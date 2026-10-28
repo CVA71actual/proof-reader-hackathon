@@ -1,0 +1,19 @@
+{
+  "ticker": "IONS",
+  "company": "Ionis Pharmaceuticals, Inc.",
+  "form": "ARS",
+  "filing_date": "2026-04-23",
+  "accession": "0001140361-26-016395",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/874015/000114036126016395/ny20063671x3_ars.pdf",
+  "source_sha256": "aabcaf5ef7714c9390fc5bd135d9ab0f5e77ffc559241ad4b5427802ac2f09a2",
+  "source_page_count": 144,
+  "page_number": 95,
+  "page_title": "Consolidated Statements of Operations",
+  "page_file": "ions_ars_2026_p95.pdf",
+  "page_sha256": "4237aa2bf381d174800e7858b1f3e96904785fde22dcad8c6aad4709d330e1d6",
+  "words_file": "ions_ars_2026_p95.words.json",
+  "words_sha256": "1a31fbcfab3ed798116709f7ce1bd962be2a599c20e7c29f1f1d4ed6c9a187c5",
+  "word_count": 230,
+  "captured_at": "2026-10-27T18:37:08+00:00",
+  "capture_tool": "pymupdf 1.28.2"
+}
