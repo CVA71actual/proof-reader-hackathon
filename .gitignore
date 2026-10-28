@@ -12,6 +12,9 @@ viewer/out/
 *.pdf
 !fixtures/ions_ars_2026_p95.pdf
 !fixtures/ptgx_8k_2026-08-05_ex991_p3.pdf
+# M1 code-built reports (PDF + Word live under runs/<id>/report/)
+!runs/*/report/*.pdf
+!report/**/report/*.pdf
 
 # Fake readings are rebuilt on demand and never committed
 *.reading.fake.json

@@ -1,0 +1,808 @@
+%PDF-1.4
+%“Œ‹ž ReportLab Generated PDF document http://www.reportlab.com
+1 0 obj
+<<
+/F1 2 0 R /F2 3 0 R /F3 4 0 R /F4 6 0 R
+>>
+endobj
+2 0 obj
+<<
+/BaseFont /Helvetica /Encoding /WinAnsiEncoding /Name /F1 /Subtype /Type1 /Type /Font
+>>
+endobj
+3 0 obj
+<<
+/BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding /Name /F2 /Subtype /Type1 /Type /Font
+>>
+endobj
+4 0 obj
+<<
+/BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding /Name /F3 /Subtype /Type1 /Type /Font
+>>
+endobj
+5 0 obj
+<<
+/Contents 11 0 R /MediaBox [ 0 0 612 792 ] /Parent 10 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+6 0 obj
+<<
+/BaseFont /Courier /Encoding /WinAnsiEncoding /Name /F4 /Subtype /Type1 /Type /Font
+>>
+endobj
+7 0 obj
+<<
+/Contents 12 0 R /MediaBox [ 0 0 612 792 ] /Parent 10 0 R /Resources <<
+/Font 1 0 R /ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>> /Rotate 0 /Trans <<
+
+>> 
+  /Type /Page
+>>
+endobj
+8 0 obj
+<<
+/PageMode /UseNone /Pages 10 0 R /Type /Catalog
+>>
+endobj
+9 0 obj
+<<
+/Author (built by code from the saved results) /CreationDate (D:20000101000000+00'00') /Creator (\(unspecified\)) /Keywords () /ModDate (D:20000101000000+00'00') /Producer (ReportLab PDF Library - www.reportlab.com) 
+  /Subject (\(unspecified\)) /Title (Biotech Coverage Catalyst Calendar) /Trapped /False
+>>
+endobj
+10 0 obj
+<<
+/Count 2 /Kids [ 5 0 R 7 0 R ] /Type /Pages
+>>
+endobj
+11 0 obj
+<<
+/Length 8890
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+q
+BT /F1 7 Tf 8.4 TL ET
+.266667 .266667 .266667 rg
+BT 1 0 0 1 54 32.4 Tm (Built with Meta Muse models \267 built by code from the saved results) Tj T* ET
+BT 1 0 0 1 536.594 32.4 Tm (page 1) Tj T* ET
+Q
+q
+1 0 0 1 60 713.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 4 Tm /F2 18 Tf 22 TL (Biotech Coverage Catalyst Calendar) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 691.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Run 2: Sample run) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 673.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Run date: 2026-10-27) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 655.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Companies covered: IONS \267 SMPL1 \267 SMPL2 \267 SMPL3 \267 SMPL4 \267 SMPL6 \267 SMPL7) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 635.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F3 10 Tf 12 TL (Sample data \227 not real events) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 617.6 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Generated: 2026-10-28T19:50:00Z) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 607.6 cm
+Q
+q
+1 0 0 1 60 577.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Summary) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 559.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and kept: 5) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 541.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Corrected: 3) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 523.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and removed: 2) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 505.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unverified: 1) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 487.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open: 0) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 469.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Mistakes caught by code 1 \267 by the second reader 1 \267 by a person 1 \267 Excluded 2) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 451.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unresolved \(needs attention\): 1) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 421.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Calendar) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 405.6 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Kept and corrected rows only, ordered by date. Periods are shown as stated.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 54 179.6 cm
+q
+.933333 .933333 .933333 rg
+n 0 224 504 -16 re f*
+0 0 0 rg
+BT /F2 10 Tf 12 TL ET
+q
+1 0 0 1 3 211 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Date / period) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 211 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Ticker) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 211 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Program) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 211 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Event) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 211 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Source) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 211 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Status) Tj T* ET
+Q
+Q
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 3 195 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (March 12, 2027) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 195 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (SMPL1) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 195 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 185 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Phase 3 STAR-1 topline) Tj T* (results) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 185 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Sample source \(made up for the) Tj T* (sample run\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 195 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 169 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (May 4, 2027) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 169 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (SMPL1) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 169 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 159 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (FDA advisory committee) Tj T* (meeting) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 159 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Sample source \(made up for the) Tj T* (sample run\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 169 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 143 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (June 30, 2027) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 143 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (SMPL2) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 143 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 143 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (FDA target action date) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 133 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Sample source \(made up for the) Tj T* (sample run\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 143 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 117 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Q3 2027) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 117 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (SMPL1) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 117 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 117 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (52-week data presentation) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 107 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Sample source \(made up for the) Tj T* (sample run\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 117 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 91 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (July 9, 2027) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 91 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (SMPL6) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 91 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 91 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Final results) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 81 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Sample source \(made up for the) Tj T* (sample run\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 91 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (failed \267 Kept by you) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 65 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (August 2, 2027) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 65 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (SMPL6) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 65 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 65 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Application filing) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 55 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Sample source \(made up for the) Tj T* (sample run\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 55 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (undecided \267 Kept by) Tj T* (you) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 29 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (September 15,) Tj T* (2027) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 39 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (SMPL3) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 39 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 39 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Investor day) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 29 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Sample source \(made up for the) Tj T* (sample run\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 39 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 13 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (later this year) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 13 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (SMPL1) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 13 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 3 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Medical meeting) Tj T* (presentation) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 3 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Sample source \(made up for the) Tj T* (sample run\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 13 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+.8 .8 .8 RG
+.25 w
+n 0 224 m 504 224 l S
+n 0 0 m 504 0 l S
+n 0 0 m 0 224 l S
+n 504 0 m 504 224 l S
+n 0 208 m 504 208 l S
+n 0 182 m 504 182 l S
+n 0 156 m 504 156 l S
+n 0 130 m 504 130 l S
+n 0 104 m 504 104 l S
+n 0 78 m 504 78 l S
+n 0 52 m 504 52 l S
+n 0 26 m 504 26 l S
+n 75.6 0 m 75.6 224 l S
+n 115.2 0 m 115.2 224 l S
+n 172.8 0 m 172.8 224 l S
+n 280.8 0 m 280.8 224 l S
+n 424.8 0 m 424.8 224 l S
+Q
+Q
+Q
+q
+1 0 0 1 60 149.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Corrections) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 131.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e3: Date changed from 2027-06-03 to 2027-06-30 after the date check failed. \(caught by code\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 113.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e4: Company changed from Samplebio Two \(SMPL2\) to Samplebio Three \(SMPL3\). \(caught by second reader\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 95.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e5: Event type changed from regulatory_decision to advisory_committee. \(caught by person\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 65.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Excluded) Tj T* ET
+Q
+Q
+ 
+endstream
+endobj
+12 0 obj
+<<
+/Length 2970
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+q
+BT /F1 7 Tf 8.4 TL ET
+.266667 .266667 .266667 rg
+BT 1 0 0 1 54 32.4 Tm (Built with Meta Muse models \267 built by code from the saved results) Tj T* ET
+BT 1 0 0 1 536.594 32.4 Tm (page 2) Tj T* ET
+Q
+q
+1 0 0 1 60 723.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e6: House rule: a third-party calendar is never a source on its own.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 705.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e10: Removed by you.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 675.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Still open and unverified) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 645.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Unverified \267 SMPL7 \267 No event could be read from this page: The page is a scan with no text layer and the reader's answer) Tj T* (could not be read.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 615.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Sources) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 597.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Ionis Pharmaceuticals, Inc. \(filed with the SEC\) \267 filing \267 2026-04-23) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 582.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126016395/ny20063671x3_ars.pdf) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 567.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (sha256: aabcaf5ef7714c9390fc5bd135d9ab0f5e77ffc559241ad4b5427802ac2f09a2) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 549.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Sample source \(made up for the sample run\) \267 company_release \267 2026-10-01) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 534.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (sha256: 3f207ed1b817db90085f847e2099f7b4b9e819c385d0f13d3fffbb71b5bba222) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 516.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Sample source \(made up for the sample run\) \267 filing \267 2026-09-15) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 501.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (sha256: a349ffbc33d8a7a38f4ceb5a15cfc8d98390a80d4af78c00dcb23032fe56cc97) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 483.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Sample source \(made up for the sample run\) \267 third_party_calendar \267 2026-10-20) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 468.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (sha256: c62139fe19605952efc4fdc7cb295a1fb33719894a9f8a5ebb36f1033e39d44f) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 450.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Sample source \(made up for the sample run\) \267 other \267 \227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 435.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (sha256: 2ba7285457e623ff737b1234e9435a5b37f02ec692fbb32cc64c2562da3dc09d) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 417.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Sample source \(made up for the sample run\) \267 company_release \267 2026-10-10) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 402.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (sha256: 035d2ee6b526894437b1f704aea8ed3c8335f258d77476d39b3c4577cf7c94df) Tj T* ET
+Q
+Q
+ 
+endstream
+endobj
+xref
+0 13
+0000000000 65535 f 
+0000000073 00000 n 
+0000000134 00000 n 
+0000000241 00000 n 
+0000000353 00000 n 
+0000000468 00000 n 
+0000000663 00000 n 
+0000000768 00000 n 
+0000000963 00000 n 
+0000001032 00000 n 
+0000001359 00000 n 
+0000001425 00000 n 
+0000010367 00000 n 
+trailer
+<<
+/ID 
+[<0615925bee3cd89939c0a65e0a4c8188><0615925bee3cd89939c0a65e0a4c8188>]
+% ReportLab generated PDF document -- digest (http://www.reportlab.com)
+
+/Info 9 0 R
+/Root 8 0 R
+/Size 13
+>>
+startxref
+13389
+%%EOF
