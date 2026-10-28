@@ -8,7 +8,8 @@ from dataclasses import asdict, dataclass, field
 PASS = "pass"
 FAIL = "fail"
 COULD_NOT_RUN = "could_not_run"
-RESULTS = (PASS, FAIL, COULD_NOT_RUN)
+NOT_NEEDED = "not_needed"  # the check does not apply to this item (e.g. no exact date was claimed)
+RESULTS = (PASS, FAIL, COULD_NOT_RUN, NOT_NEEDED)
 
 
 @dataclass(frozen=True)
@@ -17,7 +18,7 @@ class CheckResult:
 
     check: str  # stable id, e.g. "text_layer_match"
     label: str  # plain-English name shown on screen
-    result: str  # pass / fail / could_not_run
+    result: str  # pass / fail / could_not_run / not_needed
     reason: str  # one short plain sentence
     compared: dict = field(default_factory=dict)  # what was compared with what
     kind: str = "Code"  # who ran it: always code for these checks

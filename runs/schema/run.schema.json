@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proof-reader.local/schema/run.schema.json",
+  "title": "Proof Reader run",
+  "description": "One run, written once when the run ends and never edited afterwards. A person's later actions live in decisions.jsonl.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run", "sources", "tables", "rows", "mistakes", "exclusions"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "run": {"$ref": "#/$defs/run"},
+    "sources": {"type": "array", "items": {"$ref": "#/$defs/source"}},
+    "tables": {"type": "array", "items": {"$ref": "#/$defs/table"}},
+    "rows": {"type": "array", "items": {"$ref": "#/$defs/row"}},
+    "mistakes": {"type": "array", "items": {"$ref": "#/$defs/mistake"},
+                 "description": "Genuine errors only: a proposed value that was wrong and got changed, or a row removed because its content was wrong."},
+    "exclusions": {"type": "array", "items": {"$ref": "#/$defs/exclusion"},
+                   "description": "Rows left out under a rule (house rule, past event, a person's choice). Not mistakes."}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "iso_date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "rel_path": {"type": "string", "pattern": "^(?!/)(?!.*\\.\\.)[A-Za-z0-9._/-]+$"},
+    "box": {
+      "description": "[x0, y0, x1, y1] in PDF points, origin top-left, y grows downward; null when the reader proposed no place.",
+      "oneOf": [
+        {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4},
+        {"type": "null"}
+      ]
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "number", "label", "sample", "started_at", "finished_at", "choices", "spend_usd"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "number": {"type": "integer", "minimum": 0},
+        "label": {"type": "string", "minLength": 1},
+        "sample": {"type": "boolean"},
+        "started_at": {"$ref": "#/$defs/timestamp"},
+        "finished_at": {"$ref": "#/$defs/timestamp"},
+        "choices": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["companies", "event_types", "time_window_months", "spending_limit_usd", "note_for_agent"],
+          "properties": {
+            "companies": {"type": "array", "items": {"type": "string"}},
+            "event_types": {"type": "array", "items": {"type": "string"}},
+            "time_window_months": {"type": ["integer", "null"], "minimum": 1},
+            "spending_limit_usd": {"type": ["number", "null"], "minimum": 0},
+            "note_for_agent": {"type": ["string", "null"]}
+          }
+        },
+        "spend_usd": {"type": ["number", "null"], "minimum": 0, "description": "null when the spend was not recorded."}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "publisher", "kind", "title", "url", "published_date", "captured_at", "sha256", "pages"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "publisher": {"type": "string"},
+        "kind": {"enum": ["filing", "company_release", "third_party_calendar", "other"]},
+        "title": {"type": "string"},
+        "url": {"type": ["string", "null"]},
+        "published_date": {"oneOf": [{"$ref": "#/$defs/iso_date"}, {"type": "null"}]},
+        "captured_at": {"$ref": "#/$defs/timestamp"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "pages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["page_number", "image", "width_pt", "height_pt", "words"],
+            "properties": {
+              "page_number": {"type": "integer", "minimum": 1},
+              "image": {"$ref": "#/$defs/rel_path"},
+              "width_pt": {"type": "number", "exclusiveMinimum": 0},
+              "height_pt": {"type": "number", "exclusiveMinimum": 0},
+              "words": {"$ref": "#/$defs/rel_path"}
+            }
+          }
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "label", "kind", "result", "reason", "compared", "code_ref"],
+      "properties": {
+        "name": {"type": "string"},
+        "label": {"type": "string"},
+        "kind": {"const": "Code"},
+        "result": {"enum": ["pass", "fail", "could_not_run", "not_needed"]},
+        "reason": {"type": "string"},
+        "compared": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["looked_for", "found"],
+          "properties": {
+            "looked_for": {"type": ["string", "null"]},
+            "found": {"type": ["string", "null"]},
+            "box": {"$ref": "#/$defs/box"},
+            "word_ids": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "code_ref": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file", "function"],
+          "properties": {
+            "file": {"$ref": "#/$defs/rel_path"},
+            "function": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+          }
+        }
+      }
+    },
+    "trail_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step", "tag", "who", "text", "at"],
+      "properties": {
+        "step": {"type": "string"},
+        "tag": {"enum": ["Model", "Code", "Person"]},
+        "who": {"type": "string"},
+        "text": {"type": "string"},
+        "at": {"$ref": "#/$defs/timestamp"}
+      }
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "column", "value", "box", "status", "checks"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "column": {"type": "string"},
+        "value": {"type": ["string", "null"]},
+        "box": {"$ref": "#/$defs/box"},
+        "status": {"enum": ["matched", "proposed", "failed"]},
+        "checks": {"type": "array", "items": {"$ref": "#/$defs/check"}}
+      }
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source_id", "page_number", "title", "columns", "model", "instructions", "status", "problem", "rows"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "source_id": {"$ref": "#/$defs/id"},
+        "page_number": {"type": "integer", "minimum": 1},
+        "title": {"type": "string"},
+        "columns": {"type": "array", "items": {"type": "string"}},
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "tag"],
+          "properties": {"name": {"type": "string"}, "tag": {"const": "Model"}}
+        },
+        "instructions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["prompt_sha256", "prompt_text"],
+          "properties": {
+            "prompt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "prompt_text": {"type": "string"}
+          }
+        },
+        "status": {"enum": ["checked", "unreadable"], "description": "unreadable: the model's answer could not be understood, so rows is empty."},
+        "problem": {"type": ["string", "null"]},
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "cells"],
+            "properties": {
+              "label": {"type": "string"},
+              "cells": {"type": "array", "items": {"$ref": "#/$defs/cell"}}
+            }
+          }
+        }
+      }
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ticker", "company", "event_type", "title", "date_text", "date", "quote", "source_id",
+                   "page_number", "box", "proposed_by", "status", "group", "reason", "sample", "checks", "trail"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "ticker": {"type": "string"},
+        "company": {"type": "string"},
+        "event_type": {"type": "string", "pattern": "^[a-z_]+$"},
+        "title": {"type": "string"},
+        "date_text": {"type": ["string", "null"]},
+        "date": {"oneOf": [{"$ref": "#/$defs/iso_date"}, {"type": "null"}],
+                 "description": "The exact day; when date_end is set, the first day of the period."},
+        "date_end": {"oneOf": [{"$ref": "#/$defs/iso_date"}, {"type": "null"}],
+                     "description": "Optional. The last day of the period when the source names a period (\"Q3 2027\"); null for an exact day."},
+        "quote": {"type": ["string", "null"]},
+        "source_id": {"$ref": "#/$defs/id"},
+        "page_number": {"type": "integer", "minimum": 1},
+        "box": {"$ref": "#/$defs/box"},
+        "proposed_by": {"type": "string"},
+        "status": {"enum": ["matched", "proposed", "failed", "unreadable", "undecided"]},
+        "group": {"enum": ["kept", "corrected", "removed", "unverified", "open"]},
+        "reason": {"type": "string"},
+        "sample": {"type": "boolean"},
+        "checks": {"type": "array", "items": {"$ref": "#/$defs/check"}},
+        "trail": {
+          "type": "array",
+          "minItems": 1,
+          "prefixItems": [{"allOf": [{"$ref": "#/$defs/trail_step"}, {"properties": {"step": {"const": "Instructions sent"}}}]}],
+          "items": {"$ref": "#/$defs/trail_step"}
+        }
+      }
+    },
+    "exclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "target", "rule", "reason", "by"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "target": {"$ref": "#/$defs/id"},
+        "rule": {"enum": ["third_party_calendar_only", "event_in_past", "person_removed"]},
+        "reason": {"type": "string"},
+        "by": {"enum": ["code", "person"]}
+      }
+    },
+    "mistake": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "target", "what_changed", "caught_by"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "target": {"$ref": "#/$defs/id"},
+        "what_changed": {"type": "string"},
+        "caught_by": {"enum": ["code", "second_reader", "person"]}
+      }
+    }
+  }
+}

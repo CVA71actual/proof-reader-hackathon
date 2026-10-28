@@ -36,3 +36,8 @@ The live reader uses `MODEL_API_KEY` from the environment or from `~/.config/pro
 
 The fake reading is built by code from the words file, with three values changed on purpose so that failed and
 proposed values show up in the viewer. It is always marked FAKE and is never shown as a model reading.
+
+## R1: run.json, the contract for the screens
+
+See [`runs/README.md`](runs/README.md): one `run.json` per run (never edited after the run ends), one append-only
+`decisions.jsonl`, the schemas, a saved demo run, a sample run, and the state rule in `runs/state.py`.

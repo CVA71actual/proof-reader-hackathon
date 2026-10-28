@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proof-reader.local/schema/decision.schema.json",
+  "title": "Proof Reader decision",
+  "description": "One line of decisions.jsonl. Lines are only ever appended; an undo is a new line, never an edit. A person writes keep, fix, remove and undo; code writes recheck after running the checks again on a person's fix.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["at", "target", "action", "note", "fix", "by"],
+  "properties": {
+    "at": {"type": "string", "format": "date-time"},
+    "target": {"type": "string", "description": "A row id or a table cell id from run.json."},
+    "action": {"enum": ["keep", "fix", "remove", "undo", "recheck"]},
+    "note": {"type": ["string", "null"]},
+    "fix": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["field", "from", "to"],
+          "properties": {
+            "field": {"type": "string"},
+            "from": {"type": ["string", "null"]},
+            "to": {"type": ["string", "null"]}
+          }
+        },
+        {"type": "null"}
+      ]
+    },
+    "by": {"enum": ["person", "code"]},
+    "recheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "reason", "checks"],
+      "properties": {
+        "result": {"enum": ["pass", "fail"]},
+        "reason": {"type": "string"},
+        "checks": {"type": "array", "items": {"type": "object"}}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"action": {"const": "fix"}}},
+      "then": {"properties": {"fix": {"type": "object"}}},
+      "else": {"properties": {"fix": {"type": "null"}}}
+    },
+    {
+      "if": {"properties": {"action": {"const": "recheck"}}},
+      "then": {"properties": {"by": {"const": "code"}}, "required": ["recheck"]},
+      "else": {"properties": {"by": {"const": "person"}}, "not": {"required": ["recheck"]}}
+    }
+  ]
+}
