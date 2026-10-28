@@ -28,7 +28,7 @@ def test_shell_is_served_at_root(client):
     r = client.get("/")
     assert r.status_code == 200
     assert "Proof" in r.text
-    for needle in ("Audit log", "Source view", "Judgment needed"):
+    for needle in ("Audit log", "Source view", "Judgment needed", "Catalyst Calendar", "Agent trail"):
         assert needle in r.text
     assert 'src="app.js"' in r.text
 
@@ -109,3 +109,56 @@ def test_plain_screen_words_not_raw_ids():
         assert word in js, f"the event type word {word} is mapped"
     for word in ("Date as written", "Start date", "End date", "Event type"):
         assert word in js, f"the field word {word} is mapped"
+
+
+def test_u5_u6_screens_are_wired():
+    html = (UI / "index.html").read_text()
+    js = (UI / "app.js").read_text()
+    # both screens exist and are reachable from the rail
+    for needle in ('id="scr-trail"', 'id="scr-calendar"', 'data-scr="trail"', 'data-scr="calendar"'):
+        assert needle in html, needle
+    for needle in ("renderTrail", "renderCalendar", "ct-trail", "ct-calendar"):
+        assert needle in js, needle
+    # the hash language speaks of trail and calendar
+    assert "out.screen === 'trail'" in js
+    assert "o.screen === 'judgment' || o.screen === 'trail'" in js
+
+
+def test_u5_trail_contract_on_screen():
+    js = (UI / "app.js").read_text()
+    # one actor per step, tagged; the first step expands to the exact prompt text
+    for word in ("Instructions sent", "Show the instructions", "Decided by you", "See the check"):
+        assert word in js, word
+    for tag in ("'Model'", "'Code'", "'Person'"):
+        assert tag in js, tag
+    # model steps show tokens and cost when present (R6-lite fields, tolerated when absent)
+    for field in ("tokens.prompt", "tokens.completion", "cost_usd"):
+        assert field in js, field
+    # the person's decision step is dated from the decisions record
+    assert "lastPersonDecision" in js
+    assert "dateShort" in js
+    # a failed check step links to the check in the details pane
+    assert "dataset.fn" in js and "checkFnFor" in js
+
+
+def test_u6_calendar_rules_on_screen():
+    js = (UI / "app.js").read_text()
+    # kept and corrected only, periods placed under their period as written, no invented day
+    for word in ("calendarRows", "periodhead", "no date to place"):
+        assert word in js, word
+    assert "date_end" in js
+    assert "Kept by you" in js and "Fixed by you" in js
+    # no month header is fabricated from a period: the month comes from the row's own date
+    assert "monthYear" in js and "dayMonth" in js
+    # the left-rail count is the rows on the calendar
+    assert "calendarRows().length" in js
+
+
+def test_u5_u6_format_helpers():
+    js = (UI / "app.js").read_text()
+    # money keeps small costs exact (0.000352 must not round to $0.0004)
+    assert "toFixed(6)" in js
+    assert "money(" in js
+    # the decision action words on screen are plain, never the raw action ids
+    for word in ("kept", "fixed", "removed"):
+        assert word in js

@@ -12,9 +12,9 @@
     <div class="brand"><span class="mk">P</span><span class="wm">Proof <em>Reader</em></span></div>
     <nav class="nav" id="nav">
       <button class="ni on" data-scr="audit">Audit log<span class="ct" id="ct-audit"></span></button>
-      <button class="ni" data-soon>Catalyst Calendar<span class="ct later">U6</span></button>
+      <button class="ni" data-scr="calendar">Catalyst Calendar<span class="ct" id="ct-calendar"></span></button>
       <button class="ni" data-scr="source">Source view<span class="ct" id="ct-source"></span></button>
-      <button class="ni" data-soon>Agent trail<span class="ct later">U5</span></button>
+      <button class="ni" data-scr="trail">Agent trail<span class="ct" id="ct-trail"></span></button>
       <button class="ni" data-scr="judgment" id="ni-judgment">Judgment needed<span class="ct" id="ct-judgment"></span></button>
       <button class="ni" data-soon>What changed<span class="ct later">U7</span></button>
       <button class="ni" data-soon>Export<span class="ct later">U9</span></button>
@@ -67,6 +67,23 @@
       </div>
       <div class="pane mid" id="judgment-mid"></div>
       <div class="pane det" id="judgment-det"></div>
+    </section>
+
+    <section class="screen" id="scr-trail">
+      <div class="pane list">
+        <div class="ph"><h2>Agent trail</h2><div class="sub" id="trail-sub"></div></div>
+        <div class="rows" id="trail-rows"></div>
+      </div>
+      <div class="pane mid">
+        <button class="backbtn" id="trail-back" hidden>← Back to rows</button>
+        <div class="trailscroll" id="trail-mid"></div>
+      </div>
+      <div class="pane det" id="trail-det"></div>
+    </section>
+
+    <section class="screen" id="scr-calendar">
+      <div class="pane mid" id="cal-mid"></div>
+      <div class="pane det" id="cal-det"></div>
     </section>
   </div>
 </div>

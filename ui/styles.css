@@ -189,6 +189,50 @@ input.fld,select.fld{width:100%;border:1px solid var(--line);border-radius:8px;b
 html.dark .toast{background:#EDEBE6;color:#26241F}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
+/* agent trail (U5) */
+#scr-trail .pane.mid{background:var(--bg)}
+.trailscroll{flex:1;overflow-y:auto}
+.trailwrap{padding:16px 20px 30px;max-width:600px}
+.trailhead{padding:0 0 4px}
+.trailhead .tt{font-family:var(--serif);font-size:19px;font-weight:500;line-height:1.3}
+.trailhead .tm{color:var(--sub);font-size:12.5px;margin-top:2px}
+.step{display:flex;gap:12px;padding:0 0 2px}
+.step .rail{display:flex;flex-direction:column;align-items:center}
+.step .ic{width:26px;height:26px;border-radius:8px;background:var(--panel);border:1px solid var(--line);display:grid;place-items:center;font-size:12px;flex:0 0 26px;color:var(--sub)}
+.step .ln{width:1px;flex:1;background:var(--line);margin:3px 0;min-height:12px}
+.step .bd{flex:1;padding-bottom:15px;min-width:0}
+.step .hd{display:flex;gap:7px;align-items:baseline;font-size:13px}
+.step .who{font-weight:600}
+.step .st2{font-size:9.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--sub);border:1px solid var(--line);border-radius:4px;padding:0 5px;white-space:nowrap}
+.step .wh{color:var(--faint);font-size:11px;margin-left:auto;font-family:var(--mono);white-space:nowrap}
+.step .tx{font-size:12.5px;color:var(--sub);margin-top:2px;line-height:1.5;word-break:break-word}
+.step .meta{font-size:11px;color:var(--faint);font-family:var(--mono);margin-top:3px}
+.step.failstep .ic{border-color:var(--red);background:var(--red-soft);color:var(--red)}
+.step.failstep .who{color:var(--red)}
+.step.personstep .ic{border-color:var(--green);background:var(--green-soft);color:var(--green)}
+.step .seecheck{font-size:12px;font-weight:600;color:var(--accent);margin-left:6px;white-space:nowrap}
+.step .seecheck:hover{text-decoration:underline}
+.instrbox{margin-top:6px}
+.instrbox .codeblk{display:block;white-space:pre-wrap;font-family:var(--mono);font-size:11.5px;line-height:1.55;color:var(--sub);background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:9px 11px}
+
+/* catalyst calendar (U6) */
+#scr-calendar .pane.mid{background:var(--bg)}
+.calwrap{padding:8px 22px 30px;max-width:680px}
+.mo{font-family:var(--serif);font-size:17px;font-weight:500;padding:18px 0 6px;border-bottom:1px solid var(--line)}
+.crow{display:flex;gap:12px;width:100%;padding:9px 4px;border-bottom:1px solid var(--line2);align-items:baseline;border-radius:6px}
+.crow:hover{background:var(--line2)}
+.crow.on{background:var(--accent-soft)}
+.crow .cd{font-family:var(--mono);font-size:11.5px;color:var(--sub);width:70px;flex:0 0 70px;white-space:nowrap}
+.crow .ct2{flex:1;min-width:0;font-size:13.5px;display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}
+.crow .ct2 .tk{font-family:var(--mono);font-weight:600;font-size:12px}
+.crow .ct2 .pg2{font-size:11px;color:var(--blue);font-family:var(--mono);white-space:nowrap}
+.crow .ct2 .tt{min-width:0}
+.crow .ty{font-size:10.5px;color:var(--sub);border:1px solid var(--line);border-radius:5px;padding:1px 6px;white-space:nowrap;text-transform:none;letter-spacing:0;font-weight:500}
+.crow .badge{flex:0 0 auto}
+.periodhead{padding:10px 4px 2px;font-size:12px;color:var(--sub);font-weight:600;display:flex;align-items:baseline;gap:8px}
+.periodhead::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--blue);flex:0 0 7px;align-self:center}
+.calfnote{padding:12px 4px;color:var(--faint);font-size:12px}
+
 @media (max-width:900px){
   .app{flex-direction:column;height:auto;min-height:100vh}
   .side{width:auto;flex:none;border-right:0;border-bottom:1px solid var(--line)}

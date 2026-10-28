@@ -1,4 +1,4 @@
-/* Proof Reader — U2 Audit log (home) + U4 Judgment needed, on top of U1 Source view.
+/* Proof Reader — U5 Agent trail + U6 Catalyst Calendar, on top of U1/U2/U4.
    Reads runs through the local decisions server only; no external calls.
    One state per row comes from the server: run.json + decisions in order. */
 (function () {
@@ -12,6 +12,7 @@
                       unverified: 'Unverified', open: 'Still open' };
   var GROUP_ORDER = ['kept', 'corrected', 'removed', 'unverified', 'open'];
   var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };
+  var ACTION_WORDS = { keep: 'kept', fix: 'fixed', remove: 'removed' };
   var FIX_FIELDS = ['date_text', 'date', 'date_end', 'event_type', 'title', 'quote', 'company', 'ticker'];
   var RULE_WORDS = {
     third_party_calendar_only: 'House rule: a third-party calendar is never a source on its own.',
@@ -35,6 +36,38 @@
     if (!t) return 'Unknown';
     return EVENT_WORDS[t] || t.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
   }
+
+  // small formatting helpers (no external calls)
+  var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+                     'August', 'September', 'October', 'November', 'December'];
+  function hm(iso) {   // "06:17:19" from an ISO timestamp
+    var m = /T(\d{2}):(\d{2}):(\d{2})/.exec(iso || '');
+    return m ? m[1] + ':' + m[2] + ':' + m[3] : '';
+  }
+  function dayMonth(d) {   // "12 Mar" from YYYY-MM-DD
+    var p = (d || '').split('-');
+    if (p.length !== 3) return '';
+    var mi = parseInt(p[1], 10) - 1;
+    return MONTHS_SHORT[mi] ? parseInt(p[2], 10) + ' ' + MONTHS_SHORT[mi] : '';
+  }
+  function monthYear(d) {   // "July 2027" from YYYY-MM-DD
+    var p = (d || '').split('-');
+    if (p.length !== 3) return '';
+    var mi = parseInt(p[1], 10) - 1;
+    return MONTHS_LONG[mi] ? MONTHS_LONG[mi] + ' ' + p[0] : p[0];
+  }
+  function dateShort(iso) {   // "27 Oct 2026" from an ISO timestamp
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+    if (!m) return '';
+    var mi = parseInt(m[2], 10) - 1;
+    return MONTHS_SHORT[mi] ? parseInt(m[3], 10) + ' ' + MONTHS_SHORT[mi] + ' ' + m[1] : m[1];
+  }
+  function money(c) {   // 0.000352 -> "$0.000352", 0.0018 -> "$0.0018"
+    if (c === null || c === undefined) return '';
+    return '$' + Number(c).toFixed(6).replace(/0+$/, '').replace(/\.$/, '.00');
+  }
+  function num(n) { return n === null || n === undefined ? '' : Number(n).toLocaleString('en-US'); }
 
   // ---------------------------------------------------------------- helpers
   function el(tag, cls, text) {
@@ -96,6 +129,7 @@
     return {
       runs: function () { return getJSON('/api/runs'); },
       run: function (id) { return getJSON('/api/runs/' + encodeURIComponent(id)); },
+      decisions: function (id) { return getJSON('/api/runs/' + encodeURIComponent(id) + '/decisions'); },
       decide: function (id, body) {
         return fetch('/api/runs/' + encodeURIComponent(id) + '/decisions', {
           method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
@@ -113,7 +147,10 @@
   var route = null;         // parsed hash
   var audit = { filter: 'ALL', selected: null, prev: null };   // selection memory
   var judgmentSel = null;
+  var trailSel = null;
+  var calSel = null;
   var pending = false;      // a decision POST is in flight
+  var decisionsCache = { id: null, lines: null };   // decisions.jsonl lines, for the trail's person step
 
   function needsAttention(t) {
     if (t.group === 'open' || t.group === 'unverified') return true;
@@ -154,6 +191,7 @@
   }
 
   function refresh() {
+    decisionsCache = { id: null, lines: null };
     return A.run(detail.id).then(function (body) {
       detail = { id: detail.id, run: body, state: body.state };
       renderShell();
@@ -165,6 +203,8 @@
   // '#/<run>/audit[/<rowId>][?f=ALL|ATTN|kept|...]'
   // '#/<run>/source/<srcId>/p<n>[?v=<id>][&back=audit]'
   // '#/<run>/judgment[/<rowId>][?d=<action>]'
+  // '#/<run>/trail[/<rowId>]'
+  // '#/<run>/calendar'
   function parseHash() {
     var h = location.hash || '';
     if (h === '' ) return null;
@@ -187,6 +227,7 @@
       out.valueId = q.v || null; out.back = q.back || null;
     }
     if (out.screen === 'judgment') { out.rowId = seg[2] || null; out.dialog = q.d || null; }
+    if (out.screen === 'trail') { out.rowId = seg[2] || null; }
     return out;
   }
 
@@ -200,9 +241,9 @@
       h += '/' + encodeURIComponent(o.srcId) + '/' + o.page;
       if (o.valueId) q.push('v=' + encodeURIComponent(o.valueId));
       if (o.back) q.push('back=' + o.back);
-    } else if (o.screen === 'judgment') {
+    } else if (o.screen === 'judgment' || o.screen === 'trail') {
       if (o.rowId) h += '/' + encodeURIComponent(o.rowId);
-      if (o.dialog) q.push('d=' + encodeURIComponent(o.dialog));
+      if (o.screen === 'judgment' && o.dialog) q.push('d=' + encodeURIComponent(o.dialog));
     }
     return q.length ? h + '?' + q.join('&') : h;
   }
@@ -223,6 +264,8 @@
 
     if (route.screen === 'source') renderSource();
     else if (route.screen === 'judgment') renderJudgment();
+    else if (route.screen === 'trail') renderTrail();
+    else if (route.screen === 'calendar') renderCalendar();
     else renderAudit();
 
     document.querySelectorAll('#nav .ni[data-scr]').forEach(function (b) {
@@ -230,11 +273,13 @@
     });
     var scr = document.getElementById('scr-' + (route.screen === 'none' ? 'audit' : route.screen));
     var narrow = window.matchMedia('(max-width: 900px)').matches;
-    var picked = route.screen === 'source' && !!route.srcId;
+    var picked = (route.screen === 'source' && !!route.srcId) ||
+                 (route.screen === 'trail' && !!route.rowId);
     document.querySelectorAll('.screen').forEach(function (s) { s.classList.toggle('on', s === scr); });
-    if (scr) scr.classList.toggle('picked', narrow && picked);
+    if (scr) scr.classList.toggle('picked', narrow && (picked || route.screen === 'calendar'));
     document.getElementById('src-back').hidden = !(narrow && route.screen === 'source' && !route.back);
     document.getElementById('src-back-audit').hidden = !(route.screen === 'source' && route.back === 'audit');
+    document.getElementById('trail-back').hidden = !(narrow && route.screen === 'trail' && route.rowId);
   }
 
   // ---------------------------------------------------------------- shell
@@ -259,6 +304,30 @@
     document.getElementById('ct-source').textContent = nPages;
     document.getElementById('ct-judgment').textContent = st.unresolved;
     document.getElementById('ni-judgment').classList.toggle('alert', st.unresolved > 0);
+    document.getElementById('ct-trail').textContent = nRows;
+    document.getElementById('ct-calendar').textContent = calendarRows().length;
+  }
+
+  // kept and corrected rows with a date — the ones that go on the calendar
+  function calendarRows() {
+    var out = [];
+    detail.run.rows.forEach(function (r) {
+      var t = rowTarget(r);
+      if (t.group !== 'kept' && t.group !== 'corrected') return;
+      var d = (t.values && t.values.date) || r.date;
+      if (d) out.push({ row: r, t: t, date: d, period: !!(t.values && t.values.date_end) });
+    });
+    return out;
+  }
+  function calendarUndated() {
+    var n = 0;
+    detail.run.rows.forEach(function (r) {
+      var t = rowTarget(r);
+      if (t.group !== 'kept' && t.group !== 'corrected') return;
+      var d = (t.values && t.values.date) || r.date;
+      if (!d) n++;
+    });
+    return n;
   }
 
   function switchRun(runId, nav) {
@@ -266,6 +335,9 @@
       detail = { id: runId, run: body, state: body.state };
       audit = { filter: 'ALL', selected: null, prev: null };
       judgmentSel = null;
+      trailSel = null;
+      calSel = null;
+      decisionsCache = { id: null, lines: null };
       renderShell();
       if (nav !== false) navigate({ runId: runId, screen: 'audit' });
       else render();
@@ -557,6 +629,9 @@
         if (pp) navigate({ runId: currentRunId(), screen: 'source', srcId: src.id,
                            page: 'p' + pp.page.page_number, valueId: row.id, back: 'audit' });
       }));
+      br.append(btn('btn', 'Open agent trail', function () {
+        navigate({ runId: currentRunId(), screen: 'trail', rowId: row.id });
+      }));
       var dec = btn('btn pri', t.decided_by_person ? 'Change it' : 'Decide', function () {
         judgmentSel = row.id;
         navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id });
@@ -666,6 +741,7 @@
 
   function seeTheCheck(c) {
     var d = el('details', 'fold');
+    if (c.code_ref && c.code_ref.function) d.dataset.fn = c.code_ref.function;
     d.append(el('summary', null, 'See the check'));
     var cmp = c.compared || {};
     var box = el('div', 'cmp');
@@ -766,6 +842,296 @@
         det.append(checksSection({ checks: cell.checks }, {}));
       }
     }
+  }
+
+  // ---------------------------------------------------------------- trail (U5)
+  // One step per line, one actor each. Model steps name the model and carry
+  // tokens/cost when present; the first step expands to the exact prompt text;
+  // a person's decision is the last step, dated from decisions.jsonl.
+  function renderTrail() {
+    document.getElementById('trail-sub').textContent =
+      'Step by step, for one row · ' + detail.run.rows.length + ' rows';
+    if (route.rowId && rowOf(route.rowId)) trailSel = route.rowId;
+
+    var host = clear(document.getElementById('trail-rows'));
+    detail.run.rows.forEach(function (r) { host.append(trailRowBtn(r)); });
+    var on = host.querySelector('.row.on');
+    if (on) on.scrollIntoView({ block: 'nearest' });
+
+    var mid = clear(document.getElementById('trail-mid'));
+    var det = clear(document.getElementById('trail-det'));
+    var row = rowOf(trailSel) || detail.run.rows[0] || null;
+    if (!row) {
+      mid.append(el('div', 'empty', 'No rows in this run.'));
+      det.append(el('div', 'empty', 'Nothing selected.'));
+      return;
+    }
+    trailSel = row.id;
+
+    // decision dates come from the decisions list; fetch it once per run
+    if (decisionsCache.id !== detail.id) {
+      var runId = detail.id;
+      decisionsCache = { id: runId, lines: null };
+      A.decisions(runId).then(function (lines) {
+        decisionsCache = { id: runId, lines: lines };
+        render();
+      }).catch(function () { decisionsCache = { id: runId, lines: [] }; });
+    }
+
+    var meta = detail.run.run || {};
+    var head = el('div', 'trailhead');
+    head.append(el('div', 'tt', row.title || '(no title)'));
+    head.append(el('div', 'tm', (row.ticker || '') + ' · proposed by ' + (row.proposed_by || 'Model') +
+      ' · ' + (meta.label || 'run ' + meta.number) + (meta.sample ? ' · sample data — not real events' : '')));
+    var wrap = el('div', 'trailwrap');
+    wrap.append(head);
+
+    var steps = (row.trail || []).slice();
+    var t = rowTarget(row);
+    var decision = t.decided_by_person ? lastPersonDecision(row.id) : null;
+    var lines = steps.concat([{ __decision: true, line: decision, target: t }]);
+    lines.forEach(function (s, i) {
+      wrap.append(trailStep(row, s, i < lines.length - 1));
+    });
+    mid.append(wrap);
+
+    detailsPane(det, row, { back: null });
+  }
+
+  function trailRowBtn(row) {
+    var t = rowTarget(row);
+    var b = btn('row' + (row.id === trailSel ? ' on' : ''));
+    var l1 = el('div', 'l1');
+    l1.append(el('span', 'tk', row.ticker || '—'));
+    if (row.program) l1.append(el('span', 'pg2', row.program));
+    l1.append(el('span', 'tt', row.title || ''));
+    l1.append(el('span', 'dt', (t.values && t.values.date_text) || row.date_text || ''));
+    var l2 = el('div', 'l2');
+    l2.append(t.decided_by_person ? decidedBadge(t.group) : statusBadge(t.status));
+    l2.append(el('span', 'mdl', 'by ' + (row.proposed_by || 'Model')));
+    b.append(l1, l2);
+    b.addEventListener('click', function () {
+      trailSel = row.id;
+      navigate({ runId: currentRunId(), screen: 'trail', rowId: row.id });
+    });
+    return b;
+  }
+
+  function lastPersonDecision(rowId) {
+    var last = null;
+    (decisionsCache.lines || []).forEach(function (l) {
+      if (l.target !== rowId) return;
+      if (l.action === 'undo') last = null;
+      else if (l.action === 'keep' || l.action === 'fix' || l.action === 'remove') last = l;
+    });
+    return last;
+  }
+
+  function checkFnFor(row, who) {
+    var hit = null;
+    (row.checks || []).forEach(function (c) {
+      if (c.code_ref && c.code_ref.function === who) hit = c;
+    });
+    return hit;
+  }
+
+  function trailStep(row, s, more) {
+    var t = rowTarget(row);
+    var step = el('div', 'step');
+    var rail = el('div', 'rail');
+    var body = el('div', 'bd');
+    step.append(rail, body);
+
+    if (s.__decision) {
+      // the person's decision: last step, tagged Person
+      var action = s.line ? s.line.action : (t.last_action || 'keep');
+      var word = ACTION_WORDS[action] || action;
+      rail.append(el('span', 'ic', '●'));
+      if (more) rail.append(el('span', 'ln'));
+      step.classList.add('personstep');
+      var hd = el('div', 'hd');
+      hd.append(el('span', 'who', 'Decided by you · ' + word));
+      hd.append(el('span', 'st2', 'Person'));
+      hd.append(el('span', 'wh', s.line ? dateShort(s.line.at) : ''));
+      body.append(hd);
+      var fx = s.line && s.line.fix;
+      if (fx) {
+        body.append(el('div', 'tx', (FIELD_WORDS[fx.field] || fx.field) + ': ' +
+          (fx.from === null || fx.from === undefined ? '(none)' : fx.from) + ' → ' +
+          (fx.to === null || fx.to === undefined ? '(none)' : fx.to)));
+      }
+      var note = (s.line && s.line.note) || t.reason || '';
+      if (note) body.append(el('div', 'tx', 'Note: “' + note + '”'));
+      if (!s.line) body.append(el('div', 'tx', 'Decided after this run was saved — the dated record is in the run folder.'));
+      return step;
+    }
+
+    var isFail = s.tag === 'Code' && /: fail\./.test(s.text || '');
+    var glyph = '·';
+    if (s.tag === 'Model') glyph = '◎';
+    else if (s.tag === 'Person') glyph = '●';
+    else if (isFail) glyph = '✗';
+    else if (s.step === 'Checked') glyph = '✓';
+    else if (s.step === 'Sent back') glyph = '→';
+    else if (s.step === 'Instructions sent') glyph = '»';
+    rail.append(el('span', 'ic', glyph));
+    if (more) rail.append(el('span', 'ln'));
+    if (isFail) step.classList.add('failstep');
+    if (s.tag === 'Person') step.classList.add('personstep');
+
+    var hd = el('div', 'hd');
+    var whoName = s.tag === 'Model' ? (s.who || 'Model')
+      : s.tag === 'Person' ? 'a person'
+      : s.step;                       // Code steps read by their step name; the actor is the tag
+    hd.append(el('span', 'who', whoName));
+    hd.append(el('span', 'st2', s.tag === 'Model' ? 'Model · ' + (s.who || '') : s.tag));
+    hd.append(el('span', 'wh', hm(s.at)));
+    body.append(hd);
+
+    if (s.step === 'Instructions sent') {
+      body.append(el('div', 'tx', 'The exact text the model received.'));
+      var fold = el('details', 'fold instrbox');
+      fold.append(el('summary', null, 'Show the instructions'));
+      var pre = el('pre', 'codeblk', s.text || '');
+      fold.append(pre);
+      body.append(fold);
+      if (s.tokens && s.tokens.prompt !== null && s.tokens.prompt !== undefined) {
+        body.append(el('div', 'meta', 'prompt ' + num(s.tokens.prompt) + ' tokens'));
+      }
+    } else {
+      body.append(el('div', 'tx', s.text || ''));
+      if (s.tag === 'Model' && s.tokens) {
+        var parts = [];
+        if (s.tokens.prompt !== null && s.tokens.prompt !== undefined) parts.push(num(s.tokens.prompt) + ' tokens in');
+        if (s.tokens.completion !== null && s.tokens.completion !== undefined) parts.push(num(s.tokens.completion) + ' out');
+        if (s.cost_usd !== null && s.cost_usd !== undefined) parts.push(money(s.cost_usd));
+        if (parts.length) body.append(el('div', 'meta', parts.join(' · ')));
+      } else if (s.tag === 'Model' && s.cost_usd !== null && s.cost_usd !== undefined) {
+        body.append(el('div', 'meta', money(s.cost_usd) + ' · tokens not recorded'));
+      }
+    }
+
+    // a failed check's step links to "See the check" in the details pane
+    if (isFail) {
+      var chk = checkFnFor(row, s.who);
+      if (chk) {
+        var link = el('button', 'seecheck', 'See the check');
+        link.addEventListener('click', function () {
+          var folds = document.querySelectorAll('#trail-det details.fold');
+          for (var i = 0; i < folds.length; i++) {
+            if (folds[i].dataset.fn === s.who) {
+              folds[i].open = true;
+              folds[i].scrollIntoView({ block: 'center', behavior: 'smooth' });
+              break;
+            }
+          }
+        });
+        body.querySelector('.hd').append(link);
+      }
+    }
+    return step;
+  }
+
+  // ---------------------------------------------------------------- calendar (U6)
+  // Kept and corrected rows only, never removed / unverified / open. Exact days
+  // sort within their month; a period row sits under its period as written,
+  // with no invented day.
+  function renderCalendar() {
+    var meta = detail.run.run || {};
+    var rows = calendarRows();
+
+    var host = clear(document.getElementById('cal-mid'));
+    var det = clear(document.getElementById('cal-det'));
+
+    var head = el('div', 'ph');
+    head.style.background = 'var(--panel2)';
+    head.append(el('h2', null, 'Catalyst Calendar'));
+    head.append(el('div', 'sub', 'Kept events, by date · ' + rows.length + ' row' +
+      (rows.length === 1 ? '' : 's')));
+    var rl = el('div', 'runlabel' + (meta.sample ? ' sample' : ''), meta.label || '');
+    head.append(rl);
+    host.append(head);
+
+    if (!rows.length) {
+      host.append(el('div', 'empty', 'Nothing kept yet — the calendar fills as rows are kept or corrected.'));
+      det.append(el('div', 'empty', 'Pick an event to see its details.'));
+      return;
+    }
+
+    var exact = rows.filter(function (r) { return !r.period; })
+      .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+    var periods = rows.filter(function (r) { return r.period; })
+      .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+
+    var months = [];
+    function month(key) {
+      for (var i = 0; i < months.length; i++) if (months[i].key === key) return months[i];
+      var m = { key: key, exact: [], periods: [] };
+      months.push(m);
+      return m;
+    }
+    exact.forEach(function (r) { month(r.date.slice(0, 7)).exact.push(r); });
+    periods.forEach(function (r) {
+      var m = month(r.date.slice(0, 7));
+      var label = (r.t.values && r.t.values.date_text) || r.row.date_text || '';
+      var bucket = null;
+      m.periods.forEach(function (p) { if (p.label === label) bucket = p; });
+      if (!bucket) { bucket = { label: label, rows: [] }; m.periods.push(bucket); }
+      bucket.rows.push(r);
+    });
+    months.sort(function (a, b) { return a.key < b.key ? -1 : 1; });
+
+    var wrap = el('div', 'calwrap');
+    months.forEach(function (m) {
+      var sample = m.exact[0] || (m.periods[0] && m.periods[0].rows[0]);
+      wrap.append(el('div', 'mo', monthYear(sample ? sample.date : m.key + '-01')));
+      m.exact.forEach(function (r) { wrap.append(calRow(r, dayMonth(r.date))); });
+      m.periods.forEach(function (p) {
+        wrap.append(el('div', 'periodhead', p.label || 'Period as written'));
+        p.rows.forEach(function (r) { wrap.append(calRow(r, '')); });
+      });
+    });
+    var undated = calendarUndated();
+    if (undated) {
+      wrap.append(el('div', 'calfnote', undated + ' kept row' + (undated === 1 ? ' has' : 's have') +
+        ' no date to place — not on the calendar.'));
+    }
+    host.append(wrap);
+
+    var sel = rows.filter(function (r) { return r.row.id === calSel; })[0] || null;
+    if (!sel) {
+      det.append(el('div', 'empty', 'Pick an event to see its details.'));
+      return;
+    }
+    detailsPane(det, sel.row, { back: null });
+    var sa = el('div', 'sec');
+    var br = el('div', 'btnrow');
+    br.append(btn('btn', 'Open in Audit log', function () {
+      navigate({ runId: currentRunId(), screen: 'audit', rowId: sel.row.id });
+    }));
+    br.append(btn('btn', 'Open agent trail', function () {
+      navigate({ runId: currentRunId(), screen: 'trail', rowId: sel.row.id });
+    }));
+    sa.append(br);
+    det.append(sa);
+  }
+
+  function calRow(r, dayCell) {
+    var row = r.row, t = r.t;
+    var b = btn('crow' + (row.id === calSel ? ' on' : ''));
+    b.append(el('span', 'cd', dayCell));
+    var c2 = el('span', 'ct2');
+    c2.append(el('span', 'tk', row.ticker || '—'));
+    if (row.program) c2.append(el('span', 'pg2', row.program));
+    c2.append(el('span', 'tt', row.title || '(no title)'));
+    b.append(c2);
+    b.append(el('span', 'ty', eventWord(row.event_type)));
+    if (t.decided_by_person) b.append(decidedBadge(t.group));
+    b.addEventListener('click', function () {
+      calSel = row.id;
+      renderCalendar();
+    });
+    return b;
   }
 
   // ---------------------------------------------------------------- judgment (U4)
@@ -1092,7 +1458,7 @@
     });
   });
   document.querySelectorAll('#nav .ni[data-soon]').forEach(function (b) {
-    b.addEventListener('click', function () { toast('That screen lands in a later slice (U3–U9).'); });
+    b.addEventListener('click', function () { toast('That screen lands in a later slice (U7, U9).'); });
   });
   document.getElementById('src-back').addEventListener('click', function () {
     var first = null;
@@ -1104,6 +1470,9 @@
   });
   document.getElementById('src-back-audit').addEventListener('click', function () {
     navigate({ runId: currentRunId(), screen: 'audit', rowId: audit.selected });
+  });
+  document.getElementById('trail-back').addEventListener('click', function () {
+    navigate({ runId: currentRunId(), screen: 'trail' });
   });
   window.addEventListener('hashchange', function () { render(); });
   document.addEventListener('keydown', function (e) {
