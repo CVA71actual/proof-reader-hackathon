@@ -11,44 +11,79 @@
   <aside class="side">
     <div class="brand"><span class="mk">P</span><span class="wm">Proof <em>Reader</em></span></div>
     <nav class="nav" id="nav">
-      <button class="ni" data-soon>Audit log<span class="ct later">U2</span></button>
+      <button class="ni on" data-scr="audit">Audit log<span class="ct" id="ct-audit"></span></button>
       <button class="ni" data-soon>Catalyst Calendar<span class="ct later">U6</span></button>
-      <button class="ni on" data-scr="source">Source view</button>
+      <button class="ni" data-scr="source">Source view<span class="ct" id="ct-source"></span></button>
       <button class="ni" data-soon>Agent trail<span class="ct later">U5</span></button>
-      <button class="ni" data-soon>Judgment needed<span class="ct later">U4</span></button>
+      <button class="ni" data-scr="judgment" id="ni-judgment">Judgment needed<span class="ct" id="ct-judgment"></span></button>
       <button class="ni" data-soon>What changed<span class="ct later">U7</span></button>
       <button class="ni" data-soon>Export<span class="ct later">U9</span></button>
     </nav>
-    <div class="runcard" id="runcard" hidden>
-      <div class="t1" id="runcard-title">Saved results</div>
+    <button class="runcard" id="runcard" hidden>
+      <div class="t1" id="runcard-title"></div>
       <div class="t2" id="runcard-sub"></div>
       <div class="t3" id="runcard-flag" hidden></div>
-    </div>
+    </button>
     <div class="side-ft">
       <button class="tg" id="theme" aria-pressed="false">Light / dark</button>
       <div class="ft" id="side-foot"></div>
     </div>
   </aside>
 
-  <div class="screens">
-    <section class="screen on" id="scr-source">
-      <div class="pane list" id="src-list-pane">
+  <div class="screens" id="screens">
+    <section class="screen on" id="scr-audit">
+      <div class="pane list">
         <div class="ph">
-          <h2>Source view</h2>
-          <div class="sub" id="src-sub">The pages the rows rest on</div>
+          <h2>Audit log</h2>
+          <div class="sub" id="audit-sub"></div>
+          <div class="runlabel" id="audit-runlabel" hidden></div>
+          <div class="counters" id="audit-counters"></div>
+          <button class="attnbtn" id="attnbtn"></button>
         </div>
+        <div class="facets" id="audit-facets"></div>
+        <div class="rows" id="audit-rows"></div>
+      </div>
+      <div class="pane mid" id="audit-mid"></div>
+      <div class="pane det" id="audit-det"></div>
+    </section>
+
+    <section class="screen" id="scr-source">
+      <div class="pane list">
+        <div class="ph"><h2>Source view</h2><div class="sub" id="src-sub"></div></div>
         <div class="rows" id="srcList"></div>
       </div>
-      <div class="pane mid" id="src-mid-pane">
+      <div class="pane mid">
         <button class="backbtn" id="src-back" hidden>← Back to pages</button>
+        <button class="backbtn" id="src-back-audit" hidden>← Back to Audit log</button>
         <div class="srcwrap" id="srcwrap"></div>
       </div>
-      <div class="pane det" id="srcDet">
-        <div class="empty" id="det-empty">Click a value to see what was compared.</div>
+      <div class="pane det" id="srcDet"></div>
+    </section>
+
+    <section class="screen" id="scr-judgment">
+      <div class="pane list">
+        <div class="ph"><h2>Judgment needed</h2><div class="sub" id="judgment-sub"></div></div>
+        <div class="rows" id="judgment-rows"></div>
       </div>
+      <div class="pane mid" id="judgment-mid"></div>
+      <div class="pane det" id="judgment-det"></div>
     </section>
   </div>
 </div>
+
+<div class="sheetwrap" id="runsheet-wrap" hidden>
+  <div class="sheet">
+    <div class="sh-t">Choose a run</div>
+    <div class="sh-s">Every saved run under runs/.</div>
+    <div id="runsheet-list"></div>
+    <div class="btnrow" style="margin-top:14px"><button class="btn" id="runsheet-close">Close</button></div>
+  </div>
+</div>
+
+<div class="sheetwrap" id="dialog-wrap" hidden>
+  <div class="sheet" id="dialog"></div>
+</div>
+
 <div class="toast" id="toast" role="status"></div>
 <script src="app.js"></script>
 </body>
