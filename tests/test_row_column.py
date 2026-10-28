@@ -392,3 +392,115 @@ def test_codex7_a_stub_heading_on_the_header_line_is_not_a_column(words):
         c = _cell(label, "2025")
         assert row_column_match(label, "2025", c["box"], with_stub, COLUMNS).result == PASS
         assert row_column_match(label, "2025", c["box"], with_stub, ["2025"]).result == PASS
+
+
+# ---------------------------------------------------------------- header normalization (Job 3a)
+
+
+def _w(text, x, y, w=40, h=11, i=None):
+    return {"id": i or f"{text}@{x},{y}", "text": text, "x0": x, "y0": y, "x1": x + w, "y1": y + h}
+
+
+def _dated_page(prefix):
+    """Two year columns, each headed by its date words in front of the year, one value row."""
+    words = [_w("Royalty", 40, 200, 50)]
+    for year, x in (("2025", 200), ("2024", 320)):
+        words += [_w(p, x - 24 * (len(prefix) - k), 100, 22) for k, p in enumerate(prefix)] + [_w(year, x, 100, 30)]
+    v1, v2 = _w("115,315", 196, 200, 36), _w("257,307", 316, 200, 36)
+    return words + [v1, v2], v1, v2
+
+
+@pytest.mark.parametrize("column", ["2025", "FY2025", "fiscal 2025", "December 31, 2025", "Dec. 31, 2025"])
+@pytest.mark.parametrize("prefix", [[], ["Dec.", "31,"], ["December", "31,"]])
+def test_a_year_column_is_the_same_however_it_is_printed_or_named(column, prefix):
+    words, v1, v2 = _dated_page(prefix)
+    cols = [column, "2024"]
+    assert row_column_match("Royalty", column, box_of(v1), words, cols).result == PASS
+    wrong = row_column_match("Royalty", column, box_of(v2), words, cols)
+    assert wrong.result == FAIL and "not 2025" in wrong.reason
+
+
+def test_a_page_header_printed_as_fy2025_heads_column_2025():
+    words = [_w("Royalty", 40, 200, 50), _w("FY2025", 200, 100, 50), _w("FY2024", 320, 100, 50),
+             _w("115,315", 200, 200, 36), _w("257,307", 320, 200, 36)]
+    assert row_column_match("Royalty", "2025", box_of(words[3]), words, ["2025", "2024"]).result == PASS
+    assert row_column_match("Royalty", "2025", box_of(words[4]), words, ["2025", "2024"]).result == FAIL
+
+
+def test_a_december_31_line_above_the_year_line_joins_the_header_band():
+    """'December 31,' printed on its own line above each year. The year line is still the header, the date line
+    adds no competing column, and the date-headed column name reads as the year."""
+    words = [_w("Royalty", 40, 200, 50)]
+    for year, x in (("2025", 200), ("2024", 320)):
+        words += [_w("December", x - 5, 84, 45), _w("31,", x + 42, 84, 18), _w(year, x, 100, 30)]
+    v1, v2 = _w("115,315", 196, 200, 36), _w("257,307", 316, 200, 36)
+    words += [v1, v2]
+    for column in ("2025", "December 31, 2025"):
+        assert row_column_match("Royalty", column, box_of(v1), words, [column, "2024"]).result == PASS
+        assert row_column_match("Royalty", column, box_of(v2), words, [column, "2024"]).result == FAIL
+
+
+def test_a_non_year_column_is_not_renamed():
+    words = [_w("Royalty", 40, 200, 50), _w("Total", 200, 100, 40), _w("Other", 320, 100, 40),
+             _w("5", 200, 200, 20), _w("6", 320, 200, 20)]
+    assert row_column_match("Royalty", "Total", box_of(words[3]), words, ["Total", "Other"]).result == PASS
+
+
+# ---------------------------------------------------------------- dot leaders on the label line (PR #22 finding)
+
+
+def _leader_page(label_words, leaders, headers=("2025", "2024")):
+    """A label, dot leaders, then two values, under two year headers."""
+    words = [_w(h, x, 100, 30) for h, x in zip(headers, (300, 400))]
+    x = 40
+    for t in label_words:
+        words.append(_w(t, x, 200, 8 * len(t)))
+        x += 8 * len(t) + 4
+    for t in leaders:
+        words.append(_w(t, x, 200, 4))
+        x += 8
+    v1, v2 = _w("46,016", 296, 200, 36), _w("(1,234)", 396, 200, 36)
+    return words + [v1, v2], v1, v2
+
+
+DOTS = ["."] * 12
+
+
+@pytest.mark.parametrize("leaders", [DOTS, ["…"], ["_" * 6], ["- - -".split()[0]] * 5, ["......"], ["……"]])
+def test_a_label_followed_by_dot_leaders_matches(leaders):
+    words, v1, v2 = _leader_page(["Net", "(loss)", "income"], leaders)
+    r = row_column_match("Net (loss) income", "2025", box_of(v1), words, ["2025", "2024"])
+    assert r.result == PASS, (r.result, r.reason)
+    assert r.compared["found_row"] == "Net (loss) income"
+
+
+def test_leaders_glued_to_the_last_label_word_are_stripped():
+    words, v1, _ = _leader_page(["Net", "(loss)", "income......"], [])
+    assert row_column_match("Net (loss) income", "2025", box_of(v1), words, ["2025", "2024"]).result == PASS
+
+
+def test_a_different_label_still_fails_with_leaders():
+    words, v1, _ = _leader_page(["Net", "(loss)", "income"], DOTS)
+    r = row_column_match("Net sales", "2025", box_of(v1), words, ["2025", "2024"])
+    assert r.result == FAIL and r.reason.startswith("The row label 'Net sales' is not on this line; found 'Net (loss) income'")
+
+
+def test_a_label_that_only_partly_matches_still_fails_with_leaders():
+    words, v1, _ = _leader_page(["Net", "(loss)", "income"], DOTS)
+    assert row_column_match("Net income", "2025", box_of(v1), words, ["2025", "2024"]).result == FAIL
+    words, v1, _ = _leader_page(["Net", "income"], DOTS)
+    assert row_column_match("Net (loss) income", "2025", box_of(v1), words, ["2025", "2024"]).result == FAIL
+    words, v1, _ = _leader_page(["Net", "income", "before", "tax"], DOTS)
+    assert row_column_match("Net income", "2025", box_of(v1), words, ["2025", "2024"]).result == FAIL
+
+
+def test_leaders_do_not_hide_a_wrong_column():
+    words, v1, v2 = _leader_page(["Net", "(loss)", "income"], DOTS)
+    r = row_column_match("Net (loss) income", "2025", box_of(v2), words, ["2025", "2024"])
+    assert r.result == FAIL and "not 2025" in r.reason
+
+
+def test_a_label_with_a_real_full_stop_keeps_it():
+    words, v1, _ = _leader_page(["Acme", "Inc."], DOTS)
+    assert row_column_match("Acme Inc.", "2025", box_of(v1), words, ["2025", "2024"]).result == PASS
+    assert row_column_match("Acme Inc", "2025", box_of(v1), words, ["2025", "2024"]).result == FAIL

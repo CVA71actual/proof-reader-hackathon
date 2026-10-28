@@ -39,6 +39,52 @@ _YEAR = re.compile(r"^\(?(?:19|20)\d{2}\)?\W*(?:\(\w{1,2}\))?$")
 # How many lines above the value line a wrapped label may start.
 MAX_LABEL_LINES = 3
 
+# Header words that belong to a year: "December 31, 2025", "Dec. 31, 2025" and "FY2025" all head column "2025".
+_MONTHS = ("january february march april may june july august september october november december "
+           "jan feb mar apr jun jul aug sep sept oct nov dec").split()
+_DATE_YEAR = re.compile(r"^(?:(?:" + "|".join(_MONTHS) + r")\.?\s+\d{1,2},?\s+)?((?:19|20)\d{2})$", re.I)
+_FISCAL_YEAR = re.compile(r"^(?:fy|fiscal(?: year)?)\s*((?:19|20)\d{2})$", re.I)
+_DATE_PREFIX = re.compile(r"^(?:(?:" + "|".join(_MONTHS) + r")\.?|\d{1,2},?|fy|fiscal|year)$", re.I)
+
+
+# Dot leaders: fill between a row label and its values (". . . . .", "......", "…", "____", "- - -").
+_FILL_WORD = re.compile(r"^[.\u2026_\-\u2013\u2014]+$")
+_TRAILING_FILL = re.compile(r"(?:[._\-\u2013\u2014]{2,}|\u2026)[.\u2026_\-\u2013\u2014]*$")
+
+
+def _cut_leaders(line: list[dict]) -> list[dict]:
+    """The label part of a line: the words before the first leader run. A word that ends in leaders
+    ("revenue......") keeps what is before them. Anything after a leader run is not label."""
+    out = []
+    for w in line:
+        if _FILL_WORD.match(w["text"]):
+            break
+        m = _TRAILING_FILL.search(w["text"])
+        if m and m.start() > 0:
+            out.append({**w, "text": w["text"][: m.start()]})
+            break
+        out.append(w)
+    return out
+
+
+def _key(text: str | None) -> str:
+    """A column's name as compared: a year printed with its date or fiscal prefix is just the year."""
+    t = normalize(text)
+    m = _DATE_YEAR.match(t) or _FISCAL_YEAR.match(t)
+    return m.group(1) if m else t
+
+
+def _extend(run: list[dict], line: list[dict]) -> list[dict]:
+    """A year header with its date words in front ("Dec. 31," before "2025") is one header: take them in."""
+    out = list(run)
+    if not _YEAR.match(out[0]["text"]):
+        return out
+    i = line.index(out[0])
+    while i > 0 and _DATE_PREFIX.match(line[i - 1]["text"]):
+        out.insert(0, line[i - 1])
+        i -= 1
+    return out
+
 
 def _cx(w) -> float:
     return (w["x0"] + w["x1"]) / 2
@@ -62,7 +108,7 @@ def _text(words: list[dict]) -> str:
 
 def _runs(text: str, words: list[dict], above_y: float, tol: float) -> list[list[dict]]:
     """Every run of words on one line, ending above `above_y`, that reads as `text`."""
-    want = normalize(text)
+    want = _key(text)
     if not want:
         return []
     n = len(want.split(" "))
@@ -73,28 +119,45 @@ def _runs(text: str, words: list[dict], above_y: float, tol: float) -> list[list
         line = _same_line(words, _cy(w), tol)
         i = line.index(w)
         run = line[i : i + n]
-        if len(run) == n and _text(run) == want:
+        if len(run) == n and _key(_text(run)) == want:
             found.append(run)
     return found
 
 
 def _find_header(text: str, words: list[dict], above_y: float, tol: float,
-                 columns: list[str] | None = None) -> list[dict] | None:
-    """The header run for `text` above the box: on a line holding every column header when `columns` is
-    given and such a line exists; the lowest (nearest the box) such run wins."""
+                 columns: list[str] | None = None, values: list[float] = ()) -> list[dict] | None:
+    """The header run for `text` above the box. Several lines may print it (a caption, a repeated year), so the
+    line is chosen by the page: the one that holds the most of the listed columns, then the one whose headers sit
+    best over the value glyphs on the box's line (`values`: their centres), then the lowest."""
     runs = _runs(text, words, above_y, tol)
-    if columns:
-        full = [r for r in runs
-                if all(_runs(c, _same_line(words, _cy(r[0]), tol), _cy(r[0]) + tol, tol) for c in columns)]
-        runs = full or runs
-    return max(runs, key=lambda r: _cy(r[0])) if runs else None
+    if not runs:
+        return None
+
+    def on_line(r):
+        line = _same_line(words, _cy(r[0]), tol)
+        found = [rr for c in (columns or []) if (rr := _runs(c, line, _cy(r[0]) + tol, tol))]
+        return [rr[0] for rr in found] or [r]
+
+    def misalignment(r):
+        if not values:
+            return 0.0
+        centres = [(rr[0]["x0"] + rr[-1]["x1"]) / 2 for rr in on_line(r)]
+        return sum(min(abs(c - v) for v in values) for c in centres) / len(centres)
+
+    def coverage(r):
+        line = _same_line(words, _cy(r[0]), tol)
+        return sum(bool(_runs(c, line, _cy(r[0]) + tol, tol)) for c in columns or [])
+
+    return min(runs, key=lambda r: (-coverage(r), round(misalignment(r), 1), -_cy(r[0])))
 
 
-def _bands(headers: list[tuple[str, float]]) -> list[tuple[str, float, float]]:
-    """(text, centre) sorted left to right -> (text, left, right); bands meet halfway between centres."""
+def _bands(headers: list[tuple[str, float]], single_half: float = 0.0) -> list[tuple[str, float, float]]:
+    """(text, centre) sorted left to right -> (text, left, right); bands meet halfway between centres.
+    A lone header has no neighbour to meet: its band reaches `single_half` either side of its centre."""
     headers = sorted(headers, key=lambda h: h[1])
     if len(headers) == 1:
-        return [(headers[0][0], float("-inf"), float("inf"))]
+        c = headers[0][1]
+        return [(headers[0][0], c - single_half, c + single_half)]
     out = []
     for i, (text, c) in enumerate(headers):
         left = (headers[i - 1][1] + c) / 2 if i > 0 else c - (headers[1][1] - c) / 2
@@ -118,7 +181,7 @@ def row_column_match(
     `reader_label`: a label the reader put on the cell itself, if any. It is never the claim checked; if it
     is not the row's label, the check fails."""
     want_row = normalize(row_label)
-    want_col = normalize(column)
+    want_col = _key(column)
     reader = normalize(reader_label)
     looked_for = f"row {want_row or '?'}, column {want_col or '?'}"
 
@@ -146,12 +209,15 @@ def row_column_match(
     x0, y0, x1, y1 = (float(v) for v in box)
     bx, by = (x0 + x1) / 2, (y0 + y1) / 2
     tol = median(_height(w) for w in words) / 2
+    values = [_cx(w) for w in _same_line(words, by, tol)
+              if any(ch.isdigit() for ch in w["text"]) and w["text"] not in _LEADERS]
 
     # ---- the column
     found_col = None
     col_problem = None  # reason the column could not be located
     left_edge = None    # where the value columns start; label words sit left of it
-    header = _find_header(want_col, words, y0, tol, columns) if want_col else None
+    columns = [_key(c) for c in columns] if columns else columns
+    header = _find_header(want_col, words, y0, tol, columns, values) if want_col else None
     if not want_col:
         col_problem = "The reader gave no column for this value."
     elif header is None:
@@ -159,16 +225,18 @@ def row_column_match(
     else:
         hy = _cy(header[0])
         line = _same_line(words, hy, tol)
-        heads = []
+        header = _extend(header, line)
+        heads = []   # (name, centre, left edge of its words)
         if columns:
             used = {id(w) for w in header}
             for text in columns:
                 runs = _runs(text, line, hy + tol, tol)
                 if runs:
-                    heads.append((normalize(text), (runs[0][0]["x0"] + runs[0][-1]["x1"]) / 2))
-                    used.update(id(w) for w in runs[0])
-            if not any(t == want_col for t, _ in heads):
-                heads.append((want_col, (header[0]["x0"] + header[-1]["x1"]) / 2))
+                    run = _extend(runs[0], line)
+                    heads.append((_key(text), (runs[0][0]["x0"] + runs[0][-1]["x1"]) / 2, run[0]["x0"]))
+                    used.update(id(w) for w in run)
+            if not any(t == want_col for t, _, _ in heads):
+                heads.append((want_col, (header[0]["x0"] + header[-1]["x1"]) / 2, header[0]["x0"]))
             # page evidence: every other header word printed on the line competes too. A year anywhere on
             # the line is a header; any other word counts once it is right of the first listed header (a
             # stub heading such as "(in thousands)" at the left is not a value column).
@@ -177,13 +245,15 @@ def row_column_match(
                 if id(w) in used or w["text"] in _LEADERS:
                     continue
                 if _YEAR.match(w["text"]) or w["x0"] >= first_x0:
-                    heads.append((normalize(w["text"]), _cx(w)))
+                    heads.append((normalize(w["text"]), _cx(w), w["x0"]))
         else:
-            heads = [(normalize(w["text"]), _cx(w)) for w in line]
-            if not any(t == want_col for t, _ in heads):
-                heads.append((want_col, (header[0]["x0"] + header[-1]["x1"]) / 2))
-        bands = _bands(heads)
-        left_edge = min(b[1] for b in bands)
+            heads = [(normalize(w["text"]), _cx(w), w["x0"]) for w in line]
+            if not any(t == want_col for t, _, _ in heads):
+                heads.append((want_col, (header[0]["x0"] + header[-1]["x1"]) / 2, header[0]["x0"]))
+        # one header alone: its band reaches twice its own width (or the box's width) either side of its centre
+        half = max(2 * (header[-1]["x1"] - header[0]["x0"]), x1 - x0)
+        bands = _bands([(t, c) for t, c, _ in heads], half)
+        left_edge = min(left for _, _, left in heads)   # where the value columns start; label words sit left of it
         under = next((t for t, lo, hi in bands if lo <= bx < hi), None)
         found_col = under if under is not None else "no column"
         if under != want_col:
@@ -197,10 +267,11 @@ def row_column_match(
     def label_words(y: float) -> list[dict]:
         if left_edge is None:
             # no header bands: take the words left of the box that read as words, not as values
-            return [w for w in _same_line(words, y, tol)
-                    if w["x1"] <= x0 and any(ch.isalpha() for ch in w["text"])]
-        return [w for w in _same_line(words, y, tol)
-                if w["x1"] <= min(left_edge, x0) and w["text"] not in _LEADERS]
+            return _cut_leaders([w for w in _same_line(words, y, tol)
+                                 if w["x1"] <= x0 and (any(ch.isalpha() for ch in w["text"])
+                                                       or _FILL_WORD.match(w["text"]))])
+        return _cut_leaders([w for w in _same_line(words, y, tol)
+                             if w["x1"] <= min(left_edge, x0) and w["text"] not in _LEADERS])
 
     def line_has_values(y: float) -> bool:
         edge = left_edge if left_edge is not None else x0

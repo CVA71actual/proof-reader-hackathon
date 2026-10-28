@@ -255,7 +255,7 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
 
     @app.get("/api/runs/{run_id}/decisions")
     def get_decisions(run_id: str) -> list:
-        store.run_dir(run_id)
+        store.run(run_id)          # the log is part of the run: refused with the run if a page file differs
         with DECISIONS_LOCK:
             return store.decisions(run_id)
 
@@ -278,6 +278,9 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
             raise HTTPException(422, _schema_reason(errors[0], line))
 
         with DECISIONS_LOCK:
+            # Every page file run.json names is checked again here, at decision time, not only the words file
+            # the re-check reads: a file changed since the run was loaded refuses the decision before any write.
+            verify_page_files(store.run_dir(run_id), run)
             return _decide(store, run_id, run, line)
 
     @app.get("/runs/{run_id}/pages/{name}")
