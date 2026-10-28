@@ -11,9 +11,11 @@ viewer/out/
 # Only the one extracted page is kept; never the full filing
 *.pdf
 !fixtures/ions_ars_2026_p95.pdf
+!fixtures/ptgx_8k_2026-08-05_ex991_p3.pdf
 
 # Fake readings are rebuilt on demand and never committed
 *.reading.fake.json
+*.events.fake.json
 
 # Secrets
 .env

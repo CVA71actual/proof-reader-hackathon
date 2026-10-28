@@ -67,7 +67,19 @@
         "url": {"type": ["string", "null"]},
         "published_date": {"oneOf": [{"$ref": "#/$defs/iso_date"}, {"type": "null"}]},
         "captured_at": {"$ref": "#/$defs/timestamp"},
-        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$",
+                   "description": "sha256 of the document the pages were cut from (for a rendered source: the rendered PDF)."},
+        "rendered_from": {
+          "description": "Optional. Set when the source is held only as HTML and its pages were rendered by code: the screens then say \"page rendered by code from the filed HTML\".",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["format", "sha256", "renderer"],
+          "properties": {
+            "format": {"const": "html"},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256 of the filed HTML, as fetched from url."},
+            "renderer": {"type": "string", "minLength": 1}
+          }
+        },
         "pages": {
           "type": "array",
           "items": {
@@ -213,6 +225,7 @@
         "date_end": {"oneOf": [{"$ref": "#/$defs/iso_date"}, {"type": "null"}],
                      "description": "Optional. The last day of the period when the source names a period (\"Q3 2027\"); null for an exact day."},
         "quote": {"type": ["string", "null"]},
+        "program": {"type": ["string", "null"], "description": "Optional. The drug or program name as printed (\"PN-8047\"); an event word for Date read as written."},
         "source_id": {"$ref": "#/$defs/id"},
         "page_number": {"type": "integer", "minimum": 1},
         "box": {"$ref": "#/$defs/box"},

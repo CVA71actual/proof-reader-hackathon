@@ -15,5 +15,31 @@
   "words_sha256": "1a31fbcfab3ed798116709f7ce1bd962be2a599c20e7c29f1f1d4ed6c9a187c5",
   "word_count": 230,
   "captured_at": "2026-10-27T18:37:08+00:00",
-  "capture_tool": "pymupdf 1.28.2"
+  "capture_tool": "pymupdf 1.28.2",
+  "entries": {
+    "ptgx_8k_2026-08-05_ex991_p3": {
+      "ticker": "PTGX",
+      "company": "Protagonist Therapeutics, Inc.",
+      "cik": "1377121",
+      "form": "8-K",
+      "exhibit": "99.1",
+      "exhibit_title": "Second quarter 2026 financial results press release",
+      "filing_date": "2026-08-05",
+      "accession": "0001104659-26-091099",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/1377121/000110465926091099/tm2622272d1_ex99-1.htm",
+      "source_format": "html",
+      "source_sha256": "ecfd2d79a6e812707d22a9f9a5b86ab1ff7dcc4e8bd9aa2d4c0c7636a7280d57",
+      "rendered_pdf_sha256": "4ba68e37da0c15348d3eb9c3164a8f477ca81fa42d570fd648961e69cb5a1c50",
+      "renderer": "Google Chrome 156.0.8078.48 headless print-to-pdf",
+      "rendered_page_count": 6,
+      "page_number": 3,
+      "page_file": "ptgx_8k_2026-08-05_ex991_p3.pdf",
+      "page_sha256": "94b0ed7eecf21f9e8416d602232abb609cf079a06390fc412ac177f569f42fd0",
+      "words_file": "ptgx_8k_2026-08-05_ex991_p3.words.json",
+      "words_sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+      "word_count": 467,
+      "captured_at": "2026-10-28T19:17:25+00:00",
+      "capture_tool": "pymupdf 1.28.2"
+    }
+  }
 }

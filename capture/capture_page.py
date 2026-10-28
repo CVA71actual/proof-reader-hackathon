@@ -63,8 +63,9 @@ def extract_page(source: Path, page_index: int, out_pdf: Path) -> None:
     src.close()
 
 
-def page_words(pdf: Path) -> dict:
-    """Every word on the (single) page, in the PDF's own reading order."""
+def page_words(pdf: Path, page_number: int | None = None) -> dict:
+    """Every word on the (single) page, in the PDF's own reading order. `page_number`: the page's number in
+    the full source (default: the pinned IONS page)."""
     doc = pymupdf.open(pdf)
     page = doc[0]
     raw = page.get_text("words", sort=False)
@@ -85,7 +86,7 @@ def page_words(pdf: Path) -> dict:
             }
         )
     result = {
-        "page_number": FILING["page_number"],
+        "page_number": FILING["page_number"] if page_number is None else page_number,
         "page_width": round(page.rect.width, 2),
         "page_height": round(page.rect.height, 2),
         "units": "PDF points, origin top-left, y grows downward",
@@ -129,6 +130,9 @@ def capture(source: Path, fixtures: Path = FIXTURES) -> dict:
             "capture_tool": f"pymupdf {pymupdf.VersionBind}",
         }
     )
+    old = fixtures / MANIFEST_FILE
+    if old.exists() and "entries" in json.loads(old.read_text()):
+        manifest["entries"] = json.loads(old.read_text())["entries"]  # pages captured by capture_source
     (fixtures / MANIFEST_FILE).write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
 

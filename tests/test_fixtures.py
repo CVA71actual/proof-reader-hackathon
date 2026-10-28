@@ -38,4 +38,6 @@ def test_words_file_non_empty(words_doc, manifest):
 
 def test_full_filing_not_in_repo():
     pdfs = [p.name for p in FIXTURES.parent.rglob("*.pdf") if ".git" not in p.parts]
-    assert pdfs == ["ions_ars_2026_p95.pdf"]
+    assert sorted(pdfs) == ["ions_ars_2026_p95.pdf", "ptgx_8k_2026-08-05_ex991_p3.pdf"]
+    htmls = [p.name for d in (FIXTURES, FIXTURES.parent / "runs") for p in d.rglob("*.htm*")]  # the filed HTML
+    assert htmls == []

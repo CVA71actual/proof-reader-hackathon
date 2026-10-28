@@ -159,7 +159,7 @@ def _canon(text: str | None) -> str:
 
 
 # Every date or period a quote can name, longest form first, so '2027' inside 'Q3 2027' is not read
-# as the bare year.
+# as the bare year. Four digits joined to a code by a hyphen ('PN-8047') are a name, not a year.
 _MONTH_WORDS = "|".join(sorted(_MONTHS, key=len, reverse=True))
 _ORD_WORDS = "first|second|third|fourth|1st|2nd|3rd|4th"
 _NAMED = re.compile(
@@ -170,7 +170,7 @@ _NAMED = re.compile(
     r"|(?:h[12]|[12]h|(?:first|second|1st|2nd) half(?: of)?)\s*\d{4}"
     r"|(?:mid|early|late|the end of|end of|year[- ]end|the beginning of|beginning of)[- ]?\s*\d{4}"
     rf"|(?:{_MONTH_WORDS})\.?,?\s+\d{{4}}"
-    r"|(?:full[- ]year |fiscal year |fy\s*)?\d{4}"
+    r"|(?:full[- ]year |fiscal year |fy\s*)?(?<![A-Za-z]-)\d{4}"
     r")\b", re.I)
 _YEARLESS = re.compile(
     rf"^(?:q[1-4]|[1-4]q|h[12]|[12]h|(?:{_ORD_WORDS}) (?:quarter|half)|mid|early|late|end of|"
@@ -200,7 +200,7 @@ _ANCHORS = {
     "launch": ("launch", "commercial availability"),
     "conference": ("present", "presentation", "conference", "late-breaker"),
     "filing": ("submit", "submission", "filing", "nda", "bla", "maa"),
-    "milestone": ("dosed", "enrolled", "initiated", "completed", "first patient"),
+    "milestone": ("dosed", "enrolled", "initiated", "initiation", "completed", "first patient"),
 }
 _TYPE_KEYS = (
     (("trial", "readout", "result", "topline", "data"), "trial results"),

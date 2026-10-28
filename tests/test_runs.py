@@ -68,7 +68,7 @@ def test_schemas_are_valid_2020_12():
     Draft202012Validator.check_schema(DECISION_SCHEMA)
 
 
-@pytest.mark.parametrize("name", ["demo", "sample"])
+@pytest.mark.parametrize("name", ["demo", "sample", "ptgx-r4a"])
 def test_runs_validate(name):
     errors = sorted(Draft202012Validator(SCHEMA).iter_errors(load(name)), key=str)
     assert not errors, [e.message for e in errors[:5]]
@@ -100,14 +100,14 @@ def test_decision_schema_needs_fix_only_on_fix():
 # ---------------------------------------------------------------- checks and statuses
 
 
-@pytest.mark.parametrize("name", ["demo", "sample"])
+@pytest.mark.parametrize("name", ["demo", "sample", "ptgx-r4a"])
 def test_every_check_result_is_allowed(name):
     for _, ch in all_checks(load(name)):
         assert ch["result"] in RESULTS
         assert ch["kind"] == "Code"
 
 
-@pytest.mark.parametrize("name", ["demo", "sample"])
+@pytest.mark.parametrize("name", ["demo", "sample", "ptgx-r4a"])
 def test_matched_only_when_every_check_that_ran_passed(name):
     for it in items(load(name)):
         results = [c["result"] for c in it["checks"]]
@@ -125,7 +125,7 @@ def test_demo_cells_match_the_s1_status_rule(demo):
         assert c["status"] == want
 
 
-@pytest.mark.parametrize("name", ["demo", "sample"])
+@pytest.mark.parametrize("name", ["demo", "sample", "ptgx-r4a"])
 def test_code_refs_point_at_real_functions(name):
     for _, ch in all_checks(load(name)):
         ref = ch["code_ref"]
@@ -136,7 +136,7 @@ def test_code_refs_point_at_real_functions(name):
         assert ref["function"] == ch["name"]
 
 
-@pytest.mark.parametrize("name", ["demo", "sample"])
+@pytest.mark.parametrize("name", ["demo", "sample", "ptgx-r4a"])
 def test_files_named_in_the_run_exist(name):
     run = load(name)
     for s in run["sources"]:
@@ -149,7 +149,7 @@ def test_files_named_in_the_run_exist(name):
         assert x["source_id"] in ids
 
 
-@pytest.mark.parametrize("name", ["demo", "sample"])
+@pytest.mark.parametrize("name", ["demo", "sample", "ptgx-r4a"])
 def test_ids_are_unique_and_mistakes_point_at_them(name):
     run = load(name)
     ids = [it["id"] for it in items(run)]
@@ -360,7 +360,7 @@ def screen_text(run):
         yield s["title"]
 
 
-@pytest.mark.parametrize("name", ["demo", "sample"])
+@pytest.mark.parametrize("name", ["demo", "sample", "ptgx-r4a"])
 def test_no_banned_words_on_screen(name):
     for text in screen_text(load(name)):
         for pat in BANNED:

@@ -46,13 +46,17 @@ Every path inside `run.json` (page images, words files) is relative to the run's
   bytes that were hashed. A decision re-check also reads its words file once, verifies those bytes against
   `words_sha256`, and parses that same byte snapshot. A missing or changed file at consumption is refused
   before any decision is appended, even if the earlier run-load verification passed.
+  A source EDGAR holds only as HTML carries `rendered_from` {format "html", sha256 of the filed HTML, renderer}:
+  its pages were rendered to PDF by code, `sha256` is then the rendered PDF's, and every screen says "page rendered
+  by code from the filed HTML".
 - `tables[]`: a table read from one page. Each value (`cell`) has an id, a `box` `[x0, y0, x1, y1]` in PDF points
   (origin top-left, y grows downward; `null` if the reader proposed no place), a `status` and its `checks`.
   `instructions` holds the exact text sent to the model and its SHA-256.
 - `rows[]`: dated company events. Each has a `status`, a `group`, a plain `reason`, its `checks` and a `trail`.
   `date_text` is the date as printed. `date` is the exact day, or the first day of the period when `date_end` is set.
   `date_end` (optional, ISO or null) is the last day of the period when the source names one ("Q3 2027",
-  "2H 2027", "mid-2027"): "Q3 2027" is `date` 2027-07-01, `date_end` 2027-09-30. "Keep as stated" is a normal
+  "2H 2027", "mid-2027"): "Q3 2027" is `date` 2027-07-01, `date_end` 2027-09-30. `program` (optional) is the drug or
+  program name as printed ("PN-8047"). "Keep as stated" is a normal
   outcome for period dates; the calendar must place periods.
 - `mistakes[]`: genuine errors only: a proposed value that was wrong and got changed, or a row removed because its
   content was wrong. Each says what changed on which row or value, and who caught it: `code`, `second_reader` or
@@ -87,13 +91,14 @@ still ("later this year") with no date given: `not_needed`.
 Applies to every exact day and named period in `date_text` (`checks/event_checks.py` `_supporting_clause`). The
 order in which dates appear in the quote is never evidence.
 
-1. The quote is split into clauses at sentence ends, at `;` `:` `,`, and before "that", "which", "and", "but",
+1. Four digits joined to a code by a hyphen ("PN-8047") are a program name, never a year.
+   The quote is split into clauses at sentence ends, at `;` `:` `,`, and before "that", "which", "and", "but",
    "while". A boundary never falls inside a date ("March 12, 2027" stays whole). A clause that begins "follow",
    "compared with/to", "versus", "vs", "than" or "relative to" is a comparison clause and never names the event.
 2. Event words: the fixed words for the row's `event_type` (trial results: results, data, readout, topline,
    report; regulatory decision: PDUFA, decision, approval, CRL, action date; launch: launch, commercial
    availability; conference or presentation: present, presentation, conference, late-breaker; filing: submit,
-   submission, filing, NDA, BLA, MAA; milestone: dosed, enrolled, initiated, completed, first patient), plus the
+   submission, filing, NDA, BLA, MAA; milestone: dosed, enrolled, initiated, initiation, completed, first patient), plus the
    longest word of 4 letters or more in the row's title, plus the drug or program name if the row has one. Case
    does not matter. The event clause is a clause that holds a date and an event word and is not a comparison.
 3. Decision:
@@ -237,6 +242,28 @@ It also returns:
 Undo takes back a fix or a remove, so it lowers whichever counter that decision raised.
 
 Table values start in a group from their status: matched -> kept, failed -> open, anything else -> unverified.
+
+## The first real entry
+
+**`runs/ptgx-r4a/`**: label "PTGX · one real entry", `sample` false. One real source: Protagonist Therapeutics'
+8-K filed 2026-08-05, exhibit 99.1 (the Q2 2026 results release), page 3 of 6. EDGAR holds the exhibit as HTML
+only, so it was rendered to PDF by code (Google Chrome 156.0.8078.48 headless print-to-pdf); the pin record
+holds both fingerprints, `capture/capture_source.py` refuses any other file, and only page 3 is in the repo
+(`fixtures/ptgx_8k_2026-08-05_ex991_p3.*`, entry under `entries` in `fixtures/MANIFEST.json`).
+
+`capture/read_events.py` sends the page words to Muse Spark (strict JSON, the fixed event types trial_results,
+regulatory_decision, launch, conference, filing, milestone) and saves the exact prompt, its SHA-256, the raw
+answer and the parsed events to `fixtures/ptgx_8k_2026-08-05_ex991_p3.events.json`; `--fake` builds a labelled
+fake reading offline. `runs/build_entry.py` turns each proposed event into a row: the same four checks the server
+re-runs on a fix (`runs/recheck.py` `row_checks`), status from `row_status`, starting group from the status
+(matched -> kept, failed -> open, anything else -> unverified). A full stop the reader copied from the end of the
+sentence into `date_text` ("Q1 2027.") is dropped by code in its own "Tidied" step. `decisions.jsonl` starts empty.
+
+```sh
+.venv/bin/python -m capture.capture_source   # page 3 from ~/proof-reader-docs/r4a/ptgx_ex991.pdf (pinned hash)
+.venv/bin/python -m capture.read_events      # live Muse Spark reading (needs MODEL_API_KEY); --fake offline
+.venv/bin/python -m runs.build_entry         # runs/ptgx-r4a/
+```
 
 ## Regenerate
 
