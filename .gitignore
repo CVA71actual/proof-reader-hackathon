@@ -24,3 +24,6 @@ viewer/out/
 .env
 env
 *.key
+
+# Runs started from the New run panel (the server makes them; their pages and decisions stay local)
+runs/run-*/

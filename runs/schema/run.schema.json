@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://proof-reader.local/schema/run.schema.json",
   "title": "Proof Reader run",
-  "description": "One run, written once when the run ends and never edited afterwards. A person's later actions live in decisions.jsonl.",
+  "description": "One run, written once when the run ends and never edited afterwards (a run started from the New run panel is rewritten by its job only while it is going; once its status is done it is never written again). A person's later actions live in decisions.jsonl.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "run", "sources", "tables", "rows", "mistakes", "exclusions"],
@@ -39,7 +39,8 @@
         "label": {"type": "string", "minLength": 1},
         "sample": {"type": "boolean"},
         "started_at": {"$ref": "#/$defs/timestamp"},
-        "finished_at": {"$ref": "#/$defs/timestamp"},
+        "finished_at": {"oneOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}],
+                        "description": "null while the run is going (any status but done)."},
         "choices": {
           "type": "object",
           "additionalProperties": false,
@@ -52,7 +53,16 @@
             "note_for_agent": {"type": ["string", "null"]}
           }
         },
-        "spend_usd": {"type": ["number", "null"], "minimum": 0, "description": "The sum of the cost_usd of every Model step in the rows' trails; null when the spend was not recorded."}
+        "spend_usd": {"type": ["number", "null"], "minimum": 0, "description": "The sum of the cost_usd of every Model step in the rows' trails; null when the spend was not recorded."},
+        "status": {"enum": ["queued", "running", "paused_turn_limit", "needs_input", "done", "failed"],
+                   "description": "Run controls (server/jobs.py). Absent on a run saved before they existed: it is finished."},
+        "status_reason": {"type": "string", "description": "One plain sentence for the status."},
+        "turn_count": {"type": "integer", "minimum": 0, "description": "Model calls used in the current budget of turns."},
+        "turn_limit": {"type": "integer", "minimum": 1, "description": "The budget of turns; a resume starts a fresh one."},
+        "turns_total": {"type": "integer", "minimum": 0, "description": "Every model call in the run."},
+        "resumes": {"type": "integer", "minimum": 0},
+        "trail": {"type": "array", "items": {"$ref": "#/$defs/trail_step"},
+                  "description": "Run-level Person steps, e.g. a raised spending limit. Absent when there are none."}
       }
     },
     "source": {
@@ -275,7 +285,7 @@
       "properties": {
         "id": {"$ref": "#/$defs/id"},
         "target": {"$ref": "#/$defs/id"},
-        "rule": {"enum": ["third_party_calendar_only", "event_in_past", "person_removed"]},
+        "rule": {"enum": ["third_party_calendar_only", "event_in_past", "person_removed", "outside_time_window"]},
         "reason": {"type": "string"},
         "by": {"enum": ["code", "person"]}
       }

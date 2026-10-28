@@ -3,7 +3,9 @@
 Run (from the repo root, localhost only):
     ~/proof-reader-docs/.venv/bin/python -m uvicorn server.app:app --port 8777
 
-It never calls a model and never reads the env file or any key. Run it as one process (uvicorn's default, a
+It calls a model only through a run's job (server/jobs.py, started by POST /api/runs/new or a resume), and only
+through the reader it is given (capture/reader.py LiveReader); the decisions, listing and paging code never
+touches a model, the env file or a key. Run it as one process (uvicorn's default, a
 single worker): one lock in this process makes every decision one step (read the log, check the decision
 against the state as it is now, run the re-check, append), and reads wait for a write in progress. Everything it says about a row comes
 from runs/state.py current_state(run, decisions); everything it writes is one appended line in
@@ -30,8 +32,11 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from jsonschema import Draft202012Validator
 
+from capture.reader import LiveReader
+from runs.calendar import calendar_entries
 from runs.recheck import recheck_cell, recheck_row
 from runs.state import PERSON_ACTIONS, current_state
+from server import jobs
 
 REPO = Path(__file__).resolve().parent.parent
 RUNS_DIR = REPO / "runs"
@@ -176,8 +181,18 @@ def _summary(state: dict) -> dict:
     return {k: state[k] for k in ("counts", "mistakes", "excluded", "exclusions", "unresolved")}
 
 
-def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR) -> FastAPI:
+def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, background: bool = True) -> FastAPI:
+    """`reader`: what a run's job calls (default: Muse Spark, needs a key). `background`: False runs a job to its
+    stop inside the request, which is how the tests use it."""
     store = RunStore(runs_dir)
+    reader = reader or LiveReader()
+
+    def start_job(run_id: str) -> None:
+        if background:
+            threading.Thread(target=jobs.run_job, args=(store.runs_dir, run_id, reader), daemon=True).start()
+        else:
+            jobs.run_job(store.runs_dir, run_id, reader)
+
     validator = Draft202012Validator(json.loads(DECISION_SCHEMA.read_text()))
     app = FastAPI(title="Proof Reader decisions server", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -196,9 +211,40 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR) -> FastAPI:
             state = current_state(run, decisions)
             out.append({"id": run_id, "number": meta.get("number"), "label": meta.get("label"),
                         "sample": meta.get("sample"), "started_at": meta.get("started_at"),
-                        "finished_at": meta.get("finished_at"), "counts": state["counts"],
+                        "finished_at": meta.get("finished_at"), "status": meta.get("status"),
+                        "counts": state["counts"],
                         "unresolved": state["unresolved"]})
         return out
+
+    @app.post("/api/runs/new", status_code=202)
+    def new_run(body: dict = Body(...)) -> dict:
+        try:
+            choices = jobs.validate_choices(body)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from None
+        run = jobs.create_run(store.runs_dir, choices)
+        start_job(run["run"]["id"])
+        return jobs_view(store, run["run"]["id"])
+
+    @app.post("/api/runs/{run_id}/resume", status_code=202)
+    def resume_run(run_id: str, body: dict | None = Body(None)) -> dict:
+        store.run_dir(run_id)
+        body = body or {}
+        if set(body) - {"spending_limit_usd"}:
+            raise HTTPException(422, "A resume takes only spending_limit_usd.")
+        try:
+            jobs.resume_run(store.runs_dir, run_id, body.get("spending_limit_usd"))
+        except jobs.JobError as e:
+            raise HTTPException(e.status, e.message) from None
+        start_job(run_id)
+        return jobs_view(store, run_id)
+
+    @app.get("/api/runs/{run_id}/calendar")
+    def get_calendar(run_id: str) -> dict:
+        run = store.run(run_id)
+        with DECISIONS_LOCK:
+            decisions = store.decisions(run_id)
+        return {"run_id": run_id, "entries": calendar_entries(run, current_state(run, decisions))}
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str) -> dict:
@@ -251,6 +297,11 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR) -> FastAPI:
     if Path(ui_dir).is_dir():
         app.mount("/", StaticFiles(directory=ui_dir, html=True), name="ui")
     return app
+
+
+def jobs_view(store: RunStore, run_id: str) -> dict:
+    """The run object (status, turns, spend, choices) as the job has left it."""
+    return json.loads((store.run_dir(run_id) / "run.json").read_text())["run"]
 
 
 def _decide(store: RunStore, run_id: str, run: dict, line: dict) -> dict:

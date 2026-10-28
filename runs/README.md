@@ -15,7 +15,7 @@ For offline UI work the committed files still stand on their own: `runs/sample/r
 
 | File | Written | Changed later? |
 |---|---|---|
-| `runs/<id>/run.json` | once, when the run ends | never |
+| `runs/<id>/run.json` | once, when the run ends (a run started from the New run panel is rewritten by its job while it is going, and never once its status is `done`; see `server/README.md`) | never after the run ends |
 | `runs/<id>/decisions.jsonl` | one line each time a person keeps, fixes, removes or undoes, and each time code re-checks a fix | lines are only added, never edited |
 
 Schemas (JSON Schema 2020-12): `schema/run.schema.json` and `schema/decision.schema.json`.
@@ -65,7 +65,7 @@ Every path inside `run.json` (page images, words files) is relative to the run's
   (WRONG_VALUE, PERIOD_MISREAD, WRONG_COMPANY, ...); `current_state` lists every counted mistake with its type
   and model under `mistake_list`, and `accuracy/mistake_log.py` counts them by type, model and who caught it.
 - `exclusions[]`: rows left out under a rule, not because they were wrong: `id`, `target`, `rule`
-  (`third_party_calendar_only`, `event_in_past`, `person_removed`), `reason`, `by` (`code` or `person`). A row
+  (`third_party_calendar_only`, `event_in_past`, `person_removed`, `outside_time_window`: a run started with a time window, a row whose date or period start is before today or later than today plus the window), `reason`, `by` (`code` or `person`). A row
   removed by the house rule is an exclusion, never a mistake.
   A person may keep a row the house rule left out (decided by CVA, 2026-10-27). The row then shows
   "Kept by you" and still shows that its only source is a third-party calendar; the audit log never hides that.
@@ -290,6 +290,11 @@ sentence into `date_text` ("Q1 2027.") is dropped by code in its own "Tidied" st
 .venv/bin/python -m capture.read_events      # live Muse Spark reading (needs MODEL_API_KEY); --fake offline
 .venv/bin/python -m runs.build_entry         # runs/ptgx-r4a/
 ```
+
+## Table pages and event types
+
+A page that is a table (today IONS page 95) is read by the table reader whenever its company is chosen in a new
+run; the event types chosen on the New run panel apply to event pages only.
 
 ## Regenerate
 

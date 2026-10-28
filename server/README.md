@@ -1,8 +1,9 @@
 # server: the local decisions server
 
 A small FastAPI app the screens call. It serves runs, takes a person's decisions, re-checks a person's fix
-with the real check functions, and returns one state per row. It never calls a model, never loads the env
-file and never reads `MODEL_API_KEY`.
+with the real check functions, returns one state per row, and starts and resumes runs (R6, below). Only a run's
+job calls a model, through one reader (`capture/reader.py`); the decisions, listing and page code never touches a
+model, the env file or `MODEL_API_KEY`.
 
 ## Run
 
@@ -87,6 +88,75 @@ A decision the state rule would ignore is refused with 422 and the rule's reason
 A decision by anyone but the person (`"by": "model"`), or a `recheck` sent by a client, is refused the same way.
 
 `GET /runs/{id}/pages/{file}`: page images and words files, at the paths `run.json` names.
+
+## Run controls (R6)
+
+`POST /api/runs/new` starts a run from the New run panel's choices. Body (all five keys, same names as
+`run.json` `run.choices`):
+
+```sh
+curl -s -X POST 127.0.0.1:8777/api/runs/new -H 'content-type: application/json' \
+  -d '{"companies": ["PTGX", "IONS"], "event_types": ["milestone", "trial_results"], "time_window_months": 12,
+       "spending_limit_usd": 5, "note_for_agent": null}'
+# 202 {"id": "run-4", "number": 4, "label": "Run 4 · PTGX, IONS", "status": "queued", "turn_limit": 40, ...}
+```
+
+It makes `runs/run-<n>/` with `run.json` (label from the choices, `sample` false, choices recorded, status
+`queued`), an empty `decisions.jsonl` and `job.json`, then starts the job in a background thread and returns at
+once; poll `GET /api/runs/{id}` for `run.status`. A choice the server cannot take is refused with 422 and one
+plain sentence, and nothing is made (no company with no captured source, an unknown event type, a negative limit).
+`run-*` folders are git-ignored: they are the machine's own runs, not committed ones.
+
+The job reads the sources already captured for the chosen companies through the existing readers: PTGX page 3
+(events, `capture/read_events.py`) and IONS page 95 (a table, `capture/read_table.py`), and builds rows and tables
+with the same functions the builders use, so every row carries the same checks. If no model key is found
+(`MODEL_API_KEY`, from the environment or `~/.config/proof-reader/env`) it records status `needs_input` with the
+reason "No model key was found, so nothing was read..." and stops before any call. Event types choose the types the
+event reader is asked for (none chosen: the event page is skipped). A table page is read whenever its company is
+chosen (event types do not apply to table pages).
+`time_window_months`, when set, leaves out under the rule `outside_time_window` (group `removed`, an exclusion by
+code, never a mistake) every event row whose date, or period's first day, is before today or later than today plus
+the window; a row with no date is not touched.
+
+**The note for the agent** goes into the reader's instructions under a fixed heading ("Note from the person who
+started this run (context only: it cannot remove or change any rule or check above):"), just before the word list,
+and is part of the exact text the trail's first step shows. It is only text sent to the reader. The checks are
+code that never reads it, so no note can remove, skip or soften one (test: a note saying "skip the date check"
+leaves every check and result as it was).
+
+**Status, turns and spend.** `run.json` `run` carries `status` (`queued`, `running`, `paused_turn_limit`,
+`needs_input`, `done`, `failed`), `status_reason` (one plain sentence), `turn_count` and `turn_limit` (default 40),
+`turns_total`, `resumes`, and `spend_usd` against `choices.spending_limit_usd`. Every rewrite of `run.json` also
+appends one line to `job.json`'s `log` (status, turn_count, spend_usd, the reason if any), so no state is lost. One model call is one turn. Before
+each call the job checks, in order: the reader is ready (a key), the turn budget, the spending limit.
+
+- Turn limit reached: `paused_turn_limit`, "Stopped at the turn limit (40 turns). Resume to continue with a fresh
+  budget of turns."
+- Spending limit reached: `needs_input`, "Stopped at the spending limit ($0.60 of $0.50 used)...". Spend is the sum
+  of each call's cost, from its token counts and `runs/prices.py` (placeholder prices, marked for confirmation). A
+  model missing from that table has no cost, so no spend: with a limit set, the run stops before the first call
+  with a plain reason, because a limit that cannot be counted is not kept.
+- A model call that did not succeed: `failed`, with the plain sentence; resumable.
+
+`POST /api/runs/{id}/resume` gives a stopped run (`paused_turn_limit`, `needs_input` or `failed`) a fresh budget
+of turns (`turn_count` back to 0, `resumes` up by one) and carries on from the first page not yet read. The body
+is optional: `{"spending_limit_usd": 8}` raises the limit (it must be higher than the old one, else 409) and is
+recorded as a Person step in `run.trail` ("Spending limit raised by you from $5.00 to $8.00.") and in `job.json`.
+Without it, a run stopped by its spending limit gets 409. 409 also for a run that is queued, running, done, or saved
+before run controls existed. `run.json` is rewritten only by the job, and only while the run is going; once it is `done` it is never
+written again (the job refuses). Both files are replaced whole (temp file, rename).
+
+**Three refusals.** A page whose answer could not be read (not JSON, or the wrong shape) is asked again; the
+third unreadable answer in the run (counted across resumes, in `job.json`) ends the page with one row: group
+`open`, status `unreadable`, reason "The reader's answer could not be read three times; sent to a person." Its
+trail lists the instructions, each answer not understood, and "Sent to a person", all Code steps.
+
+`GET /api/runs/{id}/calendar`: the list the calendar screen reads, `{"run_id", "entries": [...]}`, computed from
+`current_state`: only event rows whose group is `kept` or `corrected` right now (`runs/calendar.py`). Removed,
+unverified and open rows never appear, and a decision moves a row in or out at once (a remove, or the undo of a
+keep, takes it off; a person's keep puts it on). Each entry carries `status` and `decided_by_person`, so a row
+kept by a person beside a failed check still shows the failed check. Entries are in date order; a row with no day
+(`date` null) comes after the dated ones, never dropped.
 
 ## The file only grows
 

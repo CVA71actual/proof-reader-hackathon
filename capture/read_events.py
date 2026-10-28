@@ -83,12 +83,13 @@ def load_words(path: Path = WORDS_PATH) -> dict:
     return json.loads(path.read_text())
 
 
-def build_prompt(words_doc: dict, entry: dict) -> str:
-    head = INSTRUCTIONS.format(
+def build_prompt(words_doc: dict, entry: dict, event_types: tuple[str, ...] = EVENT_TYPES,
+                 note: str | None = None) -> str:
+    head = read_table.add_note(INSTRUCTIONS.format(
         company=entry["company"], ticker=entry["ticker"], form=entry["form"], exhibit=entry["exhibit"],
         filing_date=entry["filing_date"], width=_num(words_doc["page_width"]),
-        height=_num(words_doc["page_height"]), types=", ".join(EVENT_TYPES),
-    )
+        height=_num(words_doc["page_height"]), types=", ".join(event_types),
+    ), note)
     lines = [
         f"{w['id']}|{w['text']}|{_num(w['x0'])}|{_num(w['y0'])}|{_num(w['x1'])}|{_num(w['y1'])}"
         for w in words_doc["words"]
