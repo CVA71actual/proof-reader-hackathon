@@ -2,6 +2,17 @@
 
 The screens read two files per run. Nothing else.
 
+## How the UI gets data
+
+Through the local decisions server (`server/`, see `server/README.md`): `GET /api/runs` lists the runs,
+`GET /api/runs/<id>` returns `run.json` plus its `state` (the state rule below, with `decisions.jsonl` applied),
+and `POST /api/runs/<id>/decisions` writes a person's keep, fix, remove or undo. Page images and words files are
+served at `/runs/<id>/pages/<file>`, the same relative paths `run.json` names. The screens never write the files
+themselves; the server is the only writer, and it only appends.
+
+For offline UI work the committed files still stand on their own: `runs/sample/run.json` and
+`runs/sample/decisions.jsonl` can be loaded as static files, and `runs/state.py` is the rule to mirror.
+
 | File | Written | Changed later? |
 |---|---|---|
 | `runs/<id>/run.json` | once, when the run ends | never |
@@ -50,7 +61,8 @@ To draw a box on the page image: `scale = image_width_px / width_pt`, then multi
 - `matched`: no check failed, none was left unrun, at least one passed, and no second reader disagreed.
 - `failed`: at least one check failed.
 - `proposed`: a check could not run, so the reader's answer stands as a proposal.
-- `undecided` (rows only): the checks did not fail, but a second reader disagreed.
+- `undecided` (rows only): the checks did not fail, but a second reader disagreed. The row's optional
+  `disagreement` {field, first_reader, second_reader} says on what (in the sample, e8's event_type).
 - `unreadable` (rows only): the reader's answer could not be understood.
 
 "Date read as written" on a period: there is no exact day to compare, so it passes when the period words are
@@ -102,7 +114,9 @@ acted while the run was still going; everything after the run ends goes to decis
 
 One JSON object per line: `at`, `target` (a row id or a table value id), `action` (keep, fix, remove, undo,
 recheck), `note`, `fix` ({field, from, to} on a fix, otherwise null), `by` ("person"; "code" on a recheck only).
-A recheck line also carries `recheck` {result `pass` or `fail`, reason, checks (the check results)}.
+A recheck line also carries `recheck` {result `pass`, `fail` or `could_not_run`, reason, checks (the check results),
+`before` {result, checks}, `after` {result, checks}}. `before` is the same checks run on the item as it was just
+before the fix (the old value); `after` is the run on the fixed item and equals the line's own result and checks.
 
 `runs/state.py` `current_state(run, decisions)` is the reference rule (pure, no files):
 
@@ -115,6 +129,18 @@ A recheck line also carries `recheck` {result `pass` or `fail`, reason, checks (
   target's latest fix still in effect that has no re-check yet (otherwise it is ignored). `pass`: the row stays
   `corrected` with status `matched`. `fail`: the row goes back to `open` with status `failed`. Either way
   `needs_recheck` becomes false and `recheck` holds the result and the check results.
+  `could_not_run` (no check failed, but at least one had nothing to compare, for example no box): this is not a
+  failure. The row stays `corrected` with status `proposed`, still decided by the person; the fix stays in
+  `fixes_pending` (not a mistake) and the row counts in `unresolved`, so it shows under Needs attention. The reason
+  says which check: "The re-check could not run: Citation located had nothing to compare."
+  Only a fix of the row's `disagreement.field` settles the readers' disagreement; when its re-check passes the row
+  becomes `matched` and the reason starts with "Settles the readers' disagreement by the person's fix. " A fix of
+  any other field leaves the row `undecided` (group `corrected` if its re-check passed) and under Needs attention.
+  The checks compare quote, date_text, date and date_end (a table value: value). A fix of any other field (title,
+  company, ticker, event_type unless it is the disputed field) is not shown right by a re-check: unless a check
+  fails, the re-check is `could_not_run` with "No check compares <field>; the fix is recorded but not
+  demonstrated.", the status stays what the checks said, and the fix stays pending. If the cited page was not
+  captured, the page checks could not run ("Page N was not captured."); no other page is used.
 - remove: the row goes to `removed`, with the person's note as the reason.
 - undo: takes back that row's latest person decision still in effect. Undo twice takes back two. Undo of a fix also
   takes back its re-check.
@@ -122,17 +148,32 @@ A recheck line also carries `recheck` {result `pass` or `fail`, reason, checks (
 
 It also returns:
 
-- `counts`: per group (rows and table values apart), plus `excluded_by_person` and `fixes_pending` (fixes still
-  in effect that have no re-check yet).
+- `counts`: per group (rows and table values apart), plus `excluded_by_person`, `fixes_pending` (fixes still
+  in effect that have no re-check yet, or whose re-check could not run, on rows not now removed) and
+  `edits_without_error` (fixes still in effect whose value passed its checks both before and after the edit).
 - `mistakes` {code, second_reader, person}: who caught each value that was wrong and got changed. The person
-  counter is the person mistakes in run.json plus every fix still in effect whose re-check passed: an edit counts
-  only once it is a shown correction. A fix waiting for its re-check is in `fixes_pending`, not here; a fix whose
-  re-check failed is not counted. A fix always changes the value (one with from == to is ignored). A person's
-  remove is not a mistake.
+  counter is the person mistakes in run.json plus every fix still in effect that is a demonstrated mistake.
+  A fix is a demonstrated mistake only when both hold: the re-check of the new value passes (`after` is `pass`),
+  and the same checks on the old value fail (`before` is `fail`): the old value was wrong. The fix's field must be
+  one a check compares, or the disputed field it settled.
+  If `before` is `could_not_run` and `after` is `pass`, the fix is recorded but does not count as a mistake.
+  It is marked `before_undemonstrated: true`, with the reason "The old value could not be assessed; no mistake
+  was demonstrated." Its before and after evidence remains in the trail.
+  If `before` is `pass` and `after` is `pass`, the fix is an edit without an error, for example 115,315 changed
+  to $115,315 on a value that already matched: the edit is recorded and the row stays `corrected` / `matched`,
+  but it is not counted; it adds 1 to `counts.edits_without_error` with the reason "The value already passed its
+  checks before the edit." Settling the readers' disagreement by choosing the disputed value (event_type, which no
+  check compares) is such an edit: it settles the row but shows no old error, so it is not counted.
+  A re-check line with no `before` run is not counted. A fix waiting for its re-check is in `fixes_pending`, not
+  here; a fix whose re-check failed is not counted, whatever `before` said. A fix always changes the value (one
+  with from == to is ignored). A person's remove is not a mistake. Undo of a fix takes back exactly what that fix
+  added: a mistake, an edit without an error, or nothing.
 - `excluded` {code, person} and `exclusions` (target, rule, reason, by): run.json exclusions whose row is still
   removed and untouched by the person, plus every row whose latest decision in effect is the person's remove
   (rule `person_removed`). A person who keeps a row the code left out takes it out of the exclusions.
-- `unresolved`: rows still in `open` or `unverified`, the one "Needs attention" number.
+- `unresolved`: rows now in `open` or `unverified`, plus rows now `corrected` whose fix's re-check could not run or
+  that are still `undecided`, the one "Needs attention" number. A later keep or remove takes the row out (its
+  unrun check stays visible in `recheck`); undo of that keep or remove puts it back.
 
 Undo takes back a fix or a remove, so it lowers whichever counter that decision raised.
 

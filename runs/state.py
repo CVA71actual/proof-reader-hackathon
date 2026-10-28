@@ -11,6 +11,12 @@ One state per target, set by the latest decision still in effect:
                value. It belongs to the target's latest fix in effect that has no re-check yet.
                result "pass": the fix stands (group "corrected", status "matched").
                result "fail": the row goes back to group "open" with status "failed".
+               result "could_not_run": not a failure. The row stays group "corrected" with status
+               "proposed" (a field no check compares: the status stays as it was); the fix stays in
+               counts.fixes_pending (not a mistake) and the row is counted in unresolved, so it
+               shows under Needs attention.
+               An undecided row (the readers disagreed) stays "undecided" until a fix of its
+               disagreement.field passes its re-check; a fix of another field does not settle it.
     remove  -> group "removed"; the person's note is the reason
     undo    -> takes back that target's most recent decision still in effect, restoring the state
                before it (undo twice takes back two decisions). Undo of a fix also takes back its
@@ -29,9 +35,18 @@ and still show what the checks said.
 
 Mistakes and exclusions are kept apart:
     mistakes    a value that was wrong and got changed. From run.json's mistakes[] (caught by code,
-                the second reader or the person during the run) plus, for the person, every fix
-                still in effect whose re-check passed. A fix not yet re-checked is counted in
-                counts.fixes_pending instead; a fix whose re-check failed is not counted at all.
+                the second reader or the person during the run) plus, for the person, every fix still in
+                effect that is a demonstrated mistake. The re-check runs the same checks twice: on the value
+                before the fix ("before") and on the new value ("after"). A fix of a field a check compares
+                (ROW_CHECKED_FIELDS, CELL_CHECKED_FIELDS), or one that settled the disagreement, counts only when
+                after is "pass" AND before is "fail" (the old value was wrong). Before "could_not_run" with
+                after "pass" does not count, and is marked before_undemonstrated: the old value could not be
+                assessed. Before "pass" with after "pass" is an edit without an error: the
+                fix is recorded and the row stays corrected/matched, but it is not counted; it is counted in
+                counts.edits_without_error with the reason "The value already passed its checks before the edit."
+                A re-check that recorded no before-run is not counted either.
+                A fix not yet re-checked, or whose re-check could not run, is counted in counts.fixes_pending
+                instead; a fix whose re-check failed is not counted at all.
                 A fix always changes the value (a fix with from == to is ignored).
     exclusions  a row left out under a rule, not because it was wrong: run.json's exclusions[]
                 whose row is still removed and untouched by the person, plus every row whose latest
@@ -46,13 +61,20 @@ import copy
 GROUPS = ("kept", "corrected", "removed", "unverified", "open")
 ACTIONS = ("keep", "fix", "remove", "undo", "recheck")
 PERSON_ACTIONS = ("keep", "fix", "remove", "undo")
-RECHECK_RESULTS = ("pass", "fail")
+RECHECK_RESULTS = ("pass", "fail", "could_not_run")
+COULD_NOT_RUN_REASON = "The re-check could not run: a check had nothing to compare."
+NO_ERROR_REASON = "The value already passed its checks before the edit."
+NO_BEFORE_REASON = "The re-check did not record the checks on the value before the edit."
+BEFORE_UNDEMONSTRATED_REASON = "The old value could not be assessed; no mistake was demonstrated."
 CAUGHT_BY = ("code", "second_reader", "person")
 EXCLUDED_BY = ("code", "person")
 UNRESOLVED = ("open", "unverified")
 
 ROW_FIELDS = ("ticker", "company", "event_type", "title", "date_text", "date", "date_end", "quote")
 CELL_FIELDS = ("value",)
+# The fields the checks compare. A fix to any other field cannot be shown right or wrong by a re-check.
+ROW_CHECKED_FIELDS = ("quote", "date_text", "date", "date_end")
+CELL_CHECKED_FIELDS = ("value",)
 
 _CELL_GROUP = {"matched": "kept", "failed": "open"}
 
@@ -66,6 +88,7 @@ def _base_targets(run: dict) -> dict:
             "status": row["status"],
             "reason": row.get("reason"),
             "values": {f: row.get(f) for f in ROW_FIELDS},
+            "disagreement": row.get("disagreement"),
         }
     for table in run.get("tables", []):
         for trow in table.get("rows", []):
@@ -76,8 +99,13 @@ def _base_targets(run: dict) -> dict:
                     "status": cell["status"],
                     "reason": None,
                     "values": {"value": cell.get("value")},
+                    "disagreement": None,
                 }
     return targets
+
+
+def checked_fields(kind: str) -> tuple[str, ...]:
+    return ROW_CHECKED_FIELDS if kind == "row" else CELL_CHECKED_FIELDS
 
 
 def _apply(base: dict, stack: list[dict]) -> dict:
@@ -85,6 +113,9 @@ def _apply(base: dict, stack: list[dict]) -> dict:
     s["fixes"] = []
     s["before"] = {}
     s["recheck"] = None
+    disputed = (base.get("disagreement") or {}).get("field")
+    # The readers' disagreement stays open until a fix of the disputed field passes its re-check.
+    unsettled = base["status"] == "undecided"
     for d in stack:
         action, note = d["action"], d.get("note")
         if action == "keep":
@@ -98,15 +129,29 @@ def _apply(base: dict, stack: list[dict]) -> dict:
             s["before"].setdefault(fx["field"], base["values"][fx["field"]])
             s["values"][fx["field"]] = fx["to"]
             rc = d.get("recheck")
+            covered = fx["field"] in checked_fields(s["kind"])
+            settles = unsettled and disputed is not None and fx["field"] == disputed
+            outcome = _fix_outcome(rc, covered or settles)
             s["fixes"].append({"field": fx["field"], "from": fx["from"], "to": fx["to"], "at": d.get("at"),
-                               "recheck": rc})
+                               "recheck": rc, "settles": settles, "checked": covered or settles, **outcome})
             s["group"] = "corrected"
             s["reason"] = note or f"Fixed by you: {fx['field']} changed from {fx['from']} to {fx['to']}."
             if rc is not None:
                 s["recheck"] = rc
                 if rc["result"] == "pass":
-                    s["status"] = "matched"
+                    if settles:
+                        unsettled = False
+                    s["status"] = "undecided" if unsettled else "matched"
                     s["reason"] = rc.get("reason") or "The checks were run again on the fixed value and passed."
+                    if not outcome["mistake"] and outcome["not_counted_reason"]:
+                        s["reason"] = f"{s['reason']} {outcome['not_counted_reason']}"
+                elif rc["result"] == "could_not_run":
+                    if unsettled and not settles:
+                        s["status"] = "undecided"
+                    elif covered or settles:
+                        s["status"] = "proposed"
+                    # a field no check compares: the status stays what the checks last said
+                    s["reason"] = rc.get("reason") or COULD_NOT_RUN_REASON
                 else:
                     s["group"] = "open"
                     s["status"] = "failed"
@@ -118,6 +163,29 @@ def _apply(base: dict, stack: list[dict]) -> dict:
     s["decided_by_person"] = bool(stack)
     s["last_action"] = stack[-1]["action"] if stack else None
     return s
+
+
+def _fix_outcome(rc: dict | None, checked: bool) -> dict:
+    """Whether a fix is a demonstrated mistake: its re-check of the new value passed (after "pass") AND the same
+    checks failed on the old value (before "fail"). Before "could_not_run" with after "pass" does not count
+    and is marked before_undemonstrated because the old value could not be assessed. Before
+    "pass" with after "pass" is an edit without an error: recorded, not counted."""
+    out = {"mistake": False, "edit_without_error": False, "before_undemonstrated": False,
+           "not_counted_reason": None}
+    if rc is None or rc.get("result") != "pass" or not checked:
+        return out
+    before = (rc.get("before") or {}).get("result")
+    if before == "fail":
+        out["mistake"] = True
+    elif before == "could_not_run":
+        out["before_undemonstrated"] = True
+        out["not_counted_reason"] = BEFORE_UNDEMONSTRATED_REASON
+    elif before == "pass":
+        out["edit_without_error"] = True
+        out["not_counted_reason"] = NO_ERROR_REASON
+    else:
+        out["not_counted_reason"] = NO_BEFORE_REASON
+    return out
 
 
 def _why_not(d, targets: dict, stacks: dict) -> str | None:
@@ -137,7 +205,7 @@ def _why_not(d, targets: dict, stacks: dict) -> str | None:
     if action == "recheck":
         rc = d.get("recheck")
         if not isinstance(rc, dict) or rc.get("result") not in RECHECK_RESULTS:
-            return "A re-check needs a result of pass or fail."
+            return "A re-check needs a result of pass, fail or could_not_run."
         if _waiting_fix(stacks[target]) is None:
             return "There is no fix waiting for a re-check on this target."
         return None
@@ -166,6 +234,16 @@ def _waiting_fix(stack: list[dict]) -> int | None:
     return None
 
 
+def _needs_attention(s: dict) -> bool:
+    """Open or unverified; or corrected by a fix whose re-check could not run, or that left the readers'
+    disagreement open. A later keep or remove is the person's answer, so it no longer needs attention."""
+    if s["group"] in UNRESOLVED:
+        return True
+    if s["group"] != "corrected":
+        return False
+    return (s["recheck"] or {}).get("result") == "could_not_run" or s["status"] == "undecided"
+
+
 def _exclusions(run: dict, states: dict) -> list[dict]:
     out = []
     for x in run.get("exclusions", []):
@@ -181,12 +259,15 @@ def _exclusions(run: dict, states: dict) -> list[dict]:
 def current_state(run: dict, decisions: list) -> dict:
     """Return {"targets", "counts", "mistakes", "excluded", "exclusions", "unresolved", "ignored"}.
 
-    counts      rows and table values per group, plus excluded_by_person and fixes_pending (fixes in
-                effect not yet re-checked)
+    counts      rows and table values per group, plus excluded_by_person, fixes_pending (fixes in
+                effect not yet re-checked, or whose re-check could not run, on rows not now removed) and
+                edits_without_error (fixes in effect whose value passed its checks both before and after)
     mistakes    {code, second_reader, person}: who caught each value that was wrong and got changed
     excluded    {code, person}: rows left out under a rule, by who left them out
     exclusions  one entry per excluded row: target, rule, reason, by
-    unresolved  rows still "open" or "unverified" (the one "Needs attention" number)
+    unresolved  rows now "open" or "unverified", plus rows now "corrected" whose fix's re-check could not
+                run or that are still "undecided" (the one "Needs attention" number); a later keep or
+                remove takes a row out
     """
     targets = _base_targets(run)
     stacks: dict[str, list[dict]] = {t: [] for t in targets}
@@ -204,7 +285,8 @@ def current_state(run: dict, decisions: list) -> dict:
             i = _waiting_fix(st)
             rc = d["recheck"]
             st[i] = {**st[i], "recheck": {"result": rc["result"], "reason": rc.get("reason"),
-                                          "checks": rc.get("checks", []), "at": d.get("at")}}
+                                          "checks": rc.get("checks", []), "at": d.get("at"),
+                                          "before": rc.get("before"), "after": rc.get("after")}}
         else:
             stacks[d["target"]].append(d)
 
@@ -218,14 +300,16 @@ def current_state(run: dict, decisions: list) -> dict:
     for m in run.get("mistakes", []):
         if m.get("caught_by") in mistakes:
             mistakes[m["caught_by"]] += 1
-    fixes = [d for st in stacks.values() for d in st if d["action"] == "fix"]
-    mistakes["person"] += sum(1 for d in fixes if (d.get("recheck") or {}).get("result") == "pass")
-    counts["fixes_pending"] = sum(1 for d in fixes if d.get("recheck") is None)
+    fixes = [(f, s) for s in states.values() for f in s["fixes"]]
+    mistakes["person"] += sum(1 for f, _ in fixes if f["mistake"])
+    counts["edits_without_error"] = sum(1 for f, _ in fixes if f["edit_without_error"])
+    counts["fixes_pending"] = sum(1 for f, s in fixes if s["group"] != "removed"
+                                  and (f["recheck"] is None or f["recheck"]["result"] == "could_not_run"))
 
     exclusions = _exclusions(run, states)
     excluded = {k: sum(1 for x in exclusions if x["by"] == k) for k in EXCLUDED_BY}
     counts["excluded_by_person"] = excluded["person"]
-    unresolved = sum(1 for s in states.values() if s["kind"] == "row" and s["group"] in UNRESOLVED)
+    unresolved = sum(1 for s in states.values() if s["kind"] == "row" and _needs_attention(s))
 
     return {"targets": states, "counts": counts, "mistakes": mistakes, "excluded": excluded,
             "exclusions": exclusions, "unresolved": unresolved, "ignored": ignored}

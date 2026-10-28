@@ -30,10 +30,23 @@
     "recheck": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["result", "reason", "checks"],
+      "required": ["result", "reason", "checks", "before", "after"],
       "properties": {
-        "result": {"enum": ["pass", "fail"]},
+        "result": {"enum": ["pass", "fail", "could_not_run"]},
         "reason": {"type": "string"},
+        "checks": {"type": "array", "items": {"type": "object"}},
+        "before": {"$ref": "#/$defs/run_of_checks", "description": "The same checks on the item as it was before the fix (the old value)."},
+        "after": {"$ref": "#/$defs/run_of_checks", "description": "The checks on the fixed item (the new value); the same as result and checks."}
+      }
+    }
+  },
+  "$defs": {
+    "run_of_checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "checks"],
+      "properties": {
+        "result": {"enum": ["pass", "fail", "could_not_run"]},
         "checks": {"type": "array", "items": {"type": "object"}}
       }
     }

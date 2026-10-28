@@ -443,10 +443,14 @@ def test_only_fixes_in_effect_are_person_mistakes_and_undo_lowers_them(sample):
     assert st["mistakes"]["person"] == 1 and len(st["ignored"]) == 1
 
 
-def recheck(target, result, at="2026-10-27T16:05:00+00:00", by="code"):
+def recheck(target, result, at="2026-10-27T16:05:00+00:00", by="code", before="fail"):
+    """A code re-check line. `before`: the result of the same checks on the value before the fix."""
+    checks = [{"name": "date_match", "result": result}]
     return {"at": at, "target": target, "action": "recheck", "note": None, "fix": None, "by": by,
             "recheck": {"result": result, "reason": f"The checks were run again and the result is {result}.",
-                        "checks": [{"name": "date_match", "result": result}]}}
+                        "checks": checks,
+                        "before": {"result": before, "checks": [{"name": "date_match", "result": before}]},
+                        "after": {"result": result, "checks": checks}}}
 
 
 E7_FIX = {"field": "date", "from": "2027-07-09", "to": "2027-07-19"}
@@ -484,8 +488,21 @@ def test_a_fix_whose_recheck_failed_is_not_counted_and_goes_back_to_open(sample)
     assert row["status"] == "undecided"  # the run itself is not touched
 
 
+def test_a_fix_whose_recheck_could_not_run_is_pending_and_needs_attention(sample):
+    base = current_state(sample, [])
+    st = current_state(sample, [dec("e7", "fix", fix=E7_FIX), recheck("e7", "could_not_run")])
+    t = st["targets"]["e7"]
+    assert (t["group"], t["status"]) == ("corrected", "proposed") and t["decided_by_person"]
+    assert t["recheck"]["result"] == "could_not_run" and t["needs_recheck"] is False
+    assert st["mistakes"] == base["mistakes"] and st["counts"]["fixes_pending"] == 1
+    assert st["unresolved"] == base["unresolved"]          # e7 was open; it still needs attention
+    assert st["ignored"] == []
+    undone = current_state(sample, [dec("e7", "fix", fix=E7_FIX), recheck("e7", "could_not_run"), dec("e7", "undo")])
+    assert undone["counts"] == base["counts"] and undone["unresolved"] == base["unresolved"]
+
+
 def test_undo_of_a_fix_takes_its_recheck_back_too(sample):
-    for result in ("pass", "fail"):
+    for result in ("pass", "fail", "could_not_run"):
         st = current_state(sample, [dec("e7", "fix", fix=E7_FIX), recheck("e7", result), dec("e7", "undo")])
         t = st["targets"]["e7"]
         assert t["recheck"] is None and t["needs_recheck"] is False and t["fixes"] == []
@@ -495,7 +512,8 @@ def test_undo_of_a_fix_takes_its_recheck_back_too(sample):
 
 
 def test_a_recheck_applies_to_the_latest_fix_only(sample):
-    fix2 = {"field": "title", "from": "Final results", "to": "Final trial results"}
+    fix2 = {"field": "quote", "from": "Samplebio Six will report final results on July 9, 2027.",
+            "to": "Samplebio Six will report final results on July 19, 2027."}
     st = current_state(sample, [dec("e7", "fix", fix=E7_FIX), recheck("e7", "pass"),
                                 dec("e7", "fix", fix=fix2)])
     t = st["targets"]["e7"]
@@ -718,3 +736,76 @@ def test_row_status_rules():
     assert event_checks.row_status([P, {"result": "fail"}], second_reader_agrees=False) == "failed"
     assert event_checks.row_status([P], second_reader_agrees=False) == "undecided"
     assert event_checks.row_status([P], readable=False) == "unreadable"
+
+
+def test_a_pass_on_a_field_no_check_compares_is_not_a_person_mistake(sample):
+    # Codex PR4 #1: a title is compared by no check, so even a passing re-check does not show a mistake.
+    fix2 = {"field": "title", "from": "Final results", "to": "Final trial results"}
+    st = current_state(sample, [dec("e7", "fix", fix=E7_FIX), recheck("e7", "pass"),
+                                dec("e7", "fix", fix=fix2), recheck("e7", "pass", at="2026-10-27T16:06:00+00:00")])
+    assert st["mistakes"]["person"] == 2 and st["counts"]["fixes_pending"] == 0
+    assert [f["checked"] for f in st["targets"]["e7"]["fixes"]] == [True, False]
+
+
+# ---------------------------------------------------------------- before and after: a demonstrated mistake
+
+
+def test_a_fix_counts_only_when_the_old_value_failed(sample):
+    base = current_state(sample, [])
+    wrong = current_state(sample, [dec("e7", "fix", fix=E7_FIX), recheck("e7", "pass", before="fail")])
+    assert wrong["mistakes"]["person"] == base["mistakes"]["person"] + 1
+    assert wrong["counts"]["edits_without_error"] == 0
+    same = current_state(sample, [dec("e7", "fix", fix=E7_FIX), recheck("e7", "pass", before="pass")])
+    assert same["mistakes"] == base["mistakes"] and same["counts"]["edits_without_error"] == 1
+    t = same["targets"]["e7"]
+    assert t["group"] == "corrected" and t["status"] == "matched"
+    assert t["fixes"][-1]["not_counted_reason"] == "The value already passed its checks before the edit."
+
+
+def test_before_could_not_run_and_after_pass_is_not_counted_and_flagged(sample):
+    base = current_state(sample, [])
+    st = current_state(sample, [dec("e7", "fix", fix=E7_FIX), recheck("e7", "pass", before="could_not_run")])
+    assert st["mistakes"] == base["mistakes"]
+    f = st["targets"]["e7"]["fixes"][-1]
+    assert f["mistake"] is False and f["before_undemonstrated"] is True
+    assert f["not_counted_reason"] == "The old value could not be assessed; no mistake was demonstrated."
+    assert st["targets"]["e7"]["reason"].endswith(f["not_counted_reason"])
+    assert f["recheck"]["before"]["result"] == "could_not_run"
+    assert f["recheck"]["after"]["result"] == "pass"
+    assert st["counts"]["edits_without_error"] == 0
+    undone = current_state(sample, [dec("e7", "fix", fix=E7_FIX), recheck("e7", "pass", before="could_not_run"),
+                                    dec("e7", "undo")])
+    assert undone["mistakes"] == base["mistakes"] and undone["counts"] == base["counts"]
+
+
+def test_a_recheck_without_a_before_run_is_not_counted(sample):
+    base = current_state(sample, [])
+    rc = recheck("e7", "pass")
+    del rc["recheck"]["before"], rc["recheck"]["after"]
+    st = current_state(sample, [dec("e7", "fix", fix=E7_FIX), rc])
+    assert st["mistakes"] == base["mistakes"] and st["counts"]["edits_without_error"] == 0
+    assert st["targets"]["e7"]["status"] == "matched"
+
+
+def test_a_failing_recheck_is_never_counted_whatever_before_said(sample):
+    base = current_state(sample, [])
+    for before in ("pass", "fail", "could_not_run"):
+        st = current_state(sample, [dec("e7", "fix", fix=E7_FIX), recheck("e7", "fail", before=before)])
+        assert st["mistakes"] == base["mistakes"] and st["counts"]["edits_without_error"] == 0
+
+
+def test_undo_of_an_edit_without_error_lowers_edits_without_error(sample):
+    ds = [dec("e7", "fix", fix=E7_FIX), recheck("e7", "pass", before="pass")]
+    assert current_state(sample, ds)["counts"]["edits_without_error"] == 1
+    assert current_state(sample, ds + [dec("e7", "undo")])["counts"]["edits_without_error"] == 0
+
+
+def test_decision_schema_requires_before_and_after_on_a_recheck():
+    v = Draft202012Validator(DECISION_SCHEMA)
+    for key in ("before", "after"):
+        rc = recheck("e7", "pass")
+        del rc["recheck"][key]
+        assert list(v.iter_errors(rc)), key
+    rc = recheck("e7", "pass")
+    rc["recheck"]["before"]["result"] = "maybe"
+    assert list(v.iter_errors(rc))

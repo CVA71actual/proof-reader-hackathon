@@ -32,7 +32,7 @@ import pymupdf
 from capture import read_table
 from capture.capture_page import page_words
 from checks import event_checks
-from checks.selector_match import selector_match
+from runs import recheck
 from runs.build_run import (
     IONS_SOURCE_ID,
     MUSE_SPARK,
@@ -180,15 +180,7 @@ def box_of_text(text: str, words: list[dict], pad: float = 0.5) -> list[float]:
             round(max(w["x1"] for w in ws) + pad, 2), round(max(w["y1"] for w in ws) + pad, 2)]
 
 
-def run_checks(row: dict, source: dict, words_doc: dict) -> list:
-    words = words_doc["words"] if words_doc else []
-    w, h = (words_doc["page_width"], words_doc["page_height"]) if words_doc else (612.0, 792.0)
-    return [
-        event_checks.quote_match(row["quote"], words),
-        selector_match(row["quote"], row["box"], words, w, h),
-        event_checks.date_match(row["date_text"], row["date"], row["quote"], date_end=row["date_end"]),
-        event_checks.source_rule(source["kind"], []),
-    ]
+run_checks = recheck.row_checks
 
 
 def check_steps(results, minute: int) -> list[dict]:
@@ -264,14 +256,8 @@ ROW_SPECS = [
 
 def recheck_line(at_: str, row: dict, fix: dict, source: dict, words_doc: dict) -> dict:
     """The decisions line code writes after running the real checks again on a person's fix."""
-    fixed = {**row, fix["field"]: fix["to"]}
-    results = run_checks(fixed, source, words_doc)
-    passed = event_checks.row_status(results) == event_checks.MATCHED
-    return {"at": at_, "target": row["id"], "action": "recheck", "note": None, "fix": None, "by": "code",
-            "recheck": {"result": "pass" if passed else "fail",
-                        "reason": ("The checks were run again on the fixed value and passed." if passed else
-                                   "The checks were run again on the fixed value and failed."),
-                        "checks": [to_contract_check(r.to_dict()) for r in results]}}
+    return recheck.recheck_row(at_, {**row, fix["field"]: fix["to"]}, source, words_doc, field=fix["field"],
+                               before={**row, fix["field"]: fix["from"]})
 
 
 def when(row: dict) -> str:
@@ -350,6 +336,9 @@ def build_row(spec: dict, source: dict, words_doc: dict, minute: int) -> tuple[d
 
     status = event_checks.row_status(results, readable=readable,
                                      second_reader_agrees=(False if second == "disagrees" else None))
+    if second == "disagrees":
+        row["disagreement"] = {"field": "event_type", "first_reader": spec["event_type"],
+                               "second_reader": spec["second_type"]}
     row.update({
         "status": status, "group": spec["group"], "reason": spec["reason"], "sample": True,
         "checks": [to_contract_check(r.to_dict()) for r in results], "trail": trail,

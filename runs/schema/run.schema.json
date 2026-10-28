@@ -204,6 +204,17 @@
         "page_number": {"type": "integer", "minimum": 1},
         "box": {"$ref": "#/$defs/box"},
         "proposed_by": {"type": "string"},
+        "disagreement": {
+          "description": "Optional; set on an undecided row: the field the two readers disagreed on and what each read. Only a fix of this field settles the disagreement.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["field", "first_reader", "second_reader"],
+          "properties": {
+            "field": {"type": "string"},
+            "first_reader": {"type": ["string", "null"]},
+            "second_reader": {"type": ["string", "null"]}
+          }
+        },
         "status": {"enum": ["matched", "proposed", "failed", "unreadable", "undecided"]},
         "group": {"enum": ["kept", "corrected", "removed", "unverified", "open"]},
         "reason": {"type": "string"},

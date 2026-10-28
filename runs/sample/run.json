@@ -5469,6 +5469,11 @@
     169.79
    ],
    "proposed_by": "Muse Spark",
+   "disagreement": {
+    "field": "event_type",
+    "first_reader": "regulatory_decision",
+    "second_reader": "regulatory_submission"
+   },
    "status": "undecided",
    "group": "open",
    "reason": "The two readers named different event types. Waiting for you.",
