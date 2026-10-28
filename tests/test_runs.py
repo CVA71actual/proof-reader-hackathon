@@ -177,7 +177,7 @@ def test_every_trail_starts_with_the_exact_instructions(sample):
         assert first["text"] == build_sample.SAMPLE_EVENT_INSTRUCTIONS
 
 
-CHECK_FUNCTIONS = {"text_layer_match", "selector_match", "quote_match", "date_match", "source_rule"}
+CHECK_FUNCTIONS = {"text_layer_match", "selector_match", "row_column_match", "quote_match", "date_match", "source_rule"}
 
 
 def test_every_trail_step_has_one_actor(sample):

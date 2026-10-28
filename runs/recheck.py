@@ -6,7 +6,8 @@ Nothing here is re-judged by hand: the checks are the same functions that checke
     row_checks(row, source, words_doc)   event row: quote_match, selector_match, date_match (period-aware),
                                          source_rule
     recheck_row(at, row, source, words_doc)
-    recheck_cell(at, cell, words_doc)    table value: text_layer_match + selector_match (checks.status)
+    recheck_cell(at, cell, words_doc)    table value: text_layer_match + selector_match + row_column_match
+                                         (checks.status)
 
 A re-check passes only when the fixed item comes out "matched" under the same status rule the run used.
 If it did not pass, the result is "could_not_run" when no check failed but at least one could not run
@@ -144,17 +145,21 @@ def _recheck_row(at: str, row: dict, source: dict, words_doc: dict | None, settl
 
 
 def recheck_cell(at: str, cell: dict, words_doc: dict | None, settles: bool = False,
-                 field: str | None = None, page_number=None, before: dict | None = None) -> dict:
+                 field: str | None = None, page_number=None, before: dict | None = None,
+                 row_label: str | None = None, columns: list[str] | None = None) -> dict:
     """`cell` already carries the fixed value; its box is the one the reader proposed.
     `before`: the cell as it was before the fix (the old value); the same checks run on it too.
+    `row_label` / `columns`: the label of the row the cell sits in and the table's column headers.
     words_doc None: the table's page (`page_number`) was not captured."""
-    before_line = None if before is None else recheck_cell(at, before, words_doc, settles, field, page_number)
-    return _with_before(_recheck_cell(at, cell, words_doc, settles, field, page_number), before_line)
+    before_line = None if before is None else recheck_cell(at, before, words_doc, settles, field, page_number,
+                                                           row_label=row_label, columns=columns)
+    return _with_before(_recheck_cell(at, cell, words_doc, settles, field, page_number, row_label, columns),
+                        before_line)
 
 
 def _recheck_cell(at: str, cell: dict, words_doc: dict | None, settles: bool, field: str | None,
-                  page_number) -> dict:
-    checked = check_cell(cell, words_doc or BLANK_PAGE)
+                  page_number, row_label: str | None = None, columns: list[str] | None = None) -> dict:
+    checked = check_cell(cell, words_doc or BLANK_PAGE, row_label, columns)
     checks = [to_contract_check(c) for c in checked["checks"]]
     page_missing = None
     if words_doc is None:

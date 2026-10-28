@@ -27,7 +27,7 @@ from pathlib import Path
 import pymupdf
 
 from capture import read_table
-from checks import event_checks, selector_match, text_layer_match
+from checks import event_checks, row_column_match, selector_match, text_layer_match
 from checks.status import UNREADABLE, check_reading
 
 REPO = Path(__file__).resolve().parent.parent
@@ -48,6 +48,7 @@ MUSE_SPARK = "Muse Spark"
 CHECK_FUNCTIONS = {
     text_layer_match.CHECK_ID: text_layer_match.text_layer_match,
     selector_match.CHECK_ID: selector_match.selector_match,
+    row_column_match.CHECK_ID: row_column_match.row_column_match,
     event_checks.QUOTE_ID: event_checks.quote_match,
     event_checks.DATE_ID: event_checks.date_match,
     event_checks.SOURCE_ID: event_checks.source_rule,

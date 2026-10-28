@@ -12,11 +12,13 @@ One real SEC filing page goes all the way through:
 2. **Read** (`capture/read_table.py`): sends the page's words to Muse Spark (Meta) and asks for the table as JSON,
    with a proposed box for each value. The exact instructions sent, their SHA-256 and the raw answer are saved with
    the reading. If the answer can't be understood it is saved as unreadable; nothing is guessed.
-3. **Check** (`checks/`): two code checks run on every value:
+3. **Check** (`checks/`): three code checks run on every value:
    - *Matches source text*: the value appears in the page's own text.
-   - *Citation located*: the words inside the proposed box read the same as the value.
+   - *Citation located*: the words inside the proposed box read the same as the value, and the box does not
+     cut into any other word (a word counts as inside only when most of it is inside the box).
+   - *Right row and column*: the box sits on the line of its row label and under its column header.
 
-   A value is **matched** only when both checks pass, **failed** if either fails, and otherwise stays **proposed**.
+   A value is **matched** only when all three checks pass, **failed** if any fails, and otherwise stays **proposed**.
 4. **View** (`viewer/build_viewer.py`): one HTML file with the table on the left and the page on the right, every
    proposed box drawn. Click a value to find its box; click a box to find its value.
 

@@ -89,6 +89,7 @@ function in this repo that ran it. Today's checks:
 |---|---|
 | Matches source text | `checks/text_layer_match.py` `text_layer_match` |
 | Citation located | `checks/selector_match.py` `selector_match` |
+| Right row and column | `checks/row_column_match.py` `row_column_match` (table values; `compared` reads "row <label>, column <header>") |
 | Quote found on page | `checks/event_checks.py` `quote_match` |
 | Date read as written | `checks/event_checks.py` `date_match` |
 | Source is more than a calendar | `checks/event_checks.py` `source_rule` |

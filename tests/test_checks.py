@@ -99,12 +99,12 @@ def _r(check, result):
     return CheckResult(check, check, result, "")
 
 
-def test_status_matched_only_when_both_pass():
-    for a, b in itertools.product([PASS, FAIL, COULD_NOT_RUN], repeat=2):
-        s = combine_status([_r("text_layer_match", a), _r("selector_match", b)])
-        if a == PASS and b == PASS:
+def test_status_matched_only_when_all_three_pass():
+    for a, b, c in itertools.product([PASS, FAIL, COULD_NOT_RUN], repeat=3):
+        s = combine_status([_r("text_layer_match", a), _r("selector_match", b), _r("row_column_match", c)])
+        if a == b == c == PASS:
             assert s == MATCHED
-        elif FAIL in (a, b):
+        elif FAIL in (a, b, c):
             assert s == FAILED
         else:
             assert s == PROPOSED
@@ -114,6 +114,7 @@ def test_status_never_matched_with_a_missing_check():
     assert combine_status([_r("text_layer_match", PASS)]) == PROPOSED
     assert combine_status([]) == PROPOSED
     assert combine_status([_r("text_layer_match", PASS), _r("other", PASS)]) == PROPOSED
+    assert combine_status([_r("text_layer_match", PASS), _r("selector_match", PASS)]) == PROPOSED
 
 
 def test_box_alone_never_matches(words):

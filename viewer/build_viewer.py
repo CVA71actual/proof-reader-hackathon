@@ -198,7 +198,7 @@ TEMPLATE = r"""<!doctype html>
   const n = C.counts;
   summary.textContent = (n.matched + n.failed + n.proposed) + ' values read · ' + n.matched +
     ' matched · ' + n.failed + ' failed · ' + n.proposed + ' proposed only. ' +
-    '"Matched" means both code checks passed.';
+    '"Matched" means all three code checks passed.';
 
   const columns = R.columns.slice();
   C.rows.forEach(r => r.cells.forEach(c => { if (!columns.includes(c.column)) columns.push(c.column); }));

@@ -243,7 +243,8 @@ def test_table_value_fix_is_rechecked_with_the_table_checks(client, runs_dir):
     n = len(lines(runs_dir))
     bad = fix(client, "t1.0.0", "value", "115,315", "115,316")
     assert bad.json()["state"]["group"] == "open"
-    assert {c["name"] for c in bad.json()["state"]["recheck"]["checks"]} == {"text_layer_match", "selector_match"}
+    assert {c["name"] for c in bad.json()["state"]["recheck"]["checks"]} == {"text_layer_match", "selector_match",
+                                                                         "row_column_match"}
     good = fix(client, "t1.0.0", "value", "115,316", "115,315")
     assert good.json()["state"]["group"] == "corrected" and good.json()["state"]["status"] == "matched"
     assert len(lines(runs_dir)) == n + 4

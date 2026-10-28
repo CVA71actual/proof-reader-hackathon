@@ -118,6 +118,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Product sales, net' line and under 2025.",
+         "compared": {
+          "looked_for": "row Product sales, net, column 2025",
+          "found": "row Product sales, net, column 2025",
+          "box": [
+           407.64,
+           141.13,
+           440.22,
+           152.15
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -175,6 +196,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Product sales, net' line and under 2024.",
+         "compared": {
+          "looked_for": "row Product sales, net, column 2024",
+          "found": "row Product sales, net, column 2024",
+          "box": [
+           501.6,
+           141.13,
+           504.92,
+           152.15
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -231,6 +273,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Product sales, net' line and under 2023.",
+         "compared": {
+          "looked_for": "row Product sales, net, column 2023",
+          "found": "row Product sales, net, column 2023",
+          "box": [
+           566.52,
+           141.13,
+           569.84,
+           152.15
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -293,6 +356,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Royalty revenue' line and under 2025.",
+         "compared": {
+          "looked_for": "row Royalty revenue, column 2025",
+          "found": "row Royalty revenue, column 2025",
+          "box": [
+           407.66,
+           153.13,
+           440.2,
+           164.15
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -349,6 +433,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Royalty revenue' line and under 2024.",
+         "compared": {
+          "looked_for": "row Royalty revenue, column 2024",
+          "found": "row Royalty revenue, column 2024",
+          "box": [
+           472.42,
+           153.13,
+           504.96,
+           164.15
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -404,6 +509,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Royalty revenue' line and under 2023.",
+         "compared": {
+          "looked_for": "row Royalty revenue, column 2023",
+          "found": "row Royalty revenue, column 2023",
+          "box": [
+           537.3,
+           153.13,
+           569.84,
+           164.15
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -466,6 +592,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Other commercial revenue' line and under 2025.",
+         "compared": {
+          "looked_for": "row Other commercial revenue, column 2025",
+          "found": "row Other commercial revenue, column 2025",
+          "box": [
+           412.68,
+           165.13,
+           440.22,
+           176.15
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -522,6 +669,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Other commercial revenue' line and under 2024.",
+         "compared": {
+          "looked_for": "row Other commercial revenue, column 2024",
+          "found": "row Other commercial revenue, column 2024",
+          "box": [
+           477.48,
+           165.13,
+           505.02,
+           176.15
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -577,6 +745,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Other commercial revenue' line and under 2023.",
+         "compared": {
+          "looked_for": "row Other commercial revenue, column 2023",
+          "found": "row Other commercial revenue, column 2023",
+          "box": [
+           542.4,
+           165.13,
+           569.94,
+           176.15
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -639,6 +828,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Total commercial revenue' line and under 2025.",
+         "compared": {
+          "looked_for": "row Total commercial revenue, column 2025",
+          "found": "row Total commercial revenue, column 2025",
+          "box": [
+           407.66,
+           177.73,
+           440.2,
+           188.75
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -695,6 +905,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Total commercial revenue' line and under 2024.",
+         "compared": {
+          "looked_for": "row Total commercial revenue, column 2024",
+          "found": "row Total commercial revenue, column 2024",
+          "box": [
+           472.42,
+           177.73,
+           504.95,
+           188.75
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -750,6 +981,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Total commercial revenue' line and under 2023.",
+         "compared": {
+          "looked_for": "row Total commercial revenue, column 2023",
+          "found": "row Total commercial revenue, column 2023",
+          "box": [
+           537.3,
+           177.73,
+           569.83,
+           188.75
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -812,6 +1064,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Collaborative agreement revenue' line and under 2025.",
+         "compared": {
+          "looked_for": "row Collaborative agreement revenue, column 2025",
+          "found": "row Collaborative agreement revenue, column 2025",
+          "box": [
+           407.7,
+           201.73,
+           440.24,
+           212.75
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -868,6 +1141,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Collaborative agreement revenue' line and under 2024.",
+         "compared": {
+          "looked_for": "row Collaborative agreement revenue, column 2024",
+          "found": "row Collaborative agreement revenue, column 2024",
+          "box": [
+           472.46,
+           201.73,
+           505,
+           212.75
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -923,6 +1217,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Collaborative agreement revenue' line and under 2023.",
+         "compared": {
+          "looked_for": "row Collaborative agreement revenue, column 2023",
+          "found": "row Collaborative agreement revenue, column 2023",
+          "box": [
+           537.34,
+           201.73,
+           569.88,
+           212.75
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -985,6 +1300,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'WAINUA joint development revenue' line and under 2025.",
+         "compared": {
+          "looked_for": "row WAINUA joint development revenue, column 2025",
+          "found": "row WAINUA joint development revenue, column 2025",
+          "box": [
+           412.68,
+           213.73,
+           440.22,
+           224.75
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -1041,6 +1377,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'WAINUA joint development revenue' line and under 2024.",
+         "compared": {
+          "looked_for": "row WAINUA joint development revenue, column 2024",
+          "found": "row WAINUA joint development revenue, column 2024",
+          "box": [
+           477.48,
+           213.73,
+           505.02,
+           224.75
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -1096,6 +1453,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'WAINUA joint development revenue' line and under 2023.",
+         "compared": {
+          "looked_for": "row WAINUA joint development revenue, column 2023",
+          "found": "row WAINUA joint development revenue, column 2023",
+          "box": [
+           537.36,
+           213.73,
+           569.94,
+           224.75
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -1158,6 +1536,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Total research and development revenue' line and under 2025.",
+         "compared": {
+          "looked_for": "row Total research and development revenue, column 2025",
+          "found": "row Total research and development revenue, column 2025",
+          "box": [
+           407.7,
+           226.45,
+           440.24,
+           237.47
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -1214,6 +1613,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Total research and development revenue' line and under 2024.",
+         "compared": {
+          "looked_for": "row Total research and development revenue, column 2024",
+          "found": "row Total research and development revenue, column 2024",
+          "box": [
+           472.46,
+           226.45,
+           504.99,
+           237.47
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -1269,6 +1689,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Total research and development revenue' line and under 2023.",
+         "compared": {
+          "looked_for": "row Total research and development revenue, column 2023",
+          "found": "row Total research and development revenue, column 2023",
+          "box": [
+           537.33,
+           226.45,
+           569.87,
+           237.47
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -1331,6 +1772,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Total revenue' line and under 2025.",
+         "compared": {
+          "looked_for": "row Total revenue, column 2025",
+          "found": "row Total revenue, column 2025",
+          "box": [
+           407.64,
+           239.05,
+           440.22,
+           250.07
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -1387,6 +1849,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Total revenue' line and under 2024.",
+         "compared": {
+          "looked_for": "row Total revenue, column 2024",
+          "found": "row Total revenue, column 2024",
+          "box": [
+           472.44,
+           239.05,
+           505.02,
+           250.07
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -1442,6 +1925,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Total revenue' line and under 2023.",
+         "compared": {
+          "looked_for": "row Total revenue, column 2023",
+          "found": "row Total revenue, column 2023",
+          "box": [
+           537.36,
+           239.05,
+           569.94,
+           250.07
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -1504,6 +2008,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Cost of sales' line and under 2025.",
+         "compared": {
+          "looked_for": "row Cost of sales, column 2025",
+          "found": "row Cost of sales, column 2025",
+          "box": [
+           412.63,
+           275.77,
+           440.15,
+           286.79
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -1560,6 +2085,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Cost of sales' line and under 2024.",
+         "compared": {
+          "looked_for": "row Cost of sales, column 2024",
+          "found": "row Cost of sales, column 2024",
+          "box": [
+           477.41,
+           275.77,
+           504.92,
+           286.79
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -1615,6 +2161,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Cost of sales' line and under 2023.",
+         "compared": {
+          "looked_for": "row Cost of sales, column 2023",
+          "found": "row Cost of sales, column 2023",
+          "box": [
+           547.22,
+           275.77,
+           569.82,
+           286.79
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -1677,6 +2244,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Research, development and patent' line and under 2025.",
+         "compared": {
+          "looked_for": "row Research, development and patent, column 2025",
+          "found": "row Research, development and patent, column 2025",
+          "box": [
+           407.64,
+           287.77,
+           440.22,
+           298.79
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -1733,6 +2321,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Research, development and patent' line and under 2024.",
+         "compared": {
+          "looked_for": "row Research, development and patent, column 2024",
+          "found": "row Research, development and patent, column 2024",
+          "box": [
+           472.44,
+           287.77,
+           505.02,
+           298.79
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -1788,6 +2397,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Research, development and patent' line and under 2023.",
+         "compared": {
+          "looked_for": "row Research, development and patent, column 2023",
+          "found": "row Research, development and patent, column 2023",
+          "box": [
+           537.36,
+           287.77,
+           569.94,
+           298.79
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -1850,6 +2480,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Selling, general and administrative' line and under 2025.",
+         "compared": {
+          "looked_for": "row Selling, general and administrative, column 2025",
+          "found": "row Selling, general and administrative, column 2025",
+          "box": [
+           407.69,
+           299.77,
+           440.23,
+           310.79
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -1906,6 +2557,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Selling, general and administrative' line and under 2024.",
+         "compared": {
+          "looked_for": "row Selling, general and administrative, column 2024",
+          "found": "row Selling, general and administrative, column 2024",
+          "box": [
+           472.45,
+           299.77,
+           504.98,
+           310.79
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -1961,6 +2633,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Selling, general and administrative' line and under 2023.",
+         "compared": {
+          "looked_for": "row Selling, general and administrative, column 2023",
+          "found": "row Selling, general and administrative, column 2023",
+          "box": [
+           537.33,
+           299.77,
+           569.86,
+           310.79
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -2023,6 +2716,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Total operating expenses' line and under 2025.",
+         "compared": {
+          "looked_for": "row Total operating expenses, column 2025",
+          "found": "row Total operating expenses, column 2025",
+          "box": [
+           400.2,
+           312.37,
+           440.23,
+           323.39
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -2079,6 +2793,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Total operating expenses' line and under 2024.",
+         "compared": {
+          "looked_for": "row Total operating expenses, column 2024",
+          "found": "row Total operating expenses, column 2024",
+          "box": [
+           465,
+           312.37,
+           505.03,
+           323.39
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -2134,6 +2869,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Total operating expenses' line and under 2023.",
+         "compared": {
+          "looked_for": "row Total operating expenses, column 2023",
+          "found": "row Total operating expenses, column 2023",
+          "box": [
+           529.92,
+           312.37,
+           569.95,
+           323.39
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -2198,6 +2954,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Loss from operations' line and under 2025.",
+         "compared": {
+          "looked_for": "row Loss from operations, column 2025",
+          "found": "row Loss from operations, column 2025",
+          "box": [
+           404.28,
+           336.97,
+           443.96,
+           347.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -2256,6 +3033,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Loss from operations' line and under 2024.",
+         "compared": {
+          "looked_for": "row Loss from operations, column 2024",
+          "found": "row Loss from operations, column 2024",
+          "box": [
+           469.08,
+           336.97,
+           508.88,
+           347.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -2313,6 +3111,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Loss from operations' line and under 2023.",
+         "compared": {
+          "looked_for": "row Loss from operations, column 2023",
+          "found": "row Loss from operations, column 2023",
+          "box": [
+           534,
+           336.97,
+           573.68,
+           347.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -2375,6 +3194,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Investment income' line and under 2025.",
+         "compared": {
+          "looked_for": "row Investment income, column 2025",
+          "found": "row Investment income, column 2025",
+          "box": [
+           412.7,
+           372.97,
+           440.2,
+           383.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -2431,6 +3271,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Investment income' line and under 2024.",
+         "compared": {
+          "looked_for": "row Investment income, column 2024",
+          "found": "row Investment income, column 2024",
+          "box": [
+           472.41,
+           372.97,
+           504.95,
+           383.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -2486,6 +3347,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Investment income' line and under 2023.",
+         "compared": {
+          "looked_for": "row Investment income, column 2023",
+          "found": "row Investment income, column 2023",
+          "box": [
+           542.33,
+           372.97,
+           569.83,
+           383.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -2550,6 +3432,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Interest expense' line and under 2025.",
+         "compared": {
+          "looked_for": "row Interest expense, column 2025",
+          "found": "row Interest expense, column 2025",
+          "box": [
+           409.32,
+           384.97,
+           443.96,
+           395.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -2608,6 +3511,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Interest expense' line and under 2024.",
+         "compared": {
+          "looked_for": "row Interest expense, column 2024",
+          "found": "row Interest expense, column 2024",
+          "box": [
+           474.12,
+           384.97,
+           508.88,
+           395.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -2665,6 +3589,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Interest expense' line and under 2023.",
+         "compared": {
+          "looked_for": "row Interest expense, column 2023",
+          "found": "row Interest expense, column 2023",
+          "box": [
+           539.04,
+           384.97,
+           573.68,
+           395.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -2729,6 +3674,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Interest expense related to sale of future royalties' line and under 2025.",
+         "compared": {
+          "looked_for": "row Interest expense related to sale of future royalties, column 2025",
+          "found": "row Interest expense related to sale of future royalties, column 2025",
+          "box": [
+           409.32,
+           396.97,
+           443.93,
+           407.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -2787,6 +3753,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Interest expense related to sale of future royalties' line and under 2024.",
+         "compared": {
+          "looked_for": "row Interest expense related to sale of future royalties, column 2024",
+          "found": "row Interest expense related to sale of future royalties, column 2024",
+          "box": [
+           474.09,
+           396.97,
+           508.82,
+           407.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -2844,6 +3831,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Interest expense related to sale of future royalties' line and under 2023.",
+         "compared": {
+          "looked_for": "row Interest expense related to sale of future royalties, column 2023",
+          "found": "row Interest expense related to sale of future royalties, column 2023",
+          "box": [
+           538.98,
+           396.97,
+           573.59,
+           407.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -2906,6 +3914,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Gain (loss) on investments, net' line and under 2025.",
+         "compared": {
+          "looked_for": "row Gain (loss) on investments, net, column 2025",
+          "found": "row Gain (loss) on investments, net, column 2025",
+          "box": [
+           412.68,
+           408.97,
+           440.22,
+           419.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -2964,6 +3993,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Gain (loss) on investments, net' line and under 2024.",
+         "compared": {
+          "looked_for": "row Gain (loss) on investments, net, column 2024",
+          "found": "row Gain (loss) on investments, net, column 2024",
+          "box": [
+           479.16,
+           408.97,
+           508.88,
+           419.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -3021,6 +4071,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Gain (loss) on investments, net' line and under 2023.",
+         "compared": {
+          "looked_for": "row Gain (loss) on investments, net, column 2023",
+          "found": "row Gain (loss) on investments, net, column 2023",
+          "box": [
+           544.08,
+           408.97,
+           573.68,
+           419.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -3085,6 +4156,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Other income (expense), net' line and under 2025.",
+         "compared": {
+          "looked_for": "row Other income (expense), net, column 2025",
+          "found": "row Other income (expense), net, column 2025",
+          "box": [
+           409.38,
+           420.97,
+           443.99,
+           431.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -3141,6 +4233,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Other income (expense), net' line and under 2024.",
+         "compared": {
+          "looked_for": "row Other income (expense), net, column 2024",
+          "found": "row Other income (expense), net, column 2024",
+          "box": [
+           482.43,
+           420.97,
+           505.02,
+           431.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -3196,6 +4309,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Other income (expense), net' line and under 2023.",
+         "compared": {
+          "looked_for": "row Other income (expense), net, column 2023",
+          "found": "row Other income (expense), net, column 2023",
+          "box": [
+           542.4,
+           420.97,
+           569.9,
+           431.99
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -3260,6 +4394,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Loss before income tax benefit (expense)' line and under 2025.",
+         "compared": {
+          "looked_for": "row Loss before income tax benefit (expense), column 2025",
+          "found": "row Loss before income tax benefit (expense), column 2025",
+          "box": [
+           404.29,
+           445.69,
+           443.92,
+           456.71
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -3318,6 +4473,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Loss before income tax benefit (expense)' line and under 2024.",
+         "compared": {
+          "looked_for": "row Loss before income tax benefit (expense), column 2024",
+          "found": "row Loss before income tax benefit (expense), column 2024",
+          "box": [
+           469.05,
+           445.69,
+           508.81,
+           456.71
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -3375,6 +4551,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Loss before income tax benefit (expense)' line and under 2023.",
+         "compared": {
+          "looked_for": "row Loss before income tax benefit (expense), column 2023",
+          "found": "row Loss before income tax benefit (expense), column 2023",
+          "box": [
+           533.95,
+           445.69,
+           573.59,
+           456.71
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -3439,6 +4636,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Income tax benefit (expense)' line and under 2025.",
+         "compared": {
+          "looked_for": "row Income tax benefit (expense), column 2025",
+          "found": "row Income tax benefit (expense), column 2025",
+          "box": [
+           414.4,
+           469.69,
+           443.98,
+           480.71
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -3494,6 +4712,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Income tax benefit (expense)' line and under 2024.",
+         "compared": {
+          "looked_for": "row Income tax benefit (expense), column 2024",
+          "found": "row Income tax benefit (expense), column 2024",
+          "box": [
+           482.43,
+           469.69,
+           505.01,
+           480.71
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -3552,6 +4791,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Income tax benefit (expense)' line and under 2023.",
+         "compared": {
+          "looked_for": "row Income tax benefit (expense), column 2023",
+          "found": "row Income tax benefit (expense), column 2023",
+          "box": [
+           539.03,
+           469.69,
+           573.66,
+           480.71
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -3617,6 +4877,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Net loss' line and under 2025.",
+         "compared": {
+          "looked_for": "row Net loss, column 2025",
+          "found": "row Net loss, column 2025",
+          "box": [
+           404.28,
+           494.29,
+           443.93,
+           505.31
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -3676,6 +4957,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Net loss' line and under 2024.",
+         "compared": {
+          "looked_for": "row Net loss, column 2024",
+          "found": "row Net loss, column 2024",
+          "box": [
+           469.06,
+           494.29,
+           508.84,
+           505.31
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -3734,6 +5036,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Net loss' line and under 2023.",
+         "compared": {
+          "looked_for": "row Net loss, column 2023",
+          "found": "row Net loss, column 2023",
+          "box": [
+           533.96,
+           494.29,
+           573.62,
+           505.31
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -3799,6 +5122,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Basic and diluted net loss per share' line and under 2025.",
+         "compared": {
+          "looked_for": "row Basic and diluted net loss per share, column 2025",
+          "found": "row Basic and diluted net loss per share, column 2025",
+          "box": [
+           419.35,
+           521.17,
+           444.01,
+           532.19
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -3858,6 +5202,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Basic and diluted net loss per share' line and under 2024.",
+         "compared": {
+          "looked_for": "row Basic and diluted net loss per share, column 2024",
+          "found": "row Basic and diluted net loss per share, column 2024",
+          "box": [
+           484.12,
+           521.17,
+           508.9,
+           532.19
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -3916,6 +5281,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Basic and diluted net loss per share' line and under 2023.",
+         "compared": {
+          "looked_for": "row Basic and diluted net loss per share, column 2023",
+          "found": "row Basic and diluted net loss per share, column 2023",
+          "box": [
+           549.01,
+           521.17,
+           573.68,
+           532.19
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]
@@ -3978,6 +5364,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Shares used in computing basic and diluted net loss per share' line and under 2025.",
+         "compared": {
+          "looked_for": "row Shares used in computing basic and diluted net loss per share, column 2025",
+          "found": "row Shares used in computing basic and diluted net loss per share, column 2025",
+          "box": [
+           407.64,
+           536.05,
+           440.22,
+           547.07
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -4034,6 +5441,27 @@
           "file": "checks/selector_match.py",
           "function": "selector_match"
          }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Shares used in computing basic and diluted net loss per share' line and under 2024.",
+         "compared": {
+          "looked_for": "row Shares used in computing basic and diluted net loss per share, column 2024",
+          "found": "row Shares used in computing basic and diluted net loss per share, column 2024",
+          "box": [
+           472.44,
+           536.05,
+           505.02,
+           547.07
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
+         }
         }
        ]
       },
@@ -4089,6 +5517,27 @@
          "code_ref": {
           "file": "checks/selector_match.py",
           "function": "selector_match"
+         }
+        },
+        {
+         "name": "row_column_match",
+         "label": "Right row and column",
+         "kind": "Code",
+         "result": "pass",
+         "reason": "The box is on the 'Shares used in computing basic and diluted net loss per share' line and under 2023.",
+         "compared": {
+          "looked_for": "row Shares used in computing basic and diluted net loss per share, column 2023",
+          "found": "row Shares used in computing basic and diluted net loss per share, column 2023",
+          "box": [
+           537.36,
+           536.05,
+           569.94,
+           547.07
+          ]
+         },
+         "code_ref": {
+          "file": "checks/row_column_match.py",
+          "function": "row_column_match"
          }
         }
        ]

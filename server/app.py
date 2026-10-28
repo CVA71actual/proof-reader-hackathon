@@ -105,6 +105,15 @@ def _find_target(run: dict, target: str) -> tuple[str, dict, dict | None, object
     return None
 
 
+def _cell_context(run: dict, target: str) -> tuple[str | None, list[str] | None]:
+    """(row label, table columns) for a table value id: what the row-and-column check compares against."""
+    for table in run.get("tables", []):
+        for trow in table.get("rows", []):
+            if any(cell["id"] == target for cell in trow.get("cells", [])):
+                return trow.get("label"), list(table.get("columns", [])) or None
+    return None, None
+
+
 def _summary(state: dict) -> dict:
     return {k: state[k] for k in ("counts", "mistakes", "excluded", "exclusions", "unresolved")}
 
@@ -195,8 +204,9 @@ def _decide(store: RunStore, run_id: str, run: dict, line: dict) -> dict:
             rc = recheck_row(now_utc(), fixed, source or {"kind": "other"}, words_doc, fx["settles"],
                              field=fx["field"], before=old)
         else:
+            row_label, columns = _cell_context(run, line["target"])
             rc = recheck_cell(now_utc(), fixed, words_doc, fx["settles"], field=fx["field"],
-                              page_number=page_number, before=old)
+                              page_number=page_number, before=old, row_label=row_label, columns=columns)
         written.append(rc)
         state = current_state(run, decisions + written)
         # The state rule must take the re-check; if it would not, write nothing.

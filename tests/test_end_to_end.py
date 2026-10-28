@@ -40,7 +40,7 @@ def test_end_to_end_on_fake_reading(words_doc, fake_reading):
     # Every cell that was not changed on purpose is matched.
     for c in cells:
         assert (c["status"] == MATCHED) == ("fake_note" not in c)
-        assert [k["check"] for k in c["checks"]] == ["text_layer_match", "selector_match"]
+        assert [k["check"] for k in c["checks"]] == ["text_layer_match", "selector_match", "row_column_match"]
         assert all(k["kind"] == "Code" for k in c["checks"])
 
 
@@ -85,7 +85,7 @@ def test_viewer_builds(tmp_path, fake_reading):
     html = out.read_text()
     assert "data:image/png;base64," in html
     assert "FAKE" in html and "Second reader: Day 3" in html
-    assert "Matches source text" in html and "Citation located" in html
+    assert "Matches source text" in html and "Citation located" in html and "Right row and column" in html
     assert "0001140361-26-016395" in html
 
 
