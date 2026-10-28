@@ -17,8 +17,7 @@ from runs.state import current_state
 REPO = Path(__file__).resolve().parent.parent
 RUNS = REPO / "runs"
 SAMPLE = RUNS / "sample"
-PTGX_DATA = REPO / "report" / "testdata" / "ptgx-r4a"
-PTGX_LIVE = RUNS / "ptgx-r4a"
+PTGX = RUNS / "ptgx-r4a"
 
 FIXED_TIME = "2026-10-28T20:00:00Z"
 
@@ -48,14 +47,6 @@ def _mask_timestamp(data: bytes, stamp: str) -> bytes:
 @pytest.fixture
 def sample_out(tmp_path):
     return tmp_path / "sample-out"
-
-
-@pytest.fixture
-def ptgx_dir() -> Path:
-    if PTGX_LIVE.is_dir() and (PTGX_LIVE / "run.json").is_file():
-        return PTGX_LIVE
-    assert (PTGX_DATA / "run.json").is_file(), "report/testdata/ptgx-r4a/run.json missing"
-    return PTGX_DATA
 
 
 def test_sample_builds_both_files(sample_out):
@@ -152,9 +143,9 @@ def test_past_run_never_rebuilt(tmp_path):
     build("once", run_dir=run_dir, out=tmp_path / "test-out", generated_at=FIXED_TIME)
 
 
-def test_ptgx_lists_pn8047_period_and_rendered_note(ptgx_dir, tmp_path):
+def test_ptgx_lists_pn8047_period_and_rendered_note(tmp_path):
     out = tmp_path / "ptgx-out"
-    result = build("ptgx-r4a", run_dir=ptgx_dir, out=out, generated_at=FIXED_TIME)
+    result = build("ptgx-r4a", run_dir=PTGX, out=out, generated_at=FIXED_TIME)
     text = _pdf_text(result["pdf"]) + "\n" + _docx_text(result["docx"])
     assert "PN-8047" in text
     assert "Q1 2027" in text
