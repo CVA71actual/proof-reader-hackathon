@@ -36,6 +36,9 @@ curl -s 127.0.0.1:8777/api/runs/sample | jq '.state.targets.e7.group'
 
 `GET /api/runs/{id}/decisions`: the lines of `decisions.jsonl`, oldest first.
 
+Every run is checked against the page hashes in its run.json each time it is loaded; a run whose page image
+or words file is missing or changed is refused with 409 naming the file (see `runs/README.md`).
+
 ```sh
 curl -s 127.0.0.1:8777/api/runs/sample/decisions | jq length
 # 6

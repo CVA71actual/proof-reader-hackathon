@@ -190,7 +190,29 @@ def test_every_trail_step_has_one_actor(sample):
                 assert step["who"] in build_sample.MODEL_NAMES, (row["id"], step)
                 assert step["who"] not in CHECK_FUNCTIONS, (row["id"], step)
             else:
-                assert step["who"] == "You", (row["id"], step)
+                assert step["who"] == "person", (row["id"], step)
+
+
+def test_every_runs_page_files_match_their_recorded_hashes():
+    """The page image and words copy in each run folder are bound to the sha256 in run.json."""
+    import hashlib
+    run_dirs = sorted(p.parent for p in RUNS.glob("*/run.json"))
+    assert run_dirs
+    for run_dir in run_dirs:
+        run = json.loads((run_dir / "run.json").read_text())
+        for source in run["sources"]:
+            for page in source["pages"]:
+                for key in ("image", "words"):
+                    data = (run_dir / page[key]).read_bytes()
+                    assert hashlib.sha256(data).hexdigest() == page[f"{key}_sha256"], (run_dir.name, page[key])
+                    changed = bytearray(data)
+                    changed[-1] ^= 0x01
+                    assert hashlib.sha256(changed).hexdigest() != page[f"{key}_sha256"]
+
+
+def test_schema_model_names_cover_every_model_the_builders_name():
+    names = set(SCHEMA["$defs"]["model_name"]["enum"])
+    assert set(build_sample.MODEL_NAMES) <= names and build_run.MUSE_SPARK in names
 
 
 def test_rereadings_are_a_model_step_then_a_code_step(sample):
@@ -646,16 +668,24 @@ def test_state_does_not_change_its_inputs(sample, sample_decisions):
 # ---------------------------------------------------------------- event checks
 
 
+# date_match needs the row's event to find the clause that dates it (Codex PR9 review, Fable's ruling 2026-10-28).
+ROW_EVENT = {"event_type": "trial_readout", "title": "Phase 3 topline results"}
+
+
+def _dm(*args, **kwargs):
+    return event_checks.date_match(*args, **{**ROW_EVENT, **kwargs})
+
+
 def test_date_match_cases():
     q = "Results are expected on March 12, 2027."
-    assert event_checks.date_match("March 12, 2027", "2027-03-12", q).result == "pass"
-    assert event_checks.date_match("March 12, 2027", "2027-03-21", q).result == "fail"
-    assert event_checks.date_match("March 13, 2027", "2027-03-13", q).result == "fail"
-    assert event_checks.date_match(None, None, q).result == "could_not_run"
-    assert event_checks.date_match("later this year", None, "data later this year").result == "not_needed"
-    assert event_checks.date_match("later this year", "2026-12-31", "data later this year").result == "fail"
-    assert event_checks.date_match("March 12, 2027", None, q).result == "fail"
-    assert event_checks.date_match("March 12, 2027", "2027-03-12", q, date_end="2027-03-31").result == "fail"
+    assert _dm("March 12, 2027", "2027-03-12", q).result == "pass"
+    assert _dm("March 12, 2027", "2027-03-21", q).result == "fail"
+    assert _dm("March 13, 2027", "2027-03-13", q).result == "fail"
+    assert _dm(None, None, q).result == "could_not_run"
+    assert _dm("later this year", None, "data later this year").result == "not_needed"
+    assert _dm("later this year", "2026-12-31", "data later this year").result == "fail"
+    assert _dm("March 12, 2027", None, q).result == "fail"
+    assert _dm("March 12, 2027", "2027-03-12", q, date_end="2027-03-31").result == "fail"
 
 
 @pytest.mark.parametrize("text, start, end", [
@@ -673,45 +703,56 @@ def test_named_periods_have_fixed_first_and_last_days(text, start, end):
     s, e = event_checks.parse_period(text)
     assert (s.isoformat(), e.isoformat()) == (start, end)
     quote = f"Data are expected in {text}."
-    assert event_checks.date_match(text, start, quote, date_end=end).result == "pass"
-    assert event_checks.date_match(text, None, quote).result == "pass"
-    assert event_checks.date_match(text, start, quote, date_end="2030-01-01").result == "fail"
-    assert event_checks.date_match(text, start, quote).result == "fail"
-    assert event_checks.date_match(text, start, "Data are expected soon.", date_end=end).result == "fail"
+    assert _dm(text, start, quote, date_end=end).result == "pass"
+    assert _dm(text, None, quote).result == "pass"
+    assert _dm(text, start, quote, date_end="2030-01-01").result == "fail"
+    assert _dm(text, start, quote).result == "fail"
+    assert _dm(text, start, "Data are expected soon.", date_end=end).result == "fail"
 
 
 def test_vague_periods_check_only_the_words():
     q = "The company expects data in mid-2027."
     assert event_checks.parse_period("mid-2027") == (None, None)
-    assert event_checks.date_match("mid-2027", None, q).result == "pass"
-    assert event_checks.date_match("mid-2027", "2027-05-01", q, date_end="2027-08-31").result == "pass"
-    assert event_checks.date_match("mid-2027", "2027-09-01", q, date_end="2027-08-31").result == "fail"
-    assert event_checks.date_match("mid-2027", None, "The company expects data soon.").result == "fail"
+    assert _dm("mid-2027", None, q).result == "pass"
+    assert _dm("mid-2027", "2027-05-01", q, date_end="2027-08-31").result == "pass"
+    assert _dm("mid-2027", "2027-09-01", q, date_end="2027-08-31").result == "fail"
+    assert _dm("mid-2027", None, "The company expects data soon.").result == "fail"
     assert event_checks.vague_period_year("mid-2027") == 2027
     assert event_checks.vague_period_year("later this year") is None
     assert event_checks.parse_period("later this year") is None
     assert event_checks.parse_period("March 12, 2027") is None
 
 
-@pytest.mark.parametrize("text", ["mid-2027", "early 2027", "late 2027", "end of 2027"])
-def test_vague_periods_that_name_a_year_need_dates_in_that_year(text):
+@pytest.mark.parametrize("text, start, end", [
+    ("early 2027", "2027-01-01", "2027-04-30"),
+    ("mid-2027", "2027-05-01", "2027-08-31"),
+    ("late 2027", "2027-09-01", "2027-12-31"),
+    ("end of 2027", "2027-09-01", "2027-12-31"),
+])
+def test_vague_periods_need_dates_inside_their_window(text, start, end):
+    """early = January to April, mid = May to August, late / end of = September to December.
+    Changed in R3b (Red Team round 1): whole-year dates no longer pass for a vague period."""
     q = f"The company expects data in {text}."
-    assert event_checks.date_match(text, "2027-02-01", q, date_end="2027-11-30").result == "pass"
-    assert event_checks.date_match(text, "2027-01-01", q, date_end="2027-12-31").result == "pass"
-    for start, end in [("2026-12-01", "2027-03-31"), ("2027-10-01", "2028-01-31"), ("2028-01-01", "2028-06-30"),
-                       ("2026-01-01", "2026-06-30")]:
-        r = event_checks.date_match(text, start, q, date_end=end)
-        assert r.result == "fail", (start, end)
+    assert _dm(text, start, q, date_end=end).result == "pass"
+    assert _dm(text, start, q, date_end=start).result == "pass"
+    for s_, e_ in [("2027-01-01", "2027-12-31"), ("2026-12-01", "2027-03-31"), ("2027-10-01", "2028-01-31"),
+                   ("2028-01-01", "2028-06-30"), ("2026-01-01", "2026-06-30")]:
+        if (s_, e_) == (start, end):
+            continue
+        if start <= s_ <= e_ <= end:
+            continue
+        r = _dm(text, s_, q, date_end=e_)
+        assert r.result == "fail", (s_, e_)
         assert "2027" in r.reason
-    assert event_checks.date_match(text, None, q).result == "pass"
+    assert _dm(text, None, q).result == "pass"
 
 
 def test_vague_period_with_no_year_keeps_the_ordered_dates_rule(monkeypatch):
     monkeypatch.setattr(event_checks, "parse_period", lambda t: (None, None))
     q = "The company expects data around then."
     assert event_checks.vague_period_year("around then") is None
-    assert event_checks.date_match("around then", "2026-05-01", q, date_end="2029-08-31").result == "pass"
-    assert event_checks.date_match("around then", "2029-09-01", q, date_end="2026-08-31").result == "fail"
+    assert _dm("around then", "2026-05-01", q, date_end="2029-08-31").result == "pass"
+    assert _dm("around then", "2029-09-01", q, date_end="2026-08-31").result == "fail"
 
 
 def test_source_rule_cases():
@@ -809,3 +850,139 @@ def test_decision_schema_requires_before_and_after_on_a_recheck():
     rc = recheck("e7", "pass")
     rc["recheck"]["before"]["result"] = "maybe"
     assert list(v.iter_errors(rc))
+
+
+# ---------------------------------------------------------------- Codex PR9 review: which date belongs to the event
+
+Q3_27, Q4_27 = ("2027-07-01", "2027-09-30"), ("2027-10-01", "2027-12-31")
+BOUNDS = [pytest.param(True, id="with-bounds"), pytest.param(False, id="no-bounds")]
+
+
+def _period(text, bounds, quote, with_bounds, **kw):
+    start, end = bounds if with_bounds else (None, None)
+    return _dm(text, start, quote, date_end=end, **kw)
+
+
+@pytest.mark.parametrize("with_bounds", BOUNDS)
+def test_codex9_negation_after_the_date_fails(with_bounds):
+    r = _period("Q3 2027", Q3_27, "Q3 2027 is no longer the expected readout period.", with_bounds)
+    assert r.result == "fail", r.reason
+    assert "Q3 2027" in r.reason
+
+
+@pytest.mark.parametrize("with_bounds", BOUNDS)
+def test_codex9_a_superseded_period_fails_and_names_the_new_one(with_bounds):
+    q = "Q3 2027 was the previous target; results are now expected in Q4 2027."
+    r = _period("Q3 2027", Q3_27, q, with_bounds)
+    assert r.result == "fail", r.reason
+    assert r.reason == "The quote says Q3 2027 is no longer the expected period; it now names Q4 2027."
+    assert _period("Q4 2027", Q4_27, q, with_bounds).result == "pass"
+
+
+@pytest.mark.parametrize("with_bounds", BOUNDS)
+def test_codex9_a_background_year_does_not_block_the_event_period(with_bounds):
+    q = "In 2026 the company announced that results are expected in Q3 2027."
+    assert _period("Q3 2027", Q3_27, q, with_bounds).result == "pass"
+    r = _period("2026", ("2026-01-01", "2026-12-31"), q, with_bounds)
+    assert r.result == "fail", r.reason
+    assert r.reason == "The quote attaches Q3 2027 to the results; 2026 is not the date the quote gives for the event."
+
+
+@pytest.mark.parametrize("with_bounds", BOUNDS)
+def test_codex9_a_comparison_period_fails_and_the_event_period_passes(with_bounds):
+    q = "Data in Q3 2027, compared with Q3 2026."
+    r = _period("Q3 2026", ("2026-07-01", "2026-09-30"), q, with_bounds)
+    assert r.result == "fail", r.reason
+    assert r.reason == "The quote attaches Q3 2027 to the data; Q3 2026 is a comparison."
+    assert _period("Q3 2027", Q3_27, q, with_bounds).result == "pass"
+
+
+@pytest.mark.parametrize("with_bounds", BOUNDS)
+def test_codex9_two_event_clauses_with_different_dates_could_not_run(with_bounds):
+    q = "Topline data are expected in Q3 2027; results will be presented in Q4 2027."
+    for text, bounds in (("Q3 2027", Q3_27), ("Q4 2027", Q4_27)):
+        r = _period(text, bounds, q, with_bounds)
+        assert r.result == "could_not_run", r.reason
+        assert r.reason == "Could not tell which date in the quote belongs to the event."
+
+
+@pytest.mark.parametrize("with_bounds", BOUNDS)
+def test_codex9_no_event_words_could_not_run(with_bounds):
+    r = _period("Q3 2027", Q3_27, "The company expects Q3 2027.", with_bounds)
+    assert r.result == "could_not_run", r.reason
+
+
+def test_codex9_exact_day_against_a_later_comparison():
+    q = "Topline data on March 12, 2027 follow the Q4 2026 results."
+    assert _dm("March 12, 2027", "2027-03-12", q).result == "pass"
+    assert _dm("March 12, 2027", "2027-03-13", q).result == "fail"
+    for with_bounds in (True, False):
+        r = _period("Q4 2026", ("2026-10-01", "2026-12-31"), q, with_bounds)
+        assert r.result == "fail", r.reason
+        assert r.reason == "The quote attaches March 12, 2027 to the data; Q4 2026 is a comparison."
+
+
+@pytest.mark.parametrize("with_bounds", BOUNDS)
+def test_codex9_prefix_negation_and_plain_cases_go_through_the_clause_rule(with_bounds):
+    neg = _period("Q3 2027", Q3_27, "Results are not expected in Q3 2027.", with_bounds)
+    assert neg.result == "fail" and neg.reason == "The quote says the event is not in Q3 2027."
+    assert _period("Q3 2027", Q3_27, "Results are expected in Q3 2027.", with_bounds).result == "pass"
+    assert _period("Q4 2027", Q4_27, "Results are now expected in Q4 2027.", with_bounds).result == "pass"
+    moved = "Results moved from Q3 2027 to Q4 2027."
+    assert _period("Q4 2027", Q4_27, moved, with_bounds).result == "pass"
+    assert _period("Q3 2027", Q3_27, moved, with_bounds).result == "fail"
+    assert _period("Q3 2027", Q3_27, "The Q3 2027 readout has been delayed.", with_bounds).result == "fail"
+
+
+def test_codex9_mention_order_is_not_evidence():
+    # The same two dates in either order give the same answer.
+    a = "Data in Q3 2027, compared with Q3 2026."
+    b = "Compared with Q3 2026, data in Q3 2027."
+    for q in (a, b):
+        assert _dm("Q3 2027", *Q3_27[:1], q, date_end=Q3_27[1]).result == "pass", q
+        assert _dm("Q3 2026", "2026-07-01", q, date_end="2026-09-30").result == "fail", q
+
+
+def test_codex9_event_words_come_from_the_type_title_and_program():
+    words = event_checks.event_anchors("regulatory_decision", "FDA target action date", "samplimab")
+    assert {"pdufa", "action date", "samplimab"} <= set(words)
+    assert event_checks.event_anchors("investor_day", "Investor day") == ["investor"]
+
+
+# ---------------------------------------------------------------- Codex PR9 fix 0fa435e: a denied move dates nothing
+
+
+@pytest.mark.parametrize("with_bounds", BOUNDS)
+def test_codex9b_a_denied_move_could_not_run_for_either_date(with_bounds):
+    q = "Results will not move from Q3 2027 to Q4 2027."
+    for text, bounds in (("Q4 2027", Q4_27), ("Q3 2027", Q3_27)):
+        r = _period(text, bounds, q, with_bounds)
+        assert r.result == "could_not_run", (text, r.reason)
+        assert r.reason == "Could not tell which date in the quote belongs to the event."
+
+
+@pytest.mark.parametrize("with_bounds", BOUNDS)
+def test_codex9b_a_superseded_period_still_fails_and_the_new_one_still_passes(with_bounds):
+    q = "Q3 2027 was the previous target; results are now expected in Q4 2027."
+    r = _period("Q3 2027", Q3_27, q, with_bounds)
+    assert r.result == "fail", r.reason
+    assert r.reason == "The quote says Q3 2027 is no longer the expected period; it now names Q4 2027."
+    assert _period("Q4 2027", Q4_27, q, with_bounds).result == "pass"
+
+
+@pytest.mark.parametrize("with_bounds", BOUNDS)
+def test_codex9b_now_q4_not_q3_passes_q4_and_fails_q3(with_bounds):
+    # The comma puts "not Q3 2027" in its own clause, so the denied-move rule does not apply:
+    # Q4 is the date given for the results and Q3 is the period the quote rejects.
+    q = "Results are now expected in Q4 2027, not Q3 2027."
+    assert _period("Q4 2027", Q4_27, q, with_bounds).result == "pass"
+    r = _period("Q3 2027", Q3_27, q, with_bounds)
+    assert r.result == "fail", r.reason
+    assert r.reason == "The quote says Q3 2027 is no longer the expected period; it now names Q4 2027."
+
+
+@pytest.mark.parametrize("with_bounds", BOUNDS)
+def test_codex9b_an_affirmed_move_still_passes_the_new_date(with_bounds):
+    moved = "Results moved from Q3 2027 to Q4 2027."
+    assert _period("Q4 2027", Q4_27, moved, with_bounds).result == "pass"
+    assert _period("Q3 2027", Q3_27, moved, with_bounds).result == "fail"

@@ -73,13 +73,15 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["page_number", "image", "width_pt", "height_pt", "words"],
+            "required": ["page_number", "image", "width_pt", "height_pt", "words", "image_sha256", "words_sha256"],
             "properties": {
               "page_number": {"type": "integer", "minimum": 1},
               "image": {"$ref": "#/$defs/rel_path"},
               "width_pt": {"type": "number", "exclusiveMinimum": 0},
               "height_pt": {"type": "number", "exclusiveMinimum": 0},
-              "words": {"$ref": "#/$defs/rel_path"}
+              "words": {"$ref": "#/$defs/rel_path"},
+              "image_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256 of the page image file in the run folder."},
+              "words_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256 of the words file in the run folder."}
             }
           }
         }
@@ -124,11 +126,22 @@
       "properties": {
         "step": {"type": "string"},
         "tag": {"enum": ["Model", "Code", "Person"]},
-        "who": {"type": "string"},
+        "who": {"type": "string", "minLength": 1, "not": {"pattern": " and "},
+                "description": "Exactly one actor, and the right kind for the tag."},
         "text": {"type": "string"},
         "at": {"$ref": "#/$defs/timestamp"}
-      }
+      },
+      "allOf": [
+        {"if": {"properties": {"tag": {"const": "Model"}}, "required": ["tag"]},
+         "then": {"properties": {"who": {"$ref": "#/$defs/model_name"}}}},
+        {"if": {"properties": {"tag": {"const": "Code"}}, "required": ["tag"]},
+         "then": {"properties": {"who": {"type": "string", "pattern": "^[a-z_][a-z0-9_]*(\\.[a-z_][a-z0-9_]*)*$",
+                                          "description": "A Python name: a check function or a module."}}}},
+        {"if": {"properties": {"tag": {"const": "Person"}}, "required": ["tag"]},
+         "then": {"properties": {"who": {"const": "person"}}}}
+      ]
     },
+    "model_name": {"enum": ["Muse Glimmer", "Muse Spark", "Muse Wonder", "Muse Spark Open", "SAM 3.1"]},
     "cell": {
       "type": "object",
       "additionalProperties": false,

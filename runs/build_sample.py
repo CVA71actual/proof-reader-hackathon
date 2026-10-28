@@ -39,6 +39,7 @@ from runs.build_run import (
     RUNS,
     SCHEMA_VERSION,
     build_table,
+    file_sha256,
     ions_source,
     render_page,
     to_contract_check,
@@ -161,7 +162,9 @@ def sample_source(src: dict, run_dir: Path, tmp_dir: Path) -> tuple[dict, dict]:
         "captured_at": CAPTURED,
         "sha256": hashlib.sha256(pdf.read_bytes()).hexdigest(),
         "pages": [{"page_number": 1, "image": image_rel, "width_pt": words_doc["page_width"],
-                   "height_pt": words_doc["page_height"], "words": words_rel}],
+                   "height_pt": words_doc["page_height"], "words": words_rel,
+                   "image_sha256": file_sha256(run_dir / image_rel),
+                   "words_sha256": file_sha256(run_dir / words_rel)}],
     }
     return source, words_doc
 
@@ -296,7 +299,8 @@ def build_row(spec: dict, source: dict, words_doc: dict, minute: int) -> tuple[d
                       "text": f"{first['ticker']} {first['event_type']} on {when(first)}: "
                               f"“{first['quote']}”", "at": at(minute, 5)})
         if "first_date" in spec:
-            failed = event_checks.date_match(first["date_text"], first["date"], first["quote"])
+            failed = event_checks.date_match(first["date_text"], first["date"], first["quote"],
+                                             event_type=first["event_type"], title=first["title"])
             assert failed.result == "fail"
             trail += check_steps([failed], minute)
             trail.append({"step": "Sent back", "tag": "Code", "who": BUILDER,
@@ -326,7 +330,7 @@ def build_row(spec: dict, source: dict, words_doc: dict, minute: int) -> tuple[d
                       "text": f"Read the event type as {spec['second_type']}, not {spec['event_type']}.",
                       "at": at(minute + 1, 40)})
     if "first_type" in spec:
-        trail.append({"step": "Changed by you", "tag": "Person", "who": "You",
+        trail.append({"step": "Changed by you", "tag": "Person", "who": "person",
                       "text": f"Event type changed from {spec['first_type']} to {spec['event_type']}.",
                       "at": at(minute + 2)})
         trail += check_steps(run_checks(row, source, words_doc), minute + 2)

@@ -34,7 +34,9 @@
      "image": "pages/p95.png",
      "width_pt": 612.0,
      "height_pt": 792.0,
-     "words": "pages/p95.words.json"
+     "words": "pages/p95.words.json",
+     "image_sha256": "b4df297c518d418a62a274633c249afe4e10af7f27f359981e5ce01c8b355cc0",
+     "words_sha256": "1a31fbcfab3ed798116709f7ce1bd962be2a599c20e7c29f1f1d4ed6c9a187c5"
     }
    ]
   }

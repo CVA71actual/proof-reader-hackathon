@@ -9,10 +9,16 @@ against the state as it is now, run the re-check, append), and reads wait for a 
 from runs/state.py current_state(run, decisions); everything it writes is one appended line in
 runs/<id>/decisions.jsonl (a fix writes two: the person's fix, then code's re-check of it, which runs the
 checks on the value before the fix and after it).
+
+Before a run is used for anything (listed, shown, decided on, or a page file served), every page image and
+words file it names is hashed and compared with the image_sha256 / words_sha256 recorded in run.json. If one
+file is missing or differs, the whole run is refused with 409 and a sentence naming the file; no file of that
+run is served, and no decision is written to it.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import threading
@@ -20,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from jsonschema import Draft202012Validator
 
@@ -66,7 +72,16 @@ class RunStore:
         return sorted(p.parent.name for p in self.runs_dir.glob("*/run.json") if _SAFE_ID.match(p.parent.name))
 
     def run(self, run_id: str) -> dict:
-        return json.loads((self.run_dir(run_id) / "run.json").read_text())
+        """run.json, after every page file it names has been checked against its recorded hash."""
+        d = self.run_dir(run_id)
+        run = json.loads((d / "run.json").read_text())
+        verify_page_files(d, run)
+        return run
+
+    def page_files(self, run: dict) -> dict[str, str]:
+        """The page files run.json names (relative path -> recorded sha256), the only ones ever served."""
+        return {page[key]: page.get(f"{key}_sha256") for src in run.get("sources", [])
+                for page in src.get("pages", []) for key in ("image", "words") if page.get(key)}
 
     def decisions(self, run_id: str) -> list:
         f = self.run_dir(run_id) / "decisions.jsonl"
@@ -81,14 +96,57 @@ class RunStore:
             out.write(text)
 
     def words_doc(self, run_id: str, source: dict | None, page_number) -> dict | None:
-        """The words of the cited page, or None when that page was not captured. Never another page."""
+        """Parse the exact words bytes verified here; None only when the cited page was not captured."""
         if not source:
             return None
         page = next((p for p in source.get("pages", []) if p.get("page_number") == page_number), None)
         if not page or not page.get("words"):
             return None
-        f = self.run_dir(run_id) / page["words"]
-        return json.loads(f.read_text()) if f.is_file() else None
+        run_dir = self.run_dir(run_id)
+        name = page["words"]
+        f = (run_dir / name).resolve()
+        refuse = f"This run is not served: its file {name}"
+        if run_dir.resolve() not in f.parents:
+            raise HTTPException(409, f"{refuse} is outside the run's folder.")
+        expected = page.get("words_sha256")
+        if not expected:
+            raise HTTPException(409, f"{refuse} has no hash recorded in run.json.")
+        try:
+            data = f.read_bytes()
+        except (FileNotFoundError, IsADirectoryError):
+            raise HTTPException(409, f"{refuse} is missing.") from None
+        if hashlib.sha256(data).hexdigest() != expected:
+            raise HTTPException(409, f"{refuse} does not match the hash recorded in run.json.")
+        return json.loads(data.decode("utf-8"))
+
+
+def _sha256(f: Path) -> str:
+    h = hashlib.sha256()
+    with f.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 16), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def verify_page_files(run_dir: Path, run: dict) -> None:
+    """Refuse the run (409) if any page image or words file it names is missing or differs from its hash."""
+    root = run_dir.resolve()
+    for src in run.get("sources", []):
+        for page in src.get("pages", []):
+            for key, hash_key in (("image", "image_sha256"), ("words", "words_sha256")):
+                name = page.get(key)
+                if not name:
+                    continue
+                f = (run_dir / name).resolve()
+                refuse = f"This run is not served: its file {name}"
+                if root not in f.parents:
+                    raise HTTPException(409, f"{refuse} is outside the run's folder.")
+                if not page.get(hash_key):
+                    raise HTTPException(409, f"{refuse} has no hash recorded in run.json.")
+                if not f.is_file():
+                    raise HTTPException(409, f"{refuse} is missing.")
+                if _sha256(f) != page[hash_key]:
+                    raise HTTPException(409, f"{refuse} does not match the hash recorded in run.json.")
 
 
 def _find_target(run: dict, target: str) -> tuple[str, dict, dict | None, object] | None:
@@ -127,7 +185,11 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR) -> FastAPI:
     def list_runs() -> list[dict]:
         out = []
         for run_id in store.ids():
-            run = store.run(run_id)
+            try:
+                run = store.run(run_id)
+            except HTTPException as refused:
+                out.append({"id": run_id, "refused": refused.detail})
+                continue
             meta = run.get("run", {})
             with DECISIONS_LOCK:
                 decisions = store.decisions(run_id)
@@ -173,11 +235,18 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR) -> FastAPI:
             return _decide(store, run_id, run, line)
 
     @app.get("/runs/{run_id}/pages/{name}")
-    def page_file(run_id: str, name: str) -> FileResponse:
+    def page_file(run_id: str, name: str) -> Response:
+        run = store.run(run_id)          # refuses the whole run if any page file differs from its hash
         d = store.run_dir(run_id) / "pages"
-        if not _SAFE_ID.match(name) or ".." in name or not (d / name).is_file():
+        want = store.page_files(run).get(f"pages/{name}")
+        if not _SAFE_ID.match(name) or ".." in name or want is None or not (d / name).is_file():
             raise HTTPException(404, "No such page file.")
-        return FileResponse(d / name)
+        data = (d / name).read_bytes()   # the bytes sent are the bytes checked, never a later copy
+        if hashlib.sha256(data).hexdigest() != want:
+            raise HTTPException(409, f"This run is not served: its file pages/{name} does not match the hash "
+                                     f"recorded in run.json.")
+        media = "image/png" if name.endswith(".png") else "application/json" if name.endswith(".json") else None
+        return Response(data, media_type=media or "application/octet-stream")
 
     if Path(ui_dir).is_dir():
         app.mount("/", StaticFiles(directory=ui_dir, html=True), name="ui")

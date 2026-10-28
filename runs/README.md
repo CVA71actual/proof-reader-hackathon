@@ -36,7 +36,16 @@ Every path inside `run.json` (page images, words files) is relative to the run's
 
 - `run`: id, number, label, sample, start and finish times, the person's choices, spend (`null` = not recorded).
 - `sources[]`: where things came from. `kind` is filing, company_release, third_party_calendar or other. Each page
-  has an image, its size in PDF points, and a words file (every word with its box).
+  has an image, its size in PDF points, and a words file (every word with its box), each with its sha256
+  (`image_sha256`, `words_sha256`) so a changed byte in the run folder is noticed. The tests check the committed
+  runs against these hashes, and the server checks them every time it loads a run (listing, showing, deciding,
+  serving a page file): if any page file is missing or differs by one byte, the whole run is refused with 409
+  and a sentence naming the file ("This run is not served: its file pages/p95.png does not match the hash
+  recorded in run.json."), `GET /api/runs` lists it only as `{"id", "refused"}`, no file of it is served and
+  no decision is written to it. A page file is served only if run.json names it, and the bytes sent are the
+  bytes that were hashed. A decision re-check also reads its words file once, verifies those bytes against
+  `words_sha256`, and parses that same byte snapshot. A missing or changed file at consumption is refused
+  before any decision is appended, even if the earlier run-load verification passed.
 - `tables[]`: a table read from one page. Each value (`cell`) has an id, a `box` `[x0, y0, x1, y1]` in PDF points
   (origin top-left, y grows downward; `null` if the reader proposed no place), a `status` and its `checks`.
   `instructions` holds the exact text sent to the model and its SHA-256.
@@ -67,8 +76,56 @@ To draw a box on the page image: `scale = image_width_px / width_pt`, then multi
 
 "Date read as written" on a period: there is no exact day to compare, so it passes when the period words are
 printed in the quote and `date`/`date_end`, if given, are the first and last day of that period (a vague period
-such as "mid-2027", "early 2027", "late 2027" or "end of 2027" has no first or last day: `date`/`date_end` need
-only be in order and, when the words name a year, both inside that year). Vaguer still ("later this year") with no date given: `not_needed`.
+such as "mid-2027", "early 2027", "late 2027" or "end of 2027" has no first or last day: `date`/`date_end` must
+fall inside its rough window, early = January to April, mid = May to August, late / end of = September to
+December). The date text must be a whole date or period in the quote ("2027" inside "Q3 2027" is not the year
+2027), and it must be the date the quote gives for the event (below). A period with no year ("Q3") fails. Vaguer
+still ("later this year") with no date given: `not_needed`.
+
+#### Which date belongs to the event
+
+Applies to every exact day and named period in `date_text` (`checks/event_checks.py` `_supporting_clause`). The
+order in which dates appear in the quote is never evidence.
+
+1. The quote is split into clauses at sentence ends, at `;` `:` `,`, and before "that", "which", "and", "but",
+   "while". A boundary never falls inside a date ("March 12, 2027" stays whole). A clause that begins "follow",
+   "compared with/to", "versus", "vs", "than" or "relative to" is a comparison clause and never names the event.
+2. Event words: the fixed words for the row's `event_type` (trial results: results, data, readout, topline,
+   report; regulatory decision: PDUFA, decision, approval, CRL, action date; launch: launch, commercial
+   availability; conference or presentation: present, presentation, conference, late-breaker; filing: submit,
+   submission, filing, NDA, BLA, MAA; milestone: dosed, enrolled, initiated, completed, first patient), plus the
+   longest word of 4 letters or more in the row's title, plus the drug or program name if the row has one. Case
+   does not matter. The event clause is a clause that holds a date and an event word and is not a comparison.
+3. Decision:
+   - No event clause, or more than one with different dates: `could_not_run`, "Could not tell which date in the
+     quote belongs to the event." The row stays unresolved and goes to a person.
+   - One event clause, and it does not hold `date_text`: `fail`. "The quote attaches Q3 2027 to the data; Q3 2026
+     is a comparison." (or "...; 2026 is not the date the quote gives for the event."). If the clause holding
+     `date_text` negates or replaces it: "The quote says Q3 2027 is no longer the expected period; it now names
+     Q4 2027."
+   - One event clause holds multiple different dates and negation: `could_not_run` before interpreting
+     "from" / "to" as a transition. For example, "Results will not move from Q3 2027 to Q4 2027" does not
+     establish a new Q4 date or disprove the Q3 date. The check leaves both claims unresolved.
+   - Otherwise, one event clause, and it holds `date_text`: `fail` if the clause negates it (not, no longer, never, cannot,
+     n't, previous / previously, prior, superseded, anywhere in the clause), if it puts `date_text` after "from",
+     "instead of" or "rather than", or if it introduces a second, different date as the new one (now / to /
+     until / into in the three words before it, or "instead" just after it). "Now expected", "moved to",
+     "delayed" and "pushed" move the event to the date that follows them, so they fail `date_text` only when it
+     comes before them ("The Q3 2027 readout has been delayed"), not when it follows ("Results are now expected
+     in Q4 2027" passes). If the clause holds a second date and neither, or both, are introduced as the new one:
+     `could_not_run`. Otherwise the clause supports `date_text`, and the day or period comparison above applies.
+4. Worked cases (tests `test_codex9_*` in `tests/test_runs.py`, each with and without `date`/`date_end`):
+   "Q3 2027 is no longer the expected readout period." Q3 2027: fail. "Q3 2027 was the previous target; results
+   are now expected in Q4 2027." Q3 2027: fail naming Q4 2027; Q4 2027: pass. "In 2026 the company announced that
+   results are expected in Q3 2027." Q3 2027: pass; 2026: **fail** (the event clause attaches Q3 2027; chosen
+   over could_not_run because the quote does say which date the results have). "Data in Q3 2027, compared with
+   Q3 2026." Q3 2026: fail (comparison); Q3 2027: pass. "Topline data are expected in Q3 2027; results will be
+   presented in Q4 2027." either date: could_not_run. "Topline data on March 12, 2027 follow the Q4 2026
+   results." March 12, 2027: pass; Q4 2026: **fail** (the "follow" clause is a comparison; the event clause
+   attaches March 12, 2027).
+
+A row with no event words in the quote (in the sample, e10: "Year Ended December 31, 2025", an earnings row
+whose title word "results" is not in the quote) is `could_not_run` for this check.
 
 A tick on screen means `pass` and nothing else. `could_not_run` and `not_needed` are not ticks.
 
@@ -108,7 +165,8 @@ Every step has exactly one actor:
   2027-06-30, as the new reading gave").
 - A check is Code; `who` is the check function.
 - A step never mixes a routing action and a model's interpretation. A Code step's `who` is never a model name,
-  and a Model step's `who` is never a check function. A Person step inside run.json means the person
+  and a Model step's `who` is never a check function. The schema holds this: a Model `who` is one of the known
+  model names, a Code `who` is a Python name, a Person `who` is "person", and no `who` names two actors. A Person step inside run.json means the person
 acted while the run was still going; everything after the run ends goes to decisions.jsonl.
 
 ## Decisions and the state rule

@@ -47,7 +47,9 @@
      "image": "pages/p95.png",
      "width_pt": 612.0,
      "height_pt": 792.0,
-     "words": "pages/p95.words.json"
+     "words": "pages/p95.words.json",
+     "image_sha256": "b4df297c518d418a62a274633c249afe4e10af7f27f359981e5ce01c8b355cc0",
+     "words_sha256": "1a31fbcfab3ed798116709f7ce1bd962be2a599c20e7c29f1f1d4ed6c9a187c5"
     }
    ]
   },
@@ -66,7 +68,9 @@
      "image": "pages/smp-release-a-p1.png",
      "width_pt": 612.0,
      "height_pt": 792.0,
-     "words": "pages/smp-release-a-p1.words.json"
+     "words": "pages/smp-release-a-p1.words.json",
+     "image_sha256": "dda5dd82dfb508b9eaa46cdaadf8429e4f1ca3f713ec19301dc89ce4db279f9b",
+     "words_sha256": "ecd86b7171381614de4b2f4af0c0b62e1ebb428a7b329f2270d3de082f652c77"
     }
    ]
   },
@@ -85,7 +89,9 @@
      "image": "pages/smp-filing-b-p1.png",
      "width_pt": 612.0,
      "height_pt": 792.0,
-     "words": "pages/smp-filing-b-p1.words.json"
+     "words": "pages/smp-filing-b-p1.words.json",
+     "image_sha256": "cb6d22de6053176d07892e09e5f85c37f1cea0bcde3c1a6add9a604ff57bde72",
+     "words_sha256": "f53e4c31b686c1f0e203c9d8a1ab201910c1ca024cd87d4dfa2fb21491dd7acf"
     }
    ]
   },
@@ -104,7 +110,9 @@
      "image": "pages/smp-calendar-c-p1.png",
      "width_pt": 612.0,
      "height_pt": 792.0,
-     "words": "pages/smp-calendar-c-p1.words.json"
+     "words": "pages/smp-calendar-c-p1.words.json",
+     "image_sha256": "a388170748c67d597fef36b2d94e18323b7bfab097526f133bfb4b09cbabe09b",
+     "words_sha256": "c479a3bfec390ca2d19c74c82be296ec43387e81db746d5ab9abaf15a481d3be"
     }
    ]
   },
@@ -123,7 +131,9 @@
      "image": "pages/smp-scan-d-p1.png",
      "width_pt": 612.0,
      "height_pt": 792.0,
-     "words": "pages/smp-scan-d-p1.words.json"
+     "words": "pages/smp-scan-d-p1.words.json",
+     "image_sha256": "96a2d27a656da9e6597a3b24fb8344cc1c741b31cc654de1cb35a943764537ab",
+     "words_sha256": "79a899068a7ad1aaa48e546dab00445c50b5ce19d7e15f380e2ce70d2c6b9174"
     }
    ]
   },
@@ -142,7 +152,9 @@
      "image": "pages/smp-release-e-p1.png",
      "width_pt": 612.0,
      "height_pt": 792.0,
-     "words": "pages/smp-release-e-p1.words.json"
+     "words": "pages/smp-release-e-p1.words.json",
+     "image_sha256": "aca8e3b92a1020e16d5611f4cfff79df91e7e73212e0870f94037a03e99d7a06",
+     "words_sha256": "262e54d033125dfde3fdfa77ba980331e2371a186353a5a2034ecf5491406e07"
     }
    ]
   }
@@ -6547,7 +6559,7 @@
     {
      "step": "Changed by you",
      "tag": "Person",
-     "who": "You",
+     "who": "person",
      "text": "Event type changed from regulatory_decision to advisory_committee.",
      "at": "2026-10-27T15:07:00+00:00"
     },
@@ -7260,11 +7272,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "pass",
-     "reason": "The day in the row is the day printed in the quote.",
+     "result": "could_not_run",
+     "reason": "Could not tell which date in the quote belongs to the event.",
      "compared": {
       "looked_for": "2025-12-31",
-      "found": "2025-12-31"
+      "found": null
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -7320,7 +7332,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "date_match",
-     "text": "Date read as written: pass. The day in the row is the day printed in the quote.",
+     "text": "Date read as written: could not run. Could not tell which date in the quote belongs to the event.",
      "at": "2026-10-27T15:11:12+00:00"
     },
     {

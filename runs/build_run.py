@@ -137,6 +137,11 @@ def render_page(pdf: Path, out_png: Path, zoom: float = RENDER_ZOOM) -> None:
     doc.close()
 
 
+def file_sha256(path: Path) -> str:
+    """The sha256 a run records for each page file it copies, so a changed byte is noticed."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
 def ions_source(manifest: dict, run_dir: Path) -> tuple[dict, dict]:
     """Render page 95 into the run folder and copy its words beside it. Returns (source, words_doc)."""
     page_no = manifest["page_number"]
@@ -163,6 +168,8 @@ def ions_source(manifest: dict, run_dir: Path) -> tuple[dict, dict]:
             "width_pt": words_doc["page_width"],
             "height_pt": words_doc["page_height"],
             "words": words_rel,
+            "image_sha256": file_sha256(run_dir / image_rel),
+            "words_sha256": file_sha256(run_dir / words_rel),
         }],
     }
     return source, words_doc
