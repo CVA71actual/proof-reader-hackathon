@@ -208,20 +208,20 @@ ROW_SPECS = [
          title="FDA target action date", date_text="June 30, 2027", date="2027-06-30", first_date="2027-06-03",
          quote="The FDA has set a target action date of June 30, 2027.",
          group="corrected", reason="The date check caught a wrong day; the day was read again from the quote.",
-         second="agrees", mistake=("code", "Date changed from 2027-06-03 to 2027-06-30 after the date check failed.")),
+         second="agrees", mistake=("code", "PERIOD_MISREAD", "Date changed from 2027-06-03 to 2027-06-30 after the date check failed.")),
     dict(id="e4", source="smp-filing-b", ticker="SMPL3", company="Samplebio Three", event_type="investor_day",
          title="Investor day", date_text="September 15, 2027", date="2027-09-15",
          first_ticker=("SMPL2", "Samplebio Two"),
          quote="Our partner Samplebio Three will host its investor day on September 15, 2027.",
          group="corrected", reason="The second reader saw that the event belongs to the partner, not the filer.",
-         second="fixed", mistake=("second_reader",
+         second="fixed", mistake=("second_reader", "WRONG_COMPANY",
                                   "Company changed from Samplebio Two (SMPL2) to Samplebio Three (SMPL3).")),
     dict(id="e5", source="smp-release-a", ticker="SMPL1", company="Samplebio One", event_type="advisory_committee",
          title="FDA advisory committee meeting", date_text="May 4, 2027", date="2027-05-04",
          first_type="regulatory_decision",
          quote="An FDA advisory committee meeting is scheduled for May 4, 2027.",
          group="corrected", reason="You changed the event type while the run was going; the checks ran again after.",
-         second="agrees", mistake=("person", "Event type changed from regulatory_decision to advisory_committee.")),
+         second="agrees", mistake=("person", "WRONG_EVENT_TYPE", "Event type changed from regulatory_decision to advisory_committee.")),
     dict(id="e6", source="smp-calendar-c", ticker="SMPL4", company="Samplebio Four", event_type="trial_readout",
          title="Phase 2 data readout", date_text="April 20, 2027", date="2027-04-20",
          quote="SMPL4 Phase 2 data readout April 20, 2027",
@@ -381,9 +381,9 @@ def build_sample_run(run_dir: Path) -> tuple[dict, list[dict]]:
             raise AssertionError(f"{row['id']}: status {row['status']}, expected {EXPECTED_STATUS[row['id']]}")
         rows.append(row)
         if "mistake" in spec:
-            caught_by, what = spec["mistake"]
+            caught_by, mtype, what = spec["mistake"]
             mistakes.append({"id": f"m{len(mistakes) + 1}", "target": row["id"], "what_changed": what,
-                             "caught_by": caught_by})
+                             "caught_by": caught_by, "type": mtype})
         if "exclusion" in spec:
             by, rule = spec["exclusion"]
             exclusions.append({"id": f"x{len(exclusions) + 1}", "target": row["id"], "rule": rule,

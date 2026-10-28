@@ -58,6 +58,8 @@ from __future__ import annotations
 
 import copy
 
+from accuracy.types import primary_type, type_for_field
+
 GROUPS = ("kept", "corrected", "removed", "unverified", "open")
 ACTIONS = ("keep", "fix", "remove", "undo", "recheck")
 PERSON_ACTIONS = ("keep", "fix", "remove", "undo")
@@ -263,6 +265,8 @@ def current_state(run: dict, decisions: list) -> dict:
                 effect not yet re-checked, or whose re-check could not run, on rows not now removed) and
                 edits_without_error (fixes in effect whose value passed its checks both before and after)
     mistakes    {code, second_reader, person}: who caught each value that was wrong and got changed
+    mistake_list  one entry per counted mistake: target, type (accuracy.types), caught_by, model, what_changed,
+                recorded_in ("run" or "decisions")
     excluded    {code, person}: rows left out under a rule, by who left them out
     exclusions  one entry per excluded row: target, rule, reason, by
     unresolved  rows now "open" or "unverified", plus rows now "corrected" whose fix's re-check could not
@@ -306,10 +310,47 @@ def current_state(run: dict, decisions: list) -> dict:
     counts["fixes_pending"] = sum(1 for f, s in fixes if s["group"] != "removed"
                                   and (f["recheck"] is None or f["recheck"]["result"] == "could_not_run"))
 
+    mistake_list = _mistake_list(run, states)
+
     exclusions = _exclusions(run, states)
     excluded = {k: sum(1 for x in exclusions if x["by"] == k) for k in EXCLUDED_BY}
     counts["excluded_by_person"] = excluded["person"]
     unresolved = sum(1 for s in states.values() if s["kind"] == "row" and _needs_attention(s))
 
-    return {"targets": states, "counts": counts, "mistakes": mistakes, "excluded": excluded,
-            "exclusions": exclusions, "unresolved": unresolved, "ignored": ignored}
+    return {"targets": states, "counts": counts, "mistakes": mistakes, "mistake_list": mistake_list,
+            "excluded": excluded, "exclusions": exclusions, "unresolved": unresolved, "ignored": ignored}
+
+
+def _target_models(run: dict) -> dict:
+    """target id -> the model that proposed it (a row's proposed_by, a table value's table model)."""
+    out = {r["id"]: r.get("proposed_by") for r in run.get("rows", [])}
+    for table in run.get("tables", []):
+        name = (table.get("model") or {}).get("name")
+        for trow in table.get("rows", []):
+            for cell in trow.get("cells", []):
+                out[cell["id"]] = name
+    return out
+
+
+def _mistake_list(run: dict, states: dict) -> list[dict]:
+    """One entry per counted mistake, with its type code: run.json's mistakes[] (their own `type`) and every
+    fix in effect that is a demonstrated mistake (caught by the person). A fix's type is named by the check that
+    failed on the old value, else by the field it changed."""
+    models = _target_models(run)
+    out = []
+    for m in run.get("mistakes", []):
+        if m.get("caught_by") not in CAUGHT_BY:
+            continue
+        out.append({"id": m.get("id"), "target": m.get("target"), "type": m.get("type"),
+                    "caught_by": m["caught_by"], "model": models.get(m.get("target")),
+                    "what_changed": m.get("what_changed"), "recorded_in": "run"})
+    for t, s in states.items():
+        for f in s["fixes"]:
+            if not f["mistake"]:
+                continue
+            before = ((f["recheck"] or {}).get("before") or {}).get("checks") or []
+            out.append({"id": None, "target": t, "type": primary_type(before) or type_for_field(f["field"]),
+                        "caught_by": "person", "model": models.get(t),
+                        "what_changed": f"{f['field']} changed from {f['from']} to {f['to']}.",
+                        "recorded_in": "decisions"})
+    return out

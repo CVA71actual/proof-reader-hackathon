@@ -274,7 +274,11 @@
         "id": {"$ref": "#/$defs/id"},
         "target": {"$ref": "#/$defs/id"},
         "what_changed": {"type": "string"},
-        "caught_by": {"enum": ["code", "second_reader", "person"]}
+        "caught_by": {"enum": ["code", "second_reader", "person"]},
+        "type": {"enum": ["WRONG_VALUE", "WRONG_ROW", "WRONG_COLUMN", "BOX_DRIFT", "QUOTE_NOT_ON_PAGE",
+                          "DATE_NOT_IN_QUOTE", "PERIOD_MISREAD", "DATE_IN_PAST", "WRONG_EVENT_TYPE",
+                          "WRONG_COMPANY", "SOURCE_NOT_ALLOWED", "DUPLICATE", "UNREADABLE_OUTPUT"],
+                 "description": "Optional. The mistake type code (accuracy/types.py); the mistake log counts by type, model and who caught it."}
       }
     }
   }

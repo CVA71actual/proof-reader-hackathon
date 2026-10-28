@@ -60,7 +60,9 @@ Every path inside `run.json` (page images, words files) is relative to the run's
   outcome for period dates; the calendar must place periods.
 - `mistakes[]`: genuine errors only: a proposed value that was wrong and got changed, or a row removed because its
   content was wrong. Each says what changed on which row or value, and who caught it: `code`, `second_reader` or
-  `person`.
+  `person`. An optional `type` names the mistake with one of the fixed codes in `accuracy/types.py`
+  (WRONG_VALUE, PERIOD_MISREAD, WRONG_COMPANY, ...); `current_state` lists every counted mistake with its type
+  and model under `mistake_list`, and `accuracy/mistake_log.py` counts them by type, model and who caught it.
 - `exclusions[]`: rows left out under a rule, not because they were wrong: `id`, `target`, `rule`
   (`third_party_calendar_only`, `event_in_past`, `person_removed`), `reason`, `by` (`code` or `person`). A row
   removed by the house rule is an exclusion, never a mistake.

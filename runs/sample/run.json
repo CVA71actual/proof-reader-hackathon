@@ -7519,19 +7519,22 @@
    "id": "m1",
    "target": "e3",
    "what_changed": "Date changed from 2027-06-03 to 2027-06-30 after the date check failed.",
-   "caught_by": "code"
+   "caught_by": "code",
+   "type": "PERIOD_MISREAD"
   },
   {
    "id": "m2",
    "target": "e4",
    "what_changed": "Company changed from Samplebio Two (SMPL2) to Samplebio Three (SMPL3).",
-   "caught_by": "second_reader"
+   "caught_by": "second_reader",
+   "type": "WRONG_COMPANY"
   },
   {
    "id": "m3",
    "target": "e5",
    "what_changed": "Event type changed from regulatory_decision to advisory_committee.",
-   "caught_by": "person"
+   "caught_by": "person",
+   "type": "WRONG_EVENT_TYPE"
   }
  ],
  "exclusions": [

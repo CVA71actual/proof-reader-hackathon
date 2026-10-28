@@ -43,3 +43,64 @@ proposed values show up in the viewer. It is always marked FAKE and is never sho
 
 See [`runs/README.md`](runs/README.md): one `run.json` per run (never edited after the run ends), one append-only
 `decisions.jsonl`, the schemas, a saved demo run, a sample run, and the state rule in `runs/state.py`.
+
+## Accuracy and the mistake log
+
+`accuracy/` measures how often a reader gets a page right, against an answer key, and keeps a log of every caught
+mistake by type, model and who caught it.
+
+- **Answer key** (`accuracy/key.py`): one JSON file per page: the source's sha256, the page number, the words
+  file's sha256, `cells` [{row_label, column, value}] and `events` [{ticker, program, event_type, date_text,
+  quote}]. Before anything is scored, `check_key` checks the key itself against the page: every value must pass
+  `text_layer_match`, every row label and column must be printed on the page, every quote must pass `quote_match`
+  and hold its date text and program, and nothing may be listed twice. A key that fails is refused with every
+  offending entry listed, so a typo in the key can never count against the reader.
+- **Scorer** (`accuracy/score.py`): `score_table` counts, out of the key's N values: found (right value, saved
+  under the right row and column, every check passed), wrong value, wrong place (right value but a box or
+  row/column check failed), missed; values the key does not hold are extra (a second copy is `DUPLICATE`).
+  `score_events` counts, out of the key's M events: found (same ticker, program, event type and day or period,
+  every check passed), wrong date, wrong type, not backed by the checks, missed, and invented (another program,
+  another company, a duplicate, an unreadable answer). `score_planted` plants wrong values into copies of real
+  cells, runs the real checks and counts how many were caught. Every item not found carries a type code and
+  says whether the checks flagged it.
+- **Mistake types** (`accuracy/types.py`, fixed list): WRONG_VALUE, WRONG_ROW, WRONG_COLUMN, BOX_DRIFT,
+  QUOTE_NOT_ON_PAGE, DATE_NOT_IN_QUOTE, PERIOD_MISREAD, DATE_IN_PAST, WRONG_EVENT_TYPE, WRONG_COMPANY,
+  SOURCE_NOT_ALLOWED, DUPLICATE, UNREADABLE_OUTPUT, each with plain words for the screen. A failed check maps to
+  one code; when several checks fail on one item, the value check names it first, then row and column, then the
+  box. `mistakes[]` in run.json carries an optional `type`; the state rule lists every counted mistake with its
+  type and model (`current_state(...)["mistake_list"]`), and `accuracy/mistake_log.py` counts them by type x
+  model x caught_by for a run and its decisions.
+- **Report** (`accuracy/report.py`, `python -m accuracy.run`): plain text and JSON. Per model: values n/N, events
+  m/M, planted wrong values caught k/k, and the mistakes by type; then every miss with its page and what the key
+  expected.
+
+```sh
+.venv/bin/python -m accuracy.run --key accuracy/keys/ions_ars_2026_p95.key.json \
+    --reading fixtures/ions_ars_2026_p95.reading.json --words fixtures/ions_ars_2026_p95.words.json \
+    --planted accuracy/keys/ions_ars_2026_p95.planted.json
+.venv/bin/python -m accuracy.run --key accuracy/keys/ptgx_8k_2026-08-05_ex991_p3.key.json --run ptgx-r4a
+.venv/bin/python -m accuracy.run --key accuracy/keys/ions_ars_2026_p95.key.json --run sample   # + mistake log
+```
+
+### Numbers on the unsealed keys (tooling only, not a measured error rate)
+
+Both keys in `accuracy/keys/` were written by Claude from the page words, so they test the tooling, not the
+reader. They are not the held-out result.
+
+| Page | Model | Result |
+|---|---|---|
+| Ionis annual report, page 95 (real reading) | Muse Spark | values 69/69 (0 wrong value, 0 wrong place, 0 missed, 0 extra) |
+| Ionis page 95, 12 planted wrong values | Muse Spark reading | caught 12/12 (wrong value 4/4, wrong row or column 4/4, box drift 4/4), each with the planted type |
+| Protagonist 8-K exhibit 99.1, page 3 (`runs/ptgx-r4a`, arrives with R4a) | Muse Spark | events 2/2 (PN-8047 Q1 2027; PN-458o second half of 2027) |
+| Sample run mistake log | Muse Spark | 3: PERIOD_MISREAD by code, WRONG_COMPANY by the second reader, WRONG_EVENT_TYPE by the person |
+
+### The sealed run (R4b-2)
+
+1. Someone other than Claude picks 5 real public pages (SEC filings or IR decks with a text layer) from the 12
+   companies and writes one key per page in the format above, with `"sealed": true` and each page's sha256.
+2. The keys and pages live in the record repo's held-out folder, not in this repo. Claude does not open them while
+   building the reader.
+3. Someone other than Claude runs the reader on the pages, then `python -m accuracy.run --key <key> --run <run>`
+   for each page. A key that fails `check_key` is refused and fixed by its writer before anything is scored.
+4. The report (every miss listed) goes into the record; the audit header then reads "Accuracy (sealed set):
+   <model> n/N values, m/M events; planted errors caught k/k".
