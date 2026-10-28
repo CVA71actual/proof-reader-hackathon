@@ -116,7 +116,7 @@ def test_score_table_on_the_real_reading(checked, key, reading):
     sc = score_table(checked, key, reading["model"])
     assert sc["model"] == "Muse Spark"
     assert sc["N"] == 69
-    assert sc["counts"] == {"found": 69, "wrong_value": 0, "wrong_place": 0, "missed": 0, "extra": 0}
+    assert sc["counts"] == {"found": 69, "wrong_value": 0, "wrong_place": 0, "missed": 0, "extra": 0, "unscored": 0}
 
 
 def test_score_table_on_the_demo_run_table(key):
@@ -135,7 +135,7 @@ def test_score_table_buckets(checked, key, words_doc):
     rows[3]["cells"].append({**rows[3]["cells"][0], "column": "2022"})                     # extra
     sc = score_table(t, key, "muse-spark-1.3")
     c = sc["counts"]
-    assert c == {"found": 66, "wrong_value": 1, "wrong_place": 1, "missed": 1, "extra": 2}
+    assert c == {"found": 66, "wrong_value": 1, "wrong_place": 1, "missed": 1, "extra": 2, "unscored": 0}
     assert c["found"] + c["wrong_value"] + c["wrong_place"] + c["missed"] == 69
     assert sc["wrong_value"][0]["type"] == T.WRONG_VALUE and sc["wrong_value"][0]["expected"] == "115,315"
     assert sc["wrong_place"][0]["type"] == T.BOX_DRIFT
@@ -410,3 +410,153 @@ def test_banned_words_absent(checked, key, reading, words_doc, plants):
                                     planted=score_planted(reading, words_doc, plants)))
     assert not BANNED.search(text)
     assert not BANNED.search(" ".join(T.LABELS.values()))
+
+
+# ---------------------------------------------------------------- Job 3b: scorer semantics
+
+
+def _partial(key, n=10, **over):
+    return {**key, "complete": False, "cells": key["cells"][:n], **over}
+
+
+def test_a_key_must_say_whether_it_is_complete(key, words_doc):
+    silent = {k: v for k, v in key.items() if k != "complete"}
+    problems = check_key(silent, words_doc)
+    assert [p["problem"] for p in problems] == ["The key must say whether it is complete: complete true or false."]
+    assert check_key({**key, "complete": "yes"}, words_doc)
+    assert check_key({**key, "complete": False}, words_doc) == []
+    assert load_key(IONS_KEY)["complete"] is True and load_key(PTGX_KEY)["complete"] is True
+
+
+def test_on_a_partial_key_what_is_proposed_outside_it_is_unscored_not_a_mistake(checked, key, reading):
+    """ENTA-style: 10 of a 69-cell table in the key, all 10 right. The other 59 are not mistakes."""
+    partial = _partial(key)
+    sc = score_table(checked, partial, reading["model"])
+    assert sc["N"] == 10 and sc["complete"] is False
+    assert sc["counts"] == {"found": 10, "wrong_value": 0, "wrong_place": 0, "missed": 0, "extra": 0, "unscored": 59}
+    assert all(i["type"] is None for i in sc["unscored"])
+    rep = build_report(partial, None, table=sc)
+    assert rep["models"]["Muse Spark"]["mistakes_by_type"] == {} and rep["mistake_log"]["from_scoring"] == []
+    assert rep["misses"] == [] and "10/10 values" in render_text(rep)
+    assert "unscored 59" in render_text(rep) and "partial" in render_text(rep)
+    # the same table against a complete key of the same ten cells: 59 extras, each typed
+    complete = {**partial, "complete": True}
+    sc2 = score_table(checked, complete, reading["model"])
+    assert sc2["counts"]["extra"] == 59 and sc2["counts"]["unscored"] == 0
+
+
+def test_a_partial_key_still_counts_what_it_does_hold(checked, key, reading, words_doc):
+    t = copy.deepcopy(checked)
+    t["rows"][0]["cells"][0] = recheck({**t["rows"][0]["cells"][0], "value": "115,316"}, "Product sales, net", words_doc)
+    sc = score_table(t, _partial(key), reading["model"])
+    assert sc["counts"]["wrong_value"] == 1 and sc["counts"]["found"] == 9 and sc["counts"]["unscored"] == 59
+    assert sum(sc["counts"][b] for b in ("found", "wrong_value", "wrong_place", "missed")) == sc["N"]
+    dup = copy.deepcopy(checked)
+    dup["rows"][1]["cells"].append(dict(dup["rows"][1]["cells"][0]))
+    assert score_table(dup, _partial(key), reading["model"])["counts"]["extra"] == 1, "a repeat of a key cell stays an extra"
+
+
+def test_a_key_value_never_proposed_is_missed_on_a_partial_key_too(checked, key, reading):
+    t = copy.deepcopy(checked)
+    t["rows"][0]["cells"].pop(0)
+    assert score_table(t, _partial(key), reading["model"])["counts"]["missed"] == 1
+
+
+def test_partial_key_events_outside_it_are_unscored(words_doc):
+    partial = {**PTGX_EVENTS, "complete": False}
+    rows = [_row(1), _row(2, program="PN-9999"), _row(3, ticker="IONS"), _row(4, status="unreadable"),
+            _row(5, program="PN-458o", event_type="launch")]
+    sc = score_events(rows, partial)
+    c = sc["counts"]
+    assert (c["found"], c["unscored"]) == (1, 1)
+    assert sorted(i["type"] for i in sc["invented"]) == [T.UNREADABLE_OUTPUT, T.WRONG_COMPANY]
+    assert [i["program"] for i in sc["unscored"]] == ["PN-9999"] and sc["unscored"][0]["type"] is None
+    assert sc["wrong_type"][0]["type"] == T.WRONG_EVENT_TYPE
+    complete = score_events(rows, {**PTGX_EVENTS, "complete": True})
+    assert complete["counts"]["invented"] == 3 and complete["counts"]["unscored"] == 0
+    assert build_report(partial, None, events=sc)["models"]["Muse Spark"]["mistakes_by_type"].get("NO_TYPE") is None
+
+
+@pytest.mark.parametrize("name", ["FY2025", "December 31, 2025", "Dec. 31, 2025", "fiscal 2025"])
+def test_a_column_the_reader_names_as_a_dated_year_is_the_key_column(key, reading, words_doc, name):
+    r = copy.deepcopy(reading)
+    r["table"]["columns"] = [name if c == "2025" else c for c in r["table"]["columns"]]
+    for row in r["table"]["rows"]:
+        for c in row["cells"]:
+            if c["column"] == "2025":
+                c["column"] = name
+    sc = score_table(check_reading(r, words_doc), key, reading["model"])
+    assert sc["counts"] == {"found": 69, "wrong_value": 0, "wrong_place": 0, "missed": 0, "extra": 0, "unscored": 0}
+
+
+def test_a_key_may_name_the_column_as_a_dated_year_but_not_twice(key, words_doc):
+    named = {**key, "cells": [{**c, "column": "December 31, 2025"} if c["column"] == "2025" else c
+                              for c in key["cells"]]}
+    assert check_key(named, words_doc) == []
+    twice = {**key, "cells": key["cells"] + [{**key["cells"][0], "column": "FY2025"}]}
+    assert [p["problem"] for p in check_key(twice, words_doc)] == ["The key lists this row and column twice."]
+
+
+ALIASED = {**PTGX_EVENTS, "complete": True,
+           "events": [{**PTGX_EVENTS["events"][0], "program": "PN-8047", "aliases": ["Hepcidin mimetic", "PN8047"]},
+                      PTGX_EVENTS["events"][1]]}
+
+
+def test_a_program_alias_is_matched_by_the_scorer():
+    rows = [_row(1, program="Hepcidin mimetic"), _row(2, program="pn8047", date_text="Q2 2027"),
+            _row(3, program=None, title="PN8047 Phase 1", quote="Phase 1 of PN8047 is expected in Q1 2027.")]
+    sc = score_events(rows, ALIASED)
+    assert [i["id"] for i in sc["found"]] == ["e1"]
+    assert sc["counts"]["found"] == 1 and sc["counts"]["invented"] == 2, "e2 and e3 repeat the same event"
+    assert [i["id"] for i in sc["wrong_date"]] == [] and {i["type"] for i in sc["invented"]} == {T.DUPLICATE}
+    only_alias = score_events([_row(1, program="Hepcidin mimetic", date_text="Q4 2027")], ALIASED)
+    assert only_alias["counts"]["wrong_date"] == 1 and only_alias["counts"]["invented"] == 0
+    named_in_quote = score_events([_row(1, program=None, title="x", quote="PN8047 results in Q1 2027")], ALIASED)
+    assert named_in_quote["counts"]["found"] == 1
+
+
+def test_key_aliases_are_checked(words_doc):
+    key = load_key(PTGX_KEY)
+    words = json.loads((FIXTURES / "ptgx_8k_2026-08-05_ex991_p3.words.json").read_text())
+    assert check_key(key, words) == []
+    ok = {**key, "events": [{**key["events"][0], "aliases": ["Hepcidin mimetic"]}, key["events"][1]]}
+    assert check_key(ok, words) == []
+    bad_type = {**key, "events": [{**key["events"][0], "aliases": "x"}, key["events"][1]]}
+    assert [p["problem"] for p in check_key(bad_type, words)] == ["The aliases must be a list of names."]
+    clash = {**key, "events": [{**key["events"][0], "aliases": ["pn-458o"]}, key["events"][1]]}
+    assert [p["problem"] for p in check_key(clash, words)] == ["The name 'pn-458o' is used for two different programs."]
+
+
+def test_the_report_lists_right_value_check_failed_apart_with_the_checks_reason(checked, key, reading, words_doc):
+    t = copy.deepcopy(checked)
+    cell = t["rows"][0]["cells"][0]
+    drifted = dict(cell, box=list(t["rows"][0]["cells"][1]["box"]))
+    t["rows"][0]["cells"][0] = recheck(drifted, "Product sales, net", words_doc)
+    sc = score_table(t, key, reading["model"])
+    assert sc["counts"]["wrong_place"] == 1
+    reason = sc["wrong_place"][0]["stopped_by"]["reason"]
+    assert reason and sc["wrong_place"][0]["stopped_by"]["result"] == "fail"
+    rep = build_report(key, None, table=sc)
+    [item] = rep["right_but_stopped"]
+    assert (item["row_label"], item["column"], item["value"]) == ("Product sales, net", "2025", "115,315")
+    assert item["stopped_by"]["reason"] == reason
+    text = render_text(rep)
+    assert "Right value, check failed (1)" in text and reason in text
+    assert text.count("Product sales, net") == 1, "listed there, not again under the misses"
+    assert rep["misses"], "the JSON keeps it among the misses"
+
+
+def test_an_event_a_check_stopped_is_right_but_stopped_with_its_reason():
+    failed = {"name": "quote_match", "result": "fail", "reason": "The quote is not printed on the page."}
+    sc = score_events([_row(1, status="failed", checks=[failed])], PTGX_EVENTS)
+    rep = build_report(PTGX_EVENTS, None, events=sc)
+    [item] = rep["right_but_stopped"]
+    assert item["event"]["program"] == "PN-8047" and item["stopped_by"]["reason"] == failed["reason"]
+    assert "The quote is not printed on the page." in render_text(rep)
+
+
+def test_a_check_that_could_not_run_gives_its_reason_too():
+    cnr = {"name": "selector_match", "result": "could_not_run", "reason": "The reader gave no box."}
+    sc = score_events([_row(1, status="proposed", checks=[cnr])], PTGX_EVENTS)
+    assert sc["unsupported"][0]["stopped_by"] == {"check": "selector_match", "result": "could_not_run",
+                                                  "reason": "The reader gave no box."}

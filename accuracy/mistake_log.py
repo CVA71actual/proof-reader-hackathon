@@ -52,7 +52,8 @@ def log_from_score(*scores: dict) -> list[dict]:
         if not sc:
             continue
         for bucket, items in sc.items():
-            if bucket in ("found", "counts", "model", "N", "M", "unreadable") or not isinstance(items, list):
+            if bucket in ("found", "counts", "model", "N", "M", "unreadable", "complete", "unscored") \
+                    or not isinstance(items, list):
                 continue
             for it in items:
                 if bucket == "missed" and not it.get("type"):

@@ -5,17 +5,24 @@ Format (JSON, one file per page):
     {
       "key_version": 1,
       "sealed": false,                     true for the held-out set; this repo only holds unsealed keys
+      "complete": true,                    REQUIRED. true: the key lists every value and event the page holds, so
+                                           anything else a reader proposes is a mistake. false: a partial key; what
+                                           a reader proposes outside it is "unscored", never a mistake
       "source_sha256": "<64 hex>",         the document the page was cut from
       "page_number": 95,
       "words_sha256": "<64 hex>",          optional: the page's words file, as captured
       "written_by": "...", "note": "...",  optional, plain words
       "cells":  [{"row_label": "...", "column": "...", "value": "..."}],
-      "events": [{"ticker": "...", "program": "...", "event_type": "...", "date_text": "...", "quote": "..."}]
+      "events": [{"ticker": "...", "program": "...", "event_type": "...", "date_text": "...", "quote": "...",
+                  "aliases": ["..."]}]             aliases (optional): other names the page or a reader uses for
+                                                   the program (the drug for an indication); the scorer matches any
     }
 
 check_key(key, words_doc) refuses a key that cannot be trusted, with every offending entry listed: every value
 must pass text_layer_match on the page, every row label and column header must be printed on it, every quote
-must pass quote_match and hold its date text, and no entry may appear twice. A key that is refused is never
+must pass quote_match and hold its date text, and no entry may appear twice. A column is the same column however
+the year is printed or named ("2025", "FY2025", "December 31, 2025", "Dec. 31, 2025"): the key and the scorer both
+compare columns by checks.row_column_match.column_key. A key that is refused is never
 scored against, so a typo in the key cannot count against the reader.
 
 check_key returns the list of problems (empty when the key is good); raise_if_refused raises when that list is not empty.
@@ -30,6 +37,7 @@ from pathlib import Path
 
 from checks.common import PASS, normalize
 from checks.event_checks import _norm_quote, quote_match
+from checks.row_column_match import column_key
 from checks.text_layer_match import text_layer_match
 
 KEY_VERSION = 1
@@ -51,12 +59,23 @@ def load_key(path: str | Path) -> dict:
 
 
 def cell_id(c: dict) -> tuple[str, str]:
-    return normalize(c.get("row_label")), normalize(c.get("column"))
+    return normalize(c.get("row_label")), column_key(c.get("column"))
 
 
 def event_id(e: dict) -> tuple[str, str, str]:
     return (normalize(e.get("ticker")).upper(), normalize(e.get("program")).lower(),
             normalize(e.get("event_type")).lower())
+
+
+def program_names(key: dict) -> dict[str, str]:
+    """Every name the scorer accepts for a key program (lower case) -> the key's program (lower case)."""
+    names: dict[str, str] = {}
+    for e in key.get("events") or []:
+        prog = normalize(e.get("program")).lower()
+        for name in [prog, *[normalize(a).lower() for a in e.get("aliases") or [] if isinstance(a, str)]]:
+            if name:
+                names.setdefault(name, prog)
+    return names
 
 
 def _printed(text: str | None, words: list[dict]) -> bool:
@@ -78,6 +97,8 @@ def check_key(key: dict, words_doc: dict, words_bytes: bytes | None = None) -> l
         bad("key", None, key.get("key_version"), f"The key needs key_version {KEY_VERSION}.")
     if not _HEX64.match(str(key.get("source_sha256") or "")):
         bad("key", None, key.get("source_sha256"), "The key needs the source's sha256.")
+    if not isinstance(key.get("complete"), bool):
+        bad("key", None, key.get("complete"), "The key must say whether it is complete: complete true or false.")
     if not isinstance(key.get("page_number"), int) or key["page_number"] < 1:
         bad("key", None, key.get("page_number"), "The key needs a page number.")
     if words_bytes is not None and key.get("words_sha256"):
@@ -104,7 +125,7 @@ def check_key(key: dict, words_doc: dict, words_bytes: bytes | None = None) -> l
             bad("cells", i, c, f"The value {c['value']} is not printed on the page.")
         if not _printed(c["row_label"], words):
             bad("cells", i, c, f"The row label '{c['row_label']}' is not printed on the page.")
-        if not _printed(c["column"], words):
+        if not (_printed(c["column"], words) or _printed(column_key(c["column"]), words)):
             bad("cells", i, c, f"The column {c['column']} is not printed on the page.")
     seen_events: set = set()
     for i, e in enumerate(events):
@@ -123,6 +144,18 @@ def check_key(key: dict, words_doc: dict, words_bytes: bytes | None = None) -> l
             bad("events", i, e, f"The date text '{e['date_text']}' is not part of the quote.")
         if normalize(e["program"]).lower() not in _norm_quote(e["quote"]).lower():
             bad("events", i, e, f"The program '{e['program']}' is not named in the quote.")
+        aliases = e.get("aliases", [])
+        if not isinstance(aliases, list) or not all(isinstance(a, str) and normalize(a) for a in aliases):
+            bad("events", i, e, "The aliases must be a list of names.")
+    owner: dict[str, str] = {}
+    for i, e in enumerate(events):
+        if not isinstance(e, dict) or not isinstance(e.get("program"), str) or \
+                not isinstance(e.get("aliases", []), list):
+            continue
+        prog = normalize(e["program"]).lower()
+        for name in [prog, *[normalize(a).lower() for a in e.get("aliases", []) if isinstance(a, str)]]:
+            if name and owner.setdefault(name, prog) != prog:
+                bad("events", i, e, f"The name '{name}' is used for two different programs.")
     return problems
 
 

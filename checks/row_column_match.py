@@ -74,6 +74,9 @@ def _key(text: str | None) -> str:
     return m.group(1) if m else t
 
 
+column_key = _key   # public: the scorer and the key checker name columns the same way
+
+
 def _extend(run: list[dict], line: list[dict]) -> list[dict]:
     """A year header with its date words in front ("Dec. 31," before "2025") is one header: take them in."""
     out = list(run)

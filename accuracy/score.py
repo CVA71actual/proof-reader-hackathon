@@ -25,6 +25,12 @@ Events, per key event (M = len(key events)):
                  twice (DUPLICATE), or an answer that could not be read (UNREADABLE_OUTPUT)
     found + wrong_date + wrong_type + unsupported + missed = M.
 
+A key says whether it is complete (key["complete"]). On a partial key (complete false) a proposal outside the key
+is "unscored" (tables: a row and column the key does not hold; events: a program the key does not hold): it is not
+a mistake and carries no type. On a complete key those are extra / invented, as before. A column is the same
+column however the year is printed ("2025", "FY2025", "December 31, 2025"), and a key event's `aliases` are other
+names for its program; the scorer matches any.
+
 Every item that is not found carries a type code (accuracy.types) where one applies, and `caught`: whether the
 checks flagged it themselves (a check failed). A wrong item the checks passed is listed with caught false.
 """
@@ -34,13 +40,13 @@ from __future__ import annotations
 import re
 
 from accuracy import types as T
-from accuracy.key import cell_id, event_id
+from accuracy.key import cell_id, event_id, program_names
 from checks.common import FAIL, normalize
 from checks.event_checks import parse_exact_date, parse_period, vague_period_window
 from checks.status import FAILED, MATCHED, check_cell
 
-TABLE_BUCKETS = ("found", "wrong_value", "wrong_place", "missed", "extra")
-EVENT_BUCKETS = ("found", "wrong_date", "wrong_type", "unsupported", "missed", "invented")
+TABLE_BUCKETS = ("found", "wrong_value", "wrong_place", "missed", "extra", "unscored")
+EVENT_BUCKETS = ("found", "wrong_date", "wrong_type", "unsupported", "missed", "invented", "unscored")
 
 
 def model_family(name: str | None) -> str:
@@ -61,6 +67,16 @@ def _caught(checks: list[dict]) -> bool:
     return any(c.get("result") == FAIL for c in checks or [])
 
 
+def check_reason(checks: list[dict]) -> dict:
+    """The check that stopped an item (the first failed one, else the first that could not run): its name, result
+    and its reason text as the check wrote it. All None when no check stopped it."""
+    for result in (FAIL, "could_not_run"):
+        for c in checks or []:
+            if c.get("result") == result:
+                return {"check": c.get("name") or c.get("check"), "result": result, "reason": c.get("reason")}
+    return {"check": None, "result": None, "reason": None}
+
+
 # ---------------------------------------------------------------- table
 
 
@@ -77,11 +93,17 @@ def _table_cells(table: dict) -> list[dict]:
 def _cell_item(p: dict, expected, typ, types=None) -> dict:
     return {"id": p.get("id"), "row_label": p["row_label"], "column": p["column"], "value": p["value"],
             "expected": expected, "type": typ, "types": types if types is not None else T.failed_types(p["checks"]),
-            "status": p["status"], "caught": _caught(p["checks"])}
+            "status": p["status"], "caught": _caught(p["checks"]), "stopped_by": check_reason(p["checks"])}
+
+
+def is_complete(key: dict) -> bool:
+    """A key that does not say otherwise counts everything outside it (check_key refuses a key that is silent)."""
+    return key.get("complete") is not False
 
 
 def score_table(table: dict, key: dict, model: str | None = None) -> dict:
     key_cells = {cell_id(c): c for c in key.get("cells") or []}
+    complete = is_complete(key)
     out = {b: [] for b in TABLE_BUCKETS}
     tm = table.get("model")
     model = model_family(model or (tm.get("name") if isinstance(tm, dict) else tm))
@@ -91,7 +113,7 @@ def score_table(table: dict, key: dict, model: str | None = None) -> dict:
             out["missed"].append({"row_label": c["row_label"], "column": c["column"], "value": None,
                                   "expected": c["value"], "type": T.UNREADABLE_OUTPUT, "types": [T.UNREADABLE_OUTPUT],
                                   "status": "unreadable", "caught": True})
-        return _table_totals(out, key_cells, model)
+        return _table_totals(out, key_cells, model, complete)
 
     props = _table_cells(table)
     taken: set = set()
@@ -109,7 +131,9 @@ def score_table(table: dict, key: dict, model: str | None = None) -> dict:
     key_cols = {cell_id(c)[1] for c in key_cells.values()}
     for p in rest:
         k = key_cells.get(cell_id(p))
-        if k is None:
+        if k is None and not complete:
+            out["unscored"].append(_cell_item(p, None, None, []))
+        elif k is None:
             typ = T.primary_type(p["checks"])
             if typ is None:
                 typ = T.WRONG_COLUMN if cell_id(p)[0] in key_rows and cell_id(p)[1] not in key_cols else T.WRONG_ROW
@@ -128,11 +152,12 @@ def score_table(table: dict, key: dict, model: str | None = None) -> dict:
             out["missed"].append({"row_label": k["row_label"], "column": k["column"], "value": None,
                                   "expected": k["value"], "type": None, "types": [], "status": None,
                                   "caught": False})
-    return _table_totals(out, key_cells, model)
+    return _table_totals(out, key_cells, model, complete)
 
 
-def _table_totals(out: dict, key_cells: dict, model: str) -> dict:
+def _table_totals(out: dict, key_cells: dict, model: str, complete: bool) -> dict:
     out["model"] = model
+    out["complete"] = complete
     out["N"] = len(key_cells)
     out["counts"] = {b: len(out[b]) for b in TABLE_BUCKETS}
     return out
@@ -160,12 +185,15 @@ def _strip(text: str | None) -> str:
     return re.sub(r"^(?:in |during |by )?(?:the )?", "", normalize(text).rstrip(".").lower())
 
 
-def _program_of(row: dict, programs: list[str]) -> str | None:
+def _program_of(row: dict, names: dict[str, str]) -> str | None:
+    """The key program a row is about: its program (or an alias of one), else the one key program named in its
+    title or quote. A program the key does not hold is returned as printed."""
     if row.get("program"):
-        return normalize(row["program"]).lower()
+        said = normalize(row["program"]).lower()
+        return names.get(said, said)
     hay = " ".join(normalize(row.get(f)) for f in ("title", "quote")).lower()
-    hits = [p for p in programs if p and p in hay]
-    return hits[0] if len(hits) == 1 else None
+    hits = {names[n] for n in sorted(names, key=len, reverse=True) if n and n in hay}
+    return hits.pop() if len(hits) == 1 else None
 
 
 def _event_item(row: dict, expected: dict | None, typ, types=None) -> dict:
@@ -174,7 +202,8 @@ def _event_item(row: dict, expected: dict | None, typ, types=None) -> dict:
             "event_type": row.get("event_type"), "date_text": row.get("date_text"),
             "page_number": row.get("page_number"), "expected": expected, "type": typ,
             "types": types if types is not None else T.failed_types(checks), "status": row.get("status"),
-            "caught": _caught(checks) or row.get("status") in ("unreadable", FAILED)}
+            "caught": _caught(checks) or row.get("status") in ("unreadable", FAILED),
+            "stopped_by": check_reason(checks)}
 
 
 def _expected(k: dict) -> dict:
@@ -184,13 +213,14 @@ def _expected(k: dict) -> dict:
 def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = None,
                  model: str | None = None) -> dict:
     key_events = {event_id(e): e for e in key.get("events") or []}
-    programs = sorted({k[1] for k in key_events}, key=len, reverse=True)
+    names = program_names(key)
+    complete = is_complete(key)
     excluded = {x.get("target"): x.get("rule") for x in exclusions or []}
     out = {b: [] for b in EVENT_BUCKETS}
     taken: set = set()
 
     def ident(row):
-        return (normalize(row.get("ticker")).upper(), _program_of(row, programs),
+        return (normalize(row.get("ticker")).upper(), _program_of(row, names),
                 normalize(row.get("event_type")).lower())
 
     rest = []
@@ -209,6 +239,9 @@ def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = No
             out["invented"].append(_event_item(row, None, T.UNREADABLE_OUTPUT, [T.UNREADABLE_OUTPUT]))
             continue
         same_prog = [k for k in key_events if k[1] == prog]
+        if not same_prog and not complete:
+            out["unscored"].append(_event_item(row, None, None, []))
+            continue
         if not same_prog:
             typ = T.type_for_exclusion(excluded.get(row.get("id"))) or T.primary_type(checks)
             out["invented"].append(_event_item(row, None, typ))
@@ -244,6 +277,7 @@ def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = No
                                   "status": None, "caught": False})
     models = sorted({model_family(r.get("proposed_by")) for r in rows if r.get("proposed_by")})
     out["model"] = model_family(model) if model else (", ".join(models) if models else "unknown model")
+    out["complete"] = complete
     out["M"] = len(key_events)
     out["counts"] = {b: len(out[b]) for b in EVENT_BUCKETS}
     return out

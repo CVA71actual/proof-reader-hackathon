@@ -54,13 +54,21 @@ mistake by type, model and who caught it.
   quote}]. Before anything is scored, `check_key` checks the key itself against the page: every value must pass
   `text_layer_match`, every row label and column must be printed on the page, every quote must pass `quote_match`
   and hold its date text and program, and nothing may be listed twice. A key that fails is refused with every
-  offending entry listed, so a typo in the key can never count against the reader.
+  offending entry listed, so a typo in the key can never count against the reader. A key must say
+  `"complete": true` (it lists every value and event the page holds) or `false` (a partial key); a key silent on
+  it is refused. A column is the same column however the year is printed ("2025", "FY2025", "December 31, 2025",
+  "Dec. 31, 2025"): key and scorer compare columns by `checks.row_column_match.column_key`. A key event may carry
+  `aliases` (other names for its program, such as the drug for an indication); the scorer matches any, and a name
+  used for two programs is refused.
 - **Scorer** (`accuracy/score.py`): `score_table` counts, out of the key's N values: found (right value, saved
   under the right row and column, every check passed), wrong value, wrong place (right value but a box or
-  row/column check failed), missed; values the key does not hold are extra (a second copy is `DUPLICATE`).
+  row/column check failed), missed; on a complete key, values the key does not hold are extra (a second copy is
+  `DUPLICATE`); on a partial key they are **unscored**: not a mistake, no type, never in the mistake log (the key
+  holds 10 of 40 values and the reader read all 40 right: 10/10 found, 30 unscored).
   `score_events` counts, out of the key's M events: found (same ticker, program, event type and day or period,
   every check passed), wrong date, wrong type, not backed by the checks, missed, and invented (another program,
-  another company, a duplicate, an unreadable answer). `score_planted` plants wrong values into copies of real
+  another company, a duplicate, an unreadable answer; on a partial key a program the key does not hold is
+  unscored instead). `score_planted` plants wrong values into copies of real
   cells, runs the real checks and counts how many were caught. Every item not found carries a type code and
   says whether the checks flagged it.
 - **Mistake types** (`accuracy/types.py`, fixed list): WRONG_VALUE, WRONG_ROW, WRONG_COLUMN, BOX_DRIFT,
@@ -71,8 +79,9 @@ mistake by type, model and who caught it.
   type and model (`current_state(...)["mistake_list"]`), and `accuracy/mistake_log.py` counts them by type x
   model x caught_by for a run and its decisions.
 - **Report** (`accuracy/report.py`, `python -m accuracy.run`): plain text and JSON. Per model: values n/N, events
-  m/M, planted wrong values caught k/k, and the mistakes by type; then every miss with its page and what the key
-  expected.
+  m/M, planted wrong values caught k/k, and the mistakes by type; then "Right value, check failed" listed apart (the
+  reader had the value or event right and a check stopped it, with the check's own reason text); then every other
+  miss with its page and what the key expected. Unscored items are counted, never listed as misses.
 
 ```sh
 .venv/bin/python -m accuracy.run --key accuracy/keys/ions_ars_2026_p95.key.json \

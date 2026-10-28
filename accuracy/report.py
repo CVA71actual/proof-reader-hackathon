@@ -4,7 +4,9 @@
     render_text(report) -> str
 
 Per model: values n/N, events m/M, planted wrong values caught k/k, and the mistake log by type; every miss is
-listed with its page and what the key expected.
+listed with its page and what the key expected. "Right value, check failed" is listed apart: the reader had the
+value (or event) right and a check stopped it, with the check's own reason text. What a reader proposed outside a
+partial key is counted as unscored and is never a miss or a mistake.
 """
 
 from __future__ import annotations
@@ -40,6 +42,21 @@ def _miss_lines(table: dict | None, events: dict | None, page: int) -> list[dict
     return out
 
 
+def _right_but_stopped(table: dict | None, events: dict | None, page: int) -> list[dict]:
+    """The reader had it right (the key's value in the key's row and column, or the key's event on its date) and a
+    check failed or could not run: wrong_place for values, unsupported for events. The reason is the check's own."""
+    out = []
+    for it in (table or {}).get("wrong_place", []):
+        out.append({"page": page, "what": "value", "model": table["model"], "row_label": it["row_label"],
+                    "column": it["column"], "value": it["value"], "type": it.get("type"), "status": it.get("status"),
+                    "stopped_by": it.get("stopped_by")})
+    for it in (events or {}).get("unsupported", []):
+        out.append({"page": it.get("page_number") or page, "what": "event", "model": events["model"],
+                    "event": {f: it.get(f) for f in ("ticker", "program", "event_type", "date_text")},
+                    "type": it.get("type"), "status": it.get("status"), "stopped_by": it.get("stopped_by")})
+    return out
+
+
 def build_report(key: dict, key_path: str | None = None, *, table: dict | None = None, events: dict | None = None,
                  planted: dict | None = None, run_log: dict | None = None, run_id: str | None = None,
                  planted_model: str | None = None) -> dict:
@@ -64,7 +81,7 @@ def build_report(key: dict, key_path: str | None = None, *, table: dict | None =
         "report_version": REPORT_VERSION,
         "key": {"path": key_path, "sealed": bool(key.get("sealed")), "source_sha256": key.get("source_sha256"),
                 "page_number": page, "cells": len(key.get("cells") or []), "events": len(key.get("events") or []),
-                "key_check": "passed"},
+                "complete": key.get("complete") is not False, "key_check": "passed"},
         "run": run_id,
         "models": models,
         "table": table, "events": events, "planted": planted,
@@ -72,6 +89,7 @@ def build_report(key: dict, key_path: str | None = None, *, table: dict | None =
                                           "bucket": e["bucket"]} for e in scored],
                         "from_run": run_log},
         "misses": _miss_lines(table, events, page),
+        "right_but_stopped": _right_but_stopped(table, events, page),
     }
 
 
@@ -89,7 +107,9 @@ def render_text(rep: dict) -> str:
     sealed = "sealed" if k["sealed"] else "unsealed, for the tooling only"
     lines = [f"Accuracy report: page {k['page_number']} of source {str(k['source_sha256'])[:12]}... ({sealed})",
              f"Answer key: {k['path'] or 'given in code'}; {k['cells']} values, {k['events']} events; "
-             f"every key entry is printed on the page.", ""]
+             f"every key entry is printed on the page; the key is "
+             f"{'complete' if k.get('complete', True) else 'partial (what a reader proposes outside it is unscored, not a mistake)'}.",
+             ""]
     if rep.get("run"):
         lines.insert(1, f"Run: {rep['run']}")
     for name, m in rep["models"].items():
@@ -97,12 +117,13 @@ def render_text(rep: dict) -> str:
         if m["values"]:
             v = m["values"]
             lines.append(f"  values: found {v['found']}, wrong value {v['wrong_value']}, wrong place "
-                         f"{v['wrong_place']}, missed {v['missed']}, extra {v['extra']}")
+                         f"{v['wrong_place']}, missed {v['missed']}, extra {v['extra']}"
+                         + (f", unscored {v['unscored']}" if v.get("unscored") else ""))
         if m["events"]:
             e = m["events"]
             lines.append(f"  events: found {e['found']}, wrong date {e['wrong_date']}, wrong type {e['wrong_type']}, "
                          f"not backed by the checks {e['unsupported']}, missed {e['missed']}, "
-                         f"invented {e['invented']}")
+                         f"invented {e['invented']}" + (f", unscored {e['unscored']}" if e.get("unscored") else ""))
         if m["planted"]:
             parts = ", ".join(f"{kind.replace('_', ' ')} {d['caught']}/{d['total']}"
                               for kind, d in m["planted"]["by_kind"].items() if d["total"])
@@ -126,7 +147,18 @@ def render_text(rep: dict) -> str:
         for c in log["counts"]:
             lines.append(f"  {c['type']} ({c['label']}), {c['model']}, caught by {c['caught_by']}: {c['n']}")
         lines.append("")
-    misses = rep["misses"]
+    stopped = rep.get("right_but_stopped") or []
+    if stopped:
+        lines.append(f"Right value, check failed ({len(stopped)}): the reader had it right and a check stopped it.")
+        for s in stopped:
+            why = s["stopped_by"] or {}
+            what = (f"row '{s['row_label']}', column {s['column']}: {s['value']}" if s["what"] == "value"
+                    else f"event {s['event']}")
+            lines.append(f"  page {s['page']}, {what} [{s['status']}]: {why.get('check') or 'a check'} "
+                         f"{(why.get('result') or '').replace('_', ' ')}: {why.get('reason')}")
+        lines.append("")
+    # a right value a check stopped is listed above, not twice; it stays in rep["misses"] for the JSON
+    misses = [m for m in rep["misses"] if m["bucket"] not in ("wrong_place", "unsupported")]
     if not misses:
         lines.append("Every miss: none. Every key entry was found.")
     else:
