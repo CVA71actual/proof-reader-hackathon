@@ -98,17 +98,37 @@ _MONTH_YEAR = re.compile(r"^([a-z]+)\.?,?\s+(\d{4})$")
 _YEAR = re.compile(r"^(?:full[- ]year |fiscal year |fy\s*)?(\d{4})$")
 _VAGUE = re.compile(r"^(?:mid|early|late|end of|the end of|year[- ]end|beginning of|the beginning of)[- ]?\s*(\d{4})$")
 _QUARTER_START = {1: (1, 3, 31), 2: (4, 6, 30), 3: (7, 9, 30), 4: (10, 12, 31)}
+# 'early Q1 2027' / 'mid-Q2 2027' / 'late Q4 2027': one month of the quarter (early = first, mid = middle,
+# late = last), so it has a first and last day like any month.
+_QUARTER_PART = re.compile(r"^(early|mid|late)[- ]?\s*(?:q([1-4])|([1-4])q|(first|second|third|fourth|1st|2nd|3rd|4th)"
+                           r" quarter(?: of)?)\s*(\d{4})$")
+_PART_OFFSET = {"early": 0, "mid": 1, "late": 2}
+
+
+def quarter_part_period(text: str | None) -> tuple[date, date] | None:
+    """'early Q1 2027' -> (2027-01-01, 2027-01-31); 'mid-Q2 2027' -> May 2027; 'late Q4 2027' -> December 2027."""
+    m = _QUARTER_PART.match(_canon(text))
+    if not m:
+        return None
+    q = int(m[2] or m[3] or _ORDINAL[m[4]])
+    y, mo = int(m[5]), _QUARTER_START[q][0] + _PART_OFFSET[m[1]]
+    nxt = date(y + 1, 1, 1) if mo == 12 else date(y, mo + 1, 1)
+    return date(y, mo, 1), date.fromordinal(nxt.toordinal() - 1)
 
 
 def parse_period(text: str | None) -> tuple[date | None, date | None] | None:
     """A named period -> (first day, last day). 'Q3 2027' -> (2027-07-01, 2027-09-30).
 
-    Quarters, halves, months and years have fixed first and last days. Vaguer periods
+    Quarters, halves, months and years have fixed first and last days, and so does part of a quarter:
+    'early Q1 2027' is its first month, 'mid-Q2 2027' its middle month, 'late Q4 2027' its last. Vaguer periods
     ('mid-2027', 'early 2027', 'late 2027') return (None, None): the words name a period but
     not where it starts or ends. Anything else (an exact day, 'later this year') -> None.
     """
     s = normalize(text).rstrip(".").lower()
     s = re.sub(r"^(?:in |during |by )?(?:the )?", "", s)
+    part = quarter_part_period(s)
+    if part is not None:
+        return part
     m = _QUARTER.match(s)
     if m:
         q = int(m[1] or m[2] or _ORDINAL[m[3]])
@@ -164,7 +184,8 @@ _MONTH_WORDS = "|".join(sorted(_MONTHS, key=len, reverse=True))
 _ORD_WORDS = "first|second|third|fourth|1st|2nd|3rd|4th"
 _NAMED = re.compile(
     r"\b(?:"
-    rf"(?:{_MONTH_WORDS})\.?\s+\d{{1,2}},?\s+\d{{4}}"
+    rf"(?:mid|early|late)[- ]?\s*(?:q[1-4]|[1-4]q|(?:{_ORD_WORDS}) quarter(?: of)?)\s*\d{{4}}"
+    rf"|(?:{_MONTH_WORDS})\.?\s+\d{{1,2}},?\s+\d{{4}}"
     r"|\d{4}-\d{2}-\d{2}"
     rf"|(?:q[1-4]|[1-4]q|(?:{_ORD_WORDS}) quarter(?: of)?)\s*\d{{4}}"
     r"|(?:h[12]|[12]h|(?:first|second|1st|2nd) half(?: of)?)\s*\d{4}"
@@ -173,7 +194,8 @@ _NAMED = re.compile(
     r"|(?:full[- ]year |fiscal year |fy\s*)?(?<![A-Za-z]-)\d{4}"
     r")\b", re.I)
 _YEARLESS = re.compile(
-    rf"^(?:q[1-4]|[1-4]q|h[12]|[12]h|(?:{_ORD_WORDS}) (?:quarter|half)|mid|early|late|end of|"
+    rf"^(?:(?:(?:mid|early|late)[- ]?\s*)?(?:q[1-4]|[1-4]q|(?:{_ORD_WORDS}) quarter)|h[12]|[12]h|"
+    rf"(?:{_ORD_WORDS}) half|mid|early|late|end of|"
     rf"beginning of|year[- ]end|{_MONTH_WORDS})$")
 # Words that say a date is not, or is no longer, the event's date, anywhere in its clause.
 _NEGATION = re.compile(r"\b(?:not|no longer|never|cannot|previous(?:ly)?|prior|superseded)\b|n't\b", re.I)
@@ -201,6 +223,8 @@ _ANCHORS = {
     "conference": ("present", "presentation", "conference", "late-breaker"),
     "filing": ("submit", "submission", "filing", "nda", "bla", "maa"),
     "milestone": ("dosed", "enrolled", "initiated", "initiation", "completed", "first patient"),
+    "earnings": ("results", "earnings", "revenue", "net loss", "quarter ended", "year ended"),
+    "other": (),
 }
 _TYPE_KEYS = (
     (("trial", "readout", "result", "topline", "data"), "trial results"),
@@ -209,6 +233,8 @@ _TYPE_KEYS = (
     (("conference", "presentation", "meeting_presentation"), "conference"),
     (("filing", "submission"), "filing"),
     (("milestone", "dosing", "enrollment", "initiation"), "milestone"),
+    (("earnings",), "earnings"),
+    (("other",), "other"),
 )
 _UNSURE = "Could not tell which date in the quote belongs to the event."
 

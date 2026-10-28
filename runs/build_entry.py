@@ -34,7 +34,7 @@ from capture import read_events
 from capture.capture_source import FIXTURES, load_entry
 from capture.read_table import FAKE_MODEL, sha256_text
 from checks import event_checks
-from runs import recheck
+from runs import prices, recheck
 from runs.build_run import MUSE_SPARK, RUNS, SCHEMA_VERSION, file_sha256, now_utc, render_page, to_contract_check
 from runs.build_run import write_run
 
@@ -137,8 +137,11 @@ def row_reason(status: str, results: list, row: dict) -> str:
     return "The reader's row stands as a proposal."
 
 
-def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict, at: str) -> dict:
+def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict, at: str,
+              share: tuple[int | None, int | None, int] = (None, None, 1)) -> dict:
+    """`share` is this row's part of the one call's tokens: (prompt, completion, rows the call proposed)."""
     words = words_doc["words"]
+    fake = bool(reading.get("fake"))
     quote = _str(event.get("quote"))
     printed = _str(event.get("date_text"))
     box = event.get("box")
@@ -160,9 +163,11 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         "box": [float(v) for v in box] if box_ok else from_ids,
         "proposed_by": MUSE_SPARK,
     }
-    fake = bool(reading.get("fake"))
     reader = "fake reading (no model called)" if fake else MUSE_SPARK
-    trail = [{"step": "Instructions sent", "tag": "Code", "who": READER, "text": reading["prompt_text"], "at": at}]
+    prompt_tokens = (reading.get("usage") or {}).get("prompt_tokens")
+    trail = [{"step": "Instructions sent", "tag": "Code", "who": READER, "text": reading["prompt_text"], "at": at,
+              "tokens": ({"prompt": prompt_tokens, "completion": None} if isinstance(prompt_tokens, int) and not fake
+                         else None)}]
     if fake:
         trail.append({"step": "Proposed", "tag": "Code", "who": "capture.read_events",
                       "text": f"FAKE: built by code from the words, no model called. {row['ticker']} "
@@ -171,7 +176,8 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         trail.append({"step": "Proposed", "tag": "Model", "who": MUSE_SPARK,
                       "text": f"{row['ticker']} {row['program'] or ''} {row['event_type']} on "
                               f"{when({**row, 'date_text': printed})}, printed as “{printed}”: “{quote}”"
-                              .replace("  ", " "), "at": at})
+                              .replace("  ", " "), "at": at,
+                      **prices.model_cost_fields(MUSE_SPARK, share[0], share[1], call_rows=share[2])})
     if row["date_text"] != printed:
         trail.append({"step": "Tidied", "tag": "Code", "who": BUILDER,
                       "text": f"Date text “{printed}” kept as “{row['date_text']}”: the "
@@ -208,8 +214,13 @@ def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = N
     run_dir.mkdir(parents=True, exist_ok=True)
     source, words_doc = ptgx_source(entry, run_dir)
     at = reading["created_at"]
-    rows = [build_row(i, ev, reading, source, words_doc, at) for i, ev in enumerate(reading["events"], start=1)]
     fake = bool(reading.get("fake")) or reading.get("model") == FAKE_MODEL
+    usage = {} if fake else (reading.get("usage") or {})
+    n = len(reading["events"])
+    shares = list(zip(prices.split_tokens(usage.get("prompt_tokens"), n),
+                      prices.split_tokens(usage.get("completion_tokens"), n), [n] * n))
+    rows = [build_row(i, ev, reading, source, words_doc, at, share=shares[i - 1])
+            for i, ev in enumerate(reading["events"], start=1)]
     return {
         "schema_version": SCHEMA_VERSION,
         "run": {
@@ -226,7 +237,7 @@ def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = N
                 "spending_limit_usd": None,
                 "note_for_agent": None,
             },
-            "spend_usd": None,  # the reading records its tokens, not its cost
+            "spend_usd": prices.run_spend_usd(rows),  # from the reading's tokens and runs/prices.py
         },
         "sources": [source],
         "tables": [],

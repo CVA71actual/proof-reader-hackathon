@@ -32,7 +32,7 @@ import pymupdf
 from capture import read_table
 from capture.capture_page import page_words
 from checks import event_checks
-from runs import recheck
+from runs import prices, recheck
 from runs.build_run import (
     IONS_SOURCE_ID,
     MUSE_SPARK,
@@ -184,6 +184,27 @@ def box_of_text(text: str, words: list[dict], pad: float = 0.5) -> list[float]:
 
 
 run_checks = recheck.row_checks
+
+# SAMPLE token counts, fixed by hand for the sample run (no model was called for its event rows). Each Model step
+# gets its step's numbers and the cost from runs/prices.py, so the screens can show cost per step; the run is
+# labelled "Sample run" and every row "sample": true, so these numbers are always shown as sample numbers.
+SAMPLE_PROMPT_TOKENS = 1200
+SAMPLE_TOKENS = {  # step -> (prompt, completion)
+    "Proposed": (SAMPLE_PROMPT_TOKENS, 150),
+    "Answer received": (SAMPLE_PROMPT_TOKENS, 40),
+    "Read again": (1260, 30),
+    "Second reading": (SAMPLE_PROMPT_TOKENS, 140),
+}
+
+
+def add_sample_cost(trail: list[dict]) -> list[dict]:
+    """The sample's fixed token counts and their cost on every Model step; the prompt count on Instructions sent."""
+    for step in trail:
+        if step["step"] == "Instructions sent":
+            step["tokens"] = {"prompt": SAMPLE_PROMPT_TOKENS, "completion": None}
+        elif step["tag"] == "Model":
+            step.update(prices.model_cost_fields(step["who"], *SAMPLE_TOKENS[step["step"]]))
+    return trail
 
 
 def check_steps(results, minute: int) -> list[dict]:
@@ -345,7 +366,7 @@ def build_row(spec: dict, source: dict, words_doc: dict, minute: int) -> tuple[d
                                "second_reader": spec["second_type"]}
     row.update({
         "status": status, "group": spec["group"], "reason": spec["reason"], "sample": True,
-        "checks": [to_contract_check(r.to_dict()) for r in results], "trail": trail,
+        "checks": [to_contract_check(r.to_dict()) for r in results], "trail": add_sample_cost(trail),
     })
     return row, results
 
@@ -401,7 +422,7 @@ def build_sample_run(run_dir: Path) -> tuple[dict, list[dict]]:
                 "time_window_months": 12, "spending_limit_usd": 5.0,
                 "note_for_agent": "Sample note: skip events that only appear on a calendar.",
             },
-            "spend_usd": 0.42,
+            "spend_usd": prices.run_spend_usd(rows),  # the sum of the sample's Model step costs
         },
         "sources": sources,
         "tables": [table],

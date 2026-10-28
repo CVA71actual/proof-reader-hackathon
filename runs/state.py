@@ -59,6 +59,7 @@ from __future__ import annotations
 import copy
 
 from accuracy.types import primary_type, type_for_field
+from runs.prices import cost_per_kept_row_usd
 
 GROUPS = ("kept", "corrected", "removed", "unverified", "open")
 ACTIONS = ("keep", "fix", "remove", "undo", "recheck")
@@ -259,7 +260,8 @@ def _exclusions(run: dict, states: dict) -> list[dict]:
 
 
 def current_state(run: dict, decisions: list) -> dict:
-    """Return {"targets", "counts", "mistakes", "excluded", "exclusions", "unresolved", "ignored"}.
+    """Return {"targets", "counts", "mistakes", "excluded", "exclusions", "unresolved", "ignored",
+    "cost_per_kept_row_usd"}.
 
     counts      rows and table values per group, plus excluded_by_person, fixes_pending (fixes in
                 effect not yet re-checked, or whose re-check could not run, on rows not now removed) and
@@ -272,6 +274,8 @@ def current_state(run: dict, decisions: list) -> dict:
     unresolved  rows now "open" or "unverified", plus rows now "corrected" whose fix's re-check could not
                 run or that are still "undecided" (the one "Needs attention" number); a later keep or
                 remove takes a row out
+    cost_per_kept_row_usd  run.spend_usd divided by the rows now in "kept" or "corrected"; null when the spend
+                was not recorded or no row is kept
     """
     targets = _base_targets(run)
     stacks: dict[str, list[dict]] = {t: [] for t in targets}
@@ -317,8 +321,12 @@ def current_state(run: dict, decisions: list) -> dict:
     counts["excluded_by_person"] = excluded["person"]
     unresolved = sum(1 for s in states.values() if s["kind"] == "row" and _needs_attention(s))
 
+    spend = (run.get("run") or {}).get("spend_usd")
+    kept_rows = counts["rows"]["kept"] + counts["rows"]["corrected"]
+
     return {"targets": states, "counts": counts, "mistakes": mistakes, "mistake_list": mistake_list,
-            "excluded": excluded, "exclusions": exclusions, "unresolved": unresolved, "ignored": ignored}
+            "excluded": excluded, "exclusions": exclusions, "unresolved": unresolved, "ignored": ignored,
+            "cost_per_kept_row_usd": cost_per_kept_row_usd(spend, kept_rows)}
 
 
 def _target_models(run: dict) -> dict:

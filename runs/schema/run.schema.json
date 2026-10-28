@@ -52,7 +52,7 @@
             "note_for_agent": {"type": ["string", "null"]}
           }
         },
-        "spend_usd": {"type": ["number", "null"], "minimum": 0, "description": "null when the spend was not recorded."}
+        "spend_usd": {"type": ["number", "null"], "minimum": 0, "description": "The sum of the cost_usd of every Model step in the rows' trails; null when the spend was not recorded."}
       }
     },
     "source": {
@@ -141,7 +141,21 @@
         "who": {"type": "string", "minLength": 1, "not": {"pattern": " and "},
                 "description": "Exactly one actor, and the right kind for the tag."},
         "text": {"type": "string"},
-        "at": {"$ref": "#/$defs/timestamp"}
+        "at": {"$ref": "#/$defs/timestamp"},
+        "tokens": {
+          "description": "Optional. On a Model step: the tokens of the call (prompt and completion; call_rows when one call proposed several rows and this step carries its even share). On the first step, Instructions sent: the prompt's token count, completion null. null when not recorded.",
+          "oneOf": [
+            {"type": "null"},
+            {"type": "object", "additionalProperties": false, "required": ["prompt", "completion"],
+             "properties": {
+               "prompt": {"type": "integer", "minimum": 0},
+               "completion": {"type": ["integer", "null"], "minimum": 0},
+               "call_rows": {"type": "integer", "minimum": 2}
+             }}
+          ]
+        },
+        "cost_usd": {"type": ["number", "null"], "minimum": 0,
+                     "description": "Optional. On a Model step: the cost of its tokens from the fixed price table in runs/prices.py; null when not recorded."}
       },
       "allOf": [
         {"if": {"properties": {"tag": {"const": "Model"}}, "required": ["tag"]},

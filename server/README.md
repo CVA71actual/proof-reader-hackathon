@@ -27,7 +27,8 @@ curl -s 127.0.0.1:8777/api/runs
 ```
 
 `GET /api/runs/{id}`: `run.json` as it is, plus `state`, the output of `runs/state.py`
-`current_state(run, decisions)` (targets, counts, mistakes, excluded, exclusions, unresolved, ignored).
+`current_state(run, decisions)` (targets, counts, mistakes, excluded, exclusions, unresolved, ignored,
+cost_per_kept_row_usd).
 
 ```sh
 curl -s 127.0.0.1:8777/api/runs/sample | jq '.state.targets.e7.group'

@@ -29,7 +29,7 @@
    "spending_limit_usd": 5.0,
    "note_for_agent": "Sample note: skip events that only appear on a calendar."
   },
-  "spend_usd": 0.42
+  "spend_usd": 0.023556
  },
  "sources": [
   {
@@ -5797,14 +5797,23 @@
      "tag": "Code",
      "who": "runs.build_sample",
      "text": "SAMPLE INSTRUCTIONS, written for the sample run. No model was called for the event rows of this run.\nYou are reading one page. List every dated company event on it as JSON:\n{\"events\": [{\"ticker\": \"...\", \"company\": \"...\", \"event_type\": \"...\", \"title\": \"...\",\n  \"date_text\": \"<date as printed>\", \"date\": \"<YYYY-MM-DD or null>\", \"quote\": \"<the sentence as printed>\",\n  \"box\": [x0, y0, x1, y1]}]}\nUse only words printed on the page. If the page has no date for an event, give the printed words and null.\n",
-     "at": "2026-10-27T15:01:00+00:00"
+     "at": "2026-10-27T15:01:00+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": null
+     }
     },
     {
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
      "text": "SMPL1 trial_readout on 2027-03-12: “Topline results from the Phase 3 STAR-1 trial are expected on March 12, 2027.”",
-     "at": "2026-10-27T15:01:05+00:00"
+     "at": "2026-10-27T15:01:05+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 150
+     },
+     "cost_usd": 0.0018
     },
     {
      "step": "Checked",
@@ -5839,7 +5848,12 @@
      "tag": "Model",
      "who": "Muse Spark Open",
      "text": "Read the same row.",
-     "at": "2026-10-27T15:02:40+00:00"
+     "at": "2026-10-27T15:02:40+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 140
+     },
+     "cost_usd": 0.000352
     }
    ]
   },
@@ -5964,14 +5978,23 @@
      "tag": "Code",
      "who": "runs.build_sample",
      "text": "SAMPLE INSTRUCTIONS, written for the sample run. No model was called for the event rows of this run.\nYou are reading one page. List every dated company event on it as JSON:\n{\"events\": [{\"ticker\": \"...\", \"company\": \"...\", \"event_type\": \"...\", \"title\": \"...\",\n  \"date_text\": \"<date as printed>\", \"date\": \"<YYYY-MM-DD or null>\", \"quote\": \"<the sentence as printed>\",\n  \"box\": [x0, y0, x1, y1]}]}\nUse only words printed on the page. If the page has no date for an event, give the printed words and null.\n",
-     "at": "2026-10-27T15:02:00+00:00"
+     "at": "2026-10-27T15:02:00+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": null
+     }
     },
     {
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
      "text": "SMPL1 conference_presentation on 2027-07-01 to 2027-09-30: “The company plans to present 52-week data in Q3 2027.”",
-     "at": "2026-10-27T15:02:05+00:00"
+     "at": "2026-10-27T15:02:05+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 150
+     },
+     "cost_usd": 0.0018
     },
     {
      "step": "Checked",
@@ -6006,7 +6029,12 @@
      "tag": "Model",
      "who": "Muse Spark Open",
      "text": "Read the same row.",
-     "at": "2026-10-27T15:03:40+00:00"
+     "at": "2026-10-27T15:03:40+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 140
+     },
+     "cost_usd": 0.000352
     }
    ]
   },
@@ -6135,14 +6163,23 @@
      "tag": "Code",
      "who": "runs.build_sample",
      "text": "SAMPLE INSTRUCTIONS, written for the sample run. No model was called for the event rows of this run.\nYou are reading one page. List every dated company event on it as JSON:\n{\"events\": [{\"ticker\": \"...\", \"company\": \"...\", \"event_type\": \"...\", \"title\": \"...\",\n  \"date_text\": \"<date as printed>\", \"date\": \"<YYYY-MM-DD or null>\", \"quote\": \"<the sentence as printed>\",\n  \"box\": [x0, y0, x1, y1]}]}\nUse only words printed on the page. If the page has no date for an event, give the printed words and null.\n",
-     "at": "2026-10-27T15:03:00+00:00"
+     "at": "2026-10-27T15:03:00+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": null
+     }
     },
     {
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
      "text": "SMPL2 regulatory_decision on 2027-06-03: “The FDA has set a target action date of June 30, 2027.”",
-     "at": "2026-10-27T15:03:05+00:00"
+     "at": "2026-10-27T15:03:05+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 150
+     },
+     "cost_usd": 0.0018
     },
     {
      "step": "Checked",
@@ -6163,7 +6200,12 @@
      "tag": "Model",
      "who": "Muse Spark",
      "text": "Read the date in “June 30, 2027” as 2027-06-30.",
-     "at": "2026-10-27T15:03:25+00:00"
+     "at": "2026-10-27T15:03:25+00:00",
+     "tokens": {
+      "prompt": 1260,
+      "completion": 30
+     },
+     "cost_usd": 0.00138
     },
     {
      "step": "Fixed",
@@ -6205,7 +6247,12 @@
      "tag": "Model",
      "who": "Muse Spark Open",
      "text": "Read the same row.",
-     "at": "2026-10-27T15:04:40+00:00"
+     "at": "2026-10-27T15:04:40+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 140
+     },
+     "cost_usd": 0.000352
     }
    ]
   },
@@ -6336,14 +6383,23 @@
      "tag": "Code",
      "who": "runs.build_sample",
      "text": "SAMPLE INSTRUCTIONS, written for the sample run. No model was called for the event rows of this run.\nYou are reading one page. List every dated company event on it as JSON:\n{\"events\": [{\"ticker\": \"...\", \"company\": \"...\", \"event_type\": \"...\", \"title\": \"...\",\n  \"date_text\": \"<date as printed>\", \"date\": \"<YYYY-MM-DD or null>\", \"quote\": \"<the sentence as printed>\",\n  \"box\": [x0, y0, x1, y1]}]}\nUse only words printed on the page. If the page has no date for an event, give the printed words and null.\n",
-     "at": "2026-10-27T15:04:00+00:00"
+     "at": "2026-10-27T15:04:00+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": null
+     }
     },
     {
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
      "text": "SMPL2 investor_day on 2027-09-15: “Our partner Samplebio Three will host its investor day on September 15, 2027.”",
-     "at": "2026-10-27T15:04:05+00:00"
+     "at": "2026-10-27T15:04:05+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 150
+     },
+     "cost_usd": 0.0018
     },
     {
      "step": "Checked",
@@ -6378,7 +6434,12 @@
      "tag": "Model",
      "who": "Muse Spark Open",
      "text": "Read the company as Samplebio Three (SMPL3), not Samplebio Two (SMPL2): the event belongs to the partner.",
-     "at": "2026-10-27T15:05:40+00:00"
+     "at": "2026-10-27T15:05:40+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 140
+     },
+     "cost_usd": 0.000352
     },
     {
      "step": "Fixed",
@@ -6512,14 +6573,23 @@
      "tag": "Code",
      "who": "runs.build_sample",
      "text": "SAMPLE INSTRUCTIONS, written for the sample run. No model was called for the event rows of this run.\nYou are reading one page. List every dated company event on it as JSON:\n{\"events\": [{\"ticker\": \"...\", \"company\": \"...\", \"event_type\": \"...\", \"title\": \"...\",\n  \"date_text\": \"<date as printed>\", \"date\": \"<YYYY-MM-DD or null>\", \"quote\": \"<the sentence as printed>\",\n  \"box\": [x0, y0, x1, y1]}]}\nUse only words printed on the page. If the page has no date for an event, give the printed words and null.\n",
-     "at": "2026-10-27T15:05:00+00:00"
+     "at": "2026-10-27T15:05:00+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": null
+     }
     },
     {
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
      "text": "SMPL1 regulatory_decision on 2027-05-04: “An FDA advisory committee meeting is scheduled for May 4, 2027.”",
-     "at": "2026-10-27T15:05:05+00:00"
+     "at": "2026-10-27T15:05:05+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 150
+     },
+     "cost_usd": 0.0018
     },
     {
      "step": "Checked",
@@ -6554,7 +6624,12 @@
      "tag": "Model",
      "who": "Muse Spark Open",
      "text": "Read the same row.",
-     "at": "2026-10-27T15:06:40+00:00"
+     "at": "2026-10-27T15:06:40+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 140
+     },
+     "cost_usd": 0.000352
     },
     {
      "step": "Changed by you",
@@ -6710,14 +6785,23 @@
      "tag": "Code",
      "who": "runs.build_sample",
      "text": "SAMPLE INSTRUCTIONS, written for the sample run. No model was called for the event rows of this run.\nYou are reading one page. List every dated company event on it as JSON:\n{\"events\": [{\"ticker\": \"...\", \"company\": \"...\", \"event_type\": \"...\", \"title\": \"...\",\n  \"date_text\": \"<date as printed>\", \"date\": \"<YYYY-MM-DD or null>\", \"quote\": \"<the sentence as printed>\",\n  \"box\": [x0, y0, x1, y1]}]}\nUse only words printed on the page. If the page has no date for an event, give the printed words and null.\n",
-     "at": "2026-10-27T15:06:00+00:00"
+     "at": "2026-10-27T15:06:00+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": null
+     }
     },
     {
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
      "text": "SMPL4 trial_readout on 2027-04-20: “SMPL4 Phase 2 data readout April 20, 2027”",
-     "at": "2026-10-27T15:06:05+00:00"
+     "at": "2026-10-27T15:06:05+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 150
+     },
+     "cost_usd": 0.0018
     },
     {
      "step": "Checked",
@@ -6752,7 +6836,12 @@
      "tag": "Model",
      "who": "Muse Spark Open",
      "text": "Read the same row.",
-     "at": "2026-10-27T15:07:40+00:00"
+     "at": "2026-10-27T15:07:40+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 140
+     },
+     "cost_usd": 0.000352
     },
     {
      "step": "Removed",
@@ -6872,14 +6961,23 @@
      "tag": "Code",
      "who": "runs.build_sample",
      "text": "SAMPLE INSTRUCTIONS, written for the sample run. No model was called for the event rows of this run.\nYou are reading one page. List every dated company event on it as JSON:\n{\"events\": [{\"ticker\": \"...\", \"company\": \"...\", \"event_type\": \"...\", \"title\": \"...\",\n  \"date_text\": \"<date as printed>\", \"date\": \"<YYYY-MM-DD or null>\", \"quote\": \"<the sentence as printed>\",\n  \"box\": [x0, y0, x1, y1]}]}\nUse only words printed on the page. If the page has no date for an event, give the printed words and null.\n",
-     "at": "2026-10-27T15:07:00+00:00"
+     "at": "2026-10-27T15:07:00+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": null
+     }
     },
     {
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
      "text": "SMPL6 trial_readout on 2027-07-09: “Samplebio Six will report final results on July 9, 2027.”",
-     "at": "2026-10-27T15:07:05+00:00"
+     "at": "2026-10-27T15:07:05+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 150
+     },
+     "cost_usd": 0.0018
     },
     {
      "step": "Checked",
@@ -7039,14 +7137,23 @@
      "tag": "Code",
      "who": "runs.build_sample",
      "text": "SAMPLE INSTRUCTIONS, written for the sample run. No model was called for the event rows of this run.\nYou are reading one page. List every dated company event on it as JSON:\n{\"events\": [{\"ticker\": \"...\", \"company\": \"...\", \"event_type\": \"...\", \"title\": \"...\",\n  \"date_text\": \"<date as printed>\", \"date\": \"<YYYY-MM-DD or null>\", \"quote\": \"<the sentence as printed>\",\n  \"box\": [x0, y0, x1, y1]}]}\nUse only words printed on the page. If the page has no date for an event, give the printed words and null.\n",
-     "at": "2026-10-27T15:08:00+00:00"
+     "at": "2026-10-27T15:08:00+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": null
+     }
     },
     {
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
      "text": "SMPL6 regulatory_decision on 2027-08-02: “Samplebio Six expects to file its application on August 2, 2027.”",
-     "at": "2026-10-27T15:08:05+00:00"
+     "at": "2026-10-27T15:08:05+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 150
+     },
+     "cost_usd": 0.0018
     },
     {
      "step": "Checked",
@@ -7081,7 +7188,12 @@
      "tag": "Model",
      "who": "Muse Spark Open",
      "text": "Read the event type as regulatory_submission, not regulatory_decision.",
-     "at": "2026-10-27T15:09:40+00:00"
+     "at": "2026-10-27T15:09:40+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 140
+     },
+     "cost_usd": 0.000352
     }
    ]
   },
@@ -7172,14 +7284,23 @@
      "tag": "Code",
      "who": "runs.build_sample",
      "text": "SAMPLE INSTRUCTIONS, written for the sample run. No model was called for the event rows of this run.\nYou are reading one page. List every dated company event on it as JSON:\n{\"events\": [{\"ticker\": \"...\", \"company\": \"...\", \"event_type\": \"...\", \"title\": \"...\",\n  \"date_text\": \"<date as printed>\", \"date\": \"<YYYY-MM-DD or null>\", \"quote\": \"<the sentence as printed>\",\n  \"box\": [x0, y0, x1, y1]}]}\nUse only words printed on the page. If the page has no date for an event, give the printed words and null.\n",
-     "at": "2026-10-27T15:09:00+00:00"
+     "at": "2026-10-27T15:09:00+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": null
+     }
     },
     {
      "step": "Answer received",
      "tag": "Model",
      "who": "Muse Spark",
      "text": "The answer could not be understood as a list of events.",
-     "at": "2026-10-27T15:09:05+00:00"
+     "at": "2026-10-27T15:09:05+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 40
+     },
+     "cost_usd": 0.00136
     },
     {
      "step": "Checked",
@@ -7272,11 +7393,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "could_not_run",
-     "reason": "Could not tell which date in the quote belongs to the event.",
+     "result": "pass",
+     "reason": "The day in the row is the day printed in the quote.",
      "compared": {
       "looked_for": "2025-12-31",
-      "found": null
+      "found": "2025-12-31"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -7305,14 +7426,23 @@
      "tag": "Code",
      "who": "runs.build_sample",
      "text": "SAMPLE INSTRUCTIONS, written for the sample run. No model was called for the event rows of this run.\nYou are reading one page. List every dated company event on it as JSON:\n{\"events\": [{\"ticker\": \"...\", \"company\": \"...\", \"event_type\": \"...\", \"title\": \"...\",\n  \"date_text\": \"<date as printed>\", \"date\": \"<YYYY-MM-DD or null>\", \"quote\": \"<the sentence as printed>\",\n  \"box\": [x0, y0, x1, y1]}]}\nUse only words printed on the page. If the page has no date for an event, give the printed words and null.\n",
-     "at": "2026-10-27T15:10:00+00:00"
+     "at": "2026-10-27T15:10:00+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": null
+     }
     },
     {
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
      "text": "IONS earnings on 2025-12-31: “Year Ended December 31, 2025”",
-     "at": "2026-10-27T15:10:05+00:00"
+     "at": "2026-10-27T15:10:05+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 150
+     },
+     "cost_usd": 0.0018
     },
     {
      "step": "Checked",
@@ -7332,7 +7462,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "date_match",
-     "text": "Date read as written: could not run. Could not tell which date in the quote belongs to the event.",
+     "text": "Date read as written: pass. The day in the row is the day printed in the quote.",
      "at": "2026-10-27T15:11:12+00:00"
     },
     {
@@ -7467,14 +7597,23 @@
      "tag": "Code",
      "who": "runs.build_sample",
      "text": "SAMPLE INSTRUCTIONS, written for the sample run. No model was called for the event rows of this run.\nYou are reading one page. List every dated company event on it as JSON:\n{\"events\": [{\"ticker\": \"...\", \"company\": \"...\", \"event_type\": \"...\", \"title\": \"...\",\n  \"date_text\": \"<date as printed>\", \"date\": \"<YYYY-MM-DD or null>\", \"quote\": \"<the sentence as printed>\",\n  \"box\": [x0, y0, x1, y1]}]}\nUse only words printed on the page. If the page has no date for an event, give the printed words and null.\n",
-     "at": "2026-10-27T15:11:00+00:00"
+     "at": "2026-10-27T15:11:00+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": null
+     }
     },
     {
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
      "text": "SMPL1 conference_presentation on later this year: “Samplebio One will present at a medical meeting later this year.”",
-     "at": "2026-10-27T15:11:05+00:00"
+     "at": "2026-10-27T15:11:05+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 150
+     },
+     "cost_usd": 0.0018
     },
     {
      "step": "Checked",
@@ -7509,7 +7648,12 @@
      "tag": "Model",
      "who": "Muse Spark Open",
      "text": "Read the same row.",
-     "at": "2026-10-27T15:12:40+00:00"
+     "at": "2026-10-27T15:12:40+00:00",
+     "tokens": {
+      "prompt": 1200,
+      "completion": 140
+     },
+     "cost_usd": 0.000352
     }
    ]
   }

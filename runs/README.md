@@ -34,7 +34,8 @@ Every path inside `run.json` (page images, words files) is relative to the run's
 
 ## What is in run.json
 
-- `run`: id, number, label, sample, start and finish times, the person's choices, spend (`null` = not recorded).
+- `run`: id, number, label, sample, start and finish times, the person's choices, spend (`null` = not recorded;
+  see "Cost on the record").
 - `sources[]`: where things came from. `kind` is filing, company_release, third_party_calendar or other. Each page
   has an image, its size in PDF points, and a words file (every word with its box), each with its sha256
   (`image_sha256`, `words_sha256`) so a changed byte in the run folder is noticed. The tests check the committed
@@ -84,7 +85,11 @@ To draw a box on the page image: `scale = image_width_px / width_pt`, then multi
 printed in the quote and `date`/`date_end`, if given, are the first and last day of that period (a vague period
 such as "mid-2027", "early 2027", "late 2027" or "end of 2027" has no first or last day: `date`/`date_end` must
 fall inside its rough window, early = January to April, mid = May to August, late / end of = September to
-December). The date text must be a whole date or period in the quote ("2027" inside "Q3 2027" is not the year
+December). Part of a quarter is one month: "early Q1 2027" is January 2027 (2027-01-01 to 2027-01-31),
+"mid-Q2 2027" is May 2027, "late Q4 2027" is December 2027 (early = the quarter's first month, mid = its middle
+month, late = its last); like any month it has a first and last day, so `date`/`date_end`, if given, must be
+exactly those, and a row that claims the whole quarter ("Q1 2027") on a quote that says "early Q1 2027" fails. The
+date text must be a whole date or period in the quote ("2027" inside "Q3 2027" is not the year
 2027), and it must be the date the quote gives for the event (below). A period with no year ("Q3") fails. Vaguer
 still ("later this year") with no date given: `not_needed`.
 
@@ -100,7 +105,8 @@ order in which dates appear in the quote is never evidence.
 2. Event words: the fixed words for the row's `event_type` (trial results: results, data, readout, topline,
    report; regulatory decision: PDUFA, decision, approval, CRL, action date; launch: launch, commercial
    availability; conference or presentation: present, presentation, conference, late-breaker; filing: submit,
-   submission, filing, NDA, BLA, MAA; milestone: dosed, enrolled, initiated, initiation, completed, first patient), plus the
+   submission, filing, NDA, BLA, MAA; milestone: dosed, enrolled, initiated, initiation, completed, first patient;
+   earnings: results, earnings, revenue, net loss, quarter ended, year ended; other: none), plus the
    longest word of 4 letters or more in the row's title, plus the drug or program name if the row has one. Case
    does not matter. The event clause is a clause that holds a date and an event word and is not a comparison.
 3. Decision:
@@ -131,8 +137,9 @@ order in which dates appear in the quote is never evidence.
    results." March 12, 2027: pass; Q4 2026: **fail** (the "follow" clause is a comparison; the event clause
    attaches March 12, 2027).
 
-A row with no event words in the quote (in the sample, e10: "Year Ended December 31, 2025", an earnings row
-whose title word "results" is not in the quote) is `could_not_run` for this check.
+A row with no event words in the quote is `could_not_run` for this check. (In the sample, e10 is an earnings
+row quoting "Year Ended December 31, 2025": "year ended" is an earnings word, so its date check runs and passes;
+e10 stays `proposed` because it has no box, so Citation located could not run.)
 
 A tick on screen means `pass` and nothing else. `could_not_run` and `not_needed` are not ticks.
 
@@ -171,10 +178,25 @@ Every step has exactly one actor:
 - Applying a reading to the row is Code, in its own step after the Model step ("Date changed from 2027-06-03 to
   2027-06-30, as the new reading gave").
 - A check is Code; `who` is the check function.
+- A Model step carries `tokens` {prompt, completion} and `cost_usd`; the first step, "Instructions sent", carries
+  the prompt's token count in `tokens` (completion null). See "Cost on the record".
 - A step never mixes a routing action and a model's interpretation. A Code step's `who` is never a model name,
   and a Model step's `who` is never a check function. The schema holds this: a Model `who` is one of the known
   model names, a Code `who` is a Python name, a Person `who` is "person", and no `who` names two actors. A Person step inside run.json means the person
 acted while the run was still going; everything after the run ends goes to decisions.jsonl.
+
+### Cost on the record
+
+Every Model step in a row's trail carries the tokens of its call (`tokens` {prompt, completion}) and `cost_usd`,
+priced from the fixed table in `runs/prices.py` (dollars per 1M input and output tokens; the values there are
+placeholders, to confirm against dev.meta.ai before submission). The builders take the tokens from the saved
+reading's `usage`; when one call proposed several rows, its tokens are split evenly across their Model steps
+(remainder to the first, `tokens.call_rows` says how many rows shared it), so the call is counted once. The first
+step, "Instructions sent", carries the prompt's whole token count. `run.spend_usd` is the sum of the Model step
+costs, and `current_state` returns `cost_per_kept_row_usd`: spend divided by the rows now in "kept" or
+"corrected", `null` when no row is kept. Nothing is estimated: a reading with no recorded usage (the demo's table
+reading, any fake reading) gives `tokens` and `cost_usd` null and `spend_usd` null. The sample run's token counts
+are fixed sample numbers (`runs/build_sample.py` `SAMPLE_TOKENS`) and are shown as sample, like the rest of it.
 
 ## Decisions and the state rule
 
@@ -240,6 +262,8 @@ It also returns:
 - `unresolved`: rows now in `open` or `unverified`, plus rows now `corrected` whose fix's re-check could not run or
   that are still `undecided`, the one "Needs attention" number. A later keep or remove takes the row out (its
   unrun check stays visible in `recheck`); undo of that keep or remove puts it back.
+- `cost_per_kept_row_usd`: `run.spend_usd` divided by the rows now in `kept` or `corrected`; `null` when the spend
+  was not recorded or no row is kept.
 
 Undo takes back a fix or a remove, so it lowers whichever counter that decision raised.
 
