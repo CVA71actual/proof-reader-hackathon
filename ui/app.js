@@ -2205,7 +2205,9 @@
     var limit = null;
     if (limitRaw !== '') {
       limit = Number(limitRaw);
-      if (isNaN(limit) || limit < 0) { nrError('The spending limit must be a number of dollars, zero or more.'); return; }
+      // Red Team round 8: 'Infinity' and '1e309' are not numbers of dollars — refuse
+      // anything that is not finite (Number.isFinite), never send the request
+      if (!Number.isFinite(limit) || limit < 0) { nrError('The spending limit must be a number of dollars, zero or more.'); return; }
     }
     var note = document.getElementById('nr-note').value.trim() || null;
     nrError('');
@@ -2292,7 +2294,8 @@
         var body = {};
         if (limitInput && limitInput.value.trim() !== '') {
           var v = Number(limitInput.value.trim());
-          if (isNaN(v) || v < 0) { err.textContent = 'The limit must be a number of dollars.'; err.hidden = false; return; }
+          // Red Team round 8: refuse anything that is not finite, with the same red line
+          if (!Number.isFinite(v) || v < 0) { err.textContent = 'The spending limit must be a number of dollars, zero or more.'; err.hidden = false; return; }
           body.spending_limit_usd = v;
         }
         A.resume(currentRunId(), body).then(function (res) {

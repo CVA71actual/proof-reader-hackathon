@@ -501,3 +501,58 @@ def test_u13_corrected_open_row_waits_once_and_offers_keep():
     _, und = _judgment_screen("r-und")
     for word in ("Keep", "Fix again", "Remove", "Undo"):
         assert word in und, word
+
+
+def test_u14_limit_boxes_refuse_non_finite():
+    # Red Team round 8: the New run limit box and the job-bar 'new limit $' box must
+    # refuse anything that is not a finite number of dollars (Infinity, 1e309, NaN,
+    # negatives) with the inline red line, and never send the request.
+    import math
+    import re
+
+    js = (UI / "app.js").read_text()
+    wording = "The spending limit must be a number of dollars, zero or more."
+    assert js.count(wording) >= 2, "both limit boxes use the same red line"
+
+    def guard_after(anchor):
+        window = js[js.index(anchor):js.index(anchor) + 700]
+        i = 0
+        while True:
+            j = window.find("if", i)
+            if j < 0:
+                break
+            k = j + 2
+            while k < len(window) and window[k].isspace():
+                k += 1
+            if k >= len(window) or window[k] != "(":
+                i = j + 2
+                continue
+            depth = 0
+            for n in range(k, len(window)):
+                depth += (window[n] == "(") - (window[n] == ")")
+                if depth == 0:
+                    if "return" in window[n + 1:n + 120]:
+                        return window[k + 1:n]
+                    i = n + 1
+                    break
+            else:
+                break
+        raise AssertionError(f"no returning if after {anchor}")
+
+    def guard_fires(cond, var, value):
+        expr = cond.strip()
+        expr = re.sub(r"Number\.isFinite\s*\(", "math.isfinite(", expr)
+        expr = re.sub(r"Number\.isNaN\s*\(", "math.isnan(", expr)
+        expr = expr.replace("||", " or ").replace("&&", " and ")
+        expr = re.sub(r"!([^=\s])", r" not \1", expr)
+        expr = re.sub(rf"\b{var}\b", "value", expr)
+        return bool(eval(expr, {"__builtins__": {}}, {"math": math, "value": value}))
+
+    for anchor, var in (("limit = Number(limitRaw);", "limit"),
+                        ("var v = Number(limitInput.value.trim());", "v")):
+        cond = guard_after(anchor)
+        assert "Number.isFinite" in cond, f"the guard after {anchor} must use Number.isFinite"
+        for typed in ("Infinity", "1e309", "NaN", "-1"):
+            assert guard_fires(cond, var, float(typed)), (anchor, cond, typed)
+        for typed in ("0", "5", "0.5"):
+            assert not guard_fires(cond, var, float(typed)), (anchor, cond, typed)
