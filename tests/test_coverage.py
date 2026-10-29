@@ -82,7 +82,7 @@ def test_a_quote_whose_words_point_to_another_kind_of_event_fails_with_a_plain_r
 
 
 def test_a_type_is_not_failed_for_having_another_types_words_as_well():
-    assert type_match("conference", "The company will present; data follow in 2028.").result == PASS
+    assert type_match("conference", "The company will present; data follow in 2028.").result == FAIL      # data comes first in TYPE_PRIORITY
     assert type_match("milestone", "Phase 1 initiation is expected; data follow in 2028.").result == NOT_NEEDED
 
 

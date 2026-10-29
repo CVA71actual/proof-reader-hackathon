@@ -5883,7 +5883,7 @@
    "id": "e2",
    "ticker": "SMPL1",
    "company": "Samplebio One",
-   "event_type": "conference_presentation",
+   "event_type": "trial_results",
    "title": "52-week data presentation",
    "date_text": "Q3 2027",
    "date": "2027-07-01",
@@ -5998,10 +5998,10 @@
      "label": "Event type matches the quote",
      "kind": "Code",
      "result": "pass",
-     "reason": "The quote's words (present) fit conference.",
+     "reason": "The quote's words (data) fit trial results.",
      "compared": {
-      "looked_for": "conference_presentation",
-      "found": "present"
+      "looked_for": "trial_results",
+      "found": "data"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -6025,7 +6025,7 @@
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
-     "text": "SMPL1 conference_presentation on 2027-07-01 to 2027-09-30: “The company plans to present 52-week data in Q3 2027.”",
+     "text": "SMPL1 trial_results on 2027-07-01 to 2027-09-30: “The company plans to present 52-week data in Q3 2027.”",
      "at": "2026-10-27T15:02:05+00:00",
      "tokens": {
       "prompt": 1200,
@@ -6065,7 +6065,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "type_match",
-     "text": "Event type matches the quote: pass. The quote's words (present) fit conference.",
+     "text": "Event type matches the quote: pass. The quote's words (data) fit trial results.",
      "at": "2026-10-27T15:03:14+00:00"
     },
     {

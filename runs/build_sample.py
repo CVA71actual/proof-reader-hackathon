@@ -220,7 +220,7 @@ ROW_SPECS = [
          quote="Topline results from the Phase 3 STAR-1 trial are expected on March 12, 2027.",
          group="kept", reason="Every check passed and the second reader agreed.", second="agrees"),
     dict(id="e2", source="smp-release-a", ticker="SMPL1", company="Samplebio One",
-         event_type="conference_presentation", title="52-week data presentation",
+         event_type="trial_results", title="52-week data presentation",
          date_text="Q3 2027", date="2027-07-01", date_end="2027-09-30",
          quote="The company plans to present 52-week data in Q3 2027.",
          group="kept", reason="Every check passed. The source names a quarter, not a day, so the row keeps the quarter "

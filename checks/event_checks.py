@@ -266,15 +266,19 @@ def yearless_day(text: str | None, filed: date | str | None) -> date | None:
 # dateline ("SOUTH SAN FRANCISCO, Calif., August 5, 2026") printed near the top of the words, found by code. With no
 # dateline on the page, the source's published (filing) date.
 _TODAY = re.compile(r"^(?:announced |reported |said )?(?:earlier )?(?:today|this (?:morning|afternoon|evening))$")
+_DASH = r"\s*(?:--+|[\u2013\u2014])\s*"        # a dash between the city and the date: en dash, em dash, double hyphen
+_CREDIT = r"(?:\(|/)[A-Za-z ]{3,30}(?:\)|/)"        # a wire credit: (BUSINESS WIRE), (GLOBE NEWSWIRE), /PRNewswire/
 _DATELINE = re.compile(
-    rf"(?<![\w,])([A-Z][A-Za-z.'\-]*(?: [A-Za-z.'\-]+){{0,3}}(?:, [A-Z][A-Za-z.]{{1,20}})?), "
+    rf"(?<![\w,])([A-Z][A-Za-z.'&\-]*(?: [A-Za-z.'&\-]+){{0,3}}(?:, [A-Z][A-Za-z.]{{1,20}})?)(?:, |{_DASH})"
+    rf"(?:{_CREDIT}(?:{_DASH}|\s+))?"
     rf"((?i:{_MONTH_WORDS}))\.? (\d{{1,2}}), (\d{{4}})\b")
 _WEEKDAY_NAMES = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 DATELINE_WORDS = 150        # the dateline is looked for in this many words from the top of the page
 
 
 def is_today_word(text: str | None) -> bool:
-    return bool(_TODAY.match(_canon(text)))
+    """'today', 'announced today at 8:00 a.m. ET': the clock is taken off first, the today-word stays."""
+    return bool(_TODAY.match(_TIME.sub("", _canon(text)).strip()))
 
 
 def dateline_date(words: list[dict] | None) -> date | None:
@@ -723,6 +727,10 @@ def type_group(event_type: str | None) -> str | None:
 AMBIGUOUS_TYPES = ("milestone", "trial results")
 
 
+def group_key(group: str) -> str:
+    return group.replace(" ", "_")
+
+
 def _words_in(quote: str, group: str) -> list[str]:
     return [w for w in _ANCHORS[group] if _has_word(quote, w)]
 
@@ -748,6 +756,11 @@ def type_match(event_type: str | None, quote: str | None) -> CheckResult:
         return result(NOT_NEEDED, f"The quote holds words of both milestone and trial results ({both}), so there is "
                                   f"nothing decisive to compare the type with.", both)
     own = _words_in(quote, group)
+    first = event_type_for(quote)
+    if own and first not in (group_key(group), "milestone") and _words_in(quote, first.replace("_", " ")):
+        return result(FAIL, f"The quote's words ({', '.join(_words_in(quote, first.replace('_', ' ')))}) put it first "
+                            f"under {first.replace('_', ' ')}, not {group}.",
+                      "; ".join(f"{g}: {', '.join(w)}" for g in (first.replace("_", " "), group) if (w := _words_in(quote, g))))
     if own:
         return result(PASS, f"The quote's words ({', '.join(own)}) fit {group}.", ", ".join(own))
     other = {g: w for g in TYPE_GROUPS if g != group and (w := _words_in(quote, g))}
