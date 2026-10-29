@@ -378,7 +378,7 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
     A period with no year ('Q3') fails.
     Anything vaguer ('later this year') with no date given: not_needed.
     """
-    dt = normalize(date_text)
+    dt = _norm_quote(date_text)     # the same marks as the quote: a typographic apostrophe in both reads alike
     looked_for = (f"{date_iso} to {date_end}" if date_end else date_iso) or dt
 
     def result(res: str, reason: str, found=None) -> CheckResult:

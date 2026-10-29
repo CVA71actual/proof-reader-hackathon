@@ -162,8 +162,9 @@ def apply_events(rows: list[dict], second_events: list[dict], second_reading: di
         said = "; ".join(f"{d['field']}: {SECOND_FIRST} read {_say(d['first_reader'])}, {SECOND} read "
                          f"{_say(d['second_reader'])}" for d in diffs)
         row["disagreement"] = {**first, **({"also": diffs[1:]} if len(diffs) > 1 else {})}
-        row["status"] = "failed" if any(c["result"] == "fail" for c in row["checks"]) else "undecided"
-        row["group"] = "open"
+        if row.get("group") != "removed":     # a time-window exclusion by code holds: a disagreement does not undo it
+            row["status"] = "failed" if any(c["result"] == "fail" for c in row["checks"]) else "undecided"
+            row["group"] = "open"
         row["reason"] = (f"{row['reason']} " if row["status"] == "failed" else "") + (
             f"The two readers disagree on {first['field']}: {SECOND_FIRST} read {_say(first['first_reader'])}, "
             f"{SECOND} read {_say(first['second_reader'])}. A person decides.")
