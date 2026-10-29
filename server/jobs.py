@@ -634,7 +634,7 @@ class Job:
                                          "usage": {"prompt_tokens": reply.prompt_tokens,
                                                    "completion_tokens": reply.completion_tokens}}
             self.save()
-        source = scan.scanned_source(entry, self.dir, png, w, h, regions)
+        source = scan.scanned_source(entry, self.dir, png, w, h, regions, stem=page["record"]["file_stem"])
         by_id = {r["id"]: r for r in regions}
         reads = [{**r, "region": by_id[r["region_id"]]} for r in st["reads"].values() if r["region_id"] in by_id]
         ids = [int(r["id"][1:]) for r in self.run["rows"] if r["id"][1:].isdigit()]

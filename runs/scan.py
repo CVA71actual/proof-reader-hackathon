@@ -129,10 +129,14 @@ def to_page_points(event: dict, crop: list[float]) -> dict:
 # ---------------------------------------------------------------- the source and the rows
 
 
-def scanned_source(entry: dict, run_dir: Path, png: bytes, page_w: float, page_h: float, regions: list[dict]) -> dict:
-    """Write the page image and an empty words file into the run folder; the source names the regions SAM 3.1 found."""
+def scanned_source(entry: dict, run_dir: Path, png: bytes, page_w: float, page_h: float, regions: list[dict],
+                   stem: str | None = None) -> dict:
+    """Write the page image and an empty words file into the run folder; the source names the regions SAM 3.1 found.
+    `stem`: the files' name (the index gives the scanned page its own, so it never overwrites the same page read
+    from its text layer); default p<page number>."""
     page_no = entry["page_number"]
-    image_rel, words_rel = f"pages/p{page_no}.png", f"pages/p{page_no}.words.json"
+    stem = stem or f"p{page_no}"
+    image_rel, words_rel = f"pages/{stem}.png", f"pages/{stem}.words.json"
     (run_dir / "pages").mkdir(parents=True, exist_ok=True)
     (run_dir / image_rel).write_bytes(png)
     (run_dir / words_rel).write_text('{"page_width": %s, "page_height": %s, "words": []}\n' % (page_w, page_h))

@@ -17,7 +17,9 @@ page_number, page_file, page_sha256, words_file, words_sha256, captured_at. Plus
     kind          "events" (default: a release, a deck, an 8-K exhibit: read for upcoming events) or "table"
                   (a financial table: read by the table reader)
     source_id     the id of the source in run.json (default: "src-" + id)
-    file_stem     the stem of the files written into the run's pages/ folder (default: the id)
+    file_stem     the stem of the files written into the run's pages/ folder (default: the id). Two pages may not
+                  share a stem (compared without regard to case): the index is refused, because the second capture
+                  would overwrite the first and break its hash.
 page_file and words_file may be absolute, or relative to the index file's folder, to ~/proof-reader-docs/filings, or to
 ~/proof-reader-docs/filings/<TICKER>.
 
@@ -119,6 +121,7 @@ def _group(doc) -> list[dict]:
 def parse_index(doc, base: Path | None = None, path: Path | None = None) -> Index:
     index = Index(path=path)
     ids: set[str] = set()
+    stems: dict[str, str] = {}       # lower case: a case-insensitive file system would fold two stems into one file
     for i, raw in enumerate(_group(doc)):
         if not isinstance(raw, dict):
             raise SourcesError(f"Page {i + 1} of the index is not an object.")
@@ -127,6 +130,11 @@ def parse_index(doc, base: Path | None = None, path: Path | None = None) -> Inde
             if rec[what] in ids:
                 raise SourcesError(f"Page {i + 1} of the index ({rec['ticker']}): the {what} {rec[what]} is used twice.")
             ids.add(rec[what])
+        stem = rec["file_stem"].lower()
+        if stem in stems:
+            raise SourcesError(f"Page {i + 1} of the index ({rec['ticker']}): the file stem {rec['file_stem']} is already "
+                               f"used by {stems[stem]}, so their captured files would overwrite each other.")
+        stems[stem] = f"page {rec['id']}"
         index.by_ticker.setdefault(rec["ticker"], []).append(rec)
     return index
 
@@ -143,7 +151,7 @@ def builtin_index() -> Index:
         ("IONS", {**ions, "id": "ions-p95", "kind": "table", "source_id": build_run.IONS_SOURCE_ID,
                   "file_stem": "p95"}),
         ("PTGX-SCAN", {**ptgx, "ticker": "PTGX-SCAN", "id": "ptgx-p3-scanned", "kind": "scan_events",
-                       "source_id": "src-ptgx-8k-2026-08-05-ex991-scanned", "file_stem": "p3"}),
+                       "source_id": "src-ptgx-8k-2026-08-05-ex991-scanned", "file_stem": "p3-scanned"}),
     ):
         index.by_ticker[ticker] = [_normalize(raw, FIXTURES, f"The built-in page for {ticker}")]
     return index

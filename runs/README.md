@@ -245,7 +245,9 @@ PTGX 8-K exhibit page 3, the IONS annual report page 95, and the PTGX page as a 
 `runs/sources_index.sample.json` is a two-page SAMPLE with the format. A page record has the fields of a `fixtures/MANIFEST.json`
 entry (ticker, company, form, exhibit, exhibit_title, filing_date, accession, source_url, source_format, source_sha256,
 rendered_pdf_sha256, renderer, page_number, page_file, page_sha256, words_file, words_sha256, captured_at) and, optionally,
-`id`, `kind` (`events`, the default, or `table`), `source_id` and `file_stem`. A run reads **every indexed page** of each company
+`id`, `kind` (`events`, the default, or `table`), `source_id` and `file_stem`. Two pages may not share a `file_stem` (compared without regard to case, after the characters the loader replaces are
+replaced): the index is refused at load, because the second capture would overwrite the first page's files and break its hash. The
+built-in scanned PTGX page has its own stem (`p3-scanned`). A run reads **every indexed page** of each company
 it is asked for. Each page is **captured on first use** into the run's folder (`pages/<id>.png`, `pages/<id>.words.json`):
 the page and words files are checked against the index's hashes (a changed byte stops the run with the reason, `failed`,
 resumable), the page is rendered to an image, and the source is described with the hashes. Event pages go through both readers

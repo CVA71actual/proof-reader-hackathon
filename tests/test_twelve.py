@@ -419,3 +419,79 @@ def test_the_committed_sample_index_loads_and_a_run_reads_both_of_its_pages(runs
     RUN_SCHEMA.validate(run)
     assert [s["id"] for s in run["sources"]] == ["src-ptgx-8k-ex991-p3", "src-ions-ars-p95"]
     assert run["rows"] and run["tables"]
+
+
+# ---------------------------------------------------------------- duplicate file stems (Codex P2 on #37)
+
+
+def two_records(stem_a, stem_b):
+    docs = index_doc()["companies"]
+    a = {**docs["AAA"]["pages"][0], "id": "first", "file_stem": stem_a}
+    b = {**docs["BBB"]["pages"][0], "id": "second", "file_stem": stem_b}
+    return [a, b]
+
+
+def test_two_distinct_pages_with_the_same_file_stem_are_refused_at_load():
+    """Codex's case: two valid records, different ids and sources, one stem. Both would write pages/shared.png."""
+    with pytest.raises(sources.SourcesError, match=r"Page 2 of the index \(BBB\): the file stem shared is already used by "
+                                                   r"page first, so their captured files would overwrite each other"):
+        sources.parse_index(two_records("shared", "shared"))
+
+
+@pytest.mark.parametrize("a,b", [("Shared", "shared"), ("a b", "a-b"), ("p3", "P3"), ("x/y", "x-y")])
+def test_stems_that_fold_to_one_file_are_the_same_stem(a, b):
+    """Case (a macOS file system folds it) and the characters the loader replaces make two stems one file name."""
+    with pytest.raises(sources.SourcesError, match="would overwrite each other"):
+        sources.parse_index(two_records(a, b))
+
+
+def test_distinct_stems_load_and_the_default_stem_is_the_page_id_so_defaults_never_collide():
+    idx = sources.parse_index(two_records("one", "two"))
+    assert [p["record"]["file_stem"] for t in idx.tickers for p in idx.pages(t)] == ["one", "two"]
+    recs = two_records("", "")
+    for r in recs:
+        r.pop("file_stem")
+    idx2 = sources.parse_index(recs)
+    assert [p["record"]["file_stem"] for t in idx2.tickers for p in idx2.pages(t)] == ["first", "second"]
+
+
+def test_the_file_the_second_page_writes_is_not_the_first_pages_file(tmp_path):
+    """What the refusal prevents: with one stem the second capture changes the first source's recorded image hash."""
+    recs = sources.parse_index(two_records("one", "two"))
+    first, second = (recs.pages(t)[0]["record"] for t in ("AAA", "BBB"))
+    a, _ = sources.capture_page(first, tmp_path)
+    b, _ = sources.capture_page(second, tmp_path)
+    assert a["pages"][0]["image"] != b["pages"][0]["image"]
+    for src in (a, b):
+        page = src["pages"][0]
+        assert hashlib.sha256((tmp_path / page["image"]).read_bytes()).hexdigest() == page["image_sha256"]
+    clash = {**second, "file_stem": "one"}                  # the same two pages written under one stem
+    c, _ = sources.capture_page(clash, tmp_path)
+    assert c["pages"][0]["image"] == a["pages"][0]["image"], "the collision the loader now refuses"
+
+
+def test_the_index_file_with_a_duplicate_stem_is_refused_when_loaded_from_disk(tmp_path):
+    f = tmp_path / "i.json"
+    f.write_text(json.dumps({"pages": two_records("same", "same")}))
+    with pytest.raises(sources.SourcesError, match="file stem same is already used"):
+        sources.load_index(f)
+
+
+def test_the_built_in_index_has_a_stem_for_every_page_and_the_scan_has_its_own(monkeypatch, tmp_path):
+    monkeypatch.setattr(sources, "INDEX_PATH", tmp_path / "absent.json")
+    idx = sources.load_index()
+    stems = [idx.pages(t)[0]["record"]["file_stem"] for t in idx.tickers]
+    assert stems == ["p3", "p95", "p3-scanned"] and len(set(stems)) == 3
+
+
+def test_a_run_of_a_page_and_its_scan_keeps_two_sets_of_files_and_both_hashes_hold(runs_dir, monkeypatch, tmp_path):
+    from tests.test_scan import FakeSam, TWO_BOXES
+    monkeypatch.setattr(sources, "INDEX_PATH", tmp_path / "absent.json")
+    c = TestClient(create_app(runs_dir=runs_dir, ui_dir=runs_dir / "no-ui", reader=FakeReader(answer=answer),
+                              second_reader=None, wonder_reader=None, sam_reader=FakeSam(TWO_BOXES), background=False))
+    rid = c.post("/api/runs/new", json={**CHOICES, "companies": ["PTGX", "PTGX-SCAN"]}).json()["id"]
+    run = run_of(runs_dir, rid)
+    assert run["run"]["status"] == "done", run["run"]["status_reason"]
+    images = [s["pages"][0]["image"] for s in run["sources"]]
+    assert sorted(images) == ["pages/p3-scanned.png", "pages/p3.png"]
+    assert c.get(f"/api/runs/{rid}").status_code == 200, "every page file still matches the hash run.json recorded"
