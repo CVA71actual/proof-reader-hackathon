@@ -1,0 +1,31 @@
+{
+ "directory": {
+  "item": [
+   {
+    "name": "tm2622272d1_8k.htm",
+    "type": "text.gif",
+    "size": "100"
+   },
+   {
+    "name": "sample_ex99-1.htm",
+    "type": "text.gif",
+    "size": "200"
+   },
+   {
+    "name": "sample_ex99-1img01.jpg",
+    "type": "image2.gif",
+    "size": "50"
+   },
+   {
+    "name": "sample_ex99-2.pdf",
+    "type": "pdf",
+    "size": "999"
+   },
+   {
+    "name": "other.htm",
+    "type": "text.gif",
+    "size": "10"
+   }
+  ]
+ }
+}

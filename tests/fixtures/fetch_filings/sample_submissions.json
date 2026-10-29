@@ -1,0 +1,27 @@
+{
+ "cik": "1377121",
+ "name": "Protagonist Therapeutics, Inc.",
+ "tickers": [
+  "PTGX"
+ ],
+ "filings": {
+  "recent": {
+   "accessionNumber": [
+    "0001104659-26-091099",
+    "0001104659-25-000001"
+   ],
+   "filingDate": [
+    "2026-08-05",
+    "2025-01-02"
+   ],
+   "form": [
+    "8-K",
+    "8-K"
+   ],
+   "primaryDocument": [
+    "tm2622272d1_8k.htm",
+    "old.htm"
+   ]
+  }
+ }
+}

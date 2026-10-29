@@ -14,7 +14,7 @@ never printed.
     --turns 40                     model calls before a pause; the command resumes through pauses (--max-resumes)
     --types milestone,trial_results  event types (default: all)
     --note "..."                   a note for the agent (context only: it cannot remove a check)
-    --runs-dir DIR / --index FILE  where runs go (default runs/) / the sources index (default runs/sources_index.json)
+    --runs-dir DIR / --index FILE  where runs go (default runs/) / the sources index (default: runs/sources_index.twelve.json when present, else runs/sources_index.json)
     --no-second / --no-wonder      leave that model out of the run (cost control)
     --no-report                    do not build the PDF and Word report
 """
@@ -83,7 +83,11 @@ def main(argv: list[str] | None = None, readers: tuple | None = None) -> int:
     args = ap.parse_args(argv)
 
     try:
-        index = sources.load_index(args.index) if args.index else sources.load_index()
+        # The command line prefers the captured twelve-company index when it exists (capture/fetch_filings.py
+        # writes runs/sources_index.twelve.json); the server's default stays the small built-in index.
+        twelve = build_run.REPO / "runs" / "sources_index.twelve.json" if hasattr(build_run, "REPO") else Path("runs/sources_index.twelve.json")
+        chosen = args.index or (twelve if twelve.is_file() else None)
+        index = sources.load_index(chosen) if chosen else sources.load_index()
         companies = ["all"] if args.companies.strip().lower() == "all" else \
             [c.strip().upper() for c in args.companies.split(",") if c.strip()]
         types = list(read_events.EVENT_TYPES) if not args.types else [t.strip() for t in args.types.split(",")]
