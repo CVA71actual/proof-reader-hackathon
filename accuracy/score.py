@@ -54,7 +54,7 @@ def model_family(name: str | None) -> str:
     """'Muse Spark (muse-spark-1.3)' or 'muse-spark-1.3' -> 'Muse Spark'. Unknown names are kept as given."""
     if not name:
         return "unknown model"
-    s = re.sub(r"\s*\(.*\)\s*$", "", str(name)).strip()
+    s = re.sub(r"\s*\(.*\)\s*$", "", str(name)).strip().split("/")[-1]
     known = {"muse-spark-open": "Muse Spark Open", "muse-spark": "Muse Spark", "muse-glimmer": "Muse Glimmer",
              "muse-wonder": "Muse Wonder"}
     low = s.lower()

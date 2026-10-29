@@ -61,6 +61,11 @@
         "turn_limit": {"type": "integer", "minimum": 1, "description": "The budget of turns; a resume starts a fresh one."},
         "turns_total": {"type": "integer", "minimum": 0, "description": "Every model call in the run."},
         "resumes": {"type": "integer", "minimum": 0},
+        "second_reader": {"type": "object", "additionalProperties": false, "required": ["model", "status"],
+                          "properties": {"model": {"type": ["string", "null"]},
+                                         "status": {"enum": ["read", "not_run", "unreadable"]},
+                                         "reason": {"type": ["string", "null"]}},
+                          "description": "Optional. Whether the second reader read this run's pages (server/jobs.py) and why not if it did not."},
         "trail": {"type": "array", "items": {"$ref": "#/$defs/trail_step"},
                   "description": "Run-level Person steps, e.g. a raised spending limit. Absent when there are none."}
       }
@@ -187,8 +192,24 @@
         "column": {"type": "string"},
         "value": {"type": ["string", "null"]},
         "box": {"$ref": "#/$defs/box"},
-        "status": {"enum": ["matched", "proposed", "failed"]},
+        "status": {"enum": ["matched", "proposed", "failed", "undecided"]},
+        "disagreement": {"$ref": "#/$defs/disagreement"},
         "checks": {"type": "array", "items": {"$ref": "#/$defs/check"}}
+      }
+    },
+    "disagreement": {
+      "description": "Optional; set on an undecided row or value: the field the two readers disagreed on and what each read. Only a fix of this field settles the disagreement. `also` lists any other fields they read differently.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "first_reader", "second_reader"],
+      "properties": {
+        "field": {"type": "string"},
+        "first_reader": {"type": ["string", "null"]},
+        "second_reader": {"type": ["string", "null"]},
+        "also": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["field", "first_reader", "second_reader"],
+          "properties": {"field": {"type": "string"}, "first_reader": {"type": ["string", "null"]},
+                         "second_reader": {"type": ["string", "null"]}}}}
       }
     },
     "table": {
@@ -251,22 +272,12 @@
         "quote": {"type": ["string", "null"]},
         "program": {"type": ["string", "null"], "description": "Optional. The drug or program name as printed (\"PN-8047\"); an event word for Date read as written."},
         "indication": {"type": ["string", "null"], "description": "Optional. The disease or condition the program is for, as printed; the scorer and the key may alias it like the program."},
-        "found_by": {"enum": ["reader", "coverage"], "description": "Optional. \"coverage\": code found the dated sentence the reader did not turn into a row (checks/coverage.py); no model proposed it."},
+        "found_by": {"enum": ["reader", "coverage", "second_reader"], "description": "Optional. \"coverage\": code found the dated sentence the reader did not turn into a row (checks/coverage.py); no model proposed it. \"second_reader\": only the second reader read it (runs/compare.py)."},
         "source_id": {"$ref": "#/$defs/id"},
         "page_number": {"type": "integer", "minimum": 1},
         "box": {"$ref": "#/$defs/box"},
         "proposed_by": {"type": "string"},
-        "disagreement": {
-          "description": "Optional; set on an undecided row: the field the two readers disagreed on and what each read. Only a fix of this field settles the disagreement.",
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["field", "first_reader", "second_reader"],
-          "properties": {
-            "field": {"type": "string"},
-            "first_reader": {"type": ["string", "null"]},
-            "second_reader": {"type": ["string", "null"]}
-          }
-        },
+        "disagreement": {"$ref": "#/$defs/disagreement"},
         "status": {"enum": ["matched", "proposed", "failed", "unreadable", "undecided"]},
         "group": {"enum": ["kept", "corrected", "removed", "unverified", "open"]},
         "reason": {"type": "string"},

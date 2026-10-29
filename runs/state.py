@@ -73,7 +73,8 @@ CAUGHT_BY = ("code", "second_reader", "person")
 EXCLUDED_BY = ("code", "person")
 UNRESOLVED = ("open", "unverified")
 
-ROW_FIELDS = ("ticker", "company", "event_type", "title", "date_text", "date", "date_end", "quote")
+ROW_FIELDS = ("ticker", "company", "event_type", "title", "date_text", "date", "date_end", "quote", "program",
+              "indication")
 CELL_FIELDS = ("value",)
 # The fields the checks compare. A fix to any other field cannot be shown right or wrong by a re-check.
 ROW_CHECKED_FIELDS = ("quote", "date_text", "date", "date_end", "event_type")
@@ -102,7 +103,7 @@ def _base_targets(run: dict) -> dict:
                     "status": cell["status"],
                     "reason": None,
                     "values": {"value": cell.get("value")},
-                    "disagreement": None,
+                    "disagreement": cell.get("disagreement"),
                 }
     return targets
 
@@ -135,8 +136,14 @@ def _apply(base: dict, stack: list[dict]) -> dict:
             covered = fx["field"] in checked_fields(s["kind"])
             settles = unsettled and disputed is not None and fx["field"] == disputed
             outcome = _fix_outcome(rc, covered or settles)
+            # a fix that puts in what the second reader read, on the field the readers disagreed on, is the
+            # second reader's catch, not the person's
+            dis = base.get("disagreement") or {}
+            takes_second = any(fx["field"] == d.get("field") and fx["to"] == d.get("second_reader")
+                               for d in [dis, *dis.get("also", [])] if d)
             s["fixes"].append({"field": fx["field"], "from": fx["from"], "to": fx["to"], "at": d.get("at"),
-                               "recheck": rc, "settles": settles, "checked": covered or settles, **outcome})
+                               "recheck": rc, "settles": settles, "checked": covered or settles,
+                               "second_reader_value": takes_second, **outcome})
             s["group"] = "corrected"
             s["reason"] = note or f"Fixed by you: {fx['field']} changed from {fx['from']} to {fx['to']}."
             if rc is not None:
@@ -309,7 +316,8 @@ def current_state(run: dict, decisions: list) -> dict:
         if m.get("caught_by") in mistakes:
             mistakes[m["caught_by"]] += 1
     fixes = [(f, s) for s in states.values() for f in s["fixes"]]
-    mistakes["person"] += sum(1 for f, _ in fixes if f["mistake"])
+    mistakes["person"] += sum(1 for f, _ in fixes if f["mistake"] and not f["second_reader_value"])
+    mistakes["second_reader"] += sum(1 for f, _ in fixes if f["mistake"] and f["second_reader_value"])
     counts["edits_without_error"] = sum(1 for f, _ in fixes if f["edit_without_error"])
     counts["fixes_pending"] = sum(1 for f, s in fixes if s["group"] != "removed"
                                   and (f["recheck"] is None or f["recheck"]["result"] == "could_not_run"))
@@ -358,7 +366,8 @@ def _mistake_list(run: dict, states: dict) -> list[dict]:
                 continue
             before = ((f["recheck"] or {}).get("before") or {}).get("checks") or []
             out.append({"id": None, "target": t, "type": primary_type(before) or type_for_field(f["field"]),
-                        "caught_by": "person", "model": models.get(t),
+                        "caught_by": "second_reader" if f["second_reader_value"] else "person",
+                        "model": models.get(t),
                         "what_changed": f"{f['field']} changed from {f['from']} to {f['to']}.",
                         "recorded_in": "decisions"})
     return out

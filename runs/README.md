@@ -177,6 +177,47 @@ that kind but does for another ("The quote's words (results, topline) point to t
 unknown): there is nothing to compare, and the row is not held back for it. `could_not_run`: the row has no quote.
 A person's fix of the event type is re-checked by it like a fix of the date.
 
+### The second reader
+
+`capture/second_reader.py` is an independent read of the same page by Muse Spark Open: through Baseten, model
+string exactly `meta-models/muse-spark-open-1026`, base URL https://inference.baseten.co/v1; the OpenRouter fallback
+(`meta/muse-spark-open`) is used only if `OPENROUTER_API_KEY` is present and the run's OpenRouter spend (kept in
+its `job.json`) is under $20. It is given the same kind of prompt, built by the same builder from the page's words
+and the run's choices; it is never given the first reader's answer (nothing in its interface takes one). Its tokens
+and cost are its own (`runs/prices.py`, "Muse Spark Open", placeholder prices).
+
+`runs/compare.py` compares the two readings by code, event by event. Two are the same event when their quotes overlap
+(one holds the other, or holds 80% of its words) and any program or indication name they both give is shared. Compared:
+`date`, `date_end`, `event_type`, `program`, `indication` (case and spacing ignored; nothing against a value is a
+difference). The quote is the match key: quotes that run to different lengths are not a disagreement.
+
+- Any difference: the row becomes `undecided` (`failed` if a check had failed) in group `open`, with `disagreement`
+  {`field`, `first_reader`, `second_reader`} for the first differing field in the order above (`also` lists the
+  others), so it is in Judgment needed. Only a fix of `field` settles it. A person's fix that puts in what the second
+  reader read, on any differing field, and is a demonstrated mistake (the re-check passes where the old value failed),
+  is counted under `mistakes.second_reader`, not `person`.
+- No difference: nothing changes. Agreement is not evidence: only the checks say a row matched, and the trail says so.
+- A row the second reader read no matching event for: nothing changes (the trail says so).
+- An event only the second reader read: a new open row, `found_by` "second_reader", `proposed_by` "Muse Spark Open",
+  its own checks run, status `undecided` (`failed` if a check failed), reason "Proposed by the second reader only: the
+  first reader did not read it...". An open "Possible event not read" row for the same sentence is dropped.
+- Table values: the same row label and column (`column_key`) with a different value makes the cell `undecided`
+  (`failed` if a check had failed) with `disagreement` {field "value", ...}; it sits in the "unverified" group until a
+  person fixes the value.
+
+Trail, one actor per step: "Instructions sent to the second reader" (Code, `capture.second_reader`, the exact prompt),
+"Second reading" (Model, Muse Spark Open, with its share of the call's tokens and cost), "Compared" (Code,
+`runs.compare`). `run.second_reader` {model, status read / not_run / unreadable, reason} says whether the second reader
+read the run at all. The saved live reading of the PTGX page is `fixtures/ptgx_8k_2026-08-05_ex991_p3.events.second.json`
+(10,791 prompt and 5,902 completion tokens; the first reader's 10,586 and 3,518) and `runs/ptgx-r5/` is the run built
+from both readings (`python -m runs.build_entry --second ...`): the readers agreed on both events, so nothing changed
+and both rows stay `matched` by their checks.
+
+```sh
+.venv/bin/python -m capture.second_reader      # one live second read of the PTGX page (needs a key)
+.venv/bin/python -m runs.build_entry --second fixtures/ptgx_8k_2026-08-05_ex991_p3.events.second.json
+```
+
 ### Dated sentences the reader did not turn into rows
 
 `checks/coverage.py` cuts the page's words into sentences (a leading bullet is dropped; abbreviations such as "Inc."

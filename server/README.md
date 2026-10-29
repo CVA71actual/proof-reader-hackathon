@@ -146,6 +146,17 @@ Without it, a run stopped by its spending limit gets 409. 409 also for a run tha
 before run controls existed. `run.json` is rewritten only by the job, and only while the run is going; once it is `done` it is never
 written again (the job refuses). Both files are replaced whole (temp file, rename).
 
+**The second reader.** Unless the server was given none, every page the first reader has read is read again by the
+second reader (`capture/second_reader.py`, Muse Spark Open) and compared by code (`runs/compare.py`; see
+`runs/README.md`, "The second reader"). The second read is one more turn for that page: it counts against the turn
+limit, it is priced (`runs/prices.py`) and added to `spend_usd`, and the spending limit stops it like any other call
+(with a limit set and no price for the second reader's model, the run stops before the call). A second reader with no
+key does not stop the run: `run.second_reader` says `not_run` and why. An unreadable answer from it compares nothing
+(`unreadable`). A page whose second read is still to do when a limit stops the run is finished on resume; no page is
+read twice. If the OpenRouter fallback is used, its spend is kept in `job.json` (`openrouter_spend_usd`) and the
+fallback is switched off at $20. The default server (no reader given) uses the live readers; one built with a fake
+reader has no second reader unless it is given one.
+
 **Three refusals.** A page whose answer could not be read (not JSON, or the wrong shape) is asked again; the
 third unreadable answer in the run (counted across resumes, in `job.json`) ends the page with one row: group
 `open`, status `unreadable`, reason "The reader's answer could not be read three times; sent to a person." Its

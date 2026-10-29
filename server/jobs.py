@@ -11,6 +11,9 @@ What the run carries in run.json's "run" object, while it is going:
     status_reason   one plain sentence for the status
     turn_count      model calls used in the current budget; turn_limit the budget (default 40);
                     turns_total every call in the run; resumes how many times it was resumed
+    second_reader   optional: {model, status read | not_run | unreadable, reason}: whether the second reader (Muse
+                    Spark Open, runs/compare.py) read the run's pages; its read is one more turn per page, counted
+                    and priced like the first reader's, and covered by the same limits
     spend_usd       the sum of each call's cost from runs/prices.py (null when the model has no price there),
                     against choices.spending_limit_usd
     trail           a Person step each time a person raises the spending limit on resume
@@ -40,8 +43,10 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from capture import read_events, read_table
+from capture.second_reader import OPENROUTER_CAP_USD
+from checks.coverage import sentence_covered
 from capture.capture_source import load_entry
-from runs import build_entry, build_run, coverage, prices
+from runs import build_entry, build_run, compare, coverage, prices
 
 DEFAULT_TURN_LIMIT = 40
 UNREADABLE_LIMIT = 3
@@ -82,6 +87,7 @@ def add_months(d: date, months: int) -> date:
 
 def price_name(model: str) -> str:
     """The name runs/prices.py knows a model by (a model id it does not know is returned as it is)."""
+    model = model.split("/")[-1]       # meta-models/muse-spark-open-1026 and meta/muse-spark-open
     if model.startswith("muse-spark"):
         return "Muse Spark Open" if "open" in model else "Muse Spark"
     return model
@@ -170,7 +176,7 @@ def create_run(runs_dir: Path, choices: dict) -> dict:
             "sources": [], "tables": [], "rows": [], "mistakes": [], "exclusions": [],
         }
         (run_dir / "decisions.jsonl").write_text("")
-        _write(run_dir / "job.json", {"attempts": {}, "unpriced_calls": 0,
+        _write(run_dir / "job.json", {"attempts": {}, "unpriced_calls": 0, "second": {}, "openrouter_spend_usd": 0.0,
                                       "log": [snapshot(run["run"], "Run created.")]})
         _write(run_dir / "run.json", run)
         return run
@@ -220,9 +226,10 @@ def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None) -> dict:
         return run
 
 
-def run_job(runs_dir: Path, run_id: str, reader) -> None:
-    """Carry the run on until it is done or a limit stops it. Never raises: an unexpected error ends it as failed."""
-    job = Job(Path(runs_dir) / run_id, reader)
+def run_job(runs_dir: Path, run_id: str, reader, second=None) -> None:
+    """Carry the run on until it is done or a limit stops it. Never raises: an unexpected error ends it as failed.
+    `second`: the second reader (capture/second_reader.py), or None for a run with one reader."""
+    job = Job(Path(runs_dir) / run_id, reader, second)
     try:
         job.drive()
     except Exception as e:  # the type only: nothing that could carry request details
@@ -230,8 +237,8 @@ def run_job(runs_dir: Path, run_id: str, reader) -> None:
 
 
 class Job:
-    def __init__(self, run_dir: Path, reader):
-        self.dir, self.reader = run_dir, reader
+    def __init__(self, run_dir: Path, reader, second=None):
+        self.dir, self.reader, self.second = run_dir, reader, second
         self.run = json.loads((run_dir / "run.json").read_text())
         self.job = json.loads((run_dir / "job.json").read_text())
         self.meta = self.run["run"]
@@ -257,12 +264,16 @@ class Job:
         cost = prices.cost_usd(price_name(reply.model), reply.prompt_tokens, reply.completion_tokens)
         if cost is not None:
             self.meta["spend_usd"] = round((self.meta["spend_usd"] or 0) + cost, prices.ROUND_TO)
+            if (reply.extra or {}).get("route") == "openrouter":   # the fallback route has its own $20 cap
+                self.job["openrouter_spend_usd"] = round(self.job.get("openrouter_spend_usd", 0.0) + cost,
+                                                         prices.ROUND_TO)
         elif self.choices["spending_limit_usd"] is not None and not reply.error:
             self.job["unpriced_calls"] += 1
         self.save()
 
-    def stopped_before_a_call(self) -> bool:
+    def stopped_before_a_call(self, reader=None) -> bool:
         """The checks made before every model call. True (and the run is stopped) when it must not go on."""
+        reader = reader or self.reader
         meta, limit = self.meta, self.choices["spending_limit_usd"]
         if meta["turn_count"] >= meta["turn_limit"]:
             self.stop("paused_turn_limit", f"Stopped at the turn limit ({meta['turn_limit']} turns). "
@@ -270,9 +281,9 @@ class Job:
             return True
         if limit is None:
             return False
-        if self.job["unpriced_calls"] or prices.cost_usd(price_name(self.reader.model), 0, 0) is None:
+        if self.job["unpriced_calls"] or prices.cost_usd(price_name(reader.model), 0, 0) is None:
             self.stop("needs_input", f"The cost of a call could not be counted (runs/prices.py has no price for "
-                                     f"{self.reader.model}), so the spending limit of {money(limit)} cannot be "
+                                     f"{reader.model}), so the spending limit of {money(limit)} cannot be "
                                      f"kept. Nothing more was read.")
             return True
         if (meta["spend_usd"] or 0) >= limit:
@@ -292,9 +303,9 @@ class Job:
         done = {s["id"] for s in self.run["sources"]}
         for ticker in self.choices["companies"]:
             for page in PAGES[ticker]:
-                if page["source_id"] in done:
-                    continue
-                if not self.read_page(page) and self.meta["status"] != "running":
+                if page["source_id"] not in done and not self.read_page(page) and self.meta["status"] != "running":
+                    return
+                if not self.second_pass(page) and self.meta["status"] != "running":
                     return
         read = len(self.run["sources"])
         self.meta["finished_at"] = now_utc()
@@ -396,6 +407,78 @@ class Job:
             row["trail"].append({"step": "Left out", "tag": "Code", "who": "server.jobs", "text": reason, "at": at})
             self.run["exclusions"].append({"id": f"x{len(self.run['exclusions']) + 1}", "target": row["id"],
                                            "rule": "outside_time_window", "reason": reason, "by": "code"})
+
+    # ------------------------------------------------------------ the second reader
+
+    def note_second(self, sid: str, status: str, reason: str | None = None, model: str | None = None) -> None:
+        """Record what happened to the second read of one page, and summarise it for the run."""
+        self.job["second"][sid] = {"status": status, "reason": reason, "model": model}
+        seen = list(self.job["second"].values())
+        pick = next((v for v in seen if v["status"] == "read"), seen[-1])
+        self.meta["second_reader"] = {"model": pick["model"], "status": pick["status"], "reason": pick["reason"]}
+
+    def second_pass(self, page: dict) -> bool:
+        """The second reader's independent read of a page the first reader has read, compared by code. True when
+        the page is finished with (read, skipped or unreadable); False when the run stopped."""
+        sid = page["source_id"]
+        source = next((s for s in self.run["sources"] if s["id"] == sid), None)
+        if self.second is None or source is None or sid in self.job["second"]:
+            return True
+        problem = self.second.ready()
+        if problem:
+            self.note_second(sid, "not_run", problem)
+            self.save(problem)
+            return True
+        words_doc = json.loads((self.dir / source["pages"][0]["words"]).read_text())
+        if page["kind"] == "events":
+            entry = load_entry(read_events.PIN)
+            types = tuple(t for t in read_events.EVENT_TYPES if t in self.choices["event_types"])
+            prompt = read_events.build_prompt(words_doc, entry, types, self.choices["note_for_agent"])
+            parse = read_events.parse_events
+        else:
+            entry = {k: v for k, v in json.loads((build_run.FIXTURES / "MANIFEST.json").read_text()).items()
+                     if k != "entries"}
+            prompt = read_table.build_prompt(words_doc, self.choices["note_for_agent"])
+            parse = read_table.parse_table
+        if hasattr(self.second, "openrouter_allowed"):
+            self.second.openrouter_allowed = self.job.get("openrouter_spend_usd", 0.0) < OPENROUTER_CAP_USD
+        if self.stopped_before_a_call(self.second):
+            return False
+        reply = self.second.call(prompt)
+        self.count_turn(reply)
+        if reply.error:
+            self.stop("failed", f"The second reader: {reply.error} Resume to try again.")
+            return False
+        name = price_name(reply.model)
+        parsed, why = parse(reply.raw)
+        if parsed is None:
+            self.note_second(sid, "unreadable", why, name)
+            self.save(f"The second reader's answer could not be read ({why}); nothing was compared.")
+            return True
+        at = now_utc()
+        extra = {**(reply.extra or {}), "usage": {"prompt_tokens": reply.prompt_tokens,
+                                                  "completion_tokens": reply.completion_tokens}}
+        if page["kind"] == "events":
+            reading = read_events._record(model=reply.model, prompt=prompt, raw=reply.raw, events=parsed,
+                                          problem=None, entry=entry, extra=extra)
+            rows = [r for r in self.run["rows"] if r["source_id"] == sid]
+            ids = [int(r["id"][1:]) for r in self.run["rows"] if r["id"][1:].isdigit()]
+            _, new_rows = compare.apply_events(rows, parsed, reading, source, words_doc, at,
+                                               next_index=max(ids, default=0) + 1)
+            self.apply_window(new_rows, at)
+            # a dated sentence the second reader turned into a row no longer needs its "not read" row
+            quotes = [r["quote"] for r in new_rows]
+            self.run["rows"] = [r for r in self.run["rows"]
+                                if not (r.get("found_by") == "coverage" and r["source_id"] == sid
+                                        and sentence_covered(r["quote"], quotes))]
+            self.run["rows"] += new_rows
+        else:
+            table = next((t for t in self.run["tables"] if t["source_id"] == sid), None)
+            if table is not None:
+                compare.apply_table(table, parsed)
+        self.note_second(sid, "read", None, name)
+        self.save()
+        return True
 
     def mark_fake(self, reading: dict) -> None:
         if reading.get("fake"):

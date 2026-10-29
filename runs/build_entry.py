@@ -44,6 +44,7 @@ RUN_ID = "ptgx-r4a"
 RUN_DIR = RUNS / RUN_ID
 RUN_NUMBER = 3
 REAL_LABEL = "PTGX · one real entry"
+TWO_READERS_LABEL = "PTGX · two readers"
 FAKE_LABEL = "Practice run (PTGX): fake reading, no model called"
 SOURCE_ID = "src-ptgx-8k-2026-08-05-ex991"
 BUILDER = "runs.build_entry"     # the code that applies and tidies; a Code step's who, never a model
@@ -139,8 +140,10 @@ def row_reason(status: str, results: list, row: dict) -> str:
 
 
 def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict, at: str,
-              share: tuple[int | None, int | None, int] = (None, None, 1)) -> dict:
-    """`share` is this row's part of the one call's tokens: (prompt, completion, rows the call proposed)."""
+              share: tuple[int | None, int | None, int] = (None, None, 1), model_name: str = MUSE_SPARK,
+              instructions_who: str = READER) -> dict:
+    """`share` is this row's part of the one call's tokens: (prompt, completion, rows the call proposed).
+    `model_name`: the model that proposed it (the second reader's rows are built by the same function)."""
     words = words_doc["words"]
     fake = bool(reading.get("fake"))
     quote = _str(event.get("quote"))
@@ -163,11 +166,11 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         "source_id": source["id"],
         "page_number": source["pages"][0]["page_number"],
         "box": [float(v) for v in box] if box_ok else from_ids,
-        "proposed_by": MUSE_SPARK,
+        "proposed_by": model_name,
     }
-    reader = "fake reading (no model called)" if fake else MUSE_SPARK
+    reader = "fake reading (no model called)" if fake else model_name
     prompt_tokens = (reading.get("usage") or {}).get("prompt_tokens")
-    trail = [{"step": "Instructions sent", "tag": "Code", "who": READER, "text": reading["prompt_text"], "at": at,
+    trail = [{"step": "Instructions sent", "tag": "Code", "who": instructions_who, "text": reading["prompt_text"], "at": at,
               "tokens": ({"prompt": prompt_tokens, "completion": None} if isinstance(prompt_tokens, int) and not fake
                          else None)}]
     if fake:
@@ -175,11 +178,11 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
                       "text": f"FAKE: built by code from the words, no model called. {row['ticker']} "
                               f"{row['event_type']} on {when(row)}: “{quote}”", "at": at})
     else:
-        trail.append({"step": "Proposed", "tag": "Model", "who": MUSE_SPARK,
+        trail.append({"step": "Proposed", "tag": "Model", "who": model_name,
                       "text": f"{row['ticker']} {row['program'] or ''} {row['event_type']} on "
                               f"{when({**row, 'date_text': printed})}, printed as “{printed}”: “{quote}”"
                               .replace("  ", " "), "at": at,
-                      **prices.model_cost_fields(MUSE_SPARK, share[0], share[1], call_rows=share[2])})
+                      **prices.model_cost_fields(model_name, share[0], share[1], call_rows=share[2])})
     if row["date_text"] != printed:
         trail.append({"step": "Tidied", "tag": "Code", "who": BUILDER,
                       "text": f"Date text “{printed}” kept as “{row['date_text']}”: the "
@@ -205,7 +208,10 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
     return row
 
 
-def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = None) -> dict:
+def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = None,
+                    second_reading: dict | None = None) -> dict:
+    """`second_reading`: the second reader's saved reading of the same page (capture/second_reader.py); when it is
+    given and readable, runs/compare.py records where the two readers differ and adds what only the second found."""
     entry = load_entry(PIN)
     if sha256_text(reading.get("prompt_text") or "") != reading.get("prompt_sha256"):
         raise ValueError("The saved instructions do not match their SHA-256; refusing to build the run.")
@@ -223,7 +229,18 @@ def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = N
                       prices.split_tokens(usage.get("completion_tokens"), n), [n] * n))
     rows = [build_row(i, ev, reading, source, words_doc, at, share=shares[i - 1])
             for i, ev in enumerate(reading["events"], start=1)]
-    # a dated sentence the reader did not turn into a row becomes an open row, so a person sees what was skipped
+    second = None
+    if second_reading is not None and second_reading.get("readable") and not second_reading.get("call_failed"):
+        from runs import compare   # imported here: compare builds rows with build_row above
+        if sha256_text(second_reading.get("prompt_text") or "") != second_reading.get("prompt_sha256"):
+            raise ValueError("The saved second-reader instructions do not match their SHA-256; refusing to build.")
+        if second_reading.get("words_sha256") != entry["words_sha256"]:
+            raise ValueError("The second reading was made from a different words file; refusing to build the run.")
+        _, only_second = compare.apply_events(rows, second_reading["events"], second_reading, source, words_doc,
+                                              second_reading["created_at"], next_index=len(rows) + 1)
+        rows += only_second
+        second = {"model": compare.SECOND, "status": "read", "reason": None}
+    # a dated sentence no reader turned into a row becomes an open row, so a person sees what was skipped
     rows += coverage.possible_event_rows(words_doc, rows, source, first_index=len(rows) + 1, at=at,
                                          today=date.fromisoformat(at[:10]), ticker=entry["ticker"],
                                          company=entry["company"])
@@ -231,8 +248,8 @@ def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = N
         "schema_version": SCHEMA_VERSION,
         "run": {
             "id": run_dir.name,
-            "number": RUN_NUMBER,
-            "label": FAKE_LABEL if fake else REAL_LABEL,
+            "number": RUN_NUMBER if second is None else RUN_NUMBER + 1,
+            "label": FAKE_LABEL if fake else (REAL_LABEL if second is None else TWO_READERS_LABEL),
             "sample": False,
             "started_at": at,
             "finished_at": finished_at or now_utc(),
@@ -243,7 +260,8 @@ def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = N
                 "spending_limit_usd": None,
                 "note_for_agent": None,
             },
-            "spend_usd": prices.run_spend_usd(rows),  # from the reading's tokens and runs/prices.py
+            "spend_usd": prices.run_spend_usd(rows),  # from the readings' tokens and runs/prices.py
+            **({"second_reader": second} if second else {}),
         },
         "sources": [source],
         "tables": [],
@@ -256,10 +274,14 @@ def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = N
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--reading", type=Path, default=read_events.READING_PATH)
-    ap.add_argument("--out-dir", type=Path, default=RUN_DIR)
+    ap.add_argument("--out-dir", type=Path, default=None)
+    ap.add_argument("--second", type=Path, default=None,
+                    help="the second reader's saved reading (capture.second_reader); builds runs/ptgx-r5")
     args = ap.parse_args(argv)
+    args.out_dir = args.out_dir or (RUNS / "ptgx-r5" if args.second else RUN_DIR)
     reading = json.loads(args.reading.read_text())
-    run = build_entry_run(reading, args.out_dir)
+    second = json.loads(args.second.read_text()) if args.second else None
+    run = build_entry_run(reading, args.out_dir, second_reading=second)
     out = write_run(run, args.out_dir)
     decisions = args.out_dir / "decisions.jsonl"
     if not decisions.exists():
