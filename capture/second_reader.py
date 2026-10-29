@@ -10,8 +10,12 @@ nothing in this module takes one. Keys come from the environment or ~/.config/pr
 read_table.load_env_file and are never printed, logged or saved; a failed call reports only the error type and
 status code. Cost is never decided here: the job prices the token counts with runs/prices.py ("Muse Spark Open").
 
-    python -m capture.second_reader      one live second read of the pinned PTGX page (needs a key); saves
+    python -m capture.second_reader      one live second read of the pinned PTGX page from its IMAGE, with no word
+                                         list, so it does not depend on the text layer (needs a key); saves
                                          fixtures/ptgx_8k_2026-08-05_ex991_p3.events.second.json
+    python -m capture.second_reader --words
+                                         the same read from the page's words (the earlier form); saves
+                                         fixtures/ptgx_8k_2026-08-05_ex991_p3.events.second_words.json
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ from pathlib import Path
 
 from capture import read_events, read_table
 from capture.capture_source import FIXTURES, load_entry
-from capture.reader import Reply
+from capture.reader import Reply, create, messages_for
 
 NAME = "Muse Spark Open"
 BASETEN_BASE_URL = "https://inference.baseten.co/v1"
@@ -39,6 +43,7 @@ NO_KEY = ("No second-reader key was found (BASETEN_API_KEY, or OPENROUTER_API_KE
           "no second read.")
 
 SECOND_READING_PATH = FIXTURES / f"{read_events.PIN}.events.second.json"
+SECOND_WORDS_READING_PATH = FIXTURES / f"{read_events.PIN}.events.second_words.json"
 
 
 class SecondReader:
@@ -70,22 +75,22 @@ class SecondReader:
             return self.openrouter_blocked or CAP_REACHED     # a key is there; the cap, not the key, is why not
         return NO_KEY
 
-    def call(self, prompt: str) -> Reply:
+    def call(self, prompt: str, image: bytes | None = None) -> Reply:
         route = self.route()
         if route is None:
             return Reply(None, BASETEN_MODEL, error=self.ready() or NO_KEY)
-        reply = self._ask(route, prompt)
+        reply = self._ask(route, prompt, image)
         if reply.error and route == "baseten" and self._key("OPENROUTER_API_KEY") and self.openrouter_allowed:
-            reply = self._ask("openrouter", prompt)     # Baseten did not answer: the fallback, under its cap
+            reply = self._ask("openrouter", prompt, image)   # Baseten did not answer: the fallback, under its cap
         return reply
 
-    def _ask(self, route: str, prompt: str) -> Reply:
+    def _ask(self, route: str, prompt: str, image: bytes | None = None) -> Reply:
         from openai import OpenAI  # imported here so tests and offline use need no network client
 
         base, model, key = ((BASETEN_BASE_URL, BASETEN_MODEL, self._key("BASETEN_API_KEY")) if route == "baseten"
                             else (OPENROUTER_BASE_URL, OPENROUTER_MODEL, self._key("OPENROUTER_API_KEY")))
         client = OpenAI(base_url=base, api_key=key)
-        messages = [{"role": "user", "content": prompt}]
+        messages = messages_for(prompt, image)
         response_format = "json_object"
         try:
             resp = self._create(client, model, messages, json_mode=True)
@@ -99,23 +104,21 @@ class SecondReader:
                 return Reply(None, model, error=read_table._plain_error(e2), extra={"route": route})
         raw = resp.choices[0].message.content if resp.choices else None
         usage = getattr(resp, "usage", None)
-        extra = {"route": route, "base_url": base, "requested_model": model, "response_format": response_format}
+        extra = {"route": route, "base_url": base, "requested_model": model, "response_format": response_format,
+                 "input": "image" if image is not None else "words"}
         return Reply(raw, getattr(resp, "model", None) or model,
                      prompt_tokens=getattr(usage, "prompt_tokens", None),
                      completion_tokens=getattr(usage, "completion_tokens", None), extra=extra)
 
     @staticmethod
     def _create(client, model: str, messages: list, json_mode: bool):
-        kwargs = {"model": model, "messages": messages, "temperature": 0}
-        if json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
-        return client.chat.completions.create(**kwargs)
+        return create(client, model, messages, json_mode)
 
 
-def reading_record(reply: Reply, prompt: str, parsed, problem, entry: dict) -> dict:
+def reading_record(reply: Reply, prompt: str, parsed, problem, entry: dict, input: str = "words") -> dict:
     """The saved second reading of a page: the exact prompt and its SHA-256, the raw answer, the parsed events and the
     tokens. The same shape as the first reading, so the same builders and the same checks take it."""
-    extra = {**(reply.extra or {}), "second_reader": True,
+    extra = {**(reply.extra or {}), "second_reader": True, "input": input,
              "usage": {"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens}}
     if reply.error:
         extra["call_failed"] = True
@@ -125,18 +128,29 @@ def reading_record(reply: Reply, prompt: str, parsed, problem, entry: dict) -> d
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", type=Path, default=SECOND_READING_PATH)
+    ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--words", action="store_true", help="read from the page's words instead of its image")
     args = ap.parse_args(argv)
+    args.out = args.out or (SECOND_WORDS_READING_PATH if args.words else SECOND_READING_PATH)
     reader = SecondReader()
     problem = reader.ready()
     if problem:
         print(problem)
         return 2
     words_doc, entry = read_events.load_words(), load_entry(read_events.PIN)
-    prompt = read_events.build_prompt(words_doc, entry)
-    reply = reader.call(prompt)
+    if args.words:
+        prompt, image, got = read_events.build_prompt(words_doc, entry), None, "words"
+    else:
+        from runs.build_run import render_page
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            png = Path(tmp) / "page.png"
+            render_page(FIXTURES / entry["page_file"], png)
+            image = png.read_bytes()
+        prompt, got = read_events.build_image_prompt(entry), "image"
+    reply = reader.call(prompt, image=image)
     parsed, parse_problem = (None, None) if reply.error else read_events.parse_events(reply.raw)
-    rec = reading_record(reply, prompt, parsed, parse_problem, entry)
+    rec = reading_record(reply, prompt, parsed, parse_problem, entry, got)
     args.out.write_text(json.dumps(rec, indent=1, ensure_ascii=False) + "\n")
     if reply.error:
         print(f"The second read did not succeed ({reply.error}); the failure is saved -> {args.out}")
@@ -144,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     if parsed is None:
         print(f"Saved an unreadable answer from {rec['model']} ({parse_problem}) -> {args.out}")
         return 0
-    print(f"Saved second reading by {rec['model']} via {reply.extra['route']}: {len(parsed)} events, "
+    print(f"Saved second reading ({got}) by {rec['model']} via {reply.extra['route']}: {len(parsed)} events, "
           f"tokens {reply.prompt_tokens} in / {reply.completion_tokens} out -> {args.out}")
     return 0
 

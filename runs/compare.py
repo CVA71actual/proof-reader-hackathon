@@ -101,10 +101,23 @@ def _model_step(ev: dict, share: tuple, at: str) -> dict:
             **prices.model_cost_fields(SECOND, share[0], share[1], call_rows=share[2])}
 
 
-def _instructions_step(reading: dict, at: str) -> dict:
+INPUT_WORDS = {
+    "image": "The page image only. The page's words were not sent: this read does not depend on the text layer.",
+    "image_and_words": "The page image and the page's words (the fallback after the image-only answer could not be "
+                       "read).",
+    "words": "The page's words only.",
+}
+
+
+def _instructions_steps(reading: dict, at: str) -> list[dict]:
+    """The second reader's own "Instructions sent" (the exact prompt) and which input it got."""
     pt = (reading.get("usage") or {}).get("prompt_tokens")
-    return {"step": "Instructions sent to the second reader", "tag": "Code", "who": SECOND_WHO, "at": at,
-            "text": reading["prompt_text"], "tokens": {"prompt": pt, "completion": None} if isinstance(pt, int) else None}
+    got = reading.get("input") or "words"
+    return [
+        {"step": "Second reader input", "tag": "Code", "who": SECOND_WHO, "at": at, "text": INPUT_WORDS[got]},
+        {"step": "Instructions sent to the second reader", "tag": "Code", "who": SECOND_WHO, "at": at,
+         "text": reading["prompt_text"], "tokens": {"prompt": pt, "completion": None} if isinstance(pt, int) else None},
+    ]
 
 
 def apply_events(rows: list[dict], second_events: list[dict], second_reading: dict, source: dict, words_doc: dict,
@@ -125,7 +138,7 @@ def apply_events(rows: list[dict], second_events: list[dict], second_reading: di
                                          f"{AGREEMENT_NOTE}"})
             continue
         ev, diffs = second_events[j], differences(row, second_events[j])
-        row["trail"] += [_instructions_step(second_reading, at), _model_step(ev, shares[j], at)]
+        row["trail"] += [*_instructions_steps(second_reading, at), _model_step(ev, shares[j], at)]
         if not diffs:
             row["trail"].append({"step": "Compared", "tag": "Code", "who": WHO, "at": at,
                                  "text": f"Both readers read the same date, event type, program and indication. "

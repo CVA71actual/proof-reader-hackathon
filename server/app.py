@@ -33,7 +33,9 @@ from fastapi.staticfiles import StaticFiles
 from jsonschema import Draft202012Validator
 
 from capture.reader import LiveReader
+from capture.sam import SamReader
 from capture.second_reader import SecondReader
+from capture.wonder import WonderReader
 from runs.calendar import calendar_entries
 from runs.recheck import recheck_cell, recheck_row
 from runs.state import PERSON_ACTIONS, current_state
@@ -183,23 +185,30 @@ def _summary(state: dict) -> dict:
 
 
 def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, background: bool = True,
-               second_reader="default", coverage_as_of=None) -> FastAPI:
+               second_reader="default", coverage_as_of=None, wonder_reader="default",
+               sam_reader="default") -> FastAPI:
     """`reader`: what a run's job calls (default: Muse Spark, needs a key). `second_reader`: the independent second
     read (default: Muse Spark Open when no `reader` was given, none when one was, so a test with a fake reader never
     reaches the network; None: one reader). `background`: False runs a job to its stop inside the request, which is
     how the tests use it. `coverage_as_of`: a date; the dated-sentence coverage counts dates after it (default: each
-    source's published date)."""
+    source's published date). `wonder_reader`: the escalation model (default: Muse Wonder when no `reader` was given,
+    none when one was; None: no escalation). `sam_reader`: SAM 3.1 for scanned pages (same default rule)."""
     store = RunStore(runs_dir)
     if second_reader == "default":
         second_reader = SecondReader() if reader is None else None
+    if wonder_reader == "default":
+        wonder_reader = WonderReader() if reader is None else None
+    if sam_reader == "default":
+        sam_reader = SamReader() if reader is None else None
     reader = reader or LiveReader()
 
     def start_job(run_id: str) -> None:
         if background:
-            threading.Thread(target=jobs.run_job, args=(store.runs_dir, run_id, reader, second_reader, coverage_as_of),
+            threading.Thread(target=jobs.run_job, args=(store.runs_dir, run_id, reader, second_reader, coverage_as_of, wonder_reader,
+                                   sam_reader),
                              daemon=True).start()
         else:
-            jobs.run_job(store.runs_dir, run_id, reader, second_reader, coverage_as_of)
+            jobs.run_job(store.runs_dir, run_id, reader, second_reader, coverage_as_of, wonder_reader, sam_reader)
 
     validator = Draft202012Validator(json.loads(DECISION_SCHEMA.read_text()))
     app = FastAPI(title="Proof Reader decisions server", docs_url=None, redoc_url=None, openapi_url=None)

@@ -13,6 +13,13 @@ from __future__ import annotations
 PRICES_PER_1M_USD = {
     "Muse Spark": {"input": 1.00, "output": 4.00},        # Muse Spark 1.3 (muse-spark-1.3); placeholder
     "Muse Spark Open": {"input": 0.20, "output": 0.80},   # the second reader in the sample run; placeholder
+    "Muse Wonder": {"input": 1.00, "output": 4.00},       # muse-wonder-1.0, the escalation model; price not confirmed
+}
+
+# US dollars per image, for a model that is priced per image. PLACEHOLDER VALUE: $2.50 per 1,000 images (dev.meta.ai,
+# noted 2026-10-21 in research/WHY_PROOF_READER); confirm before submission.
+PRICES_PER_IMAGE_USD = {
+    "SAM 3.1": 0.0025,
 }
 
 ROUND_TO = 6  # cost figures are kept to a millionth of a dollar
@@ -25,6 +32,20 @@ def cost_usd(model: str, prompt_tokens: int | None, completion_tokens: int | Non
     if price is None or not isinstance(prompt_tokens, int) or not isinstance(completion_tokens, int):
         return None
     return round((prompt_tokens * price["input"] + completion_tokens * price["output"]) / 1_000_000, ROUND_TO)
+
+
+def image_cost_usd(model: str, images: int | None) -> float | None:
+    """The cost of a call to a model priced per image; None when the model is not priced that way or the count is
+    unknown."""
+    price = PRICES_PER_IMAGE_USD.get(model)
+    if price is None or not isinstance(images, int):
+        return None
+    return round(images * price, ROUND_TO)
+
+
+def has_price(model: str) -> bool:
+    """True when the model is in either table: a call to it can be priced."""
+    return model in PRICES_PER_1M_USD or model in PRICES_PER_IMAGE_USD
 
 
 def model_cost_fields(model: str, prompt_tokens: int | None, completion_tokens: int | None,

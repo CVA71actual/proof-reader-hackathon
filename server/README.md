@@ -162,6 +162,13 @@ Dated-sentence coverage counts dates after each source's published date, or afte
 (or `run_job(..., as_of=...)`) is given one. The default server (no reader given) uses the live readers; one built with a fake
 reader has no second reader unless it is given one.
 
+**Image read and escalation.** The second reader is shown the page image with no word list (words only as a fallback
+after an unreadable answer; `run.second_reader.input` says which). After the second pass, each row of an events page
+that failed a check or that the readers disagree on is sent to Muse Wonder (`wonder_reader`, default
+`capture/wonder.py` when no `reader` was given), at most 3 a page, each a counted turn priced from `runs/prices.py`
+("Muse Wonder", a placeholder price until confirmed) and covered by the turn and spending limits; a row is never sent
+twice, across resumes either (`job.json` `escalated_rows`). See `runs/README.md`, "Escalation to Muse Wonder".
+
 **Three refusals.** A page whose answer could not be read (not JSON, or the wrong shape) is asked again; the
 third unreadable answer in the run (counted across resumes, in `job.json`) ends the page with one row: group
 `open`, status `unreadable`, reason "The reader's answer could not be read three times; sent to a person." Its

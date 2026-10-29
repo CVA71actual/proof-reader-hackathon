@@ -229,6 +229,39 @@ and both rows stay `matched` by their checks.
 .venv/bin/python -m runs.build_entry --second fixtures/ptgx_8k_2026-08-05_ex991_p3.events.second.json
 ```
 
+### The second reader reads the image
+
+The second reader is given the **page image** (the run's own `pages/pN.png`, the bytes `run.json` hashed) and a prompt
+with **no word list**, so its read does not depend on the text layer; its boxes come back on a 0-1000 grid over the
+image and code turns them into PDF points. If its image-only answer cannot be read, the words are sent too, once,
+as a fallback (a counted turn). `run.second_reader.input` (`image`, `image_and_words` or `words`) says which it got,
+and each compared row's trail says it in a "Second reader input" Code step before the second reader's own
+"Instructions sent". The first reader still reads the words. (`python -m capture.second_reader` records a live read;
+`--words` the earlier form: `fixtures/ptgx_..._p3.events.second.json` is the image read, 3,246 prompt and 3,772
+completion tokens, and `.events.second_words.json` the words read, 10,791 and 5,902.)
+
+### Escalation to Muse Wonder
+
+`runs/escalate.py`. When a row fails a check, or the two readers disagree on it, that one row's **page region** (a
+full-width band of the page image around its quote, 60 points above and below) and the **failing check's label and
+reason** go to Muse Wonder (`muse-wonder-1.0` on the Meta Model API, `capture/wonder.py`, key `MODEL_API_KEY`) for a
+re-read. At most 3 rows a page; each is one counted, priced turn. Its answer is a new proposal, built with the same
+builder as every row, so the same five checks run on it:
+
+- A row sent for a failed check, whose re-read passes **every** check, takes the re-read's values (group `corrected`,
+  status `matched`), and the failure is added to `mistakes[]` as caught by `code` (the check) with its type.
+- A re-read that does not pass every check changes nothing: the row stays as it was and its trail says why.
+- A row sent because the readers disagree is never replaced: only a person's fix settles a disagreement. Wonder's
+  reading is added as evidence ("as Muse Spark did" / "as neither reader did").
+
+Trail, one actor per step: Code "Sent to Muse Wonder because <check> failed" (`runs.escalate`), Code "Instructions
+sent to Muse Wonder" (`capture.wonder`), Model "Muse Wonder" (tokens and cost), Code "Checked" for each of the five checks on its
+proposal, Code "Escalation result". `run.escalation` {model, status read / not_run, rows_sent, rows_replaced} summarises
+it. `fixtures/ptgx_..._p3.wonder.json` is one live escalation: the PTGX first reading was altered **on purpose** (one
+date moved) so a row fails; Wonder, shown that row's band and the failed check, read the right event and period
+(2027-01-01 to 2027-03-31), and the row stayed as it was because Wonder's box reached below the quote's last line and
+Citation located failed (976 prompt and 2,631 completion tokens).
+
 ### Dated sentences the reader did not turn into rows
 
 `checks/coverage.py` cuts the page's words into sentences (a leading bullet is dropped; abbreviations such as "Inc."

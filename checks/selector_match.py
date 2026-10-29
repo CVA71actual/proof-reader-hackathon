@@ -114,6 +114,38 @@ def selector_match(
     )
 
 
+REGION_SLACK_PT = 2.0   # a box may reach this far past a region's edge: the reader's grid is coarse
+
+
+def region_match(box, regions: list[dict] | None, page_width: float, page_height: float) -> CheckResult:
+    """The citation check for a page with no text layer, where there are no words to check a box against: the box must
+    lie inside a region SAM 3.1 found on the page (`regions`: [{id, concept, box}] in PDF points). Same id and label as
+    selector_match ("Citation located"). could_not_run when no region was found, or the reader gave no box."""
+    def result(res: str, reason: str, **compared) -> CheckResult:
+        return CheckResult(CHECK_ID, LABEL, res, reason, {"value": "a box inside a region SAM 3.1 found", "box": box,
+                                                          **compared})
+
+    if box is None:
+        return result(COULD_NOT_RUN, "The reader did not propose a place on the page for this value.")
+    if not _valid_box(box):
+        return result(FAIL, "The proposed place on the page is not a usable box.")
+    x0, y0, x1, y1 = (float(v) for v in box)
+    if x1 <= x0 or y1 <= y0:
+        return result(FAIL, "The proposed box is empty.")
+    if x1 <= 0 or y1 <= 0 or x0 >= page_width or y0 >= page_height:
+        return result(FAIL, "The proposed box is off the page.")
+    if not regions:
+        return result(COULD_NOT_RUN, "SAM 3.1 found no region on this page to compare the box with.")
+    s = REGION_SLACK_PT
+    for r in regions:
+        rx0, ry0, rx1, ry1 = r["box"]
+        if x0 >= rx0 - s and y0 >= ry0 - s and x1 <= rx1 + s and y1 <= ry1 + s:
+            return result(PASS, f"The box lies inside {r['id']}, a {r['concept']} region SAM 3.1 found.",
+                          found=r["id"], region=r["box"])
+    return result(FAIL, "The box is not inside any region SAM 3.1 found on the page.",
+                  found=", ".join(r["id"] for r in regions))
+
+
 def _quote_run(want: str, words: list[dict], rect) -> list[dict] | None:
     """The run of page words that reads as the quote; when it is printed more than once, the run the box overlaps
     most. None when the quote is not printed (the strict rule then reports what is in the box)."""

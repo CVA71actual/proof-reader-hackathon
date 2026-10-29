@@ -43,13 +43,14 @@ class FakeSecond:
 
     def __init__(self, answer=None, tokens=(10000, 5000), problem=None, route=None, model=BASETEN_MODEL):
         self.answer, self.tokens, self.problem, self.route, self.model = answer, tokens, problem, route, model
-        self.prompts = []
+        self.prompts, self.images = [], []
 
     def ready(self):
         return self.problem
 
-    def call(self, prompt):
+    def call(self, prompt, image=None):
         self.prompts.append(prompt)
+        self.images.append(image)
         raw = self.answer(prompt, len(self.prompts)) if self.answer else FakeReader.default(prompt)
         return Reply(raw, self.model, prompt_tokens=self.tokens[0], completion_tokens=self.tokens[1],
                      extra={"route": self.route} if self.route else None)
@@ -117,7 +118,7 @@ def test_a_failed_baseten_call_falls_back_only_when_the_fallback_is_allowed(monk
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
     calls = []
 
-    def ask(self, route, prompt):
+    def ask(self, route, prompt, image=None):
         calls.append(route)
         return Reply(None, "m", error="The model call did not succeed (APIError, status 503).") if route == "baseten" \
             else Reply('{"events": []}', OPENROUTER_MODEL, extra={"route": "openrouter"})
@@ -135,9 +136,9 @@ def test_a_failed_baseten_call_falls_back_only_when_the_fallback_is_allowed(monk
 
 def test_the_second_reader_takes_no_first_reader_answer():
     import inspect
-    assert list(inspect.signature(SecondReader.call).parameters) == ["self", "prompt"]
+    assert list(inspect.signature(SecondReader.call).parameters) == ["self", "prompt", "image"]
     assert list(inspect.signature(second_reader.reading_record).parameters) == ["reply", "prompt", "parsed",
-                                                                                 "problem", "entry"]
+                                                                                 "problem", "entry", "input"]
 
 
 def test_the_saved_live_second_reading_of_the_ptgx_page():
@@ -209,7 +210,7 @@ def test_two_readers_that_agree_change_nothing_and_say_agreement_is_not_a_check(
     run = run_of(runs_dir, rid)
     RUN_SCHEMA.validate(run)
     assert run["run"]["status"] == "done" and run["run"]["second_reader"] == {
-        "model": "Muse Spark Open", "status": "read", "reason": None}
+        "model": "Muse Spark Open", "status": "read", "reason": None, "input": "image"}
     plain = run_of(runs_dir, start(runs_dir, FakeReader(), None)[1])
     assert [(r["status"], r["group"]) for r in run["rows"]] == [(r["status"], r["group"]) for r in plain["rows"]]
     assert all("disagreement" not in r for r in run["rows"])
@@ -223,12 +224,61 @@ def test_two_readers_that_agree_change_nothing_and_say_agreement_is_not_a_check(
     assert run["run"]["turn_count"] == 2 and len(first.prompts) == len(second.prompts) == 1
 
 
-def test_the_second_reader_gets_the_same_prompt_and_never_the_first_readers_answer(runs_dir):
+def test_the_second_reader_gets_the_page_image_and_no_word_list_and_never_the_first_readers_answer(runs_dir):
     first, second = FakeReader(), FakeSecond()
-    start(runs_dir, first, second)
-    assert second.prompts == first.prompts, "built by the same builder from the same page and choices"
-    answer = FakeReader.default(first.prompts[0])
-    assert answer not in second.prompts[0]
+    _, rid = start(runs_dir, first, second)
+    entry = load_entry(PIN)
+    assert second.prompts == [read_events.build_image_prompt(entry)], "the image prompt, built from the page's facts"
+    assert "\nw0|" not in second.prompts[0] and "id|text|x0|y0|x1|y1" not in second.prompts[0], "no word list"
+    png = (runs_dir / rid / "pages" / "p3.png").read_bytes()
+    assert second.images == [png] and png[:4] == b"\x89PNG", "the page's own image, the bytes the run hashed"
+    assert first.prompts != second.prompts and FakeReader.default(first.prompts[0]) not in second.prompts[0]
+    assert run_of(runs_dir, rid)["run"]["second_reader"]["input"] == "image"
+
+
+def test_the_trail_says_what_the_second_reader_was_given(runs_dir):
+    _, rid = start(runs_dir, FakeReader(), FakeSecond())
+    for row in run_of(runs_dir, rid)["rows"]:
+        steps = {t["step"]: t for t in row["trail"]}
+        assert steps["Second reader input"]["text"] == compare.INPUT_WORDS["image"]
+        assert "does not depend on the text layer" in steps["Second reader input"]["text"]
+        assert steps["Instructions sent to the second reader"]["text"] == read_events.build_image_prompt(
+            load_entry(PIN))
+
+
+def test_an_unreadable_image_answer_is_followed_once_by_the_words_as_a_fallback(runs_dir):
+    events = fake_events()
+
+    def answer(prompt, n):
+        return "I could not read the image." if n == 1 else json.dumps({"events": events})
+
+    second = FakeSecond(answer=answer)
+    _, rid = start(runs_dir, FakeReader(), second)
+    run = run_of(runs_dir, rid)
+    assert len(second.prompts) == 2 and run["run"]["status"] == "done"
+    assert "\nw0|" not in second.prompts[0] and "w0|" in second.prompts[1], "words only in the fallback"
+    assert second.images[0] is not None and second.images[1] is not None
+    assert run["run"]["second_reader"] == {"model": "Muse Spark Open", "status": "read", "reason": None,
+                                           "input": "image_and_words"}
+    assert run["run"]["turn_count"] == 3, "the fallback is its own counted turn"
+    row = run["rows"][0]
+    assert next(t for t in row["trail"] if t["step"] == "Second reader input")["text"] == \
+        compare.INPUT_WORDS["image_and_words"]
+
+
+def test_a_second_only_row_from_an_image_read_has_its_box_in_page_points(runs_dir):
+    words = json.loads((FIXTURES / f"{PIN}.words.json").read_text())
+    extra_sentence = next(s for s in coverage.sentences(words["words"]) if s["text"].startswith("Discovery"))
+    x0, y0, x1, y1 = extra_sentence["box"]
+    grid = [x0 * 1000 / words["page_width"], y0 * 1000 / words["page_height"],
+            x1 * 1000 / words["page_width"], y1 * 1000 / words["page_height"]]
+    extra = {"ticker": "PTGX", "company": "Protagonist Therapeutics, Inc.", "program": None, "indication": None,
+             "event_type": "milestone", "title": "Discovery programs", "date_text": "2027", "date": "2027-01-01",
+             "date_end": "2027-12-31", "quote": extra_sentence["text"], "box": grid}
+    _, rid = start(runs_dir, FakeReader(), FakeSecond(answer=events_answer(fake_events() + [extra])))
+    only = next(r for r in run_of(runs_dir, rid)["rows"] if r.get("found_by") == "second_reader")
+    assert only["box"] == pytest.approx([x0, y0, x1, y1], abs=0.02)
+    assert next(c for c in only["checks"] if c["name"] == "selector_match")["result"] == "pass"
 
 
 def test_a_disagreement_on_the_date_makes_the_row_undecided_and_goes_to_a_person(runs_dir):
@@ -388,7 +438,8 @@ def test_an_unreadable_second_answer_compares_nothing_and_says_so(runs_dir):
     assert run["run"]["status"] == "done"
     assert run["run"]["second_reader"]["status"] == "unreadable" and run["run"]["second_reader"]["reason"]
     assert all("disagreement" not in r and r["status"] == "matched" for r in run["rows"])
-    assert len(second.prompts) == 1, "the first reader's rows are not held up by it"
+    assert len(second.prompts) == 2, "the image read, then the words as the one fallback"
+    assert run["run"]["second_reader"]["input"] == "image_and_words"
 
 
 def test_no_second_reader_key_means_no_second_read_and_the_run_still_finishes(runs_dir):
@@ -522,7 +573,7 @@ def openrouter_only(monkeypatch, tmp_path):
 
 
 def _stub_ask(monkeypatch, calls, tokens):
-    def ask(self, route, prompt):
+    def ask(self, route, prompt, image=None):
         calls.append(route)
         return Reply(FakeReader.default(prompt), OPENROUTER_MODEL, prompt_tokens=tokens[0],
                      completion_tokens=tokens[1], extra={"route": route})
@@ -544,7 +595,7 @@ def test_reaching_the_cap_skips_the_next_pages_second_read_and_the_run_still_fin
     assert calls == ["openrouter"], "one fallback call, then none"
     assert job["second"]["src-ptgx-8k-2026-08-05-ex991"]["status"] == "read"
     assert job["second"]["src-ions-ars-2026"] == {"status": "not_run", "reason": second_reader.CAP_REACHED,
-                                                  "model": None}
+                                                  "model": None, "input": None}
     sr = run["run"]["second_reader"]
     assert sr["status"] == "read" and second_reader.CAP_REACHED in sr["reason"]
     assert job["openrouter_spend_usd"] == pytest.approx(one)
@@ -586,7 +637,7 @@ def test_a_priced_openrouter_run_under_the_cap_is_not_stopped_by_any_of_this(run
     job = job_of(runs_dir, rid)
     assert openrouter_only == ["openrouter", "openrouter"] and job["openrouter_unpriced_calls"] == 0
     assert run_of(runs_dir, rid)["run"]["second_reader"] == {"model": "Muse Spark Open", "status": "read",
-                                                              "reason": None}
+                                                              "reason": None, "input": "image"}
 
 
 def test_baseten_stays_available_after_the_openrouter_cap_is_reached(monkeypatch, tmp_path):

@@ -1,0 +1,206 @@
+"""A page with no text layer (a scan): SAM 3.1 finds regions, the reader reads each region's image, and the box is checked
+against the region instead of against words.
+
+A scanned page has nothing for the text-layer checks to compare with, so the path is:
+  1. SAM 3.1 (capture/sam.py) is asked for each concept ("table", "block of text"), one request each; every box it
+     returns is a region (merge_regions: tables first, a text block that sits inside a table is dropped, near
+     duplicates are dropped, reading order top to bottom).
+  2. Each region is cropped from the page image and sent to the reader with the event instructions; the reader's boxes
+     come back on a 0-1000 grid over that crop and become PDF points on the page (to_page_points).
+  3. Every proposal is a row built by the same builder as any other, with the same five checks. The text-layer ones say
+     what they can: Quote found on page could not run (the page has no text layer); Citation located is the region check
+     (checks/selector_match.py region_match): the box must lie inside a region SAM 3.1 found. So a row on a scan is at
+     best `proposed`, never `matched`: nothing printed was compared with it. That is the honest status.
+  4. The trail says it is a scanned page: Code "Scanned page", Model "SAM 3.1" (the image count and cost), then the
+     reader's own steps.
+
+assemble() is pure (no model call): it builds the run from the saved SAM answer and the saved region readings, so the
+committed run can be rebuilt. The job (server/jobs.py) makes the calls, counts each one as a turn, and passes the same
+pieces to assemble_rows().
+"""
+
+from __future__ import annotations
+
+import hashlib
+import tempfile
+from pathlib import Path
+
+from capture import read_events, sam
+from capture.capture_source import FIXTURES, load_entry
+from checks.coverage import sentence_covered
+from runs import build_entry, build_run, prices
+
+SOURCE_ID = "src-ptgx-8k-2026-08-05-ex991-scanned"
+WHO = "runs.scan"
+PAD_PT = 4.0          # a region's crop reaches this far past SAM's box, so a word cut by the box is not lost
+INSIDE = 0.8          # a text block with at least this share of its area inside a table region is dropped
+DUPLICATE_IOU = 0.8
+SCAN_NOTE = ("The page has no text layer (a scan), so there are no words to check a quote or a box against. SAM 3.1 found "
+             "the region; the reader read the region's image; the box was checked against the region.")
+
+
+def sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def scanned_png(entry: dict) -> bytes:
+    """The pinned page rendered to an image alone: the PDF's text layer is not in it, so it is a scan."""
+    with tempfile.TemporaryDirectory() as tmp:
+        png = Path(tmp) / "scan.png"
+        build_run.render_page(FIXTURES / entry["page_file"], png)
+        return png.read_bytes()
+
+
+# ---------------------------------------------------------------- regions
+
+
+def _area(b) -> float:
+    return max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+
+
+def _inter(a, b) -> float:
+    return _area([max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])])
+
+
+def merge_regions(by_concept: dict[str, list[list[float]]]) -> list[dict]:
+    """[{id, concept, box}] in PDF points from the boxes SAM 3.1 found for each concept (`by_concept`: concept -> boxes).
+    Tables come first; a text block mostly inside a table, or almost the same box as one already kept, is dropped;
+    the rest are ordered top to bottom, then left to right, and numbered r1, r2, ..."""
+    kept: list[tuple[str, list[float]]] = []
+    for concept in sorted(by_concept, key=lambda c: (c != "table", c)):
+        for box in by_concept[concept]:
+            if any(_inter(box, k) / _area(box) >= INSIDE for c, k in kept if c == "table" and concept != "table"):
+                continue
+            if any(_inter(box, k) / (_area(box) + _area(k) - _inter(box, k)) >= DUPLICATE_IOU for _, k in kept):
+                continue
+            kept.append((concept, box))
+    kept.sort(key=lambda ck: (ck[1][1], ck[1][0]))
+    return [{"id": f"r{i}", "concept": c, "box": b} for i, (c, b) in enumerate(kept, start=1)]
+
+
+def crop_box(region: dict, page_w: float, page_h: float) -> list[float]:
+    x0, y0, x1, y1 = region["box"]
+    return [max(0.0, x0 - PAD_PT), max(0.0, y0 - PAD_PT), min(page_w, x1 + PAD_PT), min(page_h, y1 + PAD_PT)]
+
+
+def crop_png(png: bytes, box_pt: list[float], page_w: float) -> bytes:
+    """The part of the page image inside a box in PDF points, as PNG bytes."""
+    import pymupdf
+
+    doc = pymupdf.open(stream=png, filetype="png")
+    try:
+        scale = doc[0].rect.width / page_w
+        clip = pymupdf.Rect(*(v * scale for v in box_pt))
+        return doc[0].get_pixmap(clip=clip).tobytes("png")
+    finally:
+        doc.close()
+
+
+def region_prompt(entry: dict, region: dict, types=read_events.EVENT_TYPES, note: str | None = None) -> str:
+    head = (f"The image is one region of a scanned page (a {region['concept']} that SAM 3.1 found); it is not the whole "
+            f"page. Boxes are on a 0 to 1000 grid over this region image.\n\n")
+    return head + read_events.build_image_prompt(entry, tuple(types), note)
+
+
+def to_page_points(event: dict, crop: list[float]) -> dict:
+    """A box on the 0-1000 grid over the crop -> PDF points on the page."""
+    box = read_events.grid_to_points(event.get("box"), crop[2] - crop[0], crop[3] - crop[1])
+    if box is not None:
+        box = [round(box[0] + crop[0], 2), round(box[1] + crop[1], 2), round(box[2] + crop[0], 2),
+               round(box[3] + crop[1], 2)]
+    return {**event, "box": box}
+
+
+# ---------------------------------------------------------------- the source and the rows
+
+
+def scanned_source(entry: dict, run_dir: Path, png: bytes, page_w: float, page_h: float, regions: list[dict]) -> dict:
+    """Write the page image and an empty words file into the run folder; the source names the regions SAM 3.1 found."""
+    page_no = entry["page_number"]
+    image_rel, words_rel = f"pages/p{page_no}.png", f"pages/p{page_no}.words.json"
+    (run_dir / "pages").mkdir(parents=True, exist_ok=True)
+    (run_dir / image_rel).write_bytes(png)
+    (run_dir / words_rel).write_text('{"page_width": %s, "page_height": %s, "words": []}\n' % (page_w, page_h))
+    return {
+        "id": SOURCE_ID, "publisher": f"{entry['company']} (filed with the SEC)", "kind": "filing",
+        "title": (f"{entry['ticker']} 8-K exhibit {entry['exhibit']} ({entry['exhibit_title'].lower()}), filed "
+                  f"{entry['filing_date']}, as a scanned page (the image only)"),
+        "url": entry["source_url"], "published_date": entry["filing_date"], "captured_at": entry["captured_at"],
+        "sha256": entry["rendered_pdf_sha256"],
+        "rendered_from": {"format": entry["source_format"], "sha256": entry["source_sha256"],
+                          "renderer": entry["renderer"]},
+        "pages": [{"page_number": page_no, "image": image_rel, "width_pt": page_w, "height_pt": page_h,
+                   "words": words_rel, "image_sha256": build_run.file_sha256(run_dir / image_rel),
+                   "words_sha256": build_run.file_sha256(run_dir / words_rel), "scanned": True, "regions": regions}],
+    }
+
+
+def assemble_rows(reads: list[dict], source: dict, sam_calls: list[dict], at: str, first_index: int = 1) -> list[dict]:
+    """The rows from the region readings. `reads`: [{region, crop, prompt_text, raw, model, usage, events}] with
+    `events` the parsed answer (None if it could not be read). `sam_calls`: [{concept, images, cost_usd}] for the trail."""
+    page = source["pages"][0]
+    words_doc = {"words": [], "page_width": page["width_pt"], "page_height": page["height_pt"]}
+    sam_cost = sum(c["cost_usd"] or 0 for c in sam_calls)
+    images = sum(c["images"] or 0 for c in sam_calls)
+    rows: list[dict] = []
+    pending: list[tuple[dict, dict]] = []
+    for read in reads:
+        events = read.get("events") or []
+        n = len(events)
+        shares = list(zip(prices.split_tokens((read.get("usage") or {}).get("prompt_tokens"), n),
+                          prices.split_tokens((read.get("usage") or {}).get("completion_tokens"), n), [n] * n))
+        reading = {"fake": False, "prompt_text": read["prompt_text"], "usage": read.get("usage") or {},
+                   "model": read.get("model")}
+        for ev, share in zip(events, shares):
+            ev = to_page_points(ev, read["crop"])
+            if any(sentence_covered(ev.get("quote") or "", [r["quote"]]) or sentence_covered(r["quote"] or "",
+                                                                                              [ev.get("quote")])
+                   for r in rows if r["quote"] and ev.get("quote")):
+                continue          # the same sentence read again from an overlapping region
+            row = build_entry.build_row(first_index + len(rows), ev, reading, source, words_doc, at, share=share)
+            rows.append(row)
+            pending.append((row, read["region"]))
+    for row, region in pending:
+        per_row = round(sam_cost / len(rows), prices.ROUND_TO) if rows else 0
+        steps = [
+            {"step": "Scanned page", "tag": "Code", "who": WHO, "at": at, "text": SCAN_NOTE},
+            {"step": f"{sam.NAME} found {region['id']}", "tag": "Model", "who": sam.NAME, "at": at,
+             "text": (f"Region {region['id']}: a {region['concept']} at {region['box']} (PDF points). SAM 3.1 finds where "
+                      f"things are; it reads nothing. {images} image{'s' if images != 1 else ''} processed for this page "
+                      f"({len(sam_calls)} concept requests); this row's share of the cost is recorded."),
+             "tokens": None, "cost_usd": per_row},
+        ]
+        row["trail"][1:1] = steps
+        row["reason"] = (f"{row['reason']} The page is a scan: there is no text layer, so nothing printed was compared "
+                         f"with this row; its box lies in region {region['id']}.") if row["status"] != "failed" else row["reason"]
+    return rows
+
+
+# ---------------------------------------------------------------- the pure build from saved answers
+
+
+def assemble(entry: dict, run_dir: Path, png: bytes, sam_record: dict, read_record: dict, *, finished_at: str | None = None,
+             number: int = 5) -> dict:
+    """The run for the scanned PTGX page, from the saved SAM answer and the saved region readings. No model is called."""
+    page_w = float(read_record["page_width"])
+    page_h = float(read_record["page_height"])
+    by_concept = {c: [sam.to_points(b, page_w, page_h) for b in v["boxes"]] for c, v in sam_record["concepts"].items()}
+    regions = merge_regions(by_concept)
+    source = scanned_source(entry, run_dir, png, page_w, page_h, regions)
+    by_id = {r["id"]: r for r in regions}
+    reads = [{**r, "region": by_id[r["region_id"]]} for r in read_record["reads"]]
+    calls = [{"concept": c, "images": v["images"], "cost_usd": prices.image_cost_usd(sam.NAME, v["images"])}
+             for c, v in sam_record["concepts"].items()]
+    at = read_record["created_at"]
+    rows = assemble_rows(reads, source, calls, at)
+    from runs.build_run import SCHEMA_VERSION, now_utc
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "run": {"id": run_dir.name, "number": number, "label": "PTGX · scanned page (SAM 3.1 regions)", "sample": False,
+                "started_at": at, "finished_at": finished_at or now_utc(),
+                "choices": {"companies": [entry["ticker"]], "event_types": list(read_events.EVENT_TYPES),
+                            "time_window_months": None, "spending_limit_usd": None, "note_for_agent": None},
+                "spend_usd": prices.run_spend_usd(rows)},
+        "sources": [source], "tables": [], "rows": rows, "mistakes": [], "exclusions": [],
+    }

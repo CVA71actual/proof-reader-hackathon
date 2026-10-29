@@ -1,0 +1,112 @@
+{
+ "demonstration": "The first reading of the PTGX page was ALTERED ON PURPOSE (the Q1 2027 event's date moved to 2027-02-01) so that one row fails a check; this is not a model error. The row's page band was sent to Muse Wonder live.",
+ "model": "muse-wonder-1.0",
+ "requested_model": "muse-wonder-1.0",
+ "base_url": "https://api.meta.ai/v1",
+ "created_at": "2026-10-29T01:24:05+00:00",
+ "trigger": {
+  "kind": "check",
+  "label": "Date read as written",
+  "why": "The period in the row differs from the period printed in the quote."
+ },
+ "altered_field": {
+  "date": {
+   "from": "2027-01-01",
+   "to": "2027-02-01"
+  }
+ },
+ "band_pt": [
+  47.34,
+  190.41
+ ],
+ "input": "image",
+ "prompt_sha256": "0b6f30a7881814bd5a4c89a6523557dfce1578140be2b9131491b94a8a7d57df",
+ "prompt_text": "You are re-reading one region of a page. The image is a horizontal band of the page, from 47 to 190 points down a page 612 points wide and 792 tall; it is not the whole page.\nAn earlier reading of an event printed in this band was stopped by a code check: Date read as written. The period in the row differs from the period printed in the quote.\nRead the band again, carefully, from the image alone. Boxes are on a 0 to 1000 grid over this band image.\n\nYou are reading one page of a company's SEC filing: Protagonist Therapeutics, Inc. (ticker PTGX), 8-K exhibit 99.1, filed\n2026-08-05. The page is attached as an image. Read it from the image: you are given no list of its words.\n\nList every upcoming catalyst event the page names: something the company expects to happen, with the date or\nperiod the page gives for it. Answer with JSON only, in exactly this shape:\n{\n  \"events\": [\n    {\n      \"ticker\": \"PTGX\",\n      \"company\": \"Protagonist Therapeutics, Inc.\",\n      \"program\": \"<the drug or program name as printed, or null>\",\n      \"indication\": \"<the disease or condition the program is for, as printed, or null>\",\n      \"event_type\": \"<one of: trial_results, regulatory_decision, launch, conference, filing, milestone>\",\n      \"title\": \"<a short title for the event>\",\n      \"date_text\": \"<the date or period exactly as printed>\",\n      \"date\": \"<YYYY-MM-DD or null>\",\n      \"date_end\": \"<YYYY-MM-DD or null>\",\n      \"quote\": \"<the printed sentence that names the event and its date, word for word>\",\n      \"box\": [x0, y0, x1, y1]\n    }\n  ]\n}\n\nRules:\n- Use only what is printed on the page. Do not add or reword anything.\n- \"quote\" is the printed words in page order joined by single spaces, exactly as printed, punctuation included.\n- \"program\" is the drug or program name exactly as printed; \"indication\" is the disease or condition it is for,\n  as printed (null if the page does not say). Give both whenever the page names both.\n- \"date_text\" is copied exactly as printed in the quote.\n- \"date\" and \"date_end\": for an exact day, \"date\" is that day and \"date_end\" is null. For a quarter, half, month\n  or year, \"date\" is its first day and \"date_end\" its last day. For anything vaguer (\"mid-2027\", \"later this\n  year\"), both are null.\n- \"box\" is your proposal for where the quote is printed: the smallest box that encloses all the words of the\n  quote (if the quote runs over several lines, the box encloses those lines), on a grid from 0 to 1000 over the\n  image: x counts from the left edge and y from the top edge, and 1000 is the full width or height. If you cannot\n  place it, use null.\n- Leave out events that have already happened. If the page names none, answer {\"events\": []}.\n- Output the JSON object only, with no other text.\n",
+ "raw_response": "{\"events\": [{\"ticker\": \"PTGX\", \"company\": \"Protagonist Therapeutics, Inc.\", \"program\": \"PN-458o\", \"indication\": null, \"event_type\": \"milestone\", \"title\": \"Phase 1 initiation\", \"date_text\": \"the second half of 2027\", \"date\": \"2027-07-01\", \"date_end\": \"2027-12-31\", \"quote\": \"PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.\", \"box\": [108, 88, 963, 338]}, {\"ticker\": \"PTGX\", \"company\": \"Protagonist Therapeutics, Inc.\", \"program\": \"PN-8047\", \"indication\": null, \"event_type\": \"milestone\", \"title\": \"Phase 1 initiation\", \"date_text\": \"Q1 2027\", \"date\": \"2027-01-01\", \"date_end\": \"2027-03-31\", \"quote\": \"PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.\", \"box\": [108, 415, 963, 665]}]}",
+ "events": [
+  {
+   "ticker": "PTGX",
+   "company": "Protagonist Therapeutics, Inc.",
+   "program": "PN-458o",
+   "indication": null,
+   "event_type": "milestone",
+   "title": "Phase 1 initiation",
+   "date_text": "the second half of 2027",
+   "date": "2027-07-01",
+   "date_end": "2027-12-31",
+   "quote": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
+   "box": [
+    108,
+    88,
+    963,
+    338
+   ]
+  },
+  {
+   "ticker": "PTGX",
+   "company": "Protagonist Therapeutics, Inc.",
+   "program": "PN-8047",
+   "indication": null,
+   "event_type": "milestone",
+   "title": "Phase 1 initiation",
+   "date_text": "Q1 2027",
+   "date": "2027-01-01",
+   "date_end": "2027-03-31",
+   "quote": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
+   "box": [
+    108,
+    415,
+    963,
+    665
+   ]
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 976,
+  "completion_tokens": 2631
+ },
+ "cost_usd_at_placeholder_price": 0.0115,
+ "outcome": "kept",
+ "row_after": {
+  "status": "failed",
+  "group": "open",
+  "date": "2027-02-01",
+  "date_end": "2027-03-31",
+  "event_type": "milestone",
+  "reason": "Date read as written failed: The period in the row differs from the period printed in the quote. Waiting for you."
+ },
+ "proposal_checks": [
+  {
+   "name": "quote_match",
+   "result": "pass",
+   "reason": "The quote is printed on the page, word for word."
+  },
+  {
+   "name": "selector_match",
+   "result": "fail",
+   "reason": "The box reaches below the last line of the quote."
+  },
+  {
+   "name": "date_match",
+   "result": "pass",
+   "reason": "The period in the row is the period printed in the quote."
+  },
+  {
+   "name": "source_rule",
+   "result": "pass",
+   "reason": "The source is not a third-party calendar."
+  },
+  {
+   "name": "type_match",
+   "result": "pass",
+   "reason": "The quote's words (initiation) fit milestone."
+  }
+ ],
+ "proposal_box_page_points": [
+  66.1,
+  106.71,
+  589.36,
+  142.48
+ ],
+ "note": "Muse Wonder read the right event and the right date (2027-01-01 to 2027-03-31). The row stayed as it was because the code check Citation located failed on Wonder's box (it reaches below the quote's last line): a re-read is never trusted on its own, and one check was enough to refuse it."
+}

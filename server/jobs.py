@@ -42,11 +42,11 @@ import calendar as _calendar
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from capture import read_events, read_table
+from capture import read_events, read_table, sam as sam_module
 from capture.second_reader import CAP_REACHED, OPENROUTER_CAP_USD, UNPRICED
 from checks.coverage import sentence_covered
 from capture.capture_source import load_entry
-from runs import build_entry, build_run, compare, coverage, prices
+from runs import build_entry, build_run, compare, coverage, escalate, prices, scan
 
 DEFAULT_TURN_LIMIT = 40
 UNREADABLE_LIMIT = 3
@@ -58,6 +58,8 @@ TIME_WINDOW_MAX = 120
 PAGES = {
     "PTGX": [{"kind": "events", "source_id": build_entry.SOURCE_ID}],
     "IONS": [{"kind": "table", "source_id": build_run.IONS_SOURCE_ID}],
+    # the PTGX page again, rendered to an image with no text layer: SAM 3.1 finds its regions (runs/scan.py)
+    "PTGX-SCAN": [{"kind": "scan_events", "source_id": scan.SOURCE_ID}],
 }
 CHOICE_FIELDS = ("companies", "event_types", "time_window_months", "spending_limit_usd", "note_for_agent")
 
@@ -88,6 +90,10 @@ def add_months(d: date, months: int) -> date:
 def price_name(model: str) -> str:
     """The name runs/prices.py knows a model by (a model id it does not know is returned as it is)."""
     model = model.split("/")[-1]       # meta-models/muse-spark-open-1026 and meta/muse-spark-open
+    if model.startswith("sam-"):
+        return "SAM 3.1"
+    if model.startswith("muse-wonder"):
+        return "Muse Wonder"
     if model.startswith("muse-spark"):
         return "Muse Spark Open" if "open" in model else "Muse Spark"
     return model
@@ -227,12 +233,15 @@ def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None) -> dict:
         return run
 
 
-def run_job(runs_dir: Path, run_id: str, reader, second=None, as_of: date | None = None) -> None:
+def run_job(runs_dir: Path, run_id: str, reader, second=None, as_of: date | None = None, wonder=None,
+            sam=None) -> None:
     """Carry the run on until it is done or a limit stops it. Never raises: an unexpected error ends it as failed.
     `second`: the second reader (capture/second_reader.py), or None for a run with one reader.
+    `sam`: SAM 3.1 (capture/sam.py), which finds the regions of a scanned page.
+    `wonder`: the escalation model (capture/wonder.py, Muse Wonder), or None for a run that never escalates.
     `as_of`: the day a date must be after to count as upcoming for the dated-sentence coverage; by default the
     source's published date, so an old filing's already-past dates raise no open rows."""
-    job = Job(Path(runs_dir) / run_id, reader, second, as_of)
+    job = Job(Path(runs_dir) / run_id, reader, second, as_of, wonder, sam)
     try:
         job.drive()
     except Exception as e:  # the type only: nothing that could carry request details
@@ -240,8 +249,9 @@ def run_job(runs_dir: Path, run_id: str, reader, second=None, as_of: date | None
 
 
 class Job:
-    def __init__(self, run_dir: Path, reader, second=None, as_of: date | None = None):
-        self.dir, self.reader, self.second, self.as_of = run_dir, reader, second, as_of
+    def __init__(self, run_dir: Path, reader, second=None, as_of: date | None = None, wonder=None, sam=None):
+        self.dir, self.reader, self.second, self.as_of, self.wonder = run_dir, reader, second, as_of, wonder
+        self.sam = sam
         self.run = json.loads((run_dir / "run.json").read_text())
         self.job = json.loads((run_dir / "job.json").read_text())
         self.meta = self.run["run"]
@@ -264,7 +274,10 @@ class Job:
     def count_turn(self, reply) -> None:
         self.meta["turn_count"] += 1
         self.meta["turns_total"] += 1
-        cost = prices.cost_usd(price_name(reply.model), reply.prompt_tokens, reply.completion_tokens)
+        if reply.images is not None:      # a model priced per image (SAM 3.1)
+            cost = prices.image_cost_usd(price_name(reply.model), reply.images)
+        else:
+            cost = prices.cost_usd(price_name(reply.model), reply.prompt_tokens, reply.completion_tokens)
         if cost is None and (reply.extra or {}).get("route") == "openrouter" and not reply.error:
             # a fallback call with no token counts cannot be held under the cap: no more fallback calls
             self.job["openrouter_unpriced_calls"] = self.job.get("openrouter_unpriced_calls", 0) + 1
@@ -287,7 +300,7 @@ class Job:
             return True
         if limit is None:
             return False
-        if self.job["unpriced_calls"] or prices.cost_usd(price_name(reader.model), 0, 0) is None:
+        if self.job["unpriced_calls"] or not prices.has_price(price_name(reader.model)):
             self.stop("needs_input", f"The cost of a call could not be counted (runs/prices.py has no price for "
                                      f"{reader.model}), so the spending limit of {money(limit)} cannot be "
                                      f"kept. Nothing more was read.")
@@ -313,6 +326,8 @@ class Job:
                     return
                 if not self.second_pass(page) and self.meta["status"] != "running":
                     return
+                if not self.escalation_pass(page) and self.meta["status"] != "running":
+                    return
         read = len(self.run["sources"])
         self.meta["finished_at"] = now_utc()
         self.meta["status"] = "done"
@@ -324,6 +339,8 @@ class Job:
     def read_page(self, page: dict) -> bool:
         """Read one captured page and add its source and rows (or tables). False when nothing was added."""
         kind = page["kind"]
+        if kind == "scan_events":
+            return self.read_scan_page(page)
         if kind == "events":
             entry = load_entry(read_events.PIN)
             types = tuple(t for t in read_events.EVENT_TYPES if t in self.choices["event_types"])
@@ -421,19 +438,23 @@ class Job:
 
     # ------------------------------------------------------------ the second reader
 
-    def note_second(self, sid: str, status: str, reason: str | None = None, model: str | None = None) -> None:
+    def note_second(self, sid: str, status: str, reason: str | None = None, model: str | None = None,
+                    got: str | None = None) -> None:
         """Record what happened to the second read of one page, and summarise it for the run."""
-        self.job["second"][sid] = {"status": status, "reason": reason, "model": model}
+        self.job["second"][sid] = {"status": status, "reason": reason, "model": model, "input": got}
         seen = list(self.job["second"].values())
         pick = next((v for v in seen if v["status"] == "read"), seen[-1])
         skipped = [v["reason"] for v in seen if v["status"] != "read" and v["reason"]]
         reason = pick["reason"] if pick["status"] != "read" else (
             "Not every page was read by the second reader: " + " ".join(dict.fromkeys(skipped)) if skipped else None)
-        self.meta["second_reader"] = {"model": pick["model"], "status": pick["status"], "reason": reason}
+        self.meta["second_reader"] = {"model": pick["model"], "status": pick["status"], "reason": reason,
+                                      **({"input": pick["input"]} if pick.get("input") else {})}
 
     def second_pass(self, page: dict) -> bool:
         """The second reader's independent read of a page the first reader has read, compared by code. True when
         the page is finished with (read, skipped or unreadable); False when the run stopped."""
+        if page["kind"] == "scan_events":
+            return True        # a scanned page is read region by region (read_scan_page); no second read of it yet
         sid = page["source_id"]
         source = next((s for s in self.run["sources"] if s["id"] == sid), None)
         if self.second is None or source is None or sid in self.job["second"]:
@@ -449,33 +470,47 @@ class Job:
             self.note_second(sid, "not_run", problem)
             self.save(problem)
             return True
-        words_doc = json.loads((self.dir / source["pages"][0]["words"]).read_text())
+        page0 = source["pages"][0]
+        words_doc = json.loads((self.dir / page0["words"]).read_text())
+        image = (self.dir / page0["image"]).read_bytes()      # the page as the second reader sees it
+        note = self.choices["note_for_agent"]
         if page["kind"] == "events":
             entry = load_entry(read_events.PIN)
             types = tuple(t for t in read_events.EVENT_TYPES if t in self.choices["event_types"])
-            prompt = read_events.build_prompt(words_doc, entry, types, self.choices["note_for_agent"])
+            attempts = [("image", read_events.build_image_prompt(entry, types, note), image),
+                        ("image_and_words", read_events.build_prompt(words_doc, entry, types, note), image)]
             parse = read_events.parse_events
         else:
             entry = {k: v for k, v in json.loads((build_run.FIXTURES / "MANIFEST.json").read_text()).items()
                      if k != "entries"}
-            prompt = read_table.build_prompt(words_doc, self.choices["note_for_agent"])
+            attempts = [("image", read_table.build_image_prompt(note), image),
+                        ("image_and_words", read_table.build_prompt(words_doc, note), image)]
             parse = read_table.parse_table
-        if self.stopped_before_a_call(self.second):
-            return False
-        reply = self.second.call(prompt)
-        self.count_turn(reply)
-        if reply.error:
-            self.stop("failed", f"The second reader: {reply.error} Resume to try again.")
-            return False
+        # The second reader reads the page IMAGE, with no word list: its read does not depend on the text layer. If
+        # that answer cannot be read, the words are sent too, once, as a fallback; the run records which it got.
+        parsed, why, reply, prompt, got = None, None, None, None, None
+        for got, prompt, png in attempts:
+            if self.stopped_before_a_call(self.second):
+                return False
+            reply = self.second.call(prompt, image=png)
+            self.count_turn(reply)
+            if reply.error:
+                self.stop("failed", f"The second reader: {reply.error} Resume to try again.")
+                return False
+            parsed, why = parse(reply.raw)
+            if parsed is not None:
+                break
         name = price_name(reply.model)
-        parsed, why = parse(reply.raw)
         if parsed is None:
-            self.note_second(sid, "unreadable", why, name)
+            self.note_second(sid, "unreadable", why, name, got)
             self.save(f"The second reader's answer could not be read ({why}); nothing was compared.")
             return True
         at = now_utc()
-        extra = {**(reply.extra or {}), "usage": {"prompt_tokens": reply.prompt_tokens,
-                                                  "completion_tokens": reply.completion_tokens}}
+        extra = {**(reply.extra or {}), "input": got,
+                 "usage": {"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens}}
+        if page["kind"] == "events" and got == "image":     # boxes came back on the 0-1000 grid over the image
+            for ev in parsed:
+                ev["box"] = read_events.grid_to_points(ev.get("box"), page0["width_pt"], page0["height_pt"])
         if page["kind"] == "events":
             reading = read_events._record(model=reply.model, prompt=prompt, raw=reply.raw, events=parsed,
                                           problem=None, entry=entry, extra=extra)
@@ -494,7 +529,140 @@ class Job:
             table = next((t for t in self.run["tables"] if t["source_id"] == sid), None)
             if table is not None:
                 compare.apply_table(table, parsed)
-        self.note_second(sid, "read", None, name)
+        self.note_second(sid, "read", None, name, got)
+        self.save()
+        return True
+
+    # ------------------------------------------------------------ a scanned page: SAM 3.1 regions
+
+    def read_scan_page(self, page: dict) -> bool:
+        """A page with no text layer. SAM 3.1 is asked for each concept ("table", "block of text"), one counted, priced turn
+        each (per image); every box it returns becomes a region; each region's crop is read by the first reader, one
+        turn each; the rows are built with the region check in place of the text-layer box check (runs/scan.py).
+        What each call returned is kept in job.json, so a resume never pays for a call twice."""
+        entry = load_entry(read_events.PIN)
+        types = tuple(t for t in read_events.EVENT_TYPES if t in self.choices["event_types"])
+        if not types:
+            self.job["log"].append({"at": now_utc(), "note": f"{entry['ticker']} scanned page skipped: no event type "
+                                                              f"was chosen."})
+            return False
+        if self.sam is None or self.sam.ready():
+            reason = ("No SAM 3.1 reader is available, so a scanned page cannot be read." if self.sam is None
+                      else self.sam.ready())
+            self.stop("needs_input", reason)
+            return False
+        png = scan.scanned_png(entry)
+        words = json.loads((build_run.FIXTURES / entry["words_file"]).read_text())
+        w, h = float(words["page_width"]), float(words["page_height"])
+        st = self.job.setdefault("scan", {}).setdefault(scan.SOURCE_ID, {"by_concept": {}, "calls": [], "reads": {}})
+        for concept in sam_module.CONCEPTS:
+            if concept in st["by_concept"]:
+                continue
+            if self.stopped_before_a_call(self.sam):
+                return False
+            reply = self.sam.segment(png, concept)
+            self.count_turn(reply)
+            if reply.error:
+                self.stop("failed", f"SAM 3.1: {reply.error} Resume to try again.")
+                return False
+            st["by_concept"][concept] = [sam_module.to_points(b, w, h) for b in sam_module.parse_boxes(reply.raw)]
+            st["calls"].append({"concept": concept, "images": reply.images,
+                                "cost_usd": prices.image_cost_usd(sam_module.NAME, reply.images)})
+            self.save()
+        regions = scan.merge_regions(st["by_concept"])
+        note = self.choices["note_for_agent"]
+        for region in regions:
+            if region["id"] in st["reads"]:
+                continue
+            crop = scan.crop_box(region, w, h)
+            prompt = scan.region_prompt(entry, region, types, note)
+            if self.stopped_before_a_call(self.reader):
+                return False
+            reply = self.reader.call(prompt, image=scan.crop_png(png, crop, w))
+            self.count_turn(reply)
+            if reply.error:
+                self.stop("failed", f"{reply.error} Resume to try again.")
+                return False
+            events, _ = read_events.parse_events(reply.raw)
+            st["reads"][region["id"]] = {"region_id": region["id"], "crop": crop, "prompt_text": prompt,
+                                         "model": reply.model, "events": events,
+                                         "usage": {"prompt_tokens": reply.prompt_tokens,
+                                                   "completion_tokens": reply.completion_tokens}}
+            self.save()
+        source = scan.scanned_source(entry, self.dir, png, w, h, regions)
+        by_id = {r["id"]: r for r in regions}
+        reads = [{**r, "region": by_id[r["region_id"]]} for r in st["reads"].values() if r["region_id"] in by_id]
+        ids = [int(r["id"][1:]) for r in self.run["rows"] if r["id"][1:].isdigit()]
+        rows = scan.assemble_rows(reads, source, st["calls"], now_utc(), first_index=max(ids, default=0) + 1)
+        self.apply_window(rows, now_utc())
+        self.run["rows"] += rows
+        self.run["sources"].append(source)
+        self.save()
+        return True
+
+    # ------------------------------------------------------------ escalation to Muse Wonder
+
+    def note_escalation(self, status: str, reason: str | None = None) -> None:
+        sent = sum(1 for v in self.job.get("escalated_rows", {}).values())
+        replaced = sum(1 for v in self.job.get("escalated_rows", {}).values() if v == "replaced")
+        self.meta["escalation"] = {"model": "Muse Wonder", "status": status, "rows_sent": sent,
+                                   "rows_replaced": replaced, **({"reason": reason} if reason else {})}
+
+    def escalation_pass(self, page: dict) -> bool:
+        """Send each row of a page that failed a check, or that the two readers disagree on, to Muse Wonder (at most
+        MAX_PER_PAGE rows), one counted and priced turn each. True when the page is finished with; False when the run
+        stopped. Wonder's answer is a new proposal that goes through the same checks (runs/escalate.py)."""
+        sid = page["source_id"]
+        source = next((s for s in self.run["sources"] if s["id"] == sid), None)
+        done = self.job.setdefault("escalated", {})
+        if page["kind"] == "scan_events":
+            return True
+        if self.wonder is None or source is None or page["kind"] != "events" or sid in done:
+            return True
+        sent = self.job.setdefault("escalated_rows", {})
+        page_rows = [r for r in self.run["rows"] if r["source_id"] == sid]
+        left = escalate.MAX_PER_PAGE - sum(1 for r in page_rows if r["id"] in sent)    # the cap holds across resumes
+        rows = [r for r in escalate.candidates(page_rows) if r["id"] not in sent][: max(left, 0)]
+        if not rows:
+            done[sid] = "nothing to send"
+            return True
+        problem = self.wonder.ready()
+        if problem:
+            done[sid] = "not_run"
+            self.note_escalation("not_run", problem)
+            self.save(problem)
+            return True
+        page0 = source["pages"][0]
+        words_doc = json.loads((self.dir / page0["words"]).read_text())
+        image = (self.dir / page0["image"]).read_bytes()
+        entry = load_entry(read_events.PIN)
+        types = tuple(t for t in read_events.EVENT_TYPES if t in self.choices["event_types"])
+        for row in rows:
+            trig = escalate.trigger(row)
+            y_range = escalate.band(row, words_doc)
+            text = escalate.prompt(entry, trig, y_range, words_doc, types, self.choices["note_for_agent"])
+            if self.stopped_before_a_call(self.wonder):
+                return False
+            reply = self.wonder.call(text, image=escalate.region_png(image, words_doc, y_range))
+            self.count_turn(reply)
+            if reply.error:
+                self.stop("failed", f"Muse Wonder: {reply.error} Resume to try again.")
+                return False
+            events, _ = read_events.parse_events(reply.raw)
+            events = events or []
+            extra = {**(reply.extra or {}), "input": "image",
+                     "usage": {"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens}}
+            reading = read_events._record(model=reply.model, prompt=text, raw=reply.raw, events=events, problem=None,
+                                          entry=entry, extra=extra)
+            chosen = escalate.pick(row, events)       # the band may hold other events: take this row's
+            event = escalate.to_page_points(chosen, y_range, words_doc) if chosen else None
+            share = (reply.prompt_tokens, reply.completion_tokens, 1)
+            outcome = escalate.apply(row, event, reading, source, words_doc, now_utc(), trig, self.run, share, text)
+            self.job["escalated_rows"][row["id"]] = outcome
+            self.note_escalation("read")
+            self.save()
+        done[sid] = "done"
+        self.note_escalation("read")
         self.save()
         return True
 

@@ -236,10 +236,15 @@ def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = N
             raise ValueError("The saved second-reader instructions do not match their SHA-256; refusing to build.")
         if second_reading.get("words_sha256") != entry["words_sha256"]:
             raise ValueError("The second reading was made from a different words file; refusing to build the run.")
-        _, only_second = compare.apply_events(rows, second_reading["events"], second_reading, source, words_doc,
+        events = second_reading["events"]
+        if second_reading.get("input") == "image":     # boxes were read off the image on the 0-1000 grid
+            events = [{**e, "box": read_events.grid_to_points(e.get("box"), words_doc["page_width"],
+                                                              words_doc["page_height"])} for e in events]
+        _, only_second = compare.apply_events(rows, events, second_reading, source, words_doc,
                                               second_reading["created_at"], next_index=len(rows) + 1)
         rows += only_second
-        second = {"model": compare.SECOND, "status": "read", "reason": None}
+        second = {"model": compare.SECOND, "status": "read", "reason": None,
+                  "input": second_reading.get("input") or "words"}
     # a dated sentence no reader turned into a row becomes an open row, so a person sees what was skipped
     rows += coverage.possible_event_rows(words_doc, rows, source, first_index=len(rows) + 1, at=at,
                                          today=as_of or date.fromisoformat(entry["filing_date"]), ticker=entry["ticker"],

@@ -82,6 +82,68 @@ Words:
 """
 
 
+INSTRUCTIONS_IMAGE = """\
+You are reading one page of a company's SEC filing: {company} (ticker {ticker}), {form} exhibit {exhibit}, filed
+{filing_date}. The page is attached as an image. Read it from the image: you are given no list of its words.
+
+List every upcoming catalyst event the page names: something the company expects to happen, with the date or
+period the page gives for it. Answer with JSON only, in exactly this shape:
+{{
+  "events": [
+    {{
+      "ticker": "{ticker}",
+      "company": "{company}",
+      "program": "<the drug or program name as printed, or null>",
+      "indication": "<the disease or condition the program is for, as printed, or null>",
+      "event_type": "<one of: {types}>",
+      "title": "<a short title for the event>",
+      "date_text": "<the date or period exactly as printed>",
+      "date": "<YYYY-MM-DD or null>",
+      "date_end": "<YYYY-MM-DD or null>",
+      "quote": "<the printed sentence that names the event and its date, word for word>",
+      "box": [x0, y0, x1, y1]
+    }}
+  ]
+}}
+
+Rules:
+- Use only what is printed on the page. Do not add or reword anything.
+- "quote" is the printed words in page order joined by single spaces, exactly as printed, punctuation included.
+- "program" is the drug or program name exactly as printed; "indication" is the disease or condition it is for,
+  as printed (null if the page does not say). Give both whenever the page names both.
+- "date_text" is copied exactly as printed in the quote.
+- "date" and "date_end": for an exact day, "date" is that day and "date_end" is null. For a quarter, half, month
+  or year, "date" is its first day and "date_end" its last day. For anything vaguer ("mid-2027", "later this
+  year"), both are null.
+- "box" is your proposal for where the quote is printed: the smallest box that encloses all the words of the
+  quote (if the quote runs over several lines, the box encloses those lines), on a grid from 0 to 1000 over the
+  image: x counts from the left edge and y from the top edge, and 1000 is the full width or height. If you cannot
+  place it, use null.
+- Leave out events that have already happened. If the page names none, answer {{"events": []}}.
+- Output the JSON object only, with no other text.
+"""
+
+
+def build_image_prompt(entry: dict, event_types: tuple[str, ...] = EVENT_TYPES, note: str | None = None) -> str:
+    """The prompt for a read from the page image alone: no word list, so the read is independent of the text layer.
+    The attached image is the page; boxes come back on a 0-1000 grid (grid_to_points turns them into PDF points)."""
+    return read_table.append_note(INSTRUCTIONS_IMAGE.format(
+        company=entry["company"], ticker=entry["ticker"], form=entry["form"], exhibit=entry["exhibit"],
+        filing_date=entry["filing_date"], types=", ".join(event_types)), note)
+
+
+def grid_to_points(box, width_pt: float, height_pt: float) -> list[float] | None:
+    """A box on the 0-1000 grid over the page image -> [x0, y0, x1, y1] in PDF points; None if it is not a usable box."""
+    if not (isinstance(box, (list, tuple)) and len(box) == 4
+            and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in box)):
+        return None
+    x0, y0, x1, y1 = (min(max(float(v), 0.0), 1000.0) for v in box)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return [round(x0 * width_pt / 1000, 2), round(y0 * height_pt / 1000, 2),
+            round(x1 * width_pt / 1000, 2), round(y1 * height_pt / 1000, 2)]
+
+
 def load_words(path: Path = WORDS_PATH) -> dict:
     return json.loads(path.read_text())
 

@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from checks import event_checks
 from checks.common import COULD_NOT_RUN, FAIL, CheckResult
-from checks.selector_match import selector_match
+from checks.selector_match import region_match, selector_match
 from checks.status import MATCHED as CELL_MATCHED
 from checks.status import check_cell
 from runs.build_run import to_contract_check
@@ -67,9 +67,16 @@ def row_checks(row: dict, source: dict, words_doc: dict | None) -> list:
     """The five event-row checks, in the order the run shows them."""
     words = words_doc["words"] if words_doc else []
     w, h = (words_doc["page_width"], words_doc["page_height"]) if words_doc else (612.0, 792.0)
+    regions = next((p.get("regions") for p in source.get("pages", []) if p.get("page_number") == row.get("page_number")),
+                   None)
+    if words_doc is not None and not words and regions:
+        # a scan: no text layer, so the box is checked against the regions SAM 3.1 found, not against words
+        box_check = region_match(row.get("box"), regions, w, h)
+    else:
+        box_check = selector_match(row.get("quote"), row.get("box"), words, w, h, quote_lines=True)
     return [
         event_checks.quote_match(row.get("quote"), words),
-        selector_match(row.get("quote"), row.get("box"), words, w, h, quote_lines=True),
+        box_check,
         event_checks.date_match(row.get("date_text"), row.get("date"), row.get("quote"),
                                 date_end=row.get("date_end"), event_type=row.get("event_type"),
                                 title=row.get("title"), program=row.get("program")),

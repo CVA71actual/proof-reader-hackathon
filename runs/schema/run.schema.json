@@ -61,9 +61,18 @@
         "turn_limit": {"type": "integer", "minimum": 1, "description": "The budget of turns; a resume starts a fresh one."},
         "turns_total": {"type": "integer", "minimum": 0, "description": "Every model call in the run."},
         "resumes": {"type": "integer", "minimum": 0},
+        "escalation": {"type": "object", "additionalProperties": false,
+                       "required": ["model", "status", "rows_sent", "rows_replaced"],
+                       "properties": {"model": {"type": "string"}, "status": {"enum": ["read", "not_run"]},
+                                      "rows_sent": {"type": "integer", "minimum": 0},
+                                      "rows_replaced": {"type": "integer", "minimum": 0},
+                                      "reason": {"type": ["string", "null"]}},
+                       "description": "Optional. Rows sent to Muse Wonder because a check failed or the readers disagreed, and how many took its re-read after it passed every check (runs/escalate.py)."},
         "second_reader": {"type": "object", "additionalProperties": false, "required": ["model", "status"],
                           "properties": {"model": {"type": ["string", "null"]},
                                          "status": {"enum": ["read", "not_run", "unreadable"]},
+                                         "input": {"enum": ["image", "image_and_words", "words"],
+                                                   "description": "What the second reader was given: the page image alone (its read does not depend on the text layer), the image and the words (fallback), or the words."},
                                          "reason": {"type": ["string", "null"]}},
                           "description": "Optional. Whether the second reader read this run's pages (server/jobs.py) and why not if it did not."},
         "trail": {"type": "array", "items": {"$ref": "#/$defs/trail_step"},
@@ -108,7 +117,12 @@
               "height_pt": {"type": "number", "exclusiveMinimum": 0},
               "words": {"$ref": "#/$defs/rel_path"},
               "image_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256 of the page image file in the run folder."},
-              "words_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256 of the words file in the run folder."}
+              "words_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256 of the words file in the run folder."},
+          "scanned": {"const": true, "description": "Optional. The page has no text layer (a scan): its words file holds no words."},
+          "regions": {"type": "array", "description": "Optional, on a scanned page: the regions SAM 3.1 found, in PDF points (runs/scan.py).",
+                      "items": {"type": "object", "additionalProperties": false, "required": ["id", "concept", "box"],
+                                "properties": {"id": {"type": "string"}, "concept": {"type": "string"},
+                                               "box": {"$ref": "#/$defs/box"}}}}
             }
           }
         }
