@@ -1,0 +1,4168 @@
+{
+ "attempts": {
+  "src-ions-8k-0001140361-26-040631-ex991-p1": [],
+  "src-ions-8k-0001140361-26-040631-ex991-p2": [],
+  "src-ions-8k-0001140361-26-040631-ex991-p3": [],
+  "src-ions-8k-0001140361-26-040388-ex991-p1": [],
+  "src-ions-8k-0001140361-26-040388-ex991-p2": [],
+  "src-ions-8k-0001140361-26-040388-ex991-p3": [],
+  "src-ions-8k-0001140361-26-040388-ex991-p4": [],
+  "src-ions-8k-0001140361-26-040388-ex991-p5": [],
+  "src-ions-8k-0001140361-26-040388-ex991-p6": [],
+  "src-ions-8k-0001140361-26-037371-ex991-p1": [],
+  "src-ions-8k-0001140361-26-037371-ex991-p2": [],
+  "src-ions-8k-0001140361-26-037371-ex991-p3": [],
+  "src-ions-8k-0001140361-26-035802-ex991-p1": [],
+  "src-ions-8k-0001140361-26-035802-ex991-p2": [],
+  "src-ions-8k-0001140361-26-035657-ex991-p1": [],
+  "src-ions-8k-0001140361-26-035657-ex991-p2": [],
+  "src-ions-8k-0001140361-26-035657-ex991-p3": [],
+  "src-ions-8k-0001140361-26-035657-ex991-p4": [],
+  "src-ions-8k-0001140361-26-035657-ex991-p5": [],
+  "src-ptgx-8k-0001104659-26-091099-ex991-p1": [],
+  "src-ptgx-8k-0001104659-26-091099-ex991-p2": [],
+  "src-ptgx-8k-0001104659-26-091099-ex991-p3": [],
+  "src-ptgx-8k-0001104659-26-091099-ex991-p4": [],
+  "src-ptgx-8k-0001104659-26-091099-ex991-p5": [],
+  "src-ptgx-8k-0001104659-26-091099-ex991-p6": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p1": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p2": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p3": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p4": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p5": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p6": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p7": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p8": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p9": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p10": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p11": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p12": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p13": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p14": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p15": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p16": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p17": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p18": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p19": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p20": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p21": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p22": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p23": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p24": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p25": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p26": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p27": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p28": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p29": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p30": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p31": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p32": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p33": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p34": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p35": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p36": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p37": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p38": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p39": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p40": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p41": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p42": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p43": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p44": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p45": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p46": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p47": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p48": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p49": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p1": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p2": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p3": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p4": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p5": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p6": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p7": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p8": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p9": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p10": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p11": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p12": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p13": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p14": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p15": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p1": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p2": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p3": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p4": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p5": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p6": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p7": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p8": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p9": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p10": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p11": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p12": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p13": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p1": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p2": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p3": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p4": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p5": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p6": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p7": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p8": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p9": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p10": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p11": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p12": []
+ },
+ "unpriced_calls": 0,
+ "second": {
+  "src-ions-8k-0001140361-26-040631-ex991-p1": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-040631-ex991-p2": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-040631-ex991-p3": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-040388-ex991-p1": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-040388-ex991-p2": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-040388-ex991-p3": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-040388-ex991-p4": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-040388-ex991-p5": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-040388-ex991-p6": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-037371-ex991-p1": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-037371-ex991-p2": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-037371-ex991-p3": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-035802-ex991-p1": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-035802-ex991-p2": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-035657-ex991-p1": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-035657-ex991-p2": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-035657-ex991-p3": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-035657-ex991-p4": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ions-8k-0001140361-26-035657-ex991-p5": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex991-p1": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex991-p2": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex991-p3": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex991-p4": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex991-p5": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex991-p6": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p1": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p2": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p3": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p4": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p5": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p6": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p7": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p8": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p9": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p10": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p11": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p12": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p13": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p14": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p15": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p16": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p17": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p18": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p19": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p20": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p21": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p22": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p23": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p24": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p25": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p26": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p27": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p28": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p29": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p30": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p31": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p32": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p33": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p34": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p35": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p36": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p37": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p38": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p39": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p40": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p41": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p42": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p43": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p44": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p45": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p46": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p47": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p48": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-ptgx-8k-0001104659-26-091099-ex992-p49": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p1": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p2": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p3": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p4": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p5": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p6": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p7": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p8": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p9": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p10": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p11": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p12": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p13": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p14": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-436145-ex991-p15": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-397219-ex991-p1": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-397219-ex991-p2": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-397219-ex991-p3": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-397219-ex991-p4": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-397219-ex991-p5": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-397219-ex991-p6": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-397219-ex991-p7": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-397219-ex991-p8": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-397219-ex991-p9": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-397219-ex991-p10": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-397219-ex991-p11": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-397219-ex991-p12": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-vktx-8k-0001193125-26-397219-ex991-p13": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-rvmd-8k-0001193125-26-335039-ex991-p1": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-rvmd-8k-0001193125-26-335039-ex991-p2": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-rvmd-8k-0001193125-26-335039-ex991-p3": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-rvmd-8k-0001193125-26-335039-ex991-p4": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-rvmd-8k-0001193125-26-335039-ex991-p5": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-rvmd-8k-0001193125-26-335039-ex991-p6": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-rvmd-8k-0001193125-26-335039-ex991-p7": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-rvmd-8k-0001193125-26-335039-ex991-p8": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-rvmd-8k-0001193125-26-335039-ex991-p9": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-rvmd-8k-0001193125-26-335039-ex991-p10": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-rvmd-8k-0001193125-26-335039-ex991-p11": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  },
+  "src-rvmd-8k-0001193125-26-335039-ex991-p12": {
+   "status": "read",
+   "reason": null,
+   "model": "Muse Spark Open",
+   "input": "image"
+  }
+ },
+ "openrouter_spend_usd": 0.0,
+ "openrouter_unpriced_calls": 0,
+ "log": [
+  {
+   "at": "2026-10-29T15:47:24+00:00",
+   "status": "queued",
+   "turn_count": 0,
+   "spend_usd": null,
+   "reason": "Run created."
+  },
+  {
+   "at": "2026-10-29T15:47:24+00:00",
+   "status": "running",
+   "turn_count": 0,
+   "spend_usd": null
+  },
+  {
+   "at": "2026-10-29T15:47:37+00:00",
+   "status": "running",
+   "turn_count": 1,
+   "spend_usd": 0.025269
+  },
+  {
+   "at": "2026-10-29T15:47:37+00:00",
+   "status": "running",
+   "turn_count": 1,
+   "spend_usd": 0.025269
+  },
+  {
+   "at": "2026-10-29T15:47:53+00:00",
+   "status": "running",
+   "turn_count": 2,
+   "spend_usd": 0.027575
+  },
+  {
+   "at": "2026-10-29T15:47:53+00:00",
+   "status": "running",
+   "turn_count": 2,
+   "spend_usd": 0.027575
+  },
+  {
+   "at": "2026-10-29T15:47:59+00:00",
+   "status": "running",
+   "turn_count": 3,
+   "spend_usd": 0.050649
+  },
+  {
+   "at": "2026-10-29T15:47:59+00:00",
+   "status": "running",
+   "turn_count": 3,
+   "spend_usd": 0.050649
+  },
+  {
+   "at": "2026-10-29T15:50:26+00:00",
+   "status": "running",
+   "turn_count": 4,
+   "spend_usd": 0.051978
+  },
+  {
+   "at": "2026-10-29T15:50:26+00:00",
+   "status": "running",
+   "turn_count": 4,
+   "spend_usd": 0.051978
+  },
+  {
+   "at": "2026-10-29T15:50:29+00:00",
+   "status": "running",
+   "turn_count": 5,
+   "spend_usd": 0.063445
+  },
+  {
+   "at": "2026-10-29T15:50:29+00:00",
+   "status": "running",
+   "turn_count": 5,
+   "spend_usd": 0.063445
+  },
+  {
+   "at": "2026-10-29T15:50:37+00:00",
+   "status": "running",
+   "turn_count": 6,
+   "spend_usd": 0.064359
+  },
+  {
+   "at": "2026-10-29T15:50:37+00:00",
+   "status": "running",
+   "turn_count": 6,
+   "spend_usd": 0.064359
+  },
+  {
+   "at": "2026-10-29T15:50:40+00:00",
+   "status": "running",
+   "turn_count": 7,
+   "spend_usd": 0.080869
+  },
+  {
+   "at": "2026-10-29T15:50:40+00:00",
+   "status": "running",
+   "turn_count": 7,
+   "spend_usd": 0.080869
+  },
+  {
+   "at": "2026-10-29T15:50:50+00:00",
+   "status": "running",
+   "turn_count": 8,
+   "spend_usd": 0.082076
+  },
+  {
+   "at": "2026-10-29T15:50:50+00:00",
+   "status": "running",
+   "turn_count": 8,
+   "spend_usd": 0.082076
+  },
+  {
+   "at": "2026-10-29T15:51:11+00:00",
+   "status": "running",
+   "turn_count": 9,
+   "spend_usd": 0.119288
+  },
+  {
+   "at": "2026-10-29T15:51:11+00:00",
+   "status": "running",
+   "turn_count": 9,
+   "spend_usd": 0.119288
+  },
+  {
+   "at": "2026-10-29T15:51:40+00:00",
+   "status": "running",
+   "turn_count": 10,
+   "spend_usd": 0.126346
+  },
+  {
+   "at": "2026-10-29T15:51:40+00:00",
+   "status": "running",
+   "turn_count": 10,
+   "spend_usd": 0.126346
+  },
+  {
+   "at": "2026-10-29T15:51:45+00:00",
+   "status": "running",
+   "turn_count": 11,
+   "spend_usd": 0.140827
+  },
+  {
+   "at": "2026-10-29T15:51:45+00:00",
+   "status": "running",
+   "turn_count": 11,
+   "spend_usd": 0.140827
+  },
+  {
+   "at": "2026-10-29T15:51:53+00:00",
+   "status": "running",
+   "turn_count": 12,
+   "spend_usd": 0.141726
+  },
+  {
+   "at": "2026-10-29T15:51:53+00:00",
+   "status": "running",
+   "turn_count": 12,
+   "spend_usd": 0.141726
+  },
+  {
+   "at": "2026-10-29T15:51:55+00:00",
+   "status": "running",
+   "turn_count": 13,
+   "spend_usd": 0.15471
+  },
+  {
+   "at": "2026-10-29T15:51:55+00:00",
+   "status": "running",
+   "turn_count": 13,
+   "spend_usd": 0.15471
+  },
+  {
+   "at": "2026-10-29T15:54:23+00:00",
+   "status": "running",
+   "turn_count": 14,
+   "spend_usd": 0.155584
+  },
+  {
+   "at": "2026-10-29T15:54:23+00:00",
+   "status": "running",
+   "turn_count": 14,
+   "spend_usd": 0.155584
+  },
+  {
+   "at": "2026-10-29T15:54:26+00:00",
+   "status": "running",
+   "turn_count": 15,
+   "spend_usd": 0.167738
+  },
+  {
+   "at": "2026-10-29T15:54:26+00:00",
+   "status": "running",
+   "turn_count": 15,
+   "spend_usd": 0.167738
+  },
+  {
+   "at": "2026-10-29T15:55:44+00:00",
+   "status": "running",
+   "turn_count": 16,
+   "spend_usd": 0.169276
+  },
+  {
+   "at": "2026-10-29T15:55:44+00:00",
+   "status": "running",
+   "turn_count": 16,
+   "spend_usd": 0.169276
+  },
+  {
+   "at": "2026-10-29T15:55:47+00:00",
+   "status": "running",
+   "turn_count": 17,
+   "spend_usd": 0.183428
+  },
+  {
+   "at": "2026-10-29T15:55:47+00:00",
+   "status": "running",
+   "turn_count": 17,
+   "spend_usd": 0.183428
+  },
+  {
+   "at": "2026-10-29T15:57:03+00:00",
+   "status": "running",
+   "turn_count": 18,
+   "spend_usd": 0.184417
+  },
+  {
+   "at": "2026-10-29T15:57:03+00:00",
+   "status": "running",
+   "turn_count": 18,
+   "spend_usd": 0.184417
+  },
+  {
+   "at": "2026-10-29T15:57:32+00:00",
+   "status": "running",
+   "turn_count": 19,
+   "spend_usd": 0.231438
+  },
+  {
+   "at": "2026-10-29T15:57:32+00:00",
+   "status": "running",
+   "turn_count": 19,
+   "spend_usd": 0.231438
+  },
+  {
+   "at": "2026-10-29T15:58:13+00:00",
+   "status": "running",
+   "turn_count": 20,
+   "spend_usd": 0.232907
+  },
+  {
+   "at": "2026-10-29T15:58:13+00:00",
+   "status": "running",
+   "turn_count": 20,
+   "spend_usd": 0.232907
+  },
+  {
+   "at": "2026-10-29T15:58:18+00:00",
+   "status": "running",
+   "turn_count": 21,
+   "spend_usd": 0.254357
+  },
+  {
+   "at": "2026-10-29T15:58:18+00:00",
+   "status": "running",
+   "turn_count": 21,
+   "spend_usd": 0.254357
+  },
+  {
+   "at": "2026-10-29T15:58:30+00:00",
+   "status": "running",
+   "turn_count": 22,
+   "spend_usd": 0.255819
+  },
+  {
+   "at": "2026-10-29T15:58:30+00:00",
+   "status": "running",
+   "turn_count": 22,
+   "spend_usd": 0.255819
+  },
+  {
+   "at": "2026-10-29T15:58:31+00:00",
+   "status": "running",
+   "turn_count": 23,
+   "spend_usd": 0.259977
+  },
+  {
+   "at": "2026-10-29T15:58:31+00:00",
+   "status": "running",
+   "turn_count": 23,
+   "spend_usd": 0.259977
+  },
+  {
+   "at": "2026-10-29T15:58:42+00:00",
+   "status": "running",
+   "turn_count": 24,
+   "spend_usd": 0.260951
+  },
+  {
+   "at": "2026-10-29T15:58:42+00:00",
+   "status": "running",
+   "turn_count": 24,
+   "spend_usd": 0.260951
+  },
+  {
+   "at": "2026-10-29T15:59:04+00:00",
+   "status": "running",
+   "turn_count": 25,
+   "spend_usd": 0.298047
+  },
+  {
+   "at": "2026-10-29T15:59:04+00:00",
+   "status": "running",
+   "turn_count": 25,
+   "spend_usd": 0.298047
+  },
+  {
+   "at": "2026-10-29T15:59:39+00:00",
+   "status": "running",
+   "turn_count": 26,
+   "spend_usd": 0.300197
+  },
+  {
+   "at": "2026-10-29T15:59:39+00:00",
+   "status": "running",
+   "turn_count": 26,
+   "spend_usd": 0.300197
+  },
+  {
+   "at": "2026-10-29T15:59:41+00:00",
+   "status": "running",
+   "turn_count": 27,
+   "spend_usd": 0.312894
+  },
+  {
+   "at": "2026-10-29T15:59:41+00:00",
+   "status": "running",
+   "turn_count": 27,
+   "spend_usd": 0.312894
+  },
+  {
+   "at": "2026-10-29T15:59:48+00:00",
+   "status": "running",
+   "turn_count": 28,
+   "spend_usd": 0.313789
+  },
+  {
+   "at": "2026-10-29T15:59:48+00:00",
+   "status": "running",
+   "turn_count": 28,
+   "spend_usd": 0.313789
+  },
+  {
+   "at": "2026-10-29T15:59:57+00:00",
+   "status": "running",
+   "turn_count": 29,
+   "spend_usd": 0.338169
+  },
+  {
+   "at": "2026-10-29T15:59:57+00:00",
+   "status": "running",
+   "turn_count": 29,
+   "spend_usd": 0.338169
+  },
+  {
+   "at": "2026-10-29T16:00:59+00:00",
+   "status": "running",
+   "turn_count": 30,
+   "spend_usd": 0.342572
+  },
+  {
+   "at": "2026-10-29T16:00:59+00:00",
+   "status": "running",
+   "turn_count": 30,
+   "spend_usd": 0.342572
+  },
+  {
+   "at": "2026-10-29T16:01:25+00:00",
+   "status": "running",
+   "turn_count": 31,
+   "spend_usd": 0.383786
+  },
+  {
+   "at": "2026-10-29T16:01:25+00:00",
+   "status": "running",
+   "turn_count": 31,
+   "spend_usd": 0.383786
+  },
+  {
+   "at": "2026-10-29T16:02:36+00:00",
+   "status": "running",
+   "turn_count": 32,
+   "spend_usd": 0.387901
+  },
+  {
+   "at": "2026-10-29T16:02:36+00:00",
+   "status": "running",
+   "turn_count": 32,
+   "spend_usd": 0.387901
+  },
+  {
+   "at": "2026-10-29T16:02:56+00:00",
+   "status": "running",
+   "turn_count": 33,
+   "spend_usd": 0.423963
+  },
+  {
+   "at": "2026-10-29T16:02:56+00:00",
+   "status": "running",
+   "turn_count": 33,
+   "spend_usd": 0.423963
+  },
+  {
+   "at": "2026-10-29T16:03:18+00:00",
+   "status": "running",
+   "turn_count": 34,
+   "spend_usd": 0.428458
+  },
+  {
+   "at": "2026-10-29T16:03:18+00:00",
+   "status": "running",
+   "turn_count": 34,
+   "spend_usd": 0.428458
+  },
+  {
+   "at": "2026-10-29T16:03:21+00:00",
+   "status": "running",
+   "turn_count": 35,
+   "spend_usd": 0.441461
+  },
+  {
+   "at": "2026-10-29T16:03:21+00:00",
+   "status": "running",
+   "turn_count": 35,
+   "spend_usd": 0.441461
+  },
+  {
+   "at": "2026-10-29T16:03:30+00:00",
+   "status": "running",
+   "turn_count": 36,
+   "spend_usd": 0.4424
+  },
+  {
+   "at": "2026-10-29T16:03:30+00:00",
+   "status": "running",
+   "turn_count": 36,
+   "spend_usd": 0.4424
+  },
+  {
+   "at": "2026-10-29T16:03:32+00:00",
+   "status": "running",
+   "turn_count": 37,
+   "spend_usd": 0.454817
+  },
+  {
+   "at": "2026-10-29T16:03:32+00:00",
+   "status": "running",
+   "turn_count": 37,
+   "spend_usd": 0.454817
+  },
+  {
+   "at": "2026-10-29T16:03:41+00:00",
+   "status": "running",
+   "turn_count": 38,
+   "spend_usd": 0.456077
+  },
+  {
+   "at": "2026-10-29T16:03:41+00:00",
+   "status": "running",
+   "turn_count": 38,
+   "spend_usd": 0.456077
+  },
+  {
+   "at": "2026-10-29T16:03:53+00:00",
+   "status": "running",
+   "turn_count": 39,
+   "spend_usd": 0.47822
+  },
+  {
+   "at": "2026-10-29T16:03:53+00:00",
+   "status": "running",
+   "turn_count": 39,
+   "spend_usd": 0.47822
+  },
+  {
+   "at": "2026-10-29T16:04:10+00:00",
+   "status": "running",
+   "turn_count": 40,
+   "spend_usd": 0.482042
+  },
+  {
+   "at": "2026-10-29T16:04:10+00:00",
+   "status": "running",
+   "turn_count": 40,
+   "spend_usd": 0.482042
+  },
+  {
+   "at": "2026-10-29T16:04:10+00:00",
+   "status": "paused_turn_limit",
+   "turn_count": 40,
+   "spend_usd": 0.482042,
+   "reason": "Stopped at the turn limit (40 turns). Resume to continue with a fresh budget of turns."
+  },
+  {
+   "at": "2026-10-29T16:04:10+00:00",
+   "status": "queued",
+   "turn_count": 0,
+   "spend_usd": 0.482042,
+   "reason": "Resuming with a fresh budget of 40 turns."
+  },
+  {
+   "at": "2026-10-29T16:04:10+00:00",
+   "status": "running",
+   "turn_count": 0,
+   "spend_usd": 0.482042
+  },
+  {
+   "at": "2026-10-29T16:04:40+00:00",
+   "status": "running",
+   "turn_count": 1,
+   "spend_usd": 0.53522
+  },
+  {
+   "at": "2026-10-29T16:04:40+00:00",
+   "status": "running",
+   "turn_count": 1,
+   "spend_usd": 0.53522
+  },
+  {
+   "at": "2026-10-29T16:05:04+00:00",
+   "status": "running",
+   "turn_count": 2,
+   "spend_usd": 0.541393
+  },
+  {
+   "at": "2026-10-29T16:05:04+00:00",
+   "status": "running",
+   "turn_count": 2,
+   "spend_usd": 0.541393
+  },
+  {
+   "at": "2026-10-29T16:05:15+00:00",
+   "status": "running",
+   "turn_count": 3,
+   "spend_usd": 0.570227
+  },
+  {
+   "at": "2026-10-29T16:05:15+00:00",
+   "status": "running",
+   "turn_count": 3,
+   "spend_usd": 0.570227
+  },
+  {
+   "at": "2026-10-29T16:05:46+00:00",
+   "status": "running",
+   "turn_count": 4,
+   "spend_usd": 0.576962
+  },
+  {
+   "at": "2026-10-29T16:05:46+00:00",
+   "status": "running",
+   "turn_count": 4,
+   "spend_usd": 0.576962
+  },
+  {
+   "at": "2026-10-29T16:05:55+00:00",
+   "status": "running",
+   "turn_count": 5,
+   "spend_usd": 0.600845
+  },
+  {
+   "at": "2026-10-29T16:05:55+00:00",
+   "status": "running",
+   "turn_count": 5,
+   "spend_usd": 0.600845
+  },
+  {
+   "at": "2026-10-29T16:06:14+00:00",
+   "status": "running",
+   "turn_count": 6,
+   "spend_usd": 0.604849
+  },
+  {
+   "at": "2026-10-29T16:06:14+00:00",
+   "status": "running",
+   "turn_count": 6,
+   "spend_usd": 0.604849
+  },
+  {
+   "at": "2026-10-29T16:06:17+00:00",
+   "status": "running",
+   "turn_count": 7,
+   "spend_usd": 0.617111
+  },
+  {
+   "at": "2026-10-29T16:06:17+00:00",
+   "status": "running",
+   "turn_count": 7,
+   "spend_usd": 0.617111
+  },
+  {
+   "at": "2026-10-29T16:08:45+00:00",
+   "status": "running",
+   "turn_count": 8,
+   "spend_usd": 0.617955
+  },
+  {
+   "at": "2026-10-29T16:08:45+00:00",
+   "status": "running",
+   "turn_count": 8,
+   "spend_usd": 0.617955
+  },
+  {
+   "at": "2026-10-29T16:08:48+00:00",
+   "status": "running",
+   "turn_count": 9,
+   "spend_usd": 0.629794
+  },
+  {
+   "at": "2026-10-29T16:08:48+00:00",
+   "status": "running",
+   "turn_count": 9,
+   "spend_usd": 0.629794
+  },
+  {
+   "at": "2026-10-29T16:08:56+00:00",
+   "status": "running",
+   "turn_count": 10,
+   "spend_usd": 0.630696
+  },
+  {
+   "at": "2026-10-29T16:08:56+00:00",
+   "status": "running",
+   "turn_count": 10,
+   "spend_usd": 0.630696
+  },
+  {
+   "at": "2026-10-29T16:08:57+00:00",
+   "status": "running",
+   "turn_count": 11,
+   "spend_usd": 0.633381
+  },
+  {
+   "at": "2026-10-29T16:08:57+00:00",
+   "status": "running",
+   "turn_count": 11,
+   "spend_usd": 0.633381
+  },
+  {
+   "at": "2026-10-29T16:09:09+00:00",
+   "status": "running",
+   "turn_count": 12,
+   "spend_usd": 0.634397
+  },
+  {
+   "at": "2026-10-29T16:09:09+00:00",
+   "status": "running",
+   "turn_count": 12,
+   "spend_usd": 0.634397
+  },
+  {
+   "at": "2026-10-29T16:09:12+00:00",
+   "status": "running",
+   "turn_count": 13,
+   "spend_usd": 0.650394
+  },
+  {
+   "at": "2026-10-29T16:09:12+00:00",
+   "status": "running",
+   "turn_count": 13,
+   "spend_usd": 0.650394
+  },
+  {
+   "at": "2026-10-29T16:09:21+00:00",
+   "status": "running",
+   "turn_count": 14,
+   "spend_usd": 0.651461
+  },
+  {
+   "at": "2026-10-29T16:09:21+00:00",
+   "status": "running",
+   "turn_count": 14,
+   "spend_usd": 0.651461
+  },
+  {
+   "at": "2026-10-29T16:09:39+00:00",
+   "status": "running",
+   "turn_count": 15,
+   "spend_usd": 0.679
+  },
+  {
+   "at": "2026-10-29T16:09:39+00:00",
+   "status": "running",
+   "turn_count": 15,
+   "spend_usd": 0.679
+  },
+  {
+   "at": "2026-10-29T16:10:25+00:00",
+   "status": "running",
+   "turn_count": 16,
+   "spend_usd": 0.688746
+  },
+  {
+   "at": "2026-10-29T16:10:25+00:00",
+   "status": "running",
+   "turn_count": 16,
+   "spend_usd": 0.688746
+  },
+  {
+   "at": "2026-10-29T16:10:35+00:00",
+   "status": "running",
+   "turn_count": 17,
+   "spend_usd": 0.706843
+  },
+  {
+   "at": "2026-10-29T16:10:35+00:00",
+   "status": "running",
+   "turn_count": 17,
+   "spend_usd": 0.706843
+  },
+  {
+   "at": "2026-10-29T16:11:02+00:00",
+   "status": "running",
+   "turn_count": 18,
+   "spend_usd": 0.712395
+  },
+  {
+   "at": "2026-10-29T16:11:02+00:00",
+   "status": "running",
+   "turn_count": 18,
+   "spend_usd": 0.712395
+  },
+  {
+   "at": "2026-10-29T16:11:04+00:00",
+   "status": "running",
+   "turn_count": 19,
+   "spend_usd": 0.721053
+  },
+  {
+   "at": "2026-10-29T16:11:04+00:00",
+   "status": "running",
+   "turn_count": 19,
+   "spend_usd": 0.721053
+  },
+  {
+   "at": "2026-10-29T16:11:14+00:00",
+   "status": "running",
+   "turn_count": 20,
+   "spend_usd": 0.722071
+  },
+  {
+   "at": "2026-10-29T16:11:14+00:00",
+   "status": "running",
+   "turn_count": 20,
+   "spend_usd": 0.722071
+  },
+  {
+   "at": "2026-10-29T16:11:29+00:00",
+   "status": "running",
+   "turn_count": 21,
+   "spend_usd": 0.745355
+  },
+  {
+   "at": "2026-10-29T16:11:29+00:00",
+   "status": "running",
+   "turn_count": 21,
+   "spend_usd": 0.745355
+  },
+  {
+   "at": "2026-10-29T16:11:49+00:00",
+   "status": "running",
+   "turn_count": 22,
+   "spend_usd": 0.74852
+  },
+  {
+   "at": "2026-10-29T16:11:49+00:00",
+   "status": "running",
+   "turn_count": 22,
+   "spend_usd": 0.74852
+  },
+  {
+   "at": "2026-10-29T16:12:14+00:00",
+   "status": "running",
+   "turn_count": 23,
+   "spend_usd": 0.779561
+  },
+  {
+   "at": "2026-10-29T16:12:14+00:00",
+   "status": "running",
+   "turn_count": 23,
+   "spend_usd": 0.779561
+  },
+  {
+   "at": "2026-10-29T16:12:43+00:00",
+   "status": "running",
+   "turn_count": 24,
+   "spend_usd": 0.78548
+  },
+  {
+   "at": "2026-10-29T16:12:43+00:00",
+   "status": "running",
+   "turn_count": 24,
+   "spend_usd": 0.78548
+  },
+  {
+   "at": "2026-10-29T16:12:45+00:00",
+   "status": "running",
+   "turn_count": 25,
+   "spend_usd": 0.78929
+  },
+  {
+   "at": "2026-10-29T16:12:45+00:00",
+   "status": "running",
+   "turn_count": 25,
+   "spend_usd": 0.78929
+  },
+  {
+   "at": "2026-10-29T16:13:07+00:00",
+   "status": "running",
+   "turn_count": 26,
+   "spend_usd": 0.790374
+  },
+  {
+   "at": "2026-10-29T16:13:07+00:00",
+   "status": "running",
+   "turn_count": 26,
+   "spend_usd": 0.790374
+  },
+  {
+   "at": "2026-10-29T16:13:13+00:00",
+   "status": "running",
+   "turn_count": 27,
+   "spend_usd": 0.803104
+  },
+  {
+   "at": "2026-10-29T16:13:13+00:00",
+   "status": "running",
+   "turn_count": 27,
+   "spend_usd": 0.803104
+  },
+  {
+   "at": "2026-10-29T16:14:59+00:00",
+   "status": "running",
+   "turn_count": 28,
+   "spend_usd": 0.804492
+  },
+  {
+   "at": "2026-10-29T16:14:59+00:00",
+   "status": "running",
+   "turn_count": 28,
+   "spend_usd": 0.804492
+  },
+  {
+   "at": "2026-10-29T16:15:02+00:00",
+   "status": "running",
+   "turn_count": 29,
+   "spend_usd": 0.812596
+  },
+  {
+   "at": "2026-10-29T16:15:02+00:00",
+   "status": "running",
+   "turn_count": 29,
+   "spend_usd": 0.812596
+  },
+  {
+   "at": "2026-10-29T16:15:09+00:00",
+   "status": "running",
+   "turn_count": 30,
+   "spend_usd": 0.813727
+  },
+  {
+   "at": "2026-10-29T16:15:09+00:00",
+   "status": "running",
+   "turn_count": 30,
+   "spend_usd": 0.813727
+  },
+  {
+   "at": "2026-10-29T16:16:13+00:00",
+   "status": "running",
+   "turn_count": 31,
+   "spend_usd": 0.886292
+  },
+  {
+   "at": "2026-10-29T16:16:13+00:00",
+   "status": "running",
+   "turn_count": 31,
+   "spend_usd": 0.886292
+  },
+  {
+   "at": "2026-10-29T16:18:46+00:00",
+   "status": "running",
+   "turn_count": 32,
+   "spend_usd": 0.894212
+  },
+  {
+   "at": "2026-10-29T16:18:46+00:00",
+   "status": "running",
+   "turn_count": 32,
+   "spend_usd": 0.894212
+  },
+  {
+   "at": "2026-10-29T16:18:50+00:00",
+   "status": "running",
+   "turn_count": 33,
+   "spend_usd": 0.914172
+  },
+  {
+   "at": "2026-10-29T16:18:50+00:00",
+   "status": "running",
+   "turn_count": 33,
+   "spend_usd": 0.914172
+  },
+  {
+   "at": "2026-10-29T16:19:01+00:00",
+   "status": "running",
+   "turn_count": 34,
+   "spend_usd": 0.915717
+  },
+  {
+   "at": "2026-10-29T16:19:01+00:00",
+   "status": "running",
+   "turn_count": 34,
+   "spend_usd": 0.915717
+  },
+  {
+   "at": "2026-10-29T16:19:04+00:00",
+   "status": "running",
+   "turn_count": 35,
+   "spend_usd": 0.921695
+  },
+  {
+   "at": "2026-10-29T16:19:04+00:00",
+   "status": "running",
+   "turn_count": 35,
+   "spend_usd": 0.921695
+  },
+  {
+   "at": "2026-10-29T16:19:14+00:00",
+   "status": "running",
+   "turn_count": 36,
+   "spend_usd": 0.922684
+  },
+  {
+   "at": "2026-10-29T16:19:14+00:00",
+   "status": "running",
+   "turn_count": 36,
+   "spend_usd": 0.922684
+  },
+  {
+   "at": "2026-10-29T16:19:18+00:00",
+   "status": "running",
+   "turn_count": 37,
+   "spend_usd": 0.934593
+  },
+  {
+   "at": "2026-10-29T16:19:18+00:00",
+   "status": "running",
+   "turn_count": 37,
+   "spend_usd": 0.934593
+  },
+  {
+   "at": "2026-10-29T16:20:32+00:00",
+   "status": "running",
+   "turn_count": 38,
+   "spend_usd": 0.935745
+  },
+  {
+   "at": "2026-10-29T16:20:32+00:00",
+   "status": "running",
+   "turn_count": 38,
+   "spend_usd": 0.935745
+  },
+  {
+   "at": "2026-10-29T16:20:37+00:00",
+   "status": "running",
+   "turn_count": 39,
+   "spend_usd": 0.947029
+  },
+  {
+   "at": "2026-10-29T16:20:37+00:00",
+   "status": "running",
+   "turn_count": 39,
+   "spend_usd": 0.947029
+  },
+  {
+   "at": "2026-10-29T16:21:05+00:00",
+   "status": "running",
+   "turn_count": 40,
+   "spend_usd": 0.948397
+  },
+  {
+   "at": "2026-10-29T16:21:05+00:00",
+   "status": "running",
+   "turn_count": 40,
+   "spend_usd": 0.948397
+  },
+  {
+   "at": "2026-10-29T16:21:05+00:00",
+   "status": "paused_turn_limit",
+   "turn_count": 40,
+   "spend_usd": 0.948397,
+   "reason": "Stopped at the turn limit (40 turns). Resume to continue with a fresh budget of turns."
+  },
+  {
+   "at": "2026-10-29T16:21:05+00:00",
+   "status": "queued",
+   "turn_count": 0,
+   "spend_usd": 0.948397,
+   "reason": "Resuming with a fresh budget of 40 turns."
+  },
+  {
+   "at": "2026-10-29T16:21:05+00:00",
+   "status": "running",
+   "turn_count": 0,
+   "spend_usd": 0.948397
+  },
+  {
+   "at": "2026-10-29T16:21:10+00:00",
+   "status": "running",
+   "turn_count": 1,
+   "spend_usd": 0.95835
+  },
+  {
+   "at": "2026-10-29T16:21:10+00:00",
+   "status": "running",
+   "turn_count": 1,
+   "spend_usd": 0.95835
+  },
+  {
+   "at": "2026-10-29T16:21:22+00:00",
+   "status": "running",
+   "turn_count": 2,
+   "spend_usd": 0.959448
+  },
+  {
+   "at": "2026-10-29T16:21:22+00:00",
+   "status": "running",
+   "turn_count": 2,
+   "spend_usd": 0.959448
+  },
+  {
+   "at": "2026-10-29T16:21:24+00:00",
+   "status": "running",
+   "turn_count": 3,
+   "spend_usd": 0.965662
+  },
+  {
+   "at": "2026-10-29T16:21:24+00:00",
+   "status": "running",
+   "turn_count": 3,
+   "spend_usd": 0.965662
+  },
+  {
+   "at": "2026-10-29T16:21:33+00:00",
+   "status": "running",
+   "turn_count": 4,
+   "spend_usd": 0.966602
+  },
+  {
+   "at": "2026-10-29T16:21:33+00:00",
+   "status": "running",
+   "turn_count": 4,
+   "spend_usd": 0.966602
+  },
+  {
+   "at": "2026-10-29T16:21:44+00:00",
+   "status": "running",
+   "turn_count": 5,
+   "spend_usd": 0.982631
+  },
+  {
+   "at": "2026-10-29T16:21:44+00:00",
+   "status": "running",
+   "turn_count": 5,
+   "spend_usd": 0.982631
+  },
+  {
+   "at": "2026-10-29T16:22:05+00:00",
+   "status": "running",
+   "turn_count": 6,
+   "spend_usd": 0.986524
+  },
+  {
+   "at": "2026-10-29T16:22:05+00:00",
+   "status": "running",
+   "turn_count": 6,
+   "spend_usd": 0.986524
+  },
+  {
+   "at": "2026-10-29T16:22:06+00:00",
+   "status": "running",
+   "turn_count": 7,
+   "spend_usd": 0.989623
+  },
+  {
+   "at": "2026-10-29T16:22:06+00:00",
+   "status": "running",
+   "turn_count": 7,
+   "spend_usd": 0.989623
+  },
+  {
+   "at": "2026-10-29T16:22:15+00:00",
+   "status": "running",
+   "turn_count": 8,
+   "spend_usd": 0.990473
+  },
+  {
+   "at": "2026-10-29T16:22:15+00:00",
+   "status": "running",
+   "turn_count": 8,
+   "spend_usd": 0.990473
+  },
+  {
+   "at": "2026-10-29T16:22:20+00:00",
+   "status": "running",
+   "turn_count": 9,
+   "spend_usd": 1.000952
+  },
+  {
+   "at": "2026-10-29T16:22:20+00:00",
+   "status": "running",
+   "turn_count": 9,
+   "spend_usd": 1.000952
+  },
+  {
+   "at": "2026-10-29T16:22:30+00:00",
+   "status": "running",
+   "turn_count": 10,
+   "spend_usd": 1.002102
+  },
+  {
+   "at": "2026-10-29T16:22:30+00:00",
+   "status": "running",
+   "turn_count": 10,
+   "spend_usd": 1.002102
+  },
+  {
+   "at": "2026-10-29T16:22:32+00:00",
+   "status": "running",
+   "turn_count": 11,
+   "spend_usd": 1.008445
+  },
+  {
+   "at": "2026-10-29T16:22:32+00:00",
+   "status": "running",
+   "turn_count": 11,
+   "spend_usd": 1.008445
+  },
+  {
+   "at": "2026-10-29T16:22:43+00:00",
+   "status": "running",
+   "turn_count": 12,
+   "spend_usd": 1.009804
+  },
+  {
+   "at": "2026-10-29T16:22:43+00:00",
+   "status": "running",
+   "turn_count": 12,
+   "spend_usd": 1.009804
+  },
+  {
+   "at": "2026-10-29T16:22:46+00:00",
+   "status": "running",
+   "turn_count": 13,
+   "spend_usd": 1.017423
+  },
+  {
+   "at": "2026-10-29T16:22:46+00:00",
+   "status": "running",
+   "turn_count": 13,
+   "spend_usd": 1.017423
+  },
+  {
+   "at": "2026-10-29T16:22:53+00:00",
+   "status": "running",
+   "turn_count": 14,
+   "spend_usd": 1.01824
+  },
+  {
+   "at": "2026-10-29T16:22:54+00:00",
+   "status": "running",
+   "turn_count": 14,
+   "spend_usd": 1.01824
+  },
+  {
+   "at": "2026-10-29T16:22:57+00:00",
+   "status": "running",
+   "turn_count": 15,
+   "spend_usd": 1.024256
+  },
+  {
+   "at": "2026-10-29T16:22:57+00:00",
+   "status": "running",
+   "turn_count": 15,
+   "spend_usd": 1.024256
+  },
+  {
+   "at": "2026-10-29T16:24:32+00:00",
+   "status": "running",
+   "turn_count": 16,
+   "spend_usd": 1.025194
+  },
+  {
+   "at": "2026-10-29T16:24:32+00:00",
+   "status": "running",
+   "turn_count": 16,
+   "spend_usd": 1.025194
+  },
+  {
+   "at": "2026-10-29T16:24:35+00:00",
+   "status": "running",
+   "turn_count": 17,
+   "spend_usd": 1.032407
+  },
+  {
+   "at": "2026-10-29T16:24:35+00:00",
+   "status": "running",
+   "turn_count": 17,
+   "spend_usd": 1.032407
+  },
+  {
+   "at": "2026-10-29T16:24:43+00:00",
+   "status": "running",
+   "turn_count": 18,
+   "spend_usd": 1.03322
+  },
+  {
+   "at": "2026-10-29T16:24:43+00:00",
+   "status": "running",
+   "turn_count": 18,
+   "spend_usd": 1.03322
+  },
+  {
+   "at": "2026-10-29T16:24:55+00:00",
+   "status": "running",
+   "turn_count": 19,
+   "spend_usd": 1.051949
+  },
+  {
+   "at": "2026-10-29T16:24:55+00:00",
+   "status": "running",
+   "turn_count": 19,
+   "spend_usd": 1.051949
+  },
+  {
+   "at": "2026-10-29T16:25:10+00:00",
+   "status": "running",
+   "turn_count": 20,
+   "spend_usd": 1.054392
+  },
+  {
+   "at": "2026-10-29T16:25:10+00:00",
+   "status": "running",
+   "turn_count": 20,
+   "spend_usd": 1.054392
+  },
+  {
+   "at": "2026-10-29T16:25:40+00:00",
+   "status": "running",
+   "turn_count": 21,
+   "spend_usd": 1.091661
+  },
+  {
+   "at": "2026-10-29T16:25:40+00:00",
+   "status": "running",
+   "turn_count": 21,
+   "spend_usd": 1.091661
+  },
+  {
+   "at": "2026-10-29T16:26:20+00:00",
+   "status": "running",
+   "turn_count": 22,
+   "spend_usd": 1.10174
+  },
+  {
+   "at": "2026-10-29T16:26:20+00:00",
+   "status": "running",
+   "turn_count": 22,
+   "spend_usd": 1.10174
+  },
+  {
+   "at": "2026-10-29T16:26:22+00:00",
+   "status": "running",
+   "turn_count": 23,
+   "spend_usd": 1.104427
+  },
+  {
+   "at": "2026-10-29T16:26:22+00:00",
+   "status": "running",
+   "turn_count": 23,
+   "spend_usd": 1.104427
+  },
+  {
+   "at": "2026-10-29T16:27:38+00:00",
+   "status": "running",
+   "turn_count": 24,
+   "spend_usd": 1.105451
+  },
+  {
+   "at": "2026-10-29T16:27:38+00:00",
+   "status": "running",
+   "turn_count": 24,
+   "spend_usd": 1.105451
+  },
+  {
+   "at": "2026-10-29T16:27:41+00:00",
+   "status": "running",
+   "turn_count": 25,
+   "spend_usd": 1.112055
+  },
+  {
+   "at": "2026-10-29T16:27:41+00:00",
+   "status": "running",
+   "turn_count": 25,
+   "spend_usd": 1.112055
+  },
+  {
+   "at": "2026-10-29T16:28:30+00:00",
+   "status": "running",
+   "turn_count": 26,
+   "spend_usd": 1.112971
+  },
+  {
+   "at": "2026-10-29T16:28:30+00:00",
+   "status": "running",
+   "turn_count": 26,
+   "spend_usd": 1.112971
+  },
+  {
+   "at": "2026-10-29T16:28:31+00:00",
+   "status": "running",
+   "turn_count": 27,
+   "spend_usd": 1.118226
+  },
+  {
+   "at": "2026-10-29T16:28:31+00:00",
+   "status": "running",
+   "turn_count": 27,
+   "spend_usd": 1.118226
+  },
+  {
+   "at": "2026-10-29T16:28:40+00:00",
+   "status": "running",
+   "turn_count": 28,
+   "spend_usd": 1.119176
+  },
+  {
+   "at": "2026-10-29T16:28:40+00:00",
+   "status": "running",
+   "turn_count": 28,
+   "spend_usd": 1.119176
+  },
+  {
+   "at": "2026-10-29T16:28:49+00:00",
+   "status": "running",
+   "turn_count": 29,
+   "spend_usd": 1.134511
+  },
+  {
+   "at": "2026-10-29T16:28:49+00:00",
+   "status": "running",
+   "turn_count": 29,
+   "spend_usd": 1.134511
+  },
+  {
+   "at": "2026-10-29T16:29:02+00:00",
+   "status": "running",
+   "turn_count": 30,
+   "spend_usd": 1.136432
+  },
+  {
+   "at": "2026-10-29T16:29:02+00:00",
+   "status": "running",
+   "turn_count": 30,
+   "spend_usd": 1.136432
+  },
+  {
+   "at": "2026-10-29T16:29:35+00:00",
+   "status": "running",
+   "turn_count": 31,
+   "spend_usd": 1.172123
+  },
+  {
+   "at": "2026-10-29T16:29:35+00:00",
+   "status": "running",
+   "turn_count": 31,
+   "spend_usd": 1.172123
+  },
+  {
+   "at": "2026-10-29T16:30:21+00:00",
+   "status": "running",
+   "turn_count": 32,
+   "spend_usd": 1.183388
+  },
+  {
+   "at": "2026-10-29T16:30:21+00:00",
+   "status": "running",
+   "turn_count": 32,
+   "spend_usd": 1.183388
+  },
+  {
+   "at": "2026-10-29T16:30:23+00:00",
+   "status": "running",
+   "turn_count": 33,
+   "spend_usd": 1.18587
+  },
+  {
+   "at": "2026-10-29T16:30:23+00:00",
+   "status": "running",
+   "turn_count": 33,
+   "spend_usd": 1.18587
+  },
+  {
+   "at": "2026-10-29T16:30:37+00:00",
+   "status": "running",
+   "turn_count": 34,
+   "spend_usd": 1.186765
+  },
+  {
+   "at": "2026-10-29T16:30:37+00:00",
+   "status": "running",
+   "turn_count": 34,
+   "spend_usd": 1.186765
+  },
+  {
+   "at": "2026-10-29T16:30:40+00:00",
+   "status": "running",
+   "turn_count": 35,
+   "spend_usd": 1.19479
+  },
+  {
+   "at": "2026-10-29T16:30:40+00:00",
+   "status": "running",
+   "turn_count": 35,
+   "spend_usd": 1.19479
+  },
+  {
+   "at": "2026-10-29T16:30:50+00:00",
+   "status": "running",
+   "turn_count": 36,
+   "spend_usd": 1.196087
+  },
+  {
+   "at": "2026-10-29T16:30:50+00:00",
+   "status": "running",
+   "turn_count": 36,
+   "spend_usd": 1.196087
+  },
+  {
+   "at": "2026-10-29T16:30:54+00:00",
+   "status": "running",
+   "turn_count": 37,
+   "spend_usd": 1.20461
+  },
+  {
+   "at": "2026-10-29T16:30:54+00:00",
+   "status": "running",
+   "turn_count": 37,
+   "spend_usd": 1.20461
+  },
+  {
+   "at": "2026-10-29T16:31:02+00:00",
+   "status": "running",
+   "turn_count": 38,
+   "spend_usd": 1.205507
+  },
+  {
+   "at": "2026-10-29T16:31:02+00:00",
+   "status": "running",
+   "turn_count": 38,
+   "spend_usd": 1.205507
+  },
+  {
+   "at": "2026-10-29T16:31:05+00:00",
+   "status": "running",
+   "turn_count": 39,
+   "spend_usd": 1.211571
+  },
+  {
+   "at": "2026-10-29T16:31:05+00:00",
+   "status": "running",
+   "turn_count": 39,
+   "spend_usd": 1.211571
+  },
+  {
+   "at": "2026-10-29T16:31:12+00:00",
+   "status": "running",
+   "turn_count": 40,
+   "spend_usd": 1.212455
+  },
+  {
+   "at": "2026-10-29T16:31:12+00:00",
+   "status": "running",
+   "turn_count": 40,
+   "spend_usd": 1.212455
+  },
+  {
+   "at": "2026-10-29T16:31:12+00:00",
+   "status": "paused_turn_limit",
+   "turn_count": 40,
+   "spend_usd": 1.212455,
+   "reason": "Stopped at the turn limit (40 turns). Resume to continue with a fresh budget of turns."
+  },
+  {
+   "at": "2026-10-29T16:31:12+00:00",
+   "status": "queued",
+   "turn_count": 0,
+   "spend_usd": 1.212455,
+   "reason": "Resuming with a fresh budget of 40 turns."
+  },
+  {
+   "at": "2026-10-29T16:31:12+00:00",
+   "status": "running",
+   "turn_count": 0,
+   "spend_usd": 1.212455
+  },
+  {
+   "at": "2026-10-29T16:31:15+00:00",
+   "status": "running",
+   "turn_count": 1,
+   "spend_usd": 1.218633
+  },
+  {
+   "at": "2026-10-29T16:31:15+00:00",
+   "status": "running",
+   "turn_count": 1,
+   "spend_usd": 1.218633
+  },
+  {
+   "at": "2026-10-29T16:31:23+00:00",
+   "status": "running",
+   "turn_count": 2,
+   "spend_usd": 1.219479
+  },
+  {
+   "at": "2026-10-29T16:31:23+00:00",
+   "status": "running",
+   "turn_count": 2,
+   "spend_usd": 1.219479
+  },
+  {
+   "at": "2026-10-29T16:31:28+00:00",
+   "status": "running",
+   "turn_count": 3,
+   "spend_usd": 1.231623
+  },
+  {
+   "at": "2026-10-29T16:31:28+00:00",
+   "status": "running",
+   "turn_count": 3,
+   "spend_usd": 1.231623
+  },
+  {
+   "at": "2026-10-29T16:32:57+00:00",
+   "status": "running",
+   "turn_count": 4,
+   "spend_usd": 1.232531
+  },
+  {
+   "at": "2026-10-29T16:32:57+00:00",
+   "status": "running",
+   "turn_count": 4,
+   "spend_usd": 1.232531
+  },
+  {
+   "at": "2026-10-29T16:32:59+00:00",
+   "status": "running",
+   "turn_count": 5,
+   "spend_usd": 1.242869
+  },
+  {
+   "at": "2026-10-29T16:32:59+00:00",
+   "status": "running",
+   "turn_count": 5,
+   "spend_usd": 1.242869
+  },
+  {
+   "at": "2026-10-29T16:33:12+00:00",
+   "status": "running",
+   "turn_count": 6,
+   "spend_usd": 1.244022
+  },
+  {
+   "at": "2026-10-29T16:33:12+00:00",
+   "status": "running",
+   "turn_count": 6,
+   "spend_usd": 1.244022
+  },
+  {
+   "at": "2026-10-29T16:33:16+00:00",
+   "status": "running",
+   "turn_count": 7,
+   "spend_usd": 1.251336
+  },
+  {
+   "at": "2026-10-29T16:33:16+00:00",
+   "status": "running",
+   "turn_count": 7,
+   "spend_usd": 1.251336
+  },
+  {
+   "at": "2026-10-29T16:33:41+00:00",
+   "status": "running",
+   "turn_count": 8,
+   "spend_usd": 1.25239
+  },
+  {
+   "at": "2026-10-29T16:33:41+00:00",
+   "status": "running",
+   "turn_count": 8,
+   "spend_usd": 1.25239
+  },
+  {
+   "at": "2026-10-29T16:33:44+00:00",
+   "status": "running",
+   "turn_count": 9,
+   "spend_usd": 1.259082
+  },
+  {
+   "at": "2026-10-29T16:33:44+00:00",
+   "status": "running",
+   "turn_count": 9,
+   "spend_usd": 1.259082
+  },
+  {
+   "at": "2026-10-29T16:35:09+00:00",
+   "status": "running",
+   "turn_count": 10,
+   "spend_usd": 1.260157
+  },
+  {
+   "at": "2026-10-29T16:35:09+00:00",
+   "status": "running",
+   "turn_count": 10,
+   "spend_usd": 1.260157
+  },
+  {
+   "at": "2026-10-29T16:35:12+00:00",
+   "status": "running",
+   "turn_count": 11,
+   "spend_usd": 1.267798
+  },
+  {
+   "at": "2026-10-29T16:35:12+00:00",
+   "status": "running",
+   "turn_count": 11,
+   "spend_usd": 1.267798
+  },
+  {
+   "at": "2026-10-29T16:35:21+00:00",
+   "status": "running",
+   "turn_count": 12,
+   "spend_usd": 1.268948
+  },
+  {
+   "at": "2026-10-29T16:35:21+00:00",
+   "status": "running",
+   "turn_count": 12,
+   "spend_usd": 1.268948
+  },
+  {
+   "at": "2026-10-29T16:35:26+00:00",
+   "status": "running",
+   "turn_count": 13,
+   "spend_usd": 1.281764
+  },
+  {
+   "at": "2026-10-29T16:35:26+00:00",
+   "status": "running",
+   "turn_count": 13,
+   "spend_usd": 1.281764
+  },
+  {
+   "at": "2026-10-29T16:35:36+00:00",
+   "status": "running",
+   "turn_count": 14,
+   "spend_usd": 1.283011
+  },
+  {
+   "at": "2026-10-29T16:35:36+00:00",
+   "status": "running",
+   "turn_count": 14,
+   "spend_usd": 1.283011
+  },
+  {
+   "at": "2026-10-29T16:35:53+00:00",
+   "status": "running",
+   "turn_count": 15,
+   "spend_usd": 1.303018
+  },
+  {
+   "at": "2026-10-29T16:35:53+00:00",
+   "status": "running",
+   "turn_count": 15,
+   "spend_usd": 1.303018
+  },
+  {
+   "at": "2026-10-29T16:36:24+00:00",
+   "status": "running",
+   "turn_count": 16,
+   "spend_usd": 1.310468
+  },
+  {
+   "at": "2026-10-29T16:36:24+00:00",
+   "status": "running",
+   "turn_count": 16,
+   "spend_usd": 1.310468
+  },
+  {
+   "at": "2026-10-29T16:36:26+00:00",
+   "status": "running",
+   "turn_count": 17,
+   "spend_usd": 1.315428
+  },
+  {
+   "at": "2026-10-29T16:36:26+00:00",
+   "status": "running",
+   "turn_count": 17,
+   "spend_usd": 1.315428
+  },
+  {
+   "at": "2026-10-29T16:36:35+00:00",
+   "status": "running",
+   "turn_count": 18,
+   "spend_usd": 1.316318
+  },
+  {
+   "at": "2026-10-29T16:36:35+00:00",
+   "status": "running",
+   "turn_count": 18,
+   "spend_usd": 1.316318
+  },
+  {
+   "at": "2026-10-29T16:36:38+00:00",
+   "status": "running",
+   "turn_count": 19,
+   "spend_usd": 1.323952
+  },
+  {
+   "at": "2026-10-29T16:36:38+00:00",
+   "status": "running",
+   "turn_count": 19,
+   "spend_usd": 1.323952
+  },
+  {
+   "at": "2026-10-29T16:36:47+00:00",
+   "status": "running",
+   "turn_count": 20,
+   "spend_usd": 1.325048
+  },
+  {
+   "at": "2026-10-29T16:36:47+00:00",
+   "status": "running",
+   "turn_count": 20,
+   "spend_usd": 1.325048
+  },
+  {
+   "at": "2026-10-29T16:36:50+00:00",
+   "status": "running",
+   "turn_count": 21,
+   "spend_usd": 1.331382
+  },
+  {
+   "at": "2026-10-29T16:36:50+00:00",
+   "status": "running",
+   "turn_count": 21,
+   "spend_usd": 1.331382
+  },
+  {
+   "at": "2026-10-29T16:36:58+00:00",
+   "status": "running",
+   "turn_count": 22,
+   "spend_usd": 1.332264
+  },
+  {
+   "at": "2026-10-29T16:36:58+00:00",
+   "status": "running",
+   "turn_count": 22,
+   "spend_usd": 1.332264
+  },
+  {
+   "at": "2026-10-29T16:37:00+00:00",
+   "status": "running",
+   "turn_count": 23,
+   "spend_usd": 1.334453
+  },
+  {
+   "at": "2026-10-29T16:37:00+00:00",
+   "status": "running",
+   "turn_count": 23,
+   "spend_usd": 1.334453
+  },
+  {
+   "at": "2026-10-29T16:37:48+00:00",
+   "status": "running",
+   "turn_count": 24,
+   "spend_usd": 1.335315
+  },
+  {
+   "at": "2026-10-29T16:37:48+00:00",
+   "status": "running",
+   "turn_count": 24,
+   "spend_usd": 1.335315
+  },
+  {
+   "at": "2026-10-29T16:38:24+00:00",
+   "status": "running",
+   "turn_count": 25,
+   "spend_usd": 1.386522
+  },
+  {
+   "at": "2026-10-29T16:38:24+00:00",
+   "status": "running",
+   "turn_count": 25,
+   "spend_usd": 1.386522
+  },
+  {
+   "at": "2026-10-29T16:39:29+00:00",
+   "status": "running",
+   "turn_count": 26,
+   "spend_usd": 1.404682
+  },
+  {
+   "at": "2026-10-29T16:39:29+00:00",
+   "status": "running",
+   "turn_count": 26,
+   "spend_usd": 1.404682
+  },
+  {
+   "at": "2026-10-29T16:39:30+00:00",
+   "status": "running",
+   "turn_count": 27,
+   "spend_usd": 1.406562
+  },
+  {
+   "at": "2026-10-29T16:39:30+00:00",
+   "status": "running",
+   "turn_count": 27,
+   "spend_usd": 1.406562
+  },
+  {
+   "at": "2026-10-29T16:40:08+00:00",
+   "status": "running",
+   "turn_count": 28,
+   "spend_usd": 1.407363
+  },
+  {
+   "at": "2026-10-29T16:40:08+00:00",
+   "status": "running",
+   "turn_count": 28,
+   "spend_usd": 1.407363
+  },
+  {
+   "at": "2026-10-29T16:40:24+00:00",
+   "status": "running",
+   "turn_count": 29,
+   "spend_usd": 1.433578
+  },
+  {
+   "at": "2026-10-29T16:40:24+00:00",
+   "status": "running",
+   "turn_count": 29,
+   "spend_usd": 1.433578
+  },
+  {
+   "at": "2026-10-29T16:40:50+00:00",
+   "status": "running",
+   "turn_count": 30,
+   "spend_usd": 1.437862
+  },
+  {
+   "at": "2026-10-29T16:40:50+00:00",
+   "status": "running",
+   "turn_count": 30,
+   "spend_usd": 1.437862
+  },
+  {
+   "at": "2026-10-29T16:41:03+00:00",
+   "status": "running",
+   "turn_count": 31,
+   "spend_usd": 1.467203
+  },
+  {
+   "at": "2026-10-29T16:41:04+00:00",
+   "status": "running",
+   "turn_count": 31,
+   "spend_usd": 1.467203
+  },
+  {
+   "at": "2026-10-29T16:43:00+00:00",
+   "status": "running",
+   "turn_count": 32,
+   "spend_usd": 1.470048
+  },
+  {
+   "at": "2026-10-29T16:43:00+00:00",
+   "status": "running",
+   "turn_count": 32,
+   "spend_usd": 1.470048
+  },
+  {
+   "at": "2026-10-29T16:43:26+00:00",
+   "status": "running",
+   "turn_count": 33,
+   "spend_usd": 1.515949
+  },
+  {
+   "at": "2026-10-29T16:43:26+00:00",
+   "status": "running",
+   "turn_count": 33,
+   "spend_usd": 1.515949
+  },
+  {
+   "at": "2026-10-29T16:43:56+00:00",
+   "status": "running",
+   "turn_count": 34,
+   "spend_usd": 1.523706
+  },
+  {
+   "at": "2026-10-29T16:43:56+00:00",
+   "status": "running",
+   "turn_count": 34,
+   "spend_usd": 1.523706
+  },
+  {
+   "at": "2026-10-29T16:44:01+00:00",
+   "status": "running",
+   "turn_count": 35,
+   "spend_usd": 1.542043
+  },
+  {
+   "at": "2026-10-29T16:44:01+00:00",
+   "status": "running",
+   "turn_count": 35,
+   "spend_usd": 1.542043
+  },
+  {
+   "at": "2026-10-29T16:44:12+00:00",
+   "status": "running",
+   "turn_count": 36,
+   "spend_usd": 1.5437
+  },
+  {
+   "at": "2026-10-29T16:44:12+00:00",
+   "status": "running",
+   "turn_count": 36,
+   "spend_usd": 1.5437
+  },
+  {
+   "at": "2026-10-29T16:44:32+00:00",
+   "status": "running",
+   "turn_count": 37,
+   "spend_usd": 1.579398
+  },
+  {
+   "at": "2026-10-29T16:44:32+00:00",
+   "status": "running",
+   "turn_count": 37,
+   "spend_usd": 1.579398
+  },
+  {
+   "at": "2026-10-29T16:46:20+00:00",
+   "status": "running",
+   "turn_count": 38,
+   "spend_usd": 1.58371
+  },
+  {
+   "at": "2026-10-29T16:46:20+00:00",
+   "status": "running",
+   "turn_count": 38,
+   "spend_usd": 1.58371
+  },
+  {
+   "at": "2026-10-29T16:47:00+00:00",
+   "status": "running",
+   "turn_count": 39,
+   "spend_usd": 1.67159
+  },
+  {
+   "at": "2026-10-29T16:47:00+00:00",
+   "status": "running",
+   "turn_count": 39,
+   "spend_usd": 1.67159
+  },
+  {
+   "at": "2026-10-29T16:47:00+00:00",
+   "status": "running",
+   "turn_count": 39,
+   "spend_usd": 1.67159
+  },
+  {
+   "at": "2026-10-29T16:47:20+00:00",
+   "status": "running",
+   "turn_count": 40,
+   "spend_usd": 1.708515
+  },
+  {
+   "at": "2026-10-29T16:47:20+00:00",
+   "status": "running",
+   "turn_count": 40,
+   "spend_usd": 1.708515
+  },
+  {
+   "at": "2026-10-29T16:47:20+00:00",
+   "status": "paused_turn_limit",
+   "turn_count": 40,
+   "spend_usd": 1.708515,
+   "reason": "Stopped at the turn limit (40 turns). Resume to continue with a fresh budget of turns."
+  },
+  {
+   "at": "2026-10-29T16:47:20+00:00",
+   "status": "queued",
+   "turn_count": 0,
+   "spend_usd": 1.708515,
+   "reason": "Resuming with a fresh budget of 40 turns."
+  },
+  {
+   "at": "2026-10-29T16:47:20+00:00",
+   "status": "running",
+   "turn_count": 0,
+   "spend_usd": 1.708515
+  },
+  {
+   "at": "2026-10-29T16:47:40+00:00",
+   "status": "running",
+   "turn_count": 1,
+   "spend_usd": 1.713223
+  },
+  {
+   "at": "2026-10-29T16:47:40+00:00",
+   "status": "running",
+   "turn_count": 1,
+   "spend_usd": 1.713223
+  },
+  {
+   "at": "2026-10-29T16:48:41+00:00",
+   "status": "running",
+   "turn_count": 2,
+   "spend_usd": 1.794075
+  },
+  {
+   "at": "2026-10-29T16:48:41+00:00",
+   "status": "running",
+   "turn_count": 2,
+   "spend_usd": 1.794075
+  },
+  {
+   "at": "2026-10-29T16:49:21+00:00",
+   "status": "running",
+   "turn_count": 3,
+   "spend_usd": 1.806198
+  },
+  {
+   "at": "2026-10-29T16:49:21+00:00",
+   "status": "running",
+   "turn_count": 3,
+   "spend_usd": 1.806198
+  },
+  {
+   "at": "2026-10-29T16:51:11+00:00",
+   "status": "running",
+   "turn_count": 4,
+   "spend_usd": 2.022158
+  },
+  {
+   "at": "2026-10-29T16:51:11+00:00",
+   "status": "running",
+   "turn_count": 4,
+   "spend_usd": 2.022158
+  },
+  {
+   "at": "2026-10-29T16:51:11+00:00",
+   "status": "running",
+   "turn_count": 4,
+   "spend_usd": 2.022158
+  },
+  {
+   "at": "2026-10-29T16:51:13+00:00",
+   "status": "running",
+   "turn_count": 5,
+   "spend_usd": 2.024525
+  },
+  {
+   "at": "2026-10-29T16:51:13+00:00",
+   "status": "running",
+   "turn_count": 5,
+   "spend_usd": 2.024525
+  },
+  {
+   "at": "2026-10-29T16:51:20+00:00",
+   "status": "running",
+   "turn_count": 6,
+   "spend_usd": 2.025421
+  },
+  {
+   "at": "2026-10-29T16:51:20+00:00",
+   "status": "running",
+   "turn_count": 6,
+   "spend_usd": 2.025421
+  },
+  {
+   "at": "2026-10-29T16:51:22+00:00",
+   "status": "running",
+   "turn_count": 7,
+   "spend_usd": 2.039347
+  },
+  {
+   "at": "2026-10-29T16:51:22+00:00",
+   "status": "running",
+   "turn_count": 7,
+   "spend_usd": 2.039347
+  },
+  {
+   "at": "2026-10-29T16:51:31+00:00",
+   "status": "running",
+   "turn_count": 8,
+   "spend_usd": 2.040367
+  },
+  {
+   "at": "2026-10-29T16:51:31+00:00",
+   "status": "running",
+   "turn_count": 8,
+   "spend_usd": 2.040367
+  },
+  {
+   "at": "2026-10-29T16:51:48+00:00",
+   "status": "running",
+   "turn_count": 9,
+   "spend_usd": 2.070069
+  },
+  {
+   "at": "2026-10-29T16:51:48+00:00",
+   "status": "running",
+   "turn_count": 9,
+   "spend_usd": 2.070069
+  },
+  {
+   "at": "2026-10-29T16:52:16+00:00",
+   "status": "running",
+   "turn_count": 10,
+   "spend_usd": 2.076534
+  },
+  {
+   "at": "2026-10-29T16:52:16+00:00",
+   "status": "running",
+   "turn_count": 10,
+   "spend_usd": 2.076534
+  },
+  {
+   "at": "2026-10-29T16:52:19+00:00",
+   "status": "running",
+   "turn_count": 11,
+   "spend_usd": 2.082226
+  },
+  {
+   "at": "2026-10-29T16:52:19+00:00",
+   "status": "running",
+   "turn_count": 11,
+   "spend_usd": 2.082226
+  },
+  {
+   "at": "2026-10-29T16:52:28+00:00",
+   "status": "running",
+   "turn_count": 12,
+   "spend_usd": 2.083202
+  },
+  {
+   "at": "2026-10-29T16:52:28+00:00",
+   "status": "running",
+   "turn_count": 12,
+   "spend_usd": 2.083202
+  },
+  {
+   "at": "2026-10-29T16:52:30+00:00",
+   "status": "running",
+   "turn_count": 13,
+   "spend_usd": 2.091436
+  },
+  {
+   "at": "2026-10-29T16:52:30+00:00",
+   "status": "running",
+   "turn_count": 13,
+   "spend_usd": 2.091436
+  },
+  {
+   "at": "2026-10-29T16:52:35+00:00",
+   "status": "running",
+   "turn_count": 14,
+   "spend_usd": 2.092314
+  },
+  {
+   "at": "2026-10-29T16:52:35+00:00",
+   "status": "running",
+   "turn_count": 14,
+   "spend_usd": 2.092314
+  },
+  {
+   "at": "2026-10-29T16:52:36+00:00",
+   "status": "running",
+   "turn_count": 15,
+   "spend_usd": 2.100298
+  },
+  {
+   "at": "2026-10-29T16:52:36+00:00",
+   "status": "running",
+   "turn_count": 15,
+   "spend_usd": 2.100298
+  },
+  {
+   "at": "2026-10-29T16:52:47+00:00",
+   "status": "running",
+   "turn_count": 16,
+   "spend_usd": 2.101146
+  },
+  {
+   "at": "2026-10-29T16:52:47+00:00",
+   "status": "running",
+   "turn_count": 16,
+   "spend_usd": 2.101146
+  },
+  {
+   "at": "2026-10-29T16:52:48+00:00",
+   "status": "running",
+   "turn_count": 17,
+   "spend_usd": 2.103418
+  },
+  {
+   "at": "2026-10-29T16:52:48+00:00",
+   "status": "running",
+   "turn_count": 17,
+   "spend_usd": 2.103418
+  },
+  {
+   "at": "2026-10-29T16:52:57+00:00",
+   "status": "running",
+   "turn_count": 18,
+   "spend_usd": 2.104249
+  },
+  {
+   "at": "2026-10-29T16:52:57+00:00",
+   "status": "running",
+   "turn_count": 18,
+   "spend_usd": 2.104249
+  },
+  {
+   "at": "2026-10-29T16:52:58+00:00",
+   "status": "running",
+   "turn_count": 19,
+   "spend_usd": 2.106539
+  },
+  {
+   "at": "2026-10-29T16:52:58+00:00",
+   "status": "running",
+   "turn_count": 19,
+   "spend_usd": 2.106539
+  },
+  {
+   "at": "2026-10-29T16:53:06+00:00",
+   "status": "running",
+   "turn_count": 20,
+   "spend_usd": 2.107363
+  },
+  {
+   "at": "2026-10-29T16:53:06+00:00",
+   "status": "running",
+   "turn_count": 20,
+   "spend_usd": 2.107363
+  },
+  {
+   "at": "2026-10-29T16:53:47+00:00",
+   "status": "running",
+   "turn_count": 21,
+   "spend_usd": 2.160337
+  },
+  {
+   "at": "2026-10-29T16:53:47+00:00",
+   "status": "running",
+   "turn_count": 21,
+   "spend_usd": 2.160337
+  },
+  {
+   "at": "2026-10-29T16:54:14+00:00",
+   "status": "running",
+   "turn_count": 22,
+   "spend_usd": 2.165951
+  },
+  {
+   "at": "2026-10-29T16:54:14+00:00",
+   "status": "running",
+   "turn_count": 22,
+   "spend_usd": 2.165951
+  },
+  {
+   "at": "2026-10-29T16:54:15+00:00",
+   "status": "running",
+   "turn_count": 23,
+   "spend_usd": 2.168122
+  },
+  {
+   "at": "2026-10-29T16:54:15+00:00",
+   "status": "running",
+   "turn_count": 23,
+   "spend_usd": 2.168122
+  },
+  {
+   "at": "2026-10-29T16:54:22+00:00",
+   "status": "running",
+   "turn_count": 24,
+   "spend_usd": 2.168922
+  },
+  {
+   "at": "2026-10-29T16:54:22+00:00",
+   "status": "running",
+   "turn_count": 24,
+   "spend_usd": 2.168922
+  },
+  {
+   "at": "2026-10-29T16:54:28+00:00",
+   "status": "running",
+   "turn_count": 25,
+   "spend_usd": 2.18884
+  },
+  {
+   "at": "2026-10-29T16:54:28+00:00",
+   "status": "running",
+   "turn_count": 25,
+   "spend_usd": 2.18884
+  },
+  {
+   "at": "2026-10-29T16:55:16+00:00",
+   "status": "running",
+   "turn_count": 26,
+   "spend_usd": 2.18994
+  },
+  {
+   "at": "2026-10-29T16:55:16+00:00",
+   "status": "running",
+   "turn_count": 26,
+   "spend_usd": 2.18994
+  },
+  {
+   "at": "2026-10-29T16:55:18+00:00",
+   "status": "running",
+   "turn_count": 27,
+   "spend_usd": 2.191988
+  },
+  {
+   "at": "2026-10-29T16:55:18+00:00",
+   "status": "running",
+   "turn_count": 27,
+   "spend_usd": 2.191988
+  },
+  {
+   "at": "2026-10-29T16:55:50+00:00",
+   "status": "running",
+   "turn_count": 28,
+   "spend_usd": 2.192877
+  },
+  {
+   "at": "2026-10-29T16:55:50+00:00",
+   "status": "running",
+   "turn_count": 28,
+   "spend_usd": 2.192877
+  },
+  {
+   "at": "2026-10-29T16:55:54+00:00",
+   "status": "running",
+   "turn_count": 29,
+   "spend_usd": 2.210454
+  },
+  {
+   "at": "2026-10-29T16:55:54+00:00",
+   "status": "running",
+   "turn_count": 29,
+   "spend_usd": 2.210454
+  },
+  {
+   "at": "2026-10-29T16:56:02+00:00",
+   "status": "running",
+   "turn_count": 30,
+   "spend_usd": 2.211377
+  },
+  {
+   "at": "2026-10-29T16:56:02+00:00",
+   "status": "running",
+   "turn_count": 30,
+   "spend_usd": 2.211377
+  },
+  {
+   "at": "2026-10-29T16:56:05+00:00",
+   "status": "running",
+   "turn_count": 31,
+   "spend_usd": 2.227739
+  },
+  {
+   "at": "2026-10-29T16:56:05+00:00",
+   "status": "running",
+   "turn_count": 31,
+   "spend_usd": 2.227739
+  },
+  {
+   "at": "2026-10-29T16:58:23+00:00",
+   "status": "running",
+   "turn_count": 32,
+   "spend_usd": 2.228907
+  },
+  {
+   "at": "2026-10-29T16:58:23+00:00",
+   "status": "running",
+   "turn_count": 32,
+   "spend_usd": 2.228907
+  },
+  {
+   "at": "2026-10-29T16:58:26+00:00",
+   "status": "running",
+   "turn_count": 33,
+   "spend_usd": 2.243049
+  },
+  {
+   "at": "2026-10-29T16:58:26+00:00",
+   "status": "running",
+   "turn_count": 33,
+   "spend_usd": 2.243049
+  },
+  {
+   "at": "2026-10-29T16:58:35+00:00",
+   "status": "running",
+   "turn_count": 34,
+   "spend_usd": 2.244161
+  },
+  {
+   "at": "2026-10-29T16:58:35+00:00",
+   "status": "running",
+   "turn_count": 34,
+   "spend_usd": 2.244161
+  },
+  {
+   "at": "2026-10-29T16:58:54+00:00",
+   "status": "running",
+   "turn_count": 35,
+   "spend_usd": 2.28232
+  },
+  {
+   "at": "2026-10-29T16:58:54+00:00",
+   "status": "running",
+   "turn_count": 35,
+   "spend_usd": 2.28232
+  },
+  {
+   "at": "2026-10-29T16:59:23+00:00",
+   "status": "running",
+   "turn_count": 36,
+   "spend_usd": 2.288716
+  },
+  {
+   "at": "2026-10-29T16:59:23+00:00",
+   "status": "running",
+   "turn_count": 36,
+   "spend_usd": 2.288716
+  },
+  {
+   "at": "2026-10-29T16:59:25+00:00",
+   "status": "running",
+   "turn_count": 37,
+   "spend_usd": 2.290896
+  },
+  {
+   "at": "2026-10-29T16:59:25+00:00",
+   "status": "running",
+   "turn_count": 37,
+   "spend_usd": 2.290896
+  },
+  {
+   "at": "2026-10-29T17:00:06+00:00",
+   "status": "running",
+   "turn_count": 38,
+   "spend_usd": 2.292057
+  },
+  {
+   "at": "2026-10-29T17:00:06+00:00",
+   "status": "running",
+   "turn_count": 38,
+   "spend_usd": 2.292057
+  },
+  {
+   "at": "2026-10-29T17:00:13+00:00",
+   "status": "running",
+   "turn_count": 39,
+   "spend_usd": 2.311913
+  },
+  {
+   "at": "2026-10-29T17:00:13+00:00",
+   "status": "running",
+   "turn_count": 39,
+   "spend_usd": 2.311913
+  },
+  {
+   "at": "2026-10-29T17:01:29+00:00",
+   "status": "running",
+   "turn_count": 40,
+   "spend_usd": 2.31424
+  },
+  {
+   "at": "2026-10-29T17:01:29+00:00",
+   "status": "running",
+   "turn_count": 40,
+   "spend_usd": 2.31424
+  },
+  {
+   "at": "2026-10-29T17:01:29+00:00",
+   "status": "paused_turn_limit",
+   "turn_count": 40,
+   "spend_usd": 2.31424,
+   "reason": "Stopped at the turn limit (40 turns). Resume to continue with a fresh budget of turns."
+  },
+  {
+   "at": "2026-10-29T17:01:29+00:00",
+   "status": "queued",
+   "turn_count": 0,
+   "spend_usd": 2.31424,
+   "reason": "Resuming with a fresh budget of 40 turns."
+  },
+  {
+   "at": "2026-10-29T17:01:29+00:00",
+   "status": "running",
+   "turn_count": 0,
+   "spend_usd": 2.31424
+  },
+  {
+   "at": "2026-10-29T17:01:31+00:00",
+   "status": "running",
+   "turn_count": 1,
+   "spend_usd": 2.316585
+  },
+  {
+   "at": "2026-10-29T17:01:31+00:00",
+   "status": "running",
+   "turn_count": 1,
+   "spend_usd": 2.316585
+  },
+  {
+   "at": "2026-10-29T17:01:39+00:00",
+   "status": "running",
+   "turn_count": 2,
+   "spend_usd": 2.317757
+  },
+  {
+   "at": "2026-10-29T17:01:39+00:00",
+   "status": "running",
+   "turn_count": 2,
+   "spend_usd": 2.317757
+  },
+  {
+   "at": "2026-10-29T17:01:42+00:00",
+   "status": "running",
+   "turn_count": 3,
+   "spend_usd": 2.322597
+  },
+  {
+   "at": "2026-10-29T17:01:42+00:00",
+   "status": "running",
+   "turn_count": 3,
+   "spend_usd": 2.322597
+  },
+  {
+   "at": "2026-10-29T17:01:50+00:00",
+   "status": "running",
+   "turn_count": 4,
+   "spend_usd": 2.323568
+  },
+  {
+   "at": "2026-10-29T17:01:50+00:00",
+   "status": "running",
+   "turn_count": 4,
+   "spend_usd": 2.323568
+  },
+  {
+   "at": "2026-10-29T17:01:52+00:00",
+   "status": "running",
+   "turn_count": 5,
+   "spend_usd": 2.325913
+  },
+  {
+   "at": "2026-10-29T17:01:52+00:00",
+   "status": "running",
+   "turn_count": 5,
+   "spend_usd": 2.325913
+  },
+  {
+   "at": "2026-10-29T17:02:00+00:00",
+   "status": "running",
+   "turn_count": 6,
+   "spend_usd": 2.32686
+  },
+  {
+   "at": "2026-10-29T17:02:00+00:00",
+   "status": "running",
+   "turn_count": 6,
+   "spend_usd": 2.32686
+  },
+  {
+   "at": "2026-10-29T17:02:12+00:00",
+   "status": "running",
+   "turn_count": 7,
+   "spend_usd": 2.348175
+  },
+  {
+   "at": "2026-10-29T17:02:12+00:00",
+   "status": "running",
+   "turn_count": 7,
+   "spend_usd": 2.348175
+  },
+  {
+   "at": "2026-10-29T17:02:35+00:00",
+   "status": "running",
+   "turn_count": 8,
+   "spend_usd": 2.352751
+  },
+  {
+   "at": "2026-10-29T17:02:35+00:00",
+   "status": "running",
+   "turn_count": 8,
+   "spend_usd": 2.352751
+  },
+  {
+   "at": "2026-10-29T17:02:41+00:00",
+   "status": "running",
+   "turn_count": 9,
+   "spend_usd": 2.368578
+  },
+  {
+   "at": "2026-10-29T17:02:41+00:00",
+   "status": "running",
+   "turn_count": 9,
+   "spend_usd": 2.368578
+  },
+  {
+   "at": "2026-10-29T17:02:50+00:00",
+   "status": "running",
+   "turn_count": 10,
+   "spend_usd": 2.370274
+  },
+  {
+   "at": "2026-10-29T17:02:50+00:00",
+   "status": "running",
+   "turn_count": 10,
+   "spend_usd": 2.370274
+  },
+  {
+   "at": "2026-10-29T17:03:21+00:00",
+   "status": "running",
+   "turn_count": 11,
+   "spend_usd": 2.41279
+  },
+  {
+   "at": "2026-10-29T17:03:21+00:00",
+   "status": "running",
+   "turn_count": 11,
+   "spend_usd": 2.41279
+  },
+  {
+   "at": "2026-10-29T17:03:44+00:00",
+   "status": "running",
+   "turn_count": 12,
+   "spend_usd": 2.41831
+  },
+  {
+   "at": "2026-10-29T17:03:44+00:00",
+   "status": "running",
+   "turn_count": 12,
+   "spend_usd": 2.41831
+  },
+  {
+   "at": "2026-10-29T17:03:50+00:00",
+   "status": "running",
+   "turn_count": 13,
+   "spend_usd": 2.437556
+  },
+  {
+   "at": "2026-10-29T17:03:50+00:00",
+   "status": "running",
+   "turn_count": 13,
+   "spend_usd": 2.437556
+  },
+  {
+   "at": "2026-10-29T17:03:59+00:00",
+   "status": "running",
+   "turn_count": 14,
+   "spend_usd": 2.438874
+  },
+  {
+   "at": "2026-10-29T17:03:59+00:00",
+   "status": "running",
+   "turn_count": 14,
+   "spend_usd": 2.438874
+  },
+  {
+   "at": "2026-10-29T17:04:25+00:00",
+   "status": "running",
+   "turn_count": 15,
+   "spend_usd": 2.481787
+  },
+  {
+   "at": "2026-10-29T17:04:25+00:00",
+   "status": "running",
+   "turn_count": 15,
+   "spend_usd": 2.481787
+  },
+  {
+   "at": "2026-10-29T17:04:59+00:00",
+   "status": "running",
+   "turn_count": 16,
+   "spend_usd": 2.490628
+  },
+  {
+   "at": "2026-10-29T17:04:59+00:00",
+   "status": "running",
+   "turn_count": 16,
+   "spend_usd": 2.490628
+  },
+  {
+   "at": "2026-10-29T17:05:04+00:00",
+   "status": "running",
+   "turn_count": 17,
+   "spend_usd": 2.503615
+  },
+  {
+   "at": "2026-10-29T17:05:04+00:00",
+   "status": "running",
+   "turn_count": 17,
+   "spend_usd": 2.503615
+  },
+  {
+   "at": "2026-10-29T17:05:18+00:00",
+   "status": "running",
+   "turn_count": 18,
+   "spend_usd": 2.505014
+  },
+  {
+   "at": "2026-10-29T17:05:18+00:00",
+   "status": "running",
+   "turn_count": 18,
+   "spend_usd": 2.505014
+  },
+  {
+   "at": "2026-10-29T17:05:31+00:00",
+   "status": "running",
+   "turn_count": 19,
+   "spend_usd": 2.530319
+  },
+  {
+   "at": "2026-10-29T17:05:31+00:00",
+   "status": "running",
+   "turn_count": 19,
+   "spend_usd": 2.530319
+  },
+  {
+   "at": "2026-10-29T17:05:48+00:00",
+   "status": "running",
+   "turn_count": 20,
+   "spend_usd": 2.53357
+  },
+  {
+   "at": "2026-10-29T17:05:48+00:00",
+   "status": "running",
+   "turn_count": 20,
+   "spend_usd": 2.53357
+  },
+  {
+   "at": "2026-10-29T17:05:54+00:00",
+   "status": "running",
+   "turn_count": 21,
+   "spend_usd": 2.55159
+  },
+  {
+   "at": "2026-10-29T17:05:54+00:00",
+   "status": "running",
+   "turn_count": 21,
+   "spend_usd": 2.55159
+  },
+  {
+   "at": "2026-10-29T17:06:05+00:00",
+   "status": "running",
+   "turn_count": 22,
+   "spend_usd": 2.552811
+  },
+  {
+   "at": "2026-10-29T17:06:05+00:00",
+   "status": "running",
+   "turn_count": 22,
+   "spend_usd": 2.552811
+  },
+  {
+   "at": "2026-10-29T17:06:06+00:00",
+   "status": "running",
+   "turn_count": 23,
+   "spend_usd": 2.555558
+  },
+  {
+   "at": "2026-10-29T17:06:06+00:00",
+   "status": "running",
+   "turn_count": 23,
+   "spend_usd": 2.555558
+  },
+  {
+   "at": "2026-10-29T17:06:15+00:00",
+   "status": "running",
+   "turn_count": 24,
+   "spend_usd": 2.55643
+  },
+  {
+   "at": "2026-10-29T17:06:15+00:00",
+   "status": "running",
+   "turn_count": 24,
+   "spend_usd": 2.55643
+  },
+  {
+   "at": "2026-10-29T17:06:17+00:00",
+   "status": "running",
+   "turn_count": 25,
+   "spend_usd": 2.56251
+  },
+  {
+   "at": "2026-10-29T17:06:17+00:00",
+   "status": "running",
+   "turn_count": 25,
+   "spend_usd": 2.56251
+  },
+  {
+   "at": "2026-10-29T17:06:24+00:00",
+   "status": "running",
+   "turn_count": 26,
+   "spend_usd": 2.563458
+  },
+  {
+   "at": "2026-10-29T17:06:24+00:00",
+   "status": "running",
+   "turn_count": 26,
+   "spend_usd": 2.563458
+  },
+  {
+   "at": "2026-10-29T17:06:26+00:00",
+   "status": "running",
+   "turn_count": 27,
+   "spend_usd": 2.566894
+  },
+  {
+   "at": "2026-10-29T17:06:26+00:00",
+   "status": "running",
+   "turn_count": 27,
+   "spend_usd": 2.566894
+  },
+  {
+   "at": "2026-10-29T17:06:39+00:00",
+   "status": "running",
+   "turn_count": 28,
+   "spend_usd": 2.567717
+  },
+  {
+   "at": "2026-10-29T17:06:39+00:00",
+   "status": "running",
+   "turn_count": 28,
+   "spend_usd": 2.567717
+  },
+  {
+   "at": "2026-10-29T17:06:40+00:00",
+   "status": "running",
+   "turn_count": 29,
+   "spend_usd": 2.569744
+  },
+  {
+   "at": "2026-10-29T17:06:40+00:00",
+   "status": "running",
+   "turn_count": 29,
+   "spend_usd": 2.569744
+  },
+  {
+   "at": "2026-10-29T17:06:45+00:00",
+   "status": "running",
+   "turn_count": 30,
+   "spend_usd": 2.570587
+  },
+  {
+   "at": "2026-10-29T17:06:45+00:00",
+   "status": "running",
+   "turn_count": 30,
+   "spend_usd": 2.570587
+  },
+  {
+   "at": "2026-10-29T17:06:45+00:00",
+   "status": "done",
+   "turn_count": 30,
+   "spend_usd": 2.570587,
+   "reason": "Read 114 pages: 96 rows, 0 values."
+  }
+ ],
+ "sent_back": {
+  "src-ions-8k-0001140361-26-040631-ex991-p1": "nothing to send",
+  "src-ions-8k-0001140361-26-040631-ex991-p1#second": "nothing to send",
+  "src-ions-8k-0001140361-26-040631-ex991-p2": "nothing to send",
+  "src-ions-8k-0001140361-26-040631-ex991-p2#second": "nothing to send",
+  "src-ions-8k-0001140361-26-040631-ex991-p3": "nothing to send",
+  "src-ions-8k-0001140361-26-040631-ex991-p3#second": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p1": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p1#second": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p2": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p2#second": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p3": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p3#second": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p4": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p4#second": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p5": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p5#second": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p6": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p6#second": "nothing to send",
+  "src-ions-8k-0001140361-26-037371-ex991-p1": "nothing to send",
+  "src-ions-8k-0001140361-26-037371-ex991-p1#second": "nothing to send",
+  "src-ions-8k-0001140361-26-037371-ex991-p2": "nothing to send",
+  "src-ions-8k-0001140361-26-037371-ex991-p2#second": "nothing to send",
+  "src-ions-8k-0001140361-26-037371-ex991-p3": "nothing to send",
+  "src-ions-8k-0001140361-26-037371-ex991-p3#second": "nothing to send",
+  "src-ions-8k-0001140361-26-035802-ex991-p1": "nothing to send",
+  "src-ions-8k-0001140361-26-035802-ex991-p1#second": "nothing to send",
+  "src-ions-8k-0001140361-26-035802-ex991-p2": "nothing to send",
+  "src-ions-8k-0001140361-26-035802-ex991-p2#second": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p1": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p1#second": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p2": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p2#second": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p3": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p3#second": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p4": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p4#second": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p5": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p5#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p1": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p1#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p2": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p2#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p3": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p3#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p4": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p4#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p5": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p5#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p6": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p6#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p1": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p1#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p2": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p2#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p3": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p3#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p4": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p4#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p5": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p5#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p6": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p6#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p7": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p7#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p8": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p8#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p9": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p9#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p10": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p10#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p11": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p11#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p12": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p12#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p13": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p13#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p14": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p14#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p15": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p15#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p16": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p16#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p17": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p17#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p18": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p18#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p19": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p19#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p20": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p20#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p21": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p21#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p22": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p22#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p23": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p23#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p24": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p24#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p25": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p25#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p26": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p26#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p27": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p27#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p28": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p28#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p29": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p29#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p30": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p30#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p31": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p31#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p32": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p32#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p33": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p33#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p34": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p34#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p35": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p35#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p36": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p36#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p37": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p37#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p38": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p38#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p39": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p39#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p40": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p40#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p41": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p41#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p42": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p42#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p43": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p43#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p44": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p44#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p45": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p45#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p46": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p46#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p47": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p47#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p48": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p48#second": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p49": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p49#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p1": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p1#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p2": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p2#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p3": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p3#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p4": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p4#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p5": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p5#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p6": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p6#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p7": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p7#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p8": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p8#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p9": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p9#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p10": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p10#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p11": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p11#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p12": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p12#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p13": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p13#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p14": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p14#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p15": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p15#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p1": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p1#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p2": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p2#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p3": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p3#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p4": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p4#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p5": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p5#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p6": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p6#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p7": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p7#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p8": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p8#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p9": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p9#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p10": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p10#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p11": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p11#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p12": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p12#second": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p13": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p13#second": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p1": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p1#second": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p2": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p2#second": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p3": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p3#second": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p4": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p4#second": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p5": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p5#second": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p6": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p6#second": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p7": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p7#second": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p8": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p8#second": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p9": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p9#second": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p10": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p10#second": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p11": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p11#second": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p12": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p12#second": "nothing to send"
+ },
+ "second_attempts": {
+  "src-ions-8k-0001140361-26-040631-ex991-p1": [],
+  "src-ions-8k-0001140361-26-040631-ex991-p2": [],
+  "src-ions-8k-0001140361-26-040631-ex991-p3": [],
+  "src-ions-8k-0001140361-26-040388-ex991-p1": [],
+  "src-ions-8k-0001140361-26-040388-ex991-p2": [],
+  "src-ions-8k-0001140361-26-040388-ex991-p3": [],
+  "src-ions-8k-0001140361-26-040388-ex991-p4": [],
+  "src-ions-8k-0001140361-26-040388-ex991-p5": [],
+  "src-ions-8k-0001140361-26-040388-ex991-p6": [],
+  "src-ions-8k-0001140361-26-037371-ex991-p1": [],
+  "src-ions-8k-0001140361-26-037371-ex991-p2": [],
+  "src-ions-8k-0001140361-26-037371-ex991-p3": [],
+  "src-ions-8k-0001140361-26-035802-ex991-p1": [],
+  "src-ions-8k-0001140361-26-035802-ex991-p2": [],
+  "src-ions-8k-0001140361-26-035657-ex991-p1": [],
+  "src-ions-8k-0001140361-26-035657-ex991-p2": [],
+  "src-ions-8k-0001140361-26-035657-ex991-p3": [],
+  "src-ions-8k-0001140361-26-035657-ex991-p4": [],
+  "src-ions-8k-0001140361-26-035657-ex991-p5": [],
+  "src-ptgx-8k-0001104659-26-091099-ex991-p1": [],
+  "src-ptgx-8k-0001104659-26-091099-ex991-p2": [],
+  "src-ptgx-8k-0001104659-26-091099-ex991-p3": [],
+  "src-ptgx-8k-0001104659-26-091099-ex991-p4": [],
+  "src-ptgx-8k-0001104659-26-091099-ex991-p5": [],
+  "src-ptgx-8k-0001104659-26-091099-ex991-p6": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p1": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p2": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p3": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p4": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p5": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p6": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p7": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p8": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p9": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p10": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p11": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p12": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p13": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p14": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p15": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p16": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p17": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p18": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p19": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p20": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p21": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p22": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p23": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p24": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p25": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p26": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p27": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p28": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p29": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p30": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p31": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p32": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p33": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p34": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p35": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p36": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p37": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p38": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p39": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p40": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p41": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p42": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p43": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p44": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p45": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p46": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p47": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p48": [],
+  "src-ptgx-8k-0001104659-26-091099-ex992-p49": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p1": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p2": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p3": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p4": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p5": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p6": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p7": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p8": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p9": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p10": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p11": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p12": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p13": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p14": [],
+  "src-vktx-8k-0001193125-26-436145-ex991-p15": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p1": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p2": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p3": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p4": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p5": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p6": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p7": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p8": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p9": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p10": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p11": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p12": [],
+  "src-vktx-8k-0001193125-26-397219-ex991-p13": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p1": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p2": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p3": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p4": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p5": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p6": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p7": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p8": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p9": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p10": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p11": [],
+  "src-rvmd-8k-0001193125-26-335039-ex991-p12": []
+ },
+ "escalated": {
+  "src-ions-8k-0001140361-26-040631-ex991-p1": "nothing to send",
+  "src-ions-8k-0001140361-26-040631-ex991-p2": "nothing to send",
+  "src-ions-8k-0001140361-26-040631-ex991-p3": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p1": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p2": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p3": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p4": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p5": "nothing to send",
+  "src-ions-8k-0001140361-26-040388-ex991-p6": "nothing to send",
+  "src-ions-8k-0001140361-26-037371-ex991-p1": "nothing to send",
+  "src-ions-8k-0001140361-26-037371-ex991-p2": "nothing to send",
+  "src-ions-8k-0001140361-26-037371-ex991-p3": "nothing to send",
+  "src-ions-8k-0001140361-26-035802-ex991-p1": "nothing to send",
+  "src-ions-8k-0001140361-26-035802-ex991-p2": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p1": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p2": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p3": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p4": "nothing to send",
+  "src-ions-8k-0001140361-26-035657-ex991-p5": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p1": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p2": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p3": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p4": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p5": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex991-p6": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p1": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p2": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p3": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p4": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p5": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p6": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p7": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p8": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p9": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p10": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p11": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p12": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p13": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p14": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p15": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p16": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p17": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p18": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p19": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p20": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p21": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p22": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p23": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p24": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p25": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p26": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p27": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p28": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p29": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p30": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p31": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p32": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p33": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p34": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p35": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p36": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p37": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p38": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p39": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p40": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p41": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p42": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p43": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p44": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p45": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p46": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p47": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p48": "nothing to send",
+  "src-ptgx-8k-0001104659-26-091099-ex992-p49": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p1": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p2": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p3": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p4": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p5": "done",
+  "src-vktx-8k-0001193125-26-436145-ex991-p6": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p7": "done",
+  "src-vktx-8k-0001193125-26-436145-ex991-p8": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p9": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p10": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p11": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p12": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p13": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p14": "nothing to send",
+  "src-vktx-8k-0001193125-26-436145-ex991-p15": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p1": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p2": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p3": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p4": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p5": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p6": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p7": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p8": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p9": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p10": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p11": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p12": "nothing to send",
+  "src-vktx-8k-0001193125-26-397219-ex991-p13": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p1": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p2": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p3": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p4": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p5": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p6": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p7": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p8": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p9": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p10": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p11": "nothing to send",
+  "src-rvmd-8k-0001193125-26-335039-ex991-p12": "nothing to send"
+ },
+ "escalated_rows": {
+  "e68": "kept",
+  "e76": "kept"
+ },
+ "wonder_spend_usd": 0.30384
+}

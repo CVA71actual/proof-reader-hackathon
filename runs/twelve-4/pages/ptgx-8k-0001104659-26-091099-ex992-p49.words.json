@@ -1,0 +1,41 @@
+{
+ "page_number": 49,
+ "page_width": 612.0,
+ "page_height": 792.0,
+ "units": "PDF points, origin top-left, y grows downward",
+ "words": [
+  {
+   "id": "w0",
+   "text": "Thank",
+   "x0": 31.75,
+   "y0": 399.3,
+   "x1": 33.03,
+   "y1": 399.86,
+   "block": 1,
+   "line": 0,
+   "word": 0
+  },
+  {
+   "id": "w1",
+   "text": "you",
+   "x0": 33.15,
+   "y0": 399.3,
+   "x1": 33.9,
+   "y1": 399.86,
+   "block": 1,
+   "line": 0,
+   "word": 1
+  },
+  {
+   "id": "w2",
+   "text": "49",
+   "x0": 34.03,
+   "y0": 399.3,
+   "x1": 34.53,
+   "y1": 399.86,
+   "block": 1,
+   "line": 0,
+   "word": 2
+  }
+ ]
+}
