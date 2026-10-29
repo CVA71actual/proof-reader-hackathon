@@ -23,6 +23,10 @@ def _fraction(a, b) -> str:
     return f"{a}/{b}"
 
 
+def _window_group(g: dict) -> dict:
+    return {k: g[k] for k in ("count", "proposed_excluded", "proposed_not_excluded", "never_proposed")}
+
+
 def _miss_lines(table: dict | None, events: dict | None, page: int) -> list[dict]:
     out = []
     if table:
@@ -68,7 +72,13 @@ def build_report(key: dict, key_path: str | None = None, *, table: dict | None =
     if table:
         slot(table["model"])["values"] = {"found": table["counts"]["found"], "N": table["N"], **table["counts"]}
     if events:
-        slot(events["model"])["events"] = {"found": events["counts"]["found"], "M": events["M"], **events["counts"]}
+        # found / M is the in-window number: M is the in-window key events, M_total all of them; the buckets
+        # outside_window and unplaced carry the rest (found + wrong + missed + outside + unplaced = M_total)
+        slot(events["model"])["events"] = {"found": events["counts"]["found"], "M": events["M_in_window"],
+                                           "M_total": events["M"], **events["counts"],
+                                           "outside_window": _window_group(events["outside_window"]),
+                                           "unplaced": _window_group(events["unplaced"]),
+                                           "window": events.get("window")}
     if planted:
         name = planted_model or (table or {}).get("model") or "unknown model"
         slot(name)["planted"] = {"caught": planted["caught"], "total": planted["total"],
@@ -91,6 +101,23 @@ def build_report(key: dict, key_path: str | None = None, *, table: dict | None =
         "misses": _miss_lines(table, events, page),
         "right_but_stopped": _right_but_stopped(table, events, page),
     }
+
+
+def _window_lines(e: dict) -> list[str]:
+    """The key events the window sets aside, and the rows it removed (never silently dropped)."""
+    out = []
+    if e.get("window"):
+        w = e["window"]
+        out.append(f"  time window: {w['start']} to {w['end']} ({w['months']} months); {e['M']} of {e['M_total']} "
+                   f"key events are in it")
+    for name, label in (("outside_window", "outside the window"), ("unplaced", "unplaced (vague date)")):
+        g = e[name]
+        if g["count"]:
+            out.append(f"  {label}: {g['count']} (proposed and left out by the window {g['proposed_excluded']}, "
+                       f"proposed and kept {g['proposed_not_excluded']}, never proposed {g['never_proposed']})")
+    if e.get("excluded_by_window"):
+        out.append(f"  rows left out by the window, not held against the model: {e['excluded_by_window']}")
+    return out
 
 
 def header_line(name: str, m: dict) -> str:
@@ -121,9 +148,10 @@ def render_text(rep: dict) -> str:
                          + (f", unscored {v['unscored']}" if v.get("unscored") else ""))
         if m["events"]:
             e = m["events"]
-            lines.append(f"  events: found {e['found']}, wrong date {e['wrong_date']}, wrong type {e['wrong_type']}, "
+            lines.append(f"  events (in the run's window): found {e['found']}, wrong date {e['wrong_date']}, wrong type {e['wrong_type']}, "
                          f"not backed by the checks {e['unsupported']}, missed {e['missed']}, "
                          f"invented {e['invented']}" + (f", unscored {e['unscored']}" if e.get("unscored") else ""))
+            lines.extend(_window_lines(e))
         if m["planted"]:
             parts = ", ".join(f"{kind.replace('_', ' ')} {d['caught']}/{d['total']}"
                               for kind, d in m["planted"]["by_kind"].items() if d["total"])

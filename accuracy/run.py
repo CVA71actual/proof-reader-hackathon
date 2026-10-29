@@ -22,7 +22,7 @@ from pathlib import Path
 from accuracy.key import KeyRefused, check_key, load_key
 from accuracy.mistake_log import load_run, mistake_log
 from accuracy.report import build_report, render_text
-from accuracy.score import model_family, score_events, score_planted, score_table
+from accuracy.score import model_family, run_window, score_events, score_planted, score_table
 from checks.status import check_reading
 
 REPO = Path(__file__).resolve().parent.parent
@@ -61,7 +61,7 @@ def score_run(key: dict, run_dir: Path, key_path: str | None = None, planted: li
     table = score_table(tables[0], key) if key.get("cells") and tables else None
     if key.get("cells") and not tables:
         table = score_table({"rows": [], "model": None}, key)
-    events = score_events(rows, key, run.get("exclusions")) if key.get("events") else None
+    events = score_events(rows, key, run.get("exclusions"), window=run_window(run)) if key.get("events") else None
     plant = score_planted(reading, words_doc, planted) if planted and reading else None
     return build_report(key, key_path, table=table, events=events, planted=plant,
                         run_log=mistake_log(run, decisions), run_id=run["run"]["id"])

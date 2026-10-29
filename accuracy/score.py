@@ -25,6 +25,18 @@ Events, per key event (M = len(key events)):
                  twice (DUPLICATE), or an answer that could not be read (UNREADABLE_OUTPUT)
     found + wrong_date + wrong_type + unsupported + missed = M.
 
+The run's time window (a run started with time_window_months leaves out, under outside_time_window, a row dated
+before the run's start day or later than start + months). Every key event gets `in_window`: True when its first day
+(the day, or the first day of its period) lies in [start, start + months], False when outside, None when its date
+is a vague period that cannot be placed ("mid-2027"). The five buckets above count the in-window key events only
+(M_in_window of them; this is the number the write-up quotes). The others are not dropped:
+    outside_window  key events outside the window: proposed_excluded (a row the run proposed and left out under
+                    outside_time_window), proposed_not_excluded (proposed, not left out), never_proposed
+    unplaced        key events with in_window None, split the same way
+    found + wrong_date + wrong_type + unsupported + missed + outside_window + unplaced = M.
+A proposed row not in the key is `invented` (in the window: it counts against the model) or `excluded_by_window`
+(left out by the window: it does not). With no window, every key event is in the window.
+
 A key says whether it is complete (key["complete"]). On a partial key (complete false) a proposal outside the key
 is "unscored" (tables: a row and column the key does not hold; events: a program the key does not hold): it is not
 a mistake and carries no type. On a complete key those are extra / invented, as before. A column is the same
@@ -37,7 +49,9 @@ checks flagged it themselves (a check failed). A wrong item the checks passed is
 
 from __future__ import annotations
 
+import calendar
 import re
+from datetime import date
 
 from accuracy import types as T
 from accuracy.key import cell_id, event_indication_names, event_program_names
@@ -49,6 +63,8 @@ from checks.status import FAILED, MATCHED, check_cell
 
 TABLE_BUCKETS = ("found", "wrong_value", "wrong_place", "missed", "extra", "unscored")
 EVENT_BUCKETS = ("found", "wrong_date", "wrong_type", "unsupported", "missed", "invented", "unscored")
+KEY_EVENT_BUCKETS = ("found", "wrong_date", "wrong_type", "unsupported", "missed")
+WINDOW_RULE = "outside_time_window"
 
 
 def model_family(name: str | None) -> str:
@@ -183,6 +199,41 @@ def period_of(text: str | None):
     return normalize(text).rstrip(".").lower()
 
 
+def add_months(d: date, months: int) -> date:
+    """The same day `months` later, or the month's last day (the rule server.jobs.add_months applies)."""
+    y, m = divmod(d.month - 1 + months, 12)
+    year, month = d.year + y, m + 1
+    return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
+
+
+def run_window(run: dict) -> tuple[date, int] | None:
+    """(start day, months) from run.json: run.started_at's date and run.choices.time_window_months; None when the
+    run had no window (or no usable start)."""
+    meta = (run or {}).get("run") or {}
+    months = (meta.get("choices") or {}).get("time_window_months")
+    if not isinstance(months, int) or isinstance(months, bool) or months < 0:
+        return None
+    try:
+        return date.fromisoformat(str(meta.get("started_at"))[:10]), months
+    except ValueError:
+        return None
+
+
+def in_window(date_text: str | None, window: tuple[date, int] | None) -> bool | None:
+    """Whether a key event's first day lies in [start, start + months]. No window: True. A date or period with a
+    fixed first day is placed; a vague period ("mid-2027") or text that is no date is None."""
+    if window is None:
+        return True
+    first = parse_exact_date(date_text)
+    if first is None:
+        p = parse_period(date_text)
+        first = p[0] if p is not None else None
+    if first is None:
+        return None
+    start, months = window
+    return start <= first <= add_months(start, months)
+
+
 def _strip(text: str | None) -> str:
     return re.sub(r"^(?:in |during |by )?(?:the )?", "", normalize(text).rstrip(".").lower())
 
@@ -231,12 +282,14 @@ TIE_NOTE = ("The quote holds words of both milestone and trial results, so the e
 
 
 def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = None,
-                 model: str | None = None) -> dict:
+                 model: str | None = None, window: tuple[date, int] | None = None) -> dict:
     """Match each proposed row to a key event: the same company and the same date or period, and the row's program OR
     its indication is a name of the key event (a program name or alias, an indication or indication alias). One drug
     with three indications on a page is three key events, matched by their dates and indications; a key may carry the
     same drug alias on several. The kind of event is compared after the match: a different kind is `wrong_type`
-    unless the quote holds words of both milestone and trial results (then found, with a note)."""
+    unless the quote holds words of both milestone and trial results (then found, with a note).
+    `window`: (start day, months) of the run (run_window); key events outside it or unplaced leave the five key
+    buckets for outside_window / unplaced, and rows the window removed are excluded_by_window, not invented."""
     kes = list(key.get("events") or [])
     complete = is_complete(key)
     # Rows code found (a dated sentence no reader row quotes) are not proposals: they are never scored as
@@ -248,7 +301,10 @@ def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = No
     every = set().union(*prog, *ind) if kes else set()
     excluded = {x.get("target"): x.get("rule") for x in exclusions or []}
     out = {b: [] for b in EVENT_BUCKETS}
+    out["excluded_by_window"] = []
     taken: set[int] = set()
+    by_key: dict[int, dict] = {}                    # key event index -> the item that scored it (and its row)
+    rows_of: dict[int, dict] = {}
 
     def hits(row) -> list[int]:
         names = _row_names(row, every)
@@ -282,10 +338,13 @@ def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = No
             note = (TIE_NOTE.format(row=row.get("event_type"), key=kes[i]["event_type"])
                     if type_state(row, i) == "tie" else None)
             out["found"].append(_event_item(row, _expected(kes[i]), None, [], note))
+            by_key[i], rows_of[i] = out["found"][-1], row
         else:
             rest.append(row)
     for row in rest:
         checks = row.get("checks") or []
+        by_window = excluded.get(row.get("id")) == WINDOW_RULE
+        invented = out["excluded_by_window"] if by_window else out["invented"]
         if row.get("status") == "unreadable":
             out["invented"].append(_event_item(row, None, T.UNREADABLE_OUTPUT, [T.UNREADABLE_OUTPUT]))
             continue
@@ -295,28 +354,30 @@ def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = No
             continue
         if not named:
             typ = T.type_for_exclusion(excluded.get(row.get("id"))) or T.primary_type(checks)
-            out["invented"].append(_event_item(row, None, typ))
+            invented.append(_event_item(row, None, typ))
             continue
         co = [i for i in named if same_ticker(row, i)]
         if not co:
-            out["invented"].append(_event_item(row, _expected(kes[named[0]]), T.WRONG_COMPANY))
+            invented.append(_event_item(row, _expected(kes[named[0]]), T.WRONG_COMPANY))
             continue
         free = [i for i in co if i not in taken]
         on_date = [i for i in free if same_period(row, i)]
         again = [i for i in co if i in taken and same_period(row, i)]
         if not free or (again and not on_date):      # a second row for an event already matched, on its own date
-            out["invented"].append(_event_item(row, _expected(kes[(again or co)[0]]), T.DUPLICATE))
+            invented.append(_event_item(row, _expected(kes[(again or co)[0]]), T.DUPLICATE))
             continue
         i = best(row, on_date or free)
         taken.add(i)
         k, kind = kes[i], type_state(row, i)
         if on_date and kind:
             typ = T.type_for_exclusion(excluded.get(row.get("id"))) or T.primary_type(checks)
-            out["unsupported"].append(_event_item(row, _expected(k), typ))
+            bucket, item = "unsupported", _event_item(row, _expected(k), typ)
         elif kind:
-            out["wrong_date"].append(_event_item(row, _expected(k), T.PERIOD_MISREAD))
+            bucket, item = "wrong_date", _event_item(row, _expected(k), T.PERIOD_MISREAD)
         else:
-            out["wrong_type"].append(_event_item(row, _expected(k), T.WRONG_EVENT_TYPE))
+            bucket, item = "wrong_type", _event_item(row, _expected(k), T.WRONG_EVENT_TYPE)
+        out[bucket].append(item)
+        by_key[i], rows_of[i] = item, row
     for i, k in enumerate(kes):
         if i not in taken:
             seen = next((c for c in surfaced if sentence_covered(k["quote"], [c.get("quote")])), None)
@@ -325,11 +386,41 @@ def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = No
                                   "type": T.MISSED_DATED_SENTENCE if seen else None,
                                   "types": [T.MISSED_DATED_SENTENCE] if seen else [], "status": None,
                                   "caught": bool(seen), "surfaced_as": seen["id"] if seen else None})
+            by_key[i] = out["missed"][-1]
+    # a key event outside the window, or one that cannot be placed, leaves the five buckets for its own
+    for name in ("outside_window", "unplaced"):
+        out[name] = {"count": 0, "proposed_excluded": 0, "proposed_not_excluded": 0, "never_proposed": 0, "items": []}
+    flags = [in_window(k["date_text"], window) for k in kes]
+    for i, flag in enumerate(flags):
+        if flag is True:
+            continue
+        item = by_key[i]
+        for b in KEY_EVENT_BUCKETS:
+            out[b] = [x for x in out[b] if x is not item]
+        if i not in rows_of:
+            state = "never_proposed"
+        elif excluded.get(rows_of[i].get("id")) == WINDOW_RULE:
+            state = "proposed_excluded"
+        else:
+            state = "proposed_not_excluded"
+        group = out["outside_window" if flag is False else "unplaced"]
+        group[state] += 1
+        group["count"] += 1
+        group["items"].append({"expected": _expected(kes[i]), "in_window": flag, "state": state,
+                               "id": item.get("id"), "status": item.get("status")})
+
     models = sorted({model_family(r.get("proposed_by")) for r in rows if r.get("proposed_by")})
     out["model"] = model_family(model) if model else (", ".join(models) if models else "unknown model")
     out["complete"] = complete
     out["M"] = len(kes)
+    out["M_in_window"] = flags.count(True)
+    out["window"] = ({"start": window[0].isoformat(), "months": window[1],
+                      "end": add_months(window[0], window[1]).isoformat()} if window else None)
     out["counts"] = {b: len(out[b]) for b in EVENT_BUCKETS}
+    out["counts"]["invented_in_window"] = len(out["invented"])
+    out["counts"]["excluded_by_window"] = len(out["excluded_by_window"])
+    out["counts"]["outside_window"] = out["outside_window"]["count"]
+    out["counts"]["unplaced"] = out["unplaced"]["count"]
     return out
 
 

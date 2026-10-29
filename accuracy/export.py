@@ -5,6 +5,10 @@
 writes runs/<run_id>/accuracy.json from a scorer run. It is the accuracy report (accuracy/report.py) in the shape the audit
 header and the Accuracy panel read, with what the order adds:
 
+    window         the run's time window {start, months, end} and what it set aside, scored apart from the
+                   in-window numbers in models[].events: outside_window and unplaced (each count, proposed_excluded,
+                   proposed_not_excluded, never_proposed, items), excluded_by_window (rows the run left out by the
+                   window; not held against the model); present when events were scored (its window is null when the run had none)
     sample         true when the run is the made-up sample run: the numbers describe sample data, not real events
     key            {path, sealed, complete, source_sha256, page_number, cells, events}   sealed is what the key says it is:
                    a key in this repo is an author's key and says false; the UI labels the numbers by it
@@ -96,6 +100,14 @@ def agreement(run: dict, table: dict | None = None, events: dict | None = None) 
     }
 
 
+def window_block(events: dict | None) -> dict | None:
+    if not events:
+        return None
+    return {"window": events.get("window"), "M_in_window": events["M_in_window"], "M": events["M"],
+            "outside_window": events["outside_window"], "unplaced": events["unplaced"],
+            "excluded_by_window": events["excluded_by_window"]}
+
+
 def readers(run: dict, report: dict) -> dict:
     meta = run.get("run") or {}
     first = sorted(report.get("models", {}))
@@ -130,6 +142,8 @@ def build_export(report: dict, run: dict, run_bytes: bytes, *, now: datetime | N
                         "from_run_by_caught_by": dict(from_run.get("by_caught_by", {}))},
         "run_sha256": sha256_bytes(run_bytes),
     }
+    if report.get("events"):                # beside the existing fields; absent when no events were scored
+        doc["window"] = window_block(report["events"])
     doc["content_sha256"] = content_hash(doc)
     return doc
 
