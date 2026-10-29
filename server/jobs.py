@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import calendar as _calendar
 from datetime import date, datetime, timezone
@@ -49,6 +50,7 @@ from capture.capture_source import load_entry
 from runs import build_entry, build_run, compare, coverage, escalate, prices, scan, sources
 
 DEFAULT_TURN_LIMIT = 40
+MAX_PAGE_FAILURES = 2      # a page that stops the run this many times is skipped, and the run goes on with the rest
 UNREADABLE_LIMIT = 3
 THREE_REFUSALS = "The reader's answer could not be read three times; sent to a person."
 RESUMABLE = ("paused_turn_limit", "needs_input", "failed")
@@ -131,11 +133,18 @@ def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
     if not isinstance(companies, list) or not companies or not all(isinstance(c, str) for c in companies):
         raise ValueError("Choose at least one company.")
     if companies == ["all"]:
+        # every company with a page to read; one the index lists with no page (ABVX in the captured index) is left out
         companies = [t for t in index.tickers if any(p["kind"] != "scan_events" for p in index.pages(t))]
-    unknown = [c for c in companies if c not in index.tickers]
+        if not companies:
+            raise ValueError("The sources index holds no page to read.")
+    empty = [c for c in companies if c in index.empty and c not in index.tickers]
+    unknown = [c for c in companies if c not in index.tickers and c not in index.empty]
     if unknown:
         raise ValueError(f"No source has been captured for {', '.join(unknown)} yet. "
                          f"Captured so far: {', '.join(sorted(index.tickers))}.")
+    if empty:
+        raise ValueError(f"The sources index lists {', '.join(empty)} but holds no page for "
+                         f"{'it' if len(empty) == 1 else 'them'} yet, so there is nothing to read.")
     if len(set(companies)) != len(companies):
         raise ValueError("A company is listed twice.")
     if not isinstance(types, list) or not all(isinstance(t, str) for t in types):
@@ -163,9 +172,16 @@ def label_for(number: int, choices: dict) -> str:
     return f"{who} · {window} month{'s' if window != 1 else ''}" if window else who
 
 
-def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None) -> dict:
+_RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+
+def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None, run_id: str | None = None) -> dict:
     """Make runs/<id>/ with run.json (queued), an empty decisions.jsonl and job.json. Returns the run.json dict.
-    `turn_limit`: the budget of model calls before the run pauses (default DEFAULT_TURN_LIMIT)."""
+    `turn_limit`: the budget of model calls before the run pauses (default DEFAULT_TURN_LIMIT). `run_id`: the folder's
+    name (default run-<number>), for a run that is to be kept under a name, such as twelve-1; ValueError if it is not a
+    plain name or the folder is there already. The run's number is the next in the sequence either way."""
+    if run_id is not None and (not _RUN_ID.match(run_id) or ".." in run_id):
+        raise ValueError(f"The run id {run_id!r} is not a plain name (letters, digits, dot, dash, underscore).")
     runs_dir = Path(runs_dir)
     with RUN_LOCK:
         numbers = []
@@ -175,9 +191,14 @@ def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None) -> 
             except (ValueError, KeyError, TypeError):
                 continue
         number = max(numbers, default=0) + 1
-        while (runs_dir / f"run-{number}").exists():
-            number += 1
-        run_dir = runs_dir / f"run-{number}"
+        if run_id is not None:
+            if (runs_dir / run_id).exists():
+                raise ValueError(f"There is already a folder {run_id} under {runs_dir.name}/; a saved run is never "
+                                 f"overwritten.")
+        else:
+            while (runs_dir / f"run-{number}").exists():
+                number += 1
+        run_dir = runs_dir / (run_id or f"run-{number}")
         (run_dir / "pages").mkdir(parents=True)
         now = now_utc()
         run = {
@@ -256,6 +277,8 @@ def run_job(runs_dir: Path, run_id: str, reader, second=None, as_of: date | None
         job.drive()
     except Exception as e:  # the type only: nothing that could carry request details
         job.stop("failed", f"The job stopped on an unexpected error ({type(e).__name__}). Resume to try again.")
+    finally:
+        job.remove_unrecorded_pages()
 
 
 class Job:
@@ -264,6 +287,7 @@ class Job:
         self.dir, self.reader, self.second, self.as_of, self.wonder = run_dir, reader, second, as_of, wonder
         self.sam = sam
         self.index = index or sources.load_index()
+        self.current_page: str | None = None      # the page being worked on, so a failed stop is charged to it
         self.run = json.loads((run_dir / "run.json").read_text())
         self.job = json.loads((run_dir / "job.json").read_text())
         self.meta = self.run["run"]
@@ -280,8 +304,35 @@ class Job:
             _write(self.dir / "run.json", self.run)
 
     def stop(self, status: str, reason: str) -> None:
+        if status == "failed" and self.current_page:
+            failures = self.job.setdefault("page_failures", {})
+            failures[self.current_page] = failures.get(self.current_page, 0) + 1
+            self.job.setdefault("page_failure_reasons", {})[self.current_page] = reason
         self.meta["status"], self.meta["status_reason"] = status, reason
         self.save(reason)
+
+    def remove_unrecorded_pages(self) -> None:
+        """A page is captured into the run's folder before it is read; if the run stops first (a limit, a failure), its
+        files are in pages/ but run.json names nothing of them. Remove them, so pages/ holds exactly the pages run.json
+        names (a resume captures the page again, to the same bytes)."""
+        pages = self.dir / "pages"
+        if not pages.is_dir():
+            return
+        named = {Path(p[k]).name for s in self.run["sources"] for p in s["pages"] for k in ("image", "words")}
+        for f in pages.iterdir():
+            if f.is_file() and f.name not in named:
+                f.unlink()
+
+    def skip_page(self, page: dict, reason: str) -> None:
+        """Leave the rest of the work on one page undone, say why (run.json skipped_pages, job.json), and go on."""
+        sid, ticker = page["source_id"], page["record"]["ticker"]
+        skipped = self.job.setdefault("skipped", {})
+        if sid in skipped:
+            return
+        skipped[sid] = {"ticker": ticker, "reason": reason}
+        self.meta.setdefault("skipped_pages", []).append({"source_id": sid, "ticker": ticker, "reason": reason})
+        self.job["log"].append({"at": now_utc(), "note": f"{ticker} page {sid} skipped: {reason}"})
+        self.save()
 
     def count_turn(self, reply) -> None:
         self.meta["turn_count"] += 1
@@ -362,19 +413,31 @@ class Job:
             if not pages:
                 return self.stop("needs_input", f"No page is indexed for {ticker}, so nothing was read for it.")
             for page in pages:
-                if page["source_id"] not in done and not self.read_page(page) and self.meta["status"] != "running":
+                sid = page["source_id"]
+                self.current_page = sid
+                if sid in self.job.get("skipped", {}):
+                    continue
+                if self.job.get("page_failures", {}).get(sid, 0) >= MAX_PAGE_FAILURES:
+                    self.skip_page(page, f"It stopped the run {MAX_PAGE_FAILURES} times, the last time: "
+                                         f"{self.job['page_failure_reasons'].get(sid, 'no reason recorded')}")
+                    continue
+                if sid not in done and not self.read_page(page) and self.meta["status"] != "running":
                     return
                 if not self.second_pass(page) and self.meta["status"] != "running":
                     return
                 if not self.escalation_pass(page) and self.meta["status"] != "running":
                     return
+        self.current_page = None
         if self.stopped_after_the_last_call():
             return
         read = len(self.run["sources"])
+        skipped = len(self.job.get("skipped", {}))
         self.meta["finished_at"] = now_utc()
         self.meta["status"] = "done"
         self.meta["status_reason"] = (f"Read {read} page{'s' if read != 1 else ''}: {len(self.run['rows'])} rows, "
                                       f"{sum(len(r['cells']) for t in self.run['tables'] for r in t['rows'])} values."
+                                      + (f" {skipped} page{'s' if skipped != 1 else ''} skipped (see skipped_pages)."
+                                         if skipped else "")
                                       if read else "Nothing to read: no captured page matches the choices.")
         self.save(self.meta["status_reason"])
 
@@ -393,7 +456,8 @@ class Job:
         try:
             source, words_doc = sources.capture_page(entry, self.dir)      # captured on first use, hashes checked
         except sources.SourcesError as e:
-            self.stop("failed", f"{e} Resume to try again.")
+            # a page whose files are missing or no longer match the index will not mend on a retry: skip it, go on
+            self.skip_page(page, str(e))
             return False
         if kind == "events":
             prompt = read_events.build_prompt(words_doc, entry, types, self.choices["note_for_agent"])

@@ -266,21 +266,23 @@ def test_an_unknown_company_is_refused_naming_what_is_indexed(runs_dir, index):
     assert not first.prompts and sorted(p.name for p in runs_dir.iterdir()) == []
 
 
-def test_a_page_that_no_longer_matches_its_hash_fails_the_run_with_the_reason_and_resume_skips_what_was_read(
+def test_a_page_that_no_longer_matches_its_hash_is_skipped_with_the_reason_and_the_run_goes_on(
         runs_dir, index_file, tmp_path):
     doc = index_doc()
     doc["companies"]["BBB"]["pages"][0]["page_sha256"] = "0" * 64
     index_file.write_text(json.dumps(doc))
     c, first = client(runs_dir, sources.load_index(index_file))
     rid = start(c)
-    m = run_of(runs_dir, rid)["run"]
-    assert m["status"] == "failed" and "does not match the hash the index recorded" in m["status_reason"]
-    assert m["finished_at"] is None and len(first.prompts) == 2, "AAA's two pages were read; BBB's was refused"
-    fixed = index_doc()
-    index_file.write_text(json.dumps(fixed))
-    c2, _ = client(runs_dir, sources.load_index(index_file), first=first)
-    assert c2.post(f"/api/runs/{rid}/resume").status_code == 202
-    assert run_of(runs_dir, rid)["run"]["status"] == "done" and len(first.prompts) == 3
+    run = run_of(runs_dir, rid)
+    m = run["run"]
+    assert m["status"] == "done" and m["finished_at"], "one bad page does not end the run"
+    assert [s["id"] for s in run["sources"]] == ["src-aaa-pr-p3", "src-aaa-ars-p95"], "AAA read; BBB's page was not"
+    [skipped] = m["skipped_pages"]
+    assert (skipped["source_id"], skipped["ticker"]) == ("src-bbb-pr-p3", "BBB")
+    assert "does not match the hash the index recorded" in skipped["reason"]
+    assert "1 page skipped (see skipped_pages)" in m["status_reason"] and len(first.prompts) == 2
+    RUN_SCHEMA.validate(run)
+    assert json.loads((runs_dir / rid / "job.json").read_text())["skipped"]["src-bbb-pr-p3"]["ticker"] == "BBB"
 
 
 def test_the_turn_limit_pauses_between_pages_and_resume_reads_only_the_pages_left(runs_dir, index, monkeypatch):
@@ -373,7 +375,7 @@ def test_the_command_resumes_through_turn_limit_pauses(runs_dir, index_file, cap
     code = twelve.main(["--runs-dir", str(runs_dir), "--index", str(index_file), "--turns", "2", "--no-second",
                         "--no-wonder", "--no-report"], readers=readers())
     out = capsys.readouterr().out
-    assert code == 0 and "paused at the turn limit; resuming (1)" in out
+    assert code == 0 and "paused_turn_limit: Stopped at the turn limit (2 turns)" in out and "resuming (1)" in out
     m = run_of(runs_dir, "run-1")["run"]
     assert m["status"] == "done" and m["resumes"] >= 1 and m["turns_total"] == 3
 
@@ -495,3 +497,247 @@ def test_a_run_of_a_page_and_its_scan_keeps_two_sets_of_files_and_both_hashes_ho
     images = [s["pages"][0]["image"] for s in run["sources"]]
     assert sorted(images) == ["pages/p3-scanned.png", "pages/p3.png"]
     assert c.get(f"/api/runs/{rid}").status_code == 200, "every page file still matches the hash run.json recorded"
+
+
+# ---------------------------------------------------------------- a company the index lists with no page; a run kept under a name
+
+
+def index_with_empty_company():
+    doc = index_doc()
+    doc["companies"]["EEE"] = {"pages": []}
+    return doc
+
+
+def test_a_company_listed_with_no_page_is_recorded_as_empty_not_as_unknown():
+    idx = sources.parse_index(index_with_empty_company())
+    assert idx.tickers == ["AAA", "BBB"] and idx.empty == ["EEE"]
+    assert sources.parse_index(index_doc()).empty == []
+
+
+def test_all_leaves_out_a_company_with_no_page_and_does_not_stop_at_it(runs_dir, tmp_path):
+    f = tmp_path / "i.json"
+    f.write_text(json.dumps(index_with_empty_company()))
+    c, first = client(runs_dir, sources.load_index(f), second=None, wonder=None)
+    run = run_of(runs_dir, start(c, companies=["all"]))
+    assert run["run"]["choices"]["companies"] == ["AAA", "BBB"] and run["run"]["label"] == "2 companies"
+    assert run["run"]["status"] == "done" and len(first.prompts) == 3
+
+
+def test_a_company_with_no_page_asked_for_by_name_is_refused_naming_it(runs_dir, tmp_path):
+    f = tmp_path / "i.json"
+    f.write_text(json.dumps(index_with_empty_company()))
+    c, first = client(runs_dir, sources.load_index(f))
+    for companies in (["EEE"], ["AAA", "EEE"]):
+        r = c.post("/api/runs/new", json={**CHOICES, "companies": companies})
+        assert r.status_code == 422
+        assert r.json()["detail"] == "The sources index lists EEE but holds no page for it yet, so there is nothing to read."
+    r = c.post("/api/runs/new", json={**CHOICES, "companies": ["ZZZ"]})
+    assert r.json()["detail"].startswith("No source has been captured for ZZZ yet."), "still the plain unknown case"
+    assert not first.prompts and not list(runs_dir.iterdir())
+
+
+def test_the_command_says_which_companies_it_left_out(runs_dir, tmp_path, capsys):
+    f = tmp_path / "i.json"
+    f.write_text(json.dumps(index_with_empty_company()))
+    twelve.main(["--runs-dir", str(runs_dir), "--index", str(f), "--no-report", "--no-second", "--no-wonder"],
+                readers=(FakeReader(answer=answer), None, None, None))
+    assert "left out, no page indexed for EEE" in capsys.readouterr().out
+    twelve.main(["--companies", "AAA", "--runs-dir", str(runs_dir), "--index", str(f), "--no-report", "--no-second",
+                 "--no-wonder"], readers=(FakeReader(answer=answer), None, None, None))
+    assert "left out" not in capsys.readouterr().out
+
+
+def test_a_run_can_be_kept_under_a_name_and_the_number_still_comes_from_the_sequence(runs_dir):
+    choices = jobs.validate_choices(CHOICES, sources.parse_index(index_doc()))
+    a = jobs.create_run(runs_dir, choices)
+    b = jobs.create_run(runs_dir, choices, run_id="twelve-1")
+    c = jobs.create_run(runs_dir, choices)
+    assert [x["run"]["id"] for x in (a, b, c)] == ["run-1", "twelve-1", "run-3"]
+    assert [x["run"]["number"] for x in (a, b, c)] == [1, 2, 3]
+    assert (runs_dir / "twelve-1" / "run.json").is_file() and (runs_dir / "twelve-1" / "decisions.jsonl").read_text() == ""
+
+
+@pytest.mark.parametrize("bad", ["", "../x", "a/b", ".hidden", "a b", "x" * 0 + "-dash", "twelve-1/../../etc"])
+def test_a_run_name_that_is_not_a_plain_name_is_refused_and_nothing_is_made(runs_dir, bad):
+    choices = jobs.validate_choices(CHOICES, sources.parse_index(index_doc()))
+    with pytest.raises(ValueError, match="is not a plain name"):
+        jobs.create_run(runs_dir, choices, run_id=bad)
+    assert not list(runs_dir.iterdir())
+
+
+def test_a_saved_run_is_never_overwritten_by_a_new_one_of_the_same_name(runs_dir):
+    choices = jobs.validate_choices(CHOICES, sources.parse_index(index_doc()))
+    jobs.create_run(runs_dir, choices, run_id="twelve-1")
+    before = (runs_dir / "twelve-1" / "run.json").read_bytes()
+    with pytest.raises(ValueError, match="a saved run is never overwritten"):
+        jobs.create_run(runs_dir, choices, run_id="twelve-1")
+    assert (runs_dir / "twelve-1" / "run.json").read_bytes() == before
+
+
+def test_the_command_keeps_the_run_under_the_name_it_is_given(runs_dir, index_file, capsys):
+    assert twelve.main(["--id", "twelve-1", "--runs-dir", str(runs_dir), "--index", str(index_file), "--no-report"],
+                       readers=readers()) == 0
+    run = run_of(runs_dir, "twelve-1")
+    assert run["run"]["id"] == "twelve-1" and run["run"]["status"] == "done" and run["run"]["sample"] is False
+    assert "Created twelve-1:" in capsys.readouterr().out
+    assert twelve.main(["--id", "twelve-1", "--runs-dir", str(runs_dir), "--index", str(index_file)],
+                       readers=readers()) == 2
+    assert "never overwritten" in capsys.readouterr().err
+    assert twelve.main(["--id", "../x", "--runs-dir", str(runs_dir), "--index", str(index_file)], readers=readers()) == 2
+
+
+# ---------------------------------------------------------------- a page that breaks the run is skipped; the rest goes on
+
+
+from capture.reader import Reply as _Reply
+
+
+class Breaks(FakeReader):
+    """A first reader whose calls fail for the prompts `bad` says yes to, `times` times (None: always)."""
+
+    def __init__(self, bad, times=None, raises=False, **kw):
+        super().__init__(answer=answer, **kw)
+        self.bad, self.times, self.raises, self.failed = bad, times, raises, 0
+
+    def call(self, prompt, image=None):
+        if self.bad(prompt) and (self.times is None or self.failed < self.times):
+            self.failed += 1
+            self.prompts.append(prompt)
+            if self.raises:
+                raise RuntimeError("something broke on this page")
+            return _Reply(None, "muse-spark-1.3", error="The model call did not succeed (APIError, status 503).")
+        return super().call(prompt, image)
+
+
+def beta(prompt):
+    return "Beta Therapeutics" in prompt
+
+
+def cmd(runs_dir, index_file, reader, *extra):
+    return twelve.main(["--runs-dir", str(runs_dir), "--index", str(index_file), "--no-report", "--no-second",
+                        "--no-wonder", *extra], readers=(reader, None, None, None))
+
+
+def test_one_failure_is_retried_and_the_page_is_read(runs_dir, index_file, capsys):
+    reader = Breaks(beta, times=1)
+    assert cmd(runs_dir, index_file, reader) == 0
+    out = capsys.readouterr().out
+    run = run_of(runs_dir, "run-1")
+    assert run["run"]["status"] == "done" and "skipped_pages" not in run["run"] and len(run["sources"]) == 3
+    assert "failed: The model call did not succeed" in out and "resuming (1)" in out
+    job = json.loads((runs_dir / "run-1" / "job.json").read_text())
+    assert job["page_failures"] == {"src-bbb-pr-p3": 1} and "skipped" not in job
+
+
+def test_a_page_that_stops_the_run_twice_is_skipped_and_the_rest_is_read(runs_dir, index_file, capsys):
+    reader = Breaks(beta)                                   # every call for BBB's page fails
+    assert cmd(runs_dir, index_file, reader) == 0
+    out = capsys.readouterr().out
+    run = run_of(runs_dir, "run-1")
+    m = run["run"]
+    assert m["status"] == "done" and [s["id"] for s in run["sources"]] == ["src-aaa-pr-p3", "src-aaa-ars-p95"]
+    [skipped] = m["skipped_pages"]
+    assert skipped["source_id"] == "src-bbb-pr-p3" and skipped["reason"].startswith("It stopped the run 2 times, the last time: ")
+    assert "status 503" in skipped["reason"] and reader.failed == 2, "tried twice, then left"
+    assert out.count("resuming") == 2 and "skipped pages: 1" in out and "BBB src-bbb-pr-p3: It stopped the run 2 times" in out
+    RUN_SCHEMA.validate(run)
+
+
+def test_a_page_that_raises_is_skipped_the_same_way_and_does_not_end_the_run(runs_dir, index_file, capsys):
+    reader = Breaks(beta, raises=True)
+    assert cmd(runs_dir, index_file, reader) == 0
+    run = run_of(runs_dir, "run-1")
+    assert run["run"]["status"] == "done" and len(run["sources"]) == 2
+    assert "unexpected error (RuntimeError)" in run["run"]["skipped_pages"][0]["reason"]
+
+
+def test_a_pages_that_come_after_a_broken_one_are_still_read(runs_dir, index_file, capsys):
+    """AAA first, BBB broken, nothing after it here; so put the broken one first: index order is the run's order."""
+    doc = index_doc()
+    doc["companies"] = {"BBB": doc["companies"]["BBB"], "AAA": doc["companies"]["AAA"]}
+    index_file.write_text(json.dumps(doc))
+    assert cmd(runs_dir, index_file, Breaks(beta)) == 0
+    run = run_of(runs_dir, "run-1")
+    assert [s["id"] for s in run["sources"]] == ["src-aaa-pr-p3", "src-aaa-ars-p95"]
+    assert run["run"]["skipped_pages"][0]["ticker"] == "BBB" and run["run"]["status"] == "done"
+
+
+def test_a_skipped_page_stays_skipped_and_is_not_tried_again_on_a_later_resume(runs_dir, index, tmp_path):
+    choices = jobs.validate_choices(CHOICES, index)
+    jobs.create_run(runs_dir, choices)
+    reader = Breaks(beta)
+    for _ in range(3):
+        jobs.run_job(runs_dir, "run-1", reader, None, None, None, None, index)
+        status = run_of(runs_dir, "run-1")["run"]["status"]
+        if status == "failed":
+            jobs.resume_run(runs_dir, "run-1")
+    assert status == "done" and reader.failed == 2
+    before = reader.failed
+    with pytest.raises(jobs.JobError):
+        jobs.run_job(runs_dir, "run-1", reader, None, None, None, None, index)
+    assert reader.failed == before
+
+
+def test_a_limit_or_a_pause_is_not_counted_as_a_page_failure(runs_dir, index, monkeypatch):
+    monkeypatch.setattr(jobs, "DEFAULT_TURN_LIMIT", 1)
+    c, first = client(runs_dir, index, second=None, wonder=None)
+    rid = start(c)
+    job = json.loads((runs_dir / rid / "job.json").read_text())
+    assert run_of(runs_dir, rid)["run"]["status"] == "paused_turn_limit" and not job.get("page_failures")
+
+
+def test_the_second_reader_failing_twice_on_a_page_keeps_that_pages_first_rows_and_goes_on(runs_dir, index, capsys):
+    class DownSecond(FakeSecond):
+        def call(self, prompt, image=None):
+            self.prompts.append(prompt)
+            return _Reply(None, "meta-models/muse-spark-open-1026", error="The model call did not succeed (APIError, status 503).")
+
+    c, first = client(runs_dir, index, second=DownSecond(answer=answer), wonder=None)
+    rid = start(c)
+    assert run_of(runs_dir, rid)["run"]["status"] == "failed"
+    for _ in range(12):
+        if run_of(runs_dir, rid)["run"]["status"] != "failed":
+            break
+        c.post(f"/api/runs/{rid}/resume")
+    run = run_of(runs_dir, rid)
+    assert run["run"]["status"] == "done" and len(run["sources"]) == 3, "every page's first read stands"
+    assert {s["source_id"] for s in run["run"]["skipped_pages"]} == {"src-aaa-pr-p3", "src-aaa-ars-p95", "src-bbb-pr-p3"}
+    assert all("The second reader" in s["reason"] for s in run["run"]["skipped_pages"])
+
+
+# ---------------------------------------------------------------- pages/ holds exactly the pages run.json names
+
+
+def _named(run):
+    return {Path(p[k]).name for s in run["sources"] for p in s["pages"] for k in ("image", "words")}
+
+
+def test_a_run_stopped_before_a_pages_first_read_leaves_no_files_for_it(runs_dir, index):
+    c, first = client(runs_dir, index, first=FakeReader(cost=0.60, answer=answer), second=None, wonder=None)
+    rid = start(c, spending_limit_usd=0.5)
+    run = run_of(runs_dir, rid)
+    assert run["run"]["status"] == "needs_input" and len(run["sources"]) == 1 and len(first.prompts) == 1
+    assert {f.name for f in (runs_dir / rid / "pages").iterdir()} == _named(run), "the second page was captured, then dropped"
+
+
+def test_a_failed_run_and_a_finished_run_keep_exactly_the_pages_they_name(runs_dir, index_file, capsys):
+    doc = index_doc()
+    doc["companies"]["BBB"]["pages"][0]["page_sha256"] = "0" * 64
+    index_file.write_text(json.dumps(doc))
+    c, _ = client(runs_dir, sources.load_index(index_file))
+    rid = start(c)
+    run = run_of(runs_dir, rid)
+    assert {f.name for f in (runs_dir / rid / "pages").iterdir()} == _named(run) and len(_named(run)) == 4
+
+
+def test_a_resumed_run_captures_the_dropped_page_again_to_the_same_bytes(runs_dir, index, monkeypatch):
+    monkeypatch.setattr(jobs, "DEFAULT_TURN_LIMIT", 1)
+    c, first = client(runs_dir, index, second=None, wonder=None)
+    rid = start(c)
+    before = {f.name: f.read_bytes() for f in (runs_dir / rid / "pages").iterdir()}
+    assert c.post(f"/api/runs/{rid}/resume").status_code == 202
+    c.post(f"/api/runs/{rid}/resume")
+    run = run_of(runs_dir, rid)
+    after = {f.name: f.read_bytes() for f in (runs_dir / rid / "pages").iterdir()}
+    assert run["run"]["status"] == "done" and set(after) == _named(run) and len(after) == 6
+    assert all(after[n] == b for n, b in before.items() if n in after), "the pages kept from before are unchanged"

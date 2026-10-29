@@ -17,6 +17,7 @@ never printed.
     --runs-dir DIR / --index FILE  where runs go (default runs/) / the sources index (default: runs/sources_index.twelve.json when present, else runs/sources_index.json)
     --no-second / --no-wonder      leave that model out of the run (cost control)
     --no-report                    do not build the PDF and Word report
+    --id twelve-1                  keep the run under this folder name (default run-<n>): for the recorded run
 """
 
 from __future__ import annotations
@@ -56,6 +57,10 @@ def summary(run: dict, state: dict, calendar: list[dict]) -> list[str]:
              f"  calendar: {len(calendar)} kept or corrected row{'s' if len(calendar) != 1 else ''}",
              f"  cost: {'not recorded' if cost is None else '$%.4f' % cost}; kept rows: {kept}; cost per kept row: "
              f"{'not computed' if per is None else '$%.4f' % per}"]
+    skipped = m.get("skipped_pages") or []
+    if skipped:
+        lines.append(f"  skipped pages: {len(skipped)}")
+        lines += [f"    {s['ticker']} {s['source_id']}: {s['reason']}" for s in skipped]
     sr, esc = m.get("second_reader"), m.get("escalation")
     if sr:
         lines.append(f"  second reader: {sr['status']}" + (f" ({sr['input']})" if sr.get("input") else ""))
@@ -72,7 +77,7 @@ def main(argv: list[str] | None = None, readers: tuple | None = None) -> int:
     ap.add_argument("--window", type=int, default=None)
     ap.add_argument("--limit", type=float, default=None)
     ap.add_argument("--turns", type=int, default=None)
-    ap.add_argument("--max-resumes", type=int, default=20)
+    ap.add_argument("--max-resumes", type=int, default=60)
     ap.add_argument("--types", default=None)
     ap.add_argument("--note", default=None)
     ap.add_argument("--runs-dir", type=Path, default=build_run.RUNS)
@@ -80,6 +85,7 @@ def main(argv: list[str] | None = None, readers: tuple | None = None) -> int:
     ap.add_argument("--no-second", action="store_true")
     ap.add_argument("--no-wonder", action="store_true")
     ap.add_argument("--no-report", action="store_true")
+    ap.add_argument("--id", default=None)
     args = ap.parse_args(argv)
 
     try:
@@ -101,15 +107,23 @@ def main(argv: list[str] | None = None, readers: tuple | None = None) -> int:
     wonder = None if args.no_wonder else wonder
 
     args.runs_dir.mkdir(parents=True, exist_ok=True)
-    run = jobs.create_run(args.runs_dir, choices, args.turns)
+    try:
+        run = jobs.create_run(args.runs_dir, choices, args.turns, args.id)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 2
     rid = run["run"]["id"]
     print(f"Created {rid}: {run['run']['label']} ({len(choices['companies'])} companies)")
+    if index.empty and companies == ["all"]:
+        print(f"  left out, no page indexed for {', '.join(index.empty)}")
     for resumed in range(args.max_resumes + 1):
         jobs.run_job(args.runs_dir, rid, first, second, None, wonder, sam, index)
         meta = json.loads((args.runs_dir / rid / "run.json").read_text())["run"]
-        if meta["status"] != "paused_turn_limit" or resumed == args.max_resumes:
+        if meta["status"] not in ("paused_turn_limit", "failed") or resumed == args.max_resumes:
             break
-        print(f"  paused at the turn limit; resuming ({resumed + 1})")
+        # a turn-limit pause is resumed; so is a failure (a call that did not succeed): the page is tried again, and one
+        # that stops the run twice is skipped by the job, so the rest of the run goes on
+        print(f"  {meta['status']}: {meta.get('status_reason')}\n  resuming ({resumed + 1})")
         jobs.resume_run(args.runs_dir, rid)
 
     run_json = json.loads((args.runs_dir / rid / "run.json").read_text())

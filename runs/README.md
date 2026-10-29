@@ -260,6 +260,29 @@ by the same code as `POST /api/runs/new`, resumes it through turn-limit pauses, 
 done, and prints the audit counts (rows and values by group, needs attention, mistakes caught by code / second reader /
 person, exclusions), the calendar count, the cost and the cost per kept row.
 
+### The recorded twelve-company run
+
+`runs/twelve-1/` is the one live run on the captured index (`runs/sources_index.twelve.json`, written by
+`capture/fetch_filings.py`), made once with
+
+    python -m runs.twelve --id twelve-1 --companies all --window 6 --limit 5.00
+
+(both readers and Muse Wonder on; `--id` keeps it under that name; its number comes from the sequence). Its layout:
+`run.json` (a real run: `sample` false, status `done` or the stop it ended on), `decisions.jsonl` (a person's decisions, empty
+until someone decides), `job.json` (what the job kept: the calls it made and a log line for every rewrite of `run.json`),
+`pages/` (one `<id>.png` and `<id>.words.json` per page read, hashed in `run.json`), `report/` (one PDF and one Word file,
+built by code when the run is done) and `accuracy.json` only if a key exists for its pages (none of the twelve companies' pages is
+keyed in this repo, so normally there is none). `pages/` holds exactly the pages `run.json` names (the job removes the files of a
+page it captured and then stopped before reading). `tests/test_twelve_live.py` checks the layout, checks the real index against the
+job, and pins the numbers of the recorded run; its groups are skipped, with the reason, when their files are absent.
+
+**How `runs/twelve-1/` ended** (live, 2026-10-29 04:46 to 05:47 UTC, `--window 6 --limit 5.00`, both readers and Wonder on): it
+read 105 of the index's 313 pages (IONS 19, PTGX 55, VKTX 28, RVMD 3 of 12; ABVX has no indexed page) and stopped at the spending
+limit ($5.06 of $5.00: the call that crosses the limit stops the run), so its status is `needs_input` and **no report was built**
+(a report is built when a run is done). No page broke it, none was skipped, the fallback route was not used. Six turn-limit pauses
+were resumed by the command. 95 rows: 14 kept, 3 corrected, 28 removed by the time window, 2 unverified, 48 open; cost $5.055, cost per
+kept row $0.2974. The numbers are the real ones; they are not good ones (most rows fail a check), and the failures are read in INBOX_7.
+
 ### The second reader reads the image
 
 The second reader is given the **page image** (the run's own `pages/pN.png`, the bytes `run.json` hashed) and a prompt

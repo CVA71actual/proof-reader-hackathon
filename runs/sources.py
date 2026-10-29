@@ -55,6 +55,7 @@ class SourcesError(ValueError):
 class Index:
     by_ticker: dict[str, list[dict]] = field(default_factory=dict)
     path: Path | None = None
+    empty: list[str] = field(default_factory=list)      # companies the index lists but holds no page for (ABVX)
 
     @property
     def tickers(self) -> list[str]:
@@ -120,6 +121,10 @@ def _group(doc) -> list[dict]:
 
 def parse_index(doc, base: Path | None = None, path: Path | None = None) -> Index:
     index = Index(path=path)
+    if isinstance(doc, dict) and isinstance(doc.get("companies"), dict):
+        for t, body in doc["companies"].items():
+            if not ((body.get("pages") if isinstance(body, dict) else body) or []):
+                index.empty.append(str(t).strip().upper())
     ids: set[str] = set()
     stems: dict[str, str] = {}       # lower case: a case-insensitive file system would fold two stems into one file
     for i, raw in enumerate(_group(doc)):
