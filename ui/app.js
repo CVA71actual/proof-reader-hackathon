@@ -337,7 +337,8 @@
     if (scr) scr.classList.toggle('picked', narrow && (picked || route.screen === 'calendar'));
     document.getElementById('src-back').hidden = !(narrow && route.screen === 'source' && !route.back);
     document.getElementById('src-back-audit').hidden = !(route.screen === 'source' && route.back === 'audit');
-    document.getElementById('trail-back').hidden = !(narrow && route.screen === 'trail' && route.rowId);
+    // G2-5: Back to rows is visible at desktop width whenever a row is open
+    document.getElementById('trail-back').hidden = !(route.screen === 'trail' && route.rowId);
     // G1-5: a row opened from Audit log (Decide) offers a way back
     document.getElementById('judgment-back-audit').hidden =
       !(route.screen === 'judgment' && route.rowId);
@@ -1306,8 +1307,11 @@
 
     var steps = (row.trail || []).slice();
     var t = rowTarget(row);
-    var decision = t.decided_by_person ? lastPersonDecision(row.id) : null;
-    var lines = steps.concat([{ __decision: true, line: decision, target: t }]);
+    // G2-1: Person steps come only from decisions.jsonl lines — one step per
+    // line, in order, with the person's own note; a matched or undecided row
+    // nobody decided ends at the last code step
+    var personLines = personStepsFor(row.id);
+    var lines = steps.concat(personLines.map(function (l) { return { __decision: true, line: l, target: t }; }));
     lines.forEach(function (s, i) {
       wrap.append(trailStep(row, s, i < lines.length - 1));
     });
@@ -1335,6 +1339,14 @@
     return b;
   }
 
+  // G2-1: each decisions.jsonl line of the row is its own Person step, in order
+  var PERSON_STEP_WORDS = { keep: 'Kept by you', fix: 'Fixed by you',
+                            remove: 'Removed by you', undo: 'Undone by you' };
+  function personStepsFor(rowId) {
+    return (decisionsCache.lines || []).filter(function (l) {
+      return l.target === rowId && l.by === 'person';
+    });
+  }
   function lastPersonDecisionIn(lines, rowId) {
     var last = null;
     (lines || []).forEach(function (l) {
@@ -1356,6 +1368,26 @@
     return hit;
   }
 
+  // G2-7: the model's proposal summary in plain words — 'Milestone · Q1 ’27
+  // (1 Jan – 31 Mar 2027): “…”', never 'milestone on 2027-01-01 to …'
+  function daySpanWords(a, b) {
+    var ya = (a || '').slice(0, 4), yb = (b || '').slice(0, 4);
+    if (!dayMonth(a) || !dayMonth(b)) return '';
+    // '1 Jan – 31 Mar 2027' (the start's year omitted when it matches the end's)
+    return dayMonth(a) + ' – ' + dayMonth(b) + ' ' + yb + (ya === yb ? '' : '');
+  }
+  function plainProposal(row, t, s) {
+    var v = (t && t.values) || {};
+    var dt = v.date_text || row.date_text;
+    var d1 = v.date || row.date, d2 = v.date_end || row.date_end;
+    var when;
+    if (dt && d2 && d1 && daySpanWords(d1, d2)) when = dt + ' (' + daySpanWords(d1, d2) + ')';
+    else when = dt || d1 || 'no date on the page';
+    var quote = v.quote || row.quote;
+    var said = eventWord(row.event_type) + ' · ' + when;
+    return quote ? said + ': “' + quote + '”' : said;
+  }
+
   function trailStep(row, s, more) {
     var t = rowTarget(row);
     var step = el('div', 'step');
@@ -1364,41 +1396,45 @@
     step.append(rail, body);
 
     if (s.__decision) {
-      // the person's decision: last step, tagged Person
-      var action = s.line ? s.line.action : (t.last_action || 'keep');
-      var word = ACTION_WORDS[action] || action;
+      // G2-1: a person step is one decisions.jsonl line — its own words, its own
+      // note; nothing is synthesized for rows nobody decided
+      var l = s.line;
+      var word = PERSON_STEP_WORDS[l.action] || 'Decided by you';
       rail.append(el('span', 'ic', '●'));
       if (more) rail.append(el('span', 'ln'));
       step.classList.add('personstep');
       var hd = el('div', 'hd');
-      hd.append(el('span', 'who', 'Decided by you · ' + word));
+      hd.append(el('span', 'who', word));
       hd.append(el('span', 'st2', 'Person'));
-      hd.append(el('span', 'wh', s.line ? dateShort(s.line.at) : ''));
+      hd.append(el('span', 'wh', dateShort(l.at)));
       body.append(hd);
-      var fx = s.line && s.line.fix;
-      if (fx) {
+      var fx = l.fix;
+      if (fx && l.action === 'fix') {
         body.append(el('div', 'tx', (FIELD_WORDS[fx.field] || fx.field) + ': ' +
           (fx.from === null || fx.from === undefined ? '(none)' : fx.from) + ' → ' +
           (fx.to === null || fx.to === undefined ? '(none)' : fx.to)));
       }
-      var note = (s.line && s.line.note) || t.reason || '';
-      if (note) body.append(el('div', 'tx', 'Note: “' + note + '”'));
-      if (!s.line) body.append(el('div', 'tx', 'Decided after this run was saved — the dated record is in the run folder.'));
+      if (l.note) body.append(el('div', 'tx', 'Note: “' + l.note + '”'));
       return step;
     }
 
     var isFail = s.tag === 'Code' && /: fail\./.test(s.text || '');
+    // G2-3: one glyph per outcome — tick only on pass, a grey dash when the
+    // check could not run or was not needed, a red cross on fail
+    var outcome = /: (pass|fail|could not run|not needed)\./.exec(s.text || '');
     var glyph = '·';
     if (s.tag === 'Model') glyph = '◎';
     else if (s.tag === 'Person') glyph = '●';
     else if (isFail) glyph = '✗';
+    else if (s.step === 'Checked' && outcome) glyph = outcome[1] === 'pass' ? '✓' : '–';
     else if (s.step === 'Checked') glyph = '✓';
     else if (s.step === 'Sent back') glyph = '→';
-    else if (s.step === 'Instructions sent') glyph = '»';
+    else if (s.step === 'Instructions sent' || s.step === 'Instructions sent to the second reader') glyph = '»';
     rail.append(el('span', 'ic', glyph));
     if (more) rail.append(el('span', 'ln'));
     if (isFail) step.classList.add('failstep');
     if (s.tag === 'Person') step.classList.add('personstep');
+    if (s.step === 'Checked' && outcome && outcome[1] !== 'pass' && !isFail) step.classList.add('skipstep');
 
     var hd = el('div', 'hd');
     var whoName = s.tag === 'Model' ? (s.who || 'Model')
@@ -1409,7 +1445,8 @@
     hd.append(el('span', 'wh', hm(s.at)));
     body.append(hd);
 
-    if (s.step === 'Instructions sent') {
+    if (s.step === 'Instructions sent' || s.step === 'Instructions sent to the second reader') {
+      // G2-6: the second reader's prompt folds exactly like the first
       body.append(el('div', 'tx', 'The exact text the model received.'));
       var fold = el('details', 'fold instrbox');
       fold.append(el('summary', null, 'Show the instructions'));
@@ -1420,7 +1457,14 @@
         body.append(el('div', 'meta', 'prompt ' + num(s.tokens.prompt) + ' tokens'));
       }
     } else {
-      body.append(el('div', 'tx', s.text || ''));
+      // G2-7: model summaries in plain words — the event type word and the date
+      // as written, never snake_case ids or ISO dates. The reader's proposal
+      // sentence appears on the proposal step and again on the second reading.
+      var isProposal = s.tag === 'Model' && s.step !== 'Instructions sent' &&
+                       s.step !== 'Instructions sent to the second reader' &&
+                       /\bon\b/.test(s.text || '');
+      var text = isProposal ? plainProposal(row, t, s) : (s.text || '');
+      body.append(el('div', 'tx', text));
       if (s.tag === 'Model' && s.tokens) {
         var parts = [];
         if (s.tokens.prompt !== null && s.tokens.prompt !== undefined) parts.push(num(s.tokens.prompt) + ' tokens in');
@@ -1438,13 +1482,12 @@
       if (chk) {
         var link = el('button', 'seecheck', 'See the check');
         link.addEventListener('click', function () {
+          // the folds in the details pane follow the row's check order
+          var idx = (row.checks || []).indexOf(chk);
           var folds = document.querySelectorAll('#trail-det details.fold');
-          for (var i = 0; i < folds.length; i++) {
-            if (folds[i].dataset.fn === s.who) {
-              folds[i].open = true;
-              folds[i].scrollIntoView({ block: 'center', behavior: 'smooth' });
-              break;
-            }
+          if (idx >= 0 && folds[idx]) {
+            folds[idx].open = true;
+            folds[idx].scrollIntoView({ block: 'center', behavior: 'smooth' });
           }
         });
         body.querySelector('.hd').append(link);
@@ -2491,6 +2534,13 @@
     if (route && route.screen === 'judgment' && route.rowId) {
       judgmentSel = null;
       replaceRoute({ runId: currentRunId(), screen: 'judgment' });
+      return;
+    }
+    // G2-5: Esc returns from a row's trail to the list (a pushed entry, so
+    // browser Back lands back on the row)
+    if (route && route.screen === 'trail' && route.rowId) {
+      trailSel = null;
+      navigate({ runId: currentRunId(), screen: 'trail' });
       return;
     }
     if (route && route.screen === 'source' && route.valueId) {

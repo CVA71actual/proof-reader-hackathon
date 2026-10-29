@@ -134,11 +134,15 @@ def test_u5_trail_contract_on_screen():
     # model steps show tokens and cost when present (R6-lite fields, tolerated when absent)
     for field in ("tokens.prompt", "tokens.completion", "cost_usd"):
         assert field in js, field
-    # the person's decision step is dated from the decisions record
-    assert "lastPersonDecision" in js
+    # the person's decision steps come from the decisions record, one per line,
+    # each its own step in order (G2-1)
+    assert "personStepsFor" in js
+    assert "PERSON_STEP_WORDS" in js
+    assert "Undone by you" in js
     assert "dateShort" in js
-    # a failed check step links to the check in the details pane
-    assert "dataset.fn" in js and "checkFnFor" in js
+    # a failed check step links to the check in the details pane (folds follow
+    # the row's check order — no data attributes needed)
+    assert "checkFnFor" in js and "indexOf(chk)" in js
 
 
 def test_u6_calendar_rules_on_screen():
@@ -556,6 +560,32 @@ def test_u14_limit_boxes_refuse_non_finite():
             assert guard_fires(cond, var, float(typed)), (anchor, cond, typed)
         for typed in ("0", "5", "0.5"):
             assert not guard_fires(cond, var, float(typed)), (anchor, cond, typed)
+
+
+def test_u16_trail_glass2_rows():
+    # GLASS 2 (Agent trail) rows: G2-1 person steps only from decisions.jsonl;
+    # G2-3 glyph per outcome; G2-5 Back/Esc; G2-6 capped + folded prompts;
+    # G2-7 plain-word summaries.
+    js = (UI / "app.js").read_text()
+    css = (UI / "styles.css").read_text()
+    # G2-1: never a synthesized person step — the 'dated record' line is gone
+    assert "the dated record is in the run folder" not in js
+    assert "var personLines = personStepsFor(row.id);" in js
+    assert "'Decided by you · ' + word" not in js
+    assert "PERSON_STEP_WORDS" in js and "Undone by you" in js
+    # G2-3: tick only on pass, grey dash for could-not-run / not-needed
+    assert "skipstep" in js and "skipstep" in css
+    assert "outcome[1] === 'pass' ? '✓' : '–'" in js
+    # G2-5: Back to rows visible at desktop width; Esc returns to the list
+    assert "route.screen === 'trail' && route.rowId" in js
+    # G2-6: both prompts folded; the box scrolls inside a fixed height
+    assert "Instructions sent to the second reader" in js
+    assert ".instrbox .codeblk" in css and "max-height:220px" in css
+    # G2-7: plain-word proposals — event word + date as written, day spans
+    assert "plainProposal" in js and "daySpanWords" in js
+    trail = re.search(r"function plainProposal.*?\n  \}\n", js, re.S).group(0)
+    assert "eventWord(row.event_type)" in trail
+    assert "regulatory_decision on" not in trail
 
 
 def test_u15_glass1_fixes_are_wired():
