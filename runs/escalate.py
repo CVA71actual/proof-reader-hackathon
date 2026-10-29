@@ -78,9 +78,11 @@ def region_png(page_png: bytes, words_doc: dict, y_range: tuple[float, float]) -
 
     doc = pymupdf.open(stream=page_png, filetype="png")
     try:
-        scale = doc[0].rect.width / float(words_doc["page_width"])
-        clip = pymupdf.Rect(0, y_range[0] * scale, doc[0].rect.width, y_range[1] * scale)
-        return doc[0].get_pixmap(clip=clip).tobytes("png")
+        page = doc[0]
+        units_per_pt = page.rect.width / float(words_doc["page_width"])    # a PNG page is in its own dpi's units
+        px_per_unit = pymupdf.Pixmap(page_png).width / page.rect.width     # keep the image's real resolution
+        clip = pymupdf.Rect(0, y_range[0] * units_per_pt, page.rect.width, y_range[1] * units_per_pt)
+        return page.get_pixmap(matrix=pymupdf.Matrix(px_per_unit, px_per_unit), clip=clip).tobytes("png")
     finally:
         doc.close()
 

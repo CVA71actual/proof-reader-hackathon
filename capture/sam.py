@@ -7,6 +7,11 @@ parts: an `input_text` that is a CONCEPT (a short noun phrase naming one thing: 
 where w and h are the image's pixel size and x2, y2 are inclusive; an empty answer means no match, not an error. One
 request per concept. Masks are ignored: boxes are enough. The call is priced per image processed (runs/prices.py).
 
+SAM 3.1 is an object segmenter, not a document layout model: on the PTGX text page and the IONS financial-statement
+page it matched nothing for "table", "block of text", "paragraph", "line of text", "grid", "row" and others, and answered
+only for "page" and "document" (one box, the whole page). So when "table" and "block of text" both match nothing,
+the run asks for "page" and the one region is the whole page (see runs/scan.py).
+
 SAM finds where things are; it reads nothing. A region it returns is cropped and sent to the reader, and the reader's
 box is then checked against the region (checks/selector_match.py region_match). The key is MODEL_API_KEY from the env
 loader, never printed.
@@ -31,6 +36,7 @@ from capture.reader import NO_KEY, Reply
 NAME = "SAM 3.1"
 MODEL = "sam-3.1"
 CONCEPTS = ("table", "block of text")
+FALLBACK = "page"     # asked only when neither concept matched: the answer is the whole page, one region
 SAM_PATH = FIXTURES / f"{read_events.PIN}.sam.json"
 
 _BOX = re.compile(r"<\|box;x1=(-?\d+);y1=(-?\d+);x2=(-?\d+);y2=(-?\d+);w=(\d+);h=(\d+)\|>")
@@ -99,7 +105,9 @@ def main(argv: list[str] | None = None) -> int:
     entry = load_entry(read_events.PIN)
     png = scan.scanned_png(entry)
     found = {}
-    for concept in CONCEPTS:
+    for concept in CONCEPTS + (FALLBACK,):
+        if concept == FALLBACK and any(v["boxes"] for v in found.values()):
+            break
         reply = sam.segment(png, concept)
         if reply.error:
             print(f"SAM 3.1 call for {concept!r} did not succeed ({reply.error}).")

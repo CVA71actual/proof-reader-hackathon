@@ -582,9 +582,11 @@ class Job:
         words = json.loads((build_run.FIXTURES / entry["words_file"]).read_text())
         w, h = float(words["page_width"]), float(words["page_height"])
         st = self.job.setdefault("scan", {}).setdefault(scan.SOURCE_ID, {"by_concept": {}, "calls": [], "reads": {}})
-        for concept in sam_module.CONCEPTS:
+        for concept in sam_module.CONCEPTS + (sam_module.FALLBACK,):
             if concept in st["by_concept"]:
                 continue
+            if concept == sam_module.FALLBACK and not scan.needs_fallback(st["by_concept"]):
+                break
             if self.stopped_before_a_call(self.sam):
                 return False
             reply = self.sam.segment(png, concept)

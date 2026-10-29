@@ -164,8 +164,10 @@ def test_the_region_is_a_full_width_band_around_the_quote(words_doc, tmp_path):
     import pymupdf
     page = pymupdf.open(stream=png, filetype="png")[0]
     crop = pymupdf.Pixmap(band)
-    assert band[:4] == b"\x89PNG" and crop.width == round(page.rect.width)
-    assert crop.height == pytest.approx((y1 - y0) * page.rect.width / words_doc["page_width"], abs=2)
+    full = pymupdf.Pixmap(png)
+    px_per_pt = full.width / words_doc["page_width"]
+    assert band[:4] == b"\x89PNG" and crop.width == full.width, "the band keeps the image's real resolution"
+    assert crop.height == pytest.approx((y1 - y0) * px_per_pt, abs=2)
 
 
 def test_with_no_quote_and_no_box_the_whole_page_is_the_region(words_doc):

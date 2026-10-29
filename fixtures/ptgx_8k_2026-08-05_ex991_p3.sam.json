@@ -1,0 +1,37 @@
+{
+ "model": "sam-3.1",
+ "base_url": "https://api.meta.ai/v1",
+ "input": "page image rendered with no text layer",
+ "image_sha256": "2bddbbd919e13b8db1ef66533affbcb08881a88976aab5f14e39ceaebe84e8e5",
+ "concepts": {
+  "table": {
+   "boxes": [],
+   "images": 1,
+   "answer_chars": 0,
+   "starts_with": ""
+  },
+  "block of text": {
+   "boxes": [],
+   "images": 1,
+   "answer_chars": 0,
+   "starts_with": ""
+  },
+  "page": {
+   "boxes": [
+    {
+     "x1": 5,
+     "y1": 3,
+     "x2": 1219,
+     "y2": 1583,
+     "w": 1224,
+     "h": 1584
+    }
+   ],
+   "images": 1,
+   "answer_chars": 211942,
+   "starts_with": "<0f>0<|box;x1=5;y1=3;x2=1219;y2=1583;w=1224;h=1584|><|mask;x"
+  }
+ },
+ "images_processed": 3,
+ "cost_usd_at_placeholder_price": 0.0075
+}

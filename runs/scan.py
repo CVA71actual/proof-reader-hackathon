@@ -35,6 +35,8 @@ WHO = "runs.scan"
 PAD_PT = 4.0          # a region's crop reaches this far past SAM's box, so a word cut by the box is not lost
 INSIDE = 0.8          # a text block with at least this share of its area inside a table region is dropped
 DUPLICATE_IOU = 0.8
+PAGE_NOTE = ("SAM 3.1 found no table or text block on this page (it is an object segmenter, not a layout model): its only "
+             "region is the whole page, so the box check could not run and the reader read the whole page image.")
 SCAN_NOTE = ("The page has no text layer (a scan), so there are no words to check a quote or a box against. SAM 3.1 found "
              "the region; the reader read the region's image; the box was checked against the region.")
 
@@ -62,12 +64,19 @@ def _inter(a, b) -> float:
     return _area([max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])])
 
 
+def needs_fallback(by_concept: dict[str, list[list[float]]]) -> bool:
+    """True when no concept has matched anything yet: the whole page is then asked for (sam.FALLBACK)."""
+    return not any(by_concept.get(c) for c in sam.CONCEPTS)
+
+
 def merge_regions(by_concept: dict[str, list[list[float]]]) -> list[dict]:
     """[{id, concept, box}] in PDF points from the boxes SAM 3.1 found for each concept (`by_concept`: concept -> boxes).
     Tables come first; a text block mostly inside a table, or almost the same box as one already kept, is dropped;
     the rest are ordered top to bottom, then left to right, and numbered r1, r2, ..."""
     kept: list[tuple[str, list[float]]] = []
-    for concept in sorted(by_concept, key=lambda c: (c != "table", c)):
+    for concept in sorted(by_concept, key=lambda c: (c != "table", c == sam.FALLBACK, c)):
+        if concept == sam.FALLBACK and kept:
+            continue          # the whole page is a region only when SAM found nothing finer
         for box in by_concept[concept]:
             if any(_inter(box, k) / _area(box) >= INSIDE for c, k in kept if c == "table" and concept != "table"):
                 continue
@@ -89,16 +98,22 @@ def crop_png(png: bytes, box_pt: list[float], page_w: float) -> bytes:
 
     doc = pymupdf.open(stream=png, filetype="png")
     try:
-        scale = doc[0].rect.width / page_w
-        clip = pymupdf.Rect(*(v * scale for v in box_pt))
-        return doc[0].get_pixmap(clip=clip).tobytes("png")
+        page = doc[0]
+        units_per_pt = page.rect.width / page_w                # a PNG page is measured in its own dpi's units
+        px_per_unit = pymupdf.Pixmap(png).width / page.rect.width
+        clip = pymupdf.Rect(*(v * units_per_pt for v in box_pt))
+        return page.get_pixmap(matrix=pymupdf.Matrix(px_per_unit, px_per_unit), clip=clip).tobytes("png")
     finally:
         doc.close()
 
 
 def region_prompt(entry: dict, region: dict, types=read_events.EVENT_TYPES, note: str | None = None) -> str:
-    head = (f"The image is one region of a scanned page (a {region['concept']} that SAM 3.1 found); it is not the whole "
-            f"page. Boxes are on a 0 to 1000 grid over this region image.\n\n")
+    if region["concept"] == sam.FALLBACK:
+        head = ("The image is a scanned page (SAM 3.1 found no table or text block on it, only the page). Boxes are on a "
+                "0 to 1000 grid over this image.\n\n")
+    else:
+        head = (f"The image is one region of a scanned page (a {region['concept']} that SAM 3.1 found); it is not the "
+                f"whole page. Boxes are on a 0 to 1000 grid over this region image.\n\n")
     return head + read_events.build_image_prompt(entry, tuple(types), note)
 
 
@@ -163,16 +178,18 @@ def assemble_rows(reads: list[dict], source: dict, sam_calls: list[dict], at: st
     for row, region in pending:
         per_row = round(sam_cost / len(rows), prices.ROUND_TO) if rows else 0
         steps = [
-            {"step": "Scanned page", "tag": "Code", "who": WHO, "at": at, "text": SCAN_NOTE},
+            {"step": "Scanned page", "tag": "Code", "who": WHO, "at": at,
+             "text": PAGE_NOTE if region["concept"] == sam.FALLBACK else SCAN_NOTE},
             {"step": f"{sam.NAME} found {region['id']}", "tag": "Model", "who": sam.NAME, "at": at,
-             "text": (f"Region {region['id']}: a {region['concept']} at {region['box']} (PDF points). SAM 3.1 finds where "
-                      f"things are; it reads nothing. {images} image{'s' if images != 1 else ''} processed for this page "
-                      f"({len(sam_calls)} concept requests); this row's share of the cost is recorded."),
+             "text": (f"Region {region['id']}: {'the whole page' if region['concept'] == sam.FALLBACK else 'a ' + region['concept']}"
+                      f" at {region['box']} (PDF points). SAM 3.1 finds where things are; it reads nothing. {images} "
+                      f"image{'s' if images != 1 else ''} processed for this page ({len(sam_calls)} concept "
+                      f"requests); this row's share of the cost is recorded."),
              "tokens": None, "cost_usd": per_row},
         ]
         row["trail"][1:1] = steps
         row["reason"] = (f"{row['reason']} The page is a scan: there is no text layer, so nothing printed was compared "
-                         f"with this row; its box lies in region {region['id']}.") if row["status"] != "failed" else row["reason"]
+                         f"with this row.") if row["status"] != "failed" else row["reason"]
     return rows
 
 
@@ -204,3 +221,77 @@ def assemble(entry: dict, run_dir: Path, png: bytes, sam_record: dict, read_reco
                 "spend_usd": prices.run_spend_usd(rows)},
         "sources": [source], "tables": [], "rows": rows, "mistakes": [], "exclusions": [],
     }
+
+
+# ---------------------------------------------------------------- recording and building from the command line
+
+READ_PATH = FIXTURES / f"{read_events.PIN}.scan_reading.json"
+RUN_ID = "ptgx-scan"
+
+
+def _regions_from_saved(entry: dict, sam_record: dict) -> tuple[list[dict], float, float]:
+    words = __import__("json").loads((FIXTURES / entry["words_file"]).read_text())
+    w, h = float(words["page_width"]), float(words["page_height"])
+    return merge_regions({c: [sam.to_points(b, w, h) for b in v["boxes"]] for c, v in sam_record["concepts"].items()}), w, h
+
+
+def main(argv: list[str] | None = None) -> int:
+    """python -m runs.scan --live     read each region SAM 3.1 found (fixtures/..sam.json) with the reader, live; saves
+                                      fixtures/..scan_reading.json
+       python -m runs.scan            build runs/ptgx-scan/ from the two saved files (no model call)"""
+    import argparse
+    import json
+    from datetime import datetime, timezone
+
+    from capture.reader import LiveReader
+    from runs.build_run import write_run
+
+    ap = argparse.ArgumentParser(description=main.__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--live", action="store_true")
+    ap.add_argument("--out-dir", type=Path, default=build_run.RUNS / RUN_ID)
+    args = ap.parse_args(argv)
+    entry = load_entry(read_events.PIN)
+    sam_record = json.loads(sam.SAM_PATH.read_text())
+    png = scanned_png(entry)
+    if args.live:
+        reader = LiveReader()
+        problem = reader.ready()
+        if problem:
+            print(problem)
+            return 2
+        regions, w, h = _regions_from_saved(entry, sam_record)
+        reads = []
+        for region in regions:
+            crop = crop_box(region, w, h)
+            prompt = region_prompt(entry, region)
+            reply = reader.call(prompt, image=crop_png(png, crop, w))
+            if reply.error:
+                print(f"{region['id']}: the reader's call did not succeed ({reply.error}).")
+                return 1
+            events, problem = read_events.parse_events(reply.raw)
+            reads.append({"region_id": region["id"], "region": region, "crop": crop, "prompt_text": prompt,
+                          "raw_response": reply.raw, "model": reply.model, "events": events, "parse_problem": problem,
+                          "usage": {"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens}})
+            print(f"{region['id']} ({region['concept']}): {None if events is None else len(events)} events, tokens "
+                  f"{reply.prompt_tokens} in / {reply.completion_tokens} out")
+        READ_PATH.write_text(json.dumps({"created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                         "page_width": w, "page_height": h, "image_sha256": sha256(png),
+                                         "reads": reads}, indent=1, ensure_ascii=False) + "\n")
+        print(f"saved -> {READ_PATH}")
+        return 0
+    read_record = json.loads(READ_PATH.read_text())
+    run = assemble(entry, args.out_dir, png, sam_record, read_record)
+    write_run(run, args.out_dir)
+    decisions = args.out_dir / "decisions.jsonl"
+    if not decisions.exists():
+        decisions.write_text("")
+    for r in run["rows"]:
+        print(f"{r['id']} {r['title']} [{r['date_text']}] {r['status']} / {r['group']}")
+    print(f"Wrote {args.out_dir / 'run.json'}: {len(run['rows'])} rows, spend ${run['run']['spend_usd']}")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())

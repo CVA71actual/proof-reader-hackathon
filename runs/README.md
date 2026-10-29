@@ -247,6 +247,32 @@ and each compared row's trail says it in a "Second reader input" Code step befor
 `--words` the earlier form: `fixtures/ptgx_..._p3.events.second.json` is the image read, 3,246 prompt and 3,772
 completion tokens, and `.events.second_words.json` the words read, 10,791 and 5,902.)
 
+### A scanned page: SAM 3.1 regions
+
+`runs/scan.py`, `capture/sam.py`. A page with no text layer has no words for the text-layer checks, so: **SAM 3.1** (the
+Meta Model API's Responses route, model `sam-3.1`, streaming; one request per concept, a short noun phrase) is asked for
+"table" and "block of text"; each box it returns is a region (a text block inside a table is dropped, near duplicates are
+dropped, reading order); each region's crop is read by the first reader with the event instructions, its boxes on a 0-1000
+grid over the crop turned into PDF points; every proposal is a row with the same five checks. Quote found on page **could not
+run** (no text layer) and Citation located is the **region check** (`region_match`): the box must lie inside a region SAM 3.1
+found. So a row on a scan is at best `proposed`, never `matched`: nothing printed was compared with it. The trail says so:
+Code "Scanned page", Model "SAM 3.1" (each request is one counted turn, priced per image processed from `runs/prices.py`,
+placeholder $2.50 per 1,000 images), then the reader's own steps. The source page carries `scanned: true` and its `regions`.
+In a run, the company `PTGX-SCAN` is the PTGX page rendered to an image alone; each call's answer is kept in `job.json`, so a resume
+never pays for a call twice. A scanned page gets no second read yet and no escalation.
+
+**What SAM 3.1 did on the real page (recorded in `fixtures/ptgx_..._p3.sam.json`):** it matched nothing for "table" or "block of
+text", and on the IONS financial-statement page it also matched nothing for "table", "grid", "row", "paragraph" or "line of
+text"; it answered only for "page" and "document" (one box, the whole page). It is an object segmenter, not a document layout
+model. So when neither concept matches, the run asks for "page" and the one region is the whole page; a whole-page region says
+nothing about where a quote is, so **Citation located could not run** ("SAM 3.1 found no table or text block on this page; its
+only region is the whole page...") and the row stays `proposed`. `runs/ptgx-scan/` is that run: the reader read the scan from
+its image alone (3,149 prompt and 1,851 completion tokens) and found the same two events; three SAM requests, $0.0075 at the
+placeholder price. The path is built for a segmenter that does find regions; this one, on documents, does not.
+
+**Not built: a Muse Glimmer first pass.** There is no host for Glimmer this week (it is not on the Meta Model API), so the
+cheap-first-pass item was dropped (the Operator's ruling, 2026-10-29). The cost per kept row is therefore unchanged by it.
+
 ### Escalation to Muse Wonder
 
 `runs/escalate.py`. When a row fails a check, or the two readers disagree on it, that one row's **page region** (a

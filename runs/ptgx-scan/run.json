@@ -1,0 +1,446 @@
+{
+ "schema_version": "1",
+ "run": {
+  "id": "ptgx-scan",
+  "number": 5,
+  "label": "PTGX · scanned page (SAM 3.1 regions)",
+  "sample": false,
+  "started_at": "2026-10-29T01:49:29+00:00",
+  "finished_at": "2026-10-29T01:49:29+00:00",
+  "choices": {
+   "companies": [
+    "PTGX"
+   ],
+   "event_types": [
+    "trial_results",
+    "regulatory_decision",
+    "launch",
+    "conference",
+    "filing",
+    "milestone"
+   ],
+   "time_window_months": null,
+   "spending_limit_usd": null,
+   "note_for_agent": null
+  },
+  "spend_usd": 0.018053
+ },
+ "sources": [
+  {
+   "id": "src-ptgx-8k-2026-08-05-ex991-scanned",
+   "publisher": "Protagonist Therapeutics, Inc. (filed with the SEC)",
+   "kind": "filing",
+   "title": "PTGX 8-K exhibit 99.1 (second quarter 2026 financial results press release), filed 2026-08-05, as a scanned page (the image only)",
+   "url": "https://www.sec.gov/Archives/edgar/data/1377121/000110465926091099/tm2622272d1_ex99-1.htm",
+   "published_date": "2026-08-05",
+   "captured_at": "2026-10-28T19:17:25+00:00",
+   "sha256": "4ba68e37da0c15348d3eb9c3164a8f477ca81fa42d570fd648961e69cb5a1c50",
+   "rendered_from": {
+    "format": "html",
+    "sha256": "ecfd2d79a6e812707d22a9f9a5b86ab1ff7dcc4e8bd9aa2d4c0c7636a7280d57",
+    "renderer": "Google Chrome 156.0.8078.48 headless print-to-pdf"
+   },
+   "pages": [
+    {
+     "page_number": 3,
+     "image": "pages/p3.png",
+     "width_pt": 612.0,
+     "height_pt": 792.0,
+     "words": "pages/p3.words.json",
+     "image_sha256": "2bddbbd919e13b8db1ef66533affbcb08881a88976aab5f14e39ceaebe84e8e5",
+     "words_sha256": "c45cba8d5d61a7142407ad9affe9f1073eae93c5552a23e5d8201335347c5144",
+     "scanned": true,
+     "regions": [
+      {
+       "id": "r1",
+       "concept": "page",
+       "box": [
+        2.5,
+        1.5,
+        610.0,
+        792.0
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "tables": [],
+ "rows": [
+  {
+   "id": "e1",
+   "ticker": "PTGX",
+   "company": "Protagonist Therapeutics, Inc.",
+   "event_type": "milestone",
+   "title": "Phase 1 initiation",
+   "date_text": "the second half of 2027",
+   "date": "2027-07-01",
+   "date_end": "2027-12-31",
+   "quote": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
+   "program": "PN-458o",
+   "indication": null,
+   "source_id": "src-ptgx-8k-2026-08-05-ex991-scanned",
+   "page_number": 3,
+   "box": [
+    64.26,
+    57.02,
+    569.16,
+    88.7
+   ],
+   "proposed_by": "Muse Spark",
+   "status": "proposed",
+   "group": "unverified",
+   "reason": "Quote found on page could not run: The page has no text layer to compare against. The page is a scan: there is no text layer, so nothing printed was compared with this row.",
+   "sample": false,
+   "checks": [
+    {
+     "name": "quote_match",
+     "label": "Quote found on page",
+     "kind": "Code",
+     "result": "could_not_run",
+     "reason": "The page has no text layer to compare against.",
+     "compared": {
+      "looked_for": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "quote_match"
+     }
+    },
+    {
+     "name": "selector_match",
+     "label": "Citation located",
+     "kind": "Code",
+     "result": "could_not_run",
+     "reason": "SAM 3.1 found no table or text block on this page; its only region is the whole page, which says nothing about where the quote is.",
+     "compared": {
+      "looked_for": "a box inside a region SAM 3.1 found",
+      "found": null,
+      "box": [
+       64.26,
+       57.02,
+       569.16,
+       88.7
+      ]
+     },
+     "code_ref": {
+      "file": "checks/selector_match.py",
+      "function": "selector_match"
+     }
+    },
+    {
+     "name": "date_match",
+     "label": "Date read as written",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The period in the row is the period printed in the quote.",
+     "compared": {
+      "looked_for": "2027-07-01 to 2027-12-31",
+      "found": "2027-07-01 to 2027-12-31"
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "date_match"
+     }
+    },
+    {
+     "name": "source_rule",
+     "label": "Source is more than a calendar",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The source is not a third-party calendar.",
+     "compared": {
+      "looked_for": "filing",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "source_rule"
+     }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote's words (initiation) fit milestone.",
+     "compared": {
+      "looked_for": "milestone",
+      "found": "initiation"
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
+    }
+   ],
+   "trail": [
+    {
+     "step": "Instructions sent",
+     "tag": "Code",
+     "who": "capture.read_events",
+     "text": "The image is a scanned page (SAM 3.1 found no table or text block on it, only the page). Boxes are on a 0 to 1000 grid over this image.\n\nYou are reading one page of a company's SEC filing: Protagonist Therapeutics, Inc. (ticker PTGX), 8-K exhibit 99.1, filed\n2026-08-05. The page is attached as an image. Read it from the image: you are given no list of its words.\n\nList every upcoming catalyst event the page names: something the company expects to happen, with the date or\nperiod the page gives for it. Answer with JSON only, in exactly this shape:\n{\n  \"events\": [\n    {\n      \"ticker\": \"PTGX\",\n      \"company\": \"Protagonist Therapeutics, Inc.\",\n      \"program\": \"<the drug or program name as printed, or null>\",\n      \"indication\": \"<the disease or condition the program is for, as printed, or null>\",\n      \"event_type\": \"<one of: trial_results, regulatory_decision, launch, conference, filing, milestone>\",\n      \"title\": \"<a short title for the event>\",\n      \"date_text\": \"<the date or period exactly as printed>\",\n      \"date\": \"<YYYY-MM-DD or null>\",\n      \"date_end\": \"<YYYY-MM-DD or null>\",\n      \"quote\": \"<the printed sentence that names the event and its date, word for word>\",\n      \"box\": [x0, y0, x1, y1]\n    }\n  ]\n}\n\nRules:\n- Use only what is printed on the page. Do not add or reword anything.\n- \"quote\" is the printed words in page order joined by single spaces, exactly as printed, punctuation included.\n- \"program\" is the drug or program name exactly as printed; \"indication\" is the disease or condition it is for,\n  as printed (null if the page does not say). Give both whenever the page names both.\n- \"date_text\" is copied exactly as printed in the quote.\n- \"date\" and \"date_end\": for an exact day, \"date\" is that day and \"date_end\" is null. For a quarter, half, month\n  or year, \"date\" is its first day and \"date_end\" its last day. For anything vaguer (\"mid-2027\", \"later this\n  year\"), both are null.\n- \"box\" is your proposal for where the quote is printed: the smallest box that encloses all the words of the\n  quote (if the quote runs over several lines, the box encloses those lines), on a grid from 0 to 1000 over the\n  image: x counts from the left edge and y from the top edge, and 1000 is the full width or height. If you cannot\n  place it, use null.\n- Leave out events that have already happened. If the page names none, answer {\"events\": []}.\n- Output the JSON object only, with no other text.\n",
+     "at": "2026-10-29T01:49:29+00:00",
+     "tokens": {
+      "prompt": 3149,
+      "completion": null
+     }
+    },
+    {
+     "step": "Scanned page",
+     "tag": "Code",
+     "who": "runs.scan",
+     "at": "2026-10-29T01:49:29+00:00",
+     "text": "SAM 3.1 found no table or text block on this page (it is an object segmenter, not a layout model): its only region is the whole page, so the box check could not run and the reader read the whole page image."
+    },
+    {
+     "step": "SAM 3.1 found r1",
+     "tag": "Model",
+     "who": "SAM 3.1",
+     "at": "2026-10-29T01:49:29+00:00",
+     "text": "Region r1: the whole page at [2.5, 1.5, 610.0, 792.0] (PDF points). SAM 3.1 finds where things are; it reads nothing. 3 images processed for this page (3 concept requests); this row's share of the cost is recorded.",
+     "tokens": null,
+     "cost_usd": 0.00375
+    },
+    {
+     "step": "Proposed",
+     "tag": "Model",
+     "who": "Muse Spark",
+     "text": "PTGX PN-458o milestone on 2027-07-01 to 2027-12-31, printed as “the second half of 2027”: “PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.”",
+     "at": "2026-10-29T01:49:29+00:00",
+     "tokens": {
+      "prompt": 1575,
+      "completion": 926,
+      "call_rows": 2
+     },
+     "cost_usd": 0.005279
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "quote_match",
+     "text": "Quote found on page: could not run. The page has no text layer to compare against.",
+     "at": "2026-10-29T01:49:29+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "selector_match",
+     "text": "Citation located: could not run. SAM 3.1 found no table or text block on this page; its only region is the whole page, which says nothing about where the quote is.",
+     "at": "2026-10-29T01:49:29+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "date_match",
+     "text": "Date read as written: pass. The period in the row is the period printed in the quote.",
+     "at": "2026-10-29T01:49:29+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "source_rule",
+     "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
+     "at": "2026-10-29T01:49:29+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: pass. The quote's words (initiation) fit milestone.",
+     "at": "2026-10-29T01:49:29+00:00"
+    }
+   ]
+  },
+  {
+   "id": "e2",
+   "ticker": "PTGX",
+   "company": "Protagonist Therapeutics, Inc.",
+   "event_type": "milestone",
+   "title": "Phase 1 initiation",
+   "date_text": "Q1 2027",
+   "date": "2027-01-01",
+   "date_end": "2027-03-31",
+   "quote": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
+   "program": "PN-8047",
+   "indication": null,
+   "source_id": "src-ptgx-8k-2026-08-05-ex991-scanned",
+   "page_number": 3,
+   "box": [
+    64.26,
+    105.34,
+    544.68,
+    136.22
+   ],
+   "proposed_by": "Muse Spark",
+   "status": "proposed",
+   "group": "unverified",
+   "reason": "Quote found on page could not run: The page has no text layer to compare against. The page is a scan: there is no text layer, so nothing printed was compared with this row.",
+   "sample": false,
+   "checks": [
+    {
+     "name": "quote_match",
+     "label": "Quote found on page",
+     "kind": "Code",
+     "result": "could_not_run",
+     "reason": "The page has no text layer to compare against.",
+     "compared": {
+      "looked_for": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "quote_match"
+     }
+    },
+    {
+     "name": "selector_match",
+     "label": "Citation located",
+     "kind": "Code",
+     "result": "could_not_run",
+     "reason": "SAM 3.1 found no table or text block on this page; its only region is the whole page, which says nothing about where the quote is.",
+     "compared": {
+      "looked_for": "a box inside a region SAM 3.1 found",
+      "found": null,
+      "box": [
+       64.26,
+       105.34,
+       544.68,
+       136.22
+      ]
+     },
+     "code_ref": {
+      "file": "checks/selector_match.py",
+      "function": "selector_match"
+     }
+    },
+    {
+     "name": "date_match",
+     "label": "Date read as written",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The period in the row is the period printed in the quote.",
+     "compared": {
+      "looked_for": "2027-01-01 to 2027-03-31",
+      "found": "2027-01-01 to 2027-03-31"
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "date_match"
+     }
+    },
+    {
+     "name": "source_rule",
+     "label": "Source is more than a calendar",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The source is not a third-party calendar.",
+     "compared": {
+      "looked_for": "filing",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "source_rule"
+     }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote's words (initiation) fit milestone.",
+     "compared": {
+      "looked_for": "milestone",
+      "found": "initiation"
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
+    }
+   ],
+   "trail": [
+    {
+     "step": "Instructions sent",
+     "tag": "Code",
+     "who": "capture.read_events",
+     "text": "The image is a scanned page (SAM 3.1 found no table or text block on it, only the page). Boxes are on a 0 to 1000 grid over this image.\n\nYou are reading one page of a company's SEC filing: Protagonist Therapeutics, Inc. (ticker PTGX), 8-K exhibit 99.1, filed\n2026-08-05. The page is attached as an image. Read it from the image: you are given no list of its words.\n\nList every upcoming catalyst event the page names: something the company expects to happen, with the date or\nperiod the page gives for it. Answer with JSON only, in exactly this shape:\n{\n  \"events\": [\n    {\n      \"ticker\": \"PTGX\",\n      \"company\": \"Protagonist Therapeutics, Inc.\",\n      \"program\": \"<the drug or program name as printed, or null>\",\n      \"indication\": \"<the disease or condition the program is for, as printed, or null>\",\n      \"event_type\": \"<one of: trial_results, regulatory_decision, launch, conference, filing, milestone>\",\n      \"title\": \"<a short title for the event>\",\n      \"date_text\": \"<the date or period exactly as printed>\",\n      \"date\": \"<YYYY-MM-DD or null>\",\n      \"date_end\": \"<YYYY-MM-DD or null>\",\n      \"quote\": \"<the printed sentence that names the event and its date, word for word>\",\n      \"box\": [x0, y0, x1, y1]\n    }\n  ]\n}\n\nRules:\n- Use only what is printed on the page. Do not add or reword anything.\n- \"quote\" is the printed words in page order joined by single spaces, exactly as printed, punctuation included.\n- \"program\" is the drug or program name exactly as printed; \"indication\" is the disease or condition it is for,\n  as printed (null if the page does not say). Give both whenever the page names both.\n- \"date_text\" is copied exactly as printed in the quote.\n- \"date\" and \"date_end\": for an exact day, \"date\" is that day and \"date_end\" is null. For a quarter, half, month\n  or year, \"date\" is its first day and \"date_end\" its last day. For anything vaguer (\"mid-2027\", \"later this\n  year\"), both are null.\n- \"box\" is your proposal for where the quote is printed: the smallest box that encloses all the words of the\n  quote (if the quote runs over several lines, the box encloses those lines), on a grid from 0 to 1000 over the\n  image: x counts from the left edge and y from the top edge, and 1000 is the full width or height. If you cannot\n  place it, use null.\n- Leave out events that have already happened. If the page names none, answer {\"events\": []}.\n- Output the JSON object only, with no other text.\n",
+     "at": "2026-10-29T01:49:29+00:00",
+     "tokens": {
+      "prompt": 3149,
+      "completion": null
+     }
+    },
+    {
+     "step": "Scanned page",
+     "tag": "Code",
+     "who": "runs.scan",
+     "at": "2026-10-29T01:49:29+00:00",
+     "text": "SAM 3.1 found no table or text block on this page (it is an object segmenter, not a layout model): its only region is the whole page, so the box check could not run and the reader read the whole page image."
+    },
+    {
+     "step": "SAM 3.1 found r1",
+     "tag": "Model",
+     "who": "SAM 3.1",
+     "at": "2026-10-29T01:49:29+00:00",
+     "text": "Region r1: the whole page at [2.5, 1.5, 610.0, 792.0] (PDF points). SAM 3.1 finds where things are; it reads nothing. 3 images processed for this page (3 concept requests); this row's share of the cost is recorded.",
+     "tokens": null,
+     "cost_usd": 0.00375
+    },
+    {
+     "step": "Proposed",
+     "tag": "Model",
+     "who": "Muse Spark",
+     "text": "PTGX PN-8047 milestone on 2027-01-01 to 2027-03-31, printed as “Q1 2027”: “PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.”",
+     "at": "2026-10-29T01:49:29+00:00",
+     "tokens": {
+      "prompt": 1574,
+      "completion": 925,
+      "call_rows": 2
+     },
+     "cost_usd": 0.005274
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "quote_match",
+     "text": "Quote found on page: could not run. The page has no text layer to compare against.",
+     "at": "2026-10-29T01:49:29+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "selector_match",
+     "text": "Citation located: could not run. SAM 3.1 found no table or text block on this page; its only region is the whole page, which says nothing about where the quote is.",
+     "at": "2026-10-29T01:49:29+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "date_match",
+     "text": "Date read as written: pass. The period in the row is the period printed in the quote.",
+     "at": "2026-10-29T01:49:29+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "source_rule",
+     "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
+     "at": "2026-10-29T01:49:29+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: pass. The quote's words (initiation) fit milestone.",
+     "at": "2026-10-29T01:49:29+00:00"
+    }
+   ]
+  }
+ ],
+ "mistakes": [],
+ "exclusions": []
+}

@@ -41,14 +41,15 @@ class FakeReader:
     Each call costs `cost` dollars at runs/prices.py's input price; priced=False names a model with no price."""
 
     def __init__(self, cost=0.01, answer=None, problem=None, priced=True, model=MODEL):
-        self.cost, self.answer, self.problem, self.prompts = cost, answer, problem, []
+        self.cost, self.answer, self.problem, self.prompts, self.images = cost, answer, problem, [], []
         self.model = model if priced else "unpriced-model"
 
     def ready(self):
         return self.problem
 
-    def call(self, prompt):
+    def call(self, prompt, image=None):
         self.prompts.append(prompt)
+        self.images.append(image)
         raw = self.answer(prompt, len(self.prompts)) if self.answer else self.default(prompt)
         return Reply(raw, self.model, prompt_tokens=round(self.cost * 1_000_000 / PRICE_IN), completion_tokens=0)
 

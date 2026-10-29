@@ -174,6 +174,13 @@ that failed a check or that the readers disagree on is sent to Muse Wonder (`won
 ("Muse Wonder", a placeholder price until confirmed) and covered by the turn and spending limits; a row is never sent
 twice, across resumes either (`job.json` `escalated_rows`). See `runs/README.md`, "Escalation to Muse Wonder".
 
+**A scanned page.** The company `PTGX-SCAN` is the PTGX page rendered to an image with no text layer. Its run asks SAM 3.1
+(`sam_reader`, default `capture/sam.py` when no `reader` was given) for "table" and "block of text" (then "page" if both match
+nothing), reads each region with the first reader, and checks each box against the regions instead of against words (see
+`runs/README.md`, "A scanned page"). Every SAM request and every region read is a counted turn under the turn and spending limits
+(SAM priced per image processed); with no SAM reader the run is `needs_input`; what each call returned is kept in `job.json`
+(`scan`) so a resume repeats none of them.
+
 **Three refusals.** A page whose answer could not be read (not JSON, or the wrong shape) is asked again; the
 third unreadable answer in the run (counted across resumes, in `job.json`) ends the page with one row: group
 `open`, status `unreadable`, reason "The reader's answer could not be read three times; sent to a person." Its
