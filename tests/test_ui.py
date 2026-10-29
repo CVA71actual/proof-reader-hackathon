@@ -299,3 +299,102 @@ def test_u11_accuracy_panel_is_wired():
     assert "fetch(" not in body.replace("accuracyProbe", "")
     for url in ("/api/runs/new", "/decisions"):
         assert url not in body, f"the panel must not call {url}"
+
+
+def _grab_fn(js: str, name: str) -> str:
+    """A top-level function from app.js, copied the way tests/redteam/test_round5.py reads it."""
+    at = js.index(f"function {name}")
+    i = js.index("{", at)
+    depth = 0
+    for j in range(i, len(js)):
+        if js[j] == "{":
+            depth += 1
+        elif js[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return js[at : j + 1]
+    raise AssertionError(f"{name} does not close")
+
+
+def test_u12_audit_line_is_one_models_counts():
+    # Red Team round 5 finding 6: the audit header line names one model and never
+    # stitches missing parts from another model into the same score.
+    js = (UI / "app.js").read_text()
+    for word in ("M_total", "in the run’s window ", "outside the window ", "unplaced "):
+        assert word in js, word
+    # footer: 'sealed-set file' only when key.sealed is true, else 'accuracy file'
+    assert "sealed-set file" in js and "accuracy file" in js
+    # behavior: two models, each with one part — the line must not carry both
+    import json
+    import subprocess
+    acc = {"key": {"sealed": False},
+           "models": {"Muse Spark": {"values": {"found": 1, "N": 100}},
+                      "Muse Wonder": {"events": {"found": 2, "M": 2},
+                                      "planted": {"caught": 12, "total": 12}}}}
+    script = "\n".join((_grab_fn(js, "accSealLabel"), _grab_fn(js, "accuracyLineFrom"),
+                        f"const line = accuracyLineFrom({json.dumps(acc)});",
+                        "if (line.includes('values 1/100') && line.includes('events 2/2')) process.exit(2);",
+                        "if (!line.includes('Muse Spark')) process.exit(3);",
+                        "console.log(line);"))
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout or got.stderr
+    assert "values 1/100" in got.stdout and "events 2/2" not in got.stdout
+
+
+def _panel_text(acc: dict) -> str:
+    """renderAccuracyPanel's text under the same mock element harness as the redteam UI tests."""
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("accPart", "accModelLines", "accPlantedLine", "accuracyProbe", "renderAccuracyPanel"))
+    script = f"""
+const ACC_DOC = {json.dumps(acc)};
+function el(tag, cls, text) {{
+  return {{ tag: tag, className: cls || '', textContent: text || '', children: [], style: {{}},
+    append: function () {{ for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); }} }};
+}}
+function clear(node) {{ node.textContent = ''; node.children = []; return node; }}
+function textOf(node, out) {{
+  out = out || [];
+  if (node.textContent) out.push(node.textContent);
+  (node.children || []).forEach(function (c) {{ textOf(c, out); }});
+  return out.join('\\n');
+}}
+global.fetch = function () {{
+  return Promise.resolve({{ ok: true, json: function () {{ return Promise.resolve(ACC_DOC); }} }});
+}};
+var accCache = {{ id: null, acc: null, tried: false }};
+var accPanelHost = el('div');
+var detail = {{ id: 'r', run: {{ run: {{ label: 'probe' }}, rows: [] }},
+  state: {{ cost_per_kept_row_usd: null, mistake_list: [] }} }};
+{fns}
+renderAccuracyPanel();
+setTimeout(function () {{ console.log(textOf(accPanelHost)); }}, 0);
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stderr
+    return got.stdout
+
+
+def test_u12_panel_footer_and_window_numbers():
+    # Red Team round 5 finding 7 + Job 16: an author-keyed file is never called a
+    # sealed set, and the run's window numbers sit under the per-model lines.
+    sealed = {"key": {"sealed": True},
+              "models": {"Muse Spark": {"events": {"found": 2, "M": 2, "M_total": 5,
+                                                   "outside_window": {"count": 2},
+                                                   "unplaced": {"count": 1}}}}}
+    text = _panel_text(sealed)
+    assert "The sealed set" in text
+    assert "its sealed-set file" in text
+    assert "Muse Spark — in the run’s window 2 of 5 key events" in text
+    assert "outside the window 2" in text and "unplaced 1" in text
+    unsealed = {"key": {"sealed": False},
+                "models": {"Muse Spark": {"values": {"found": 1, "N": 100}}}}
+    text = _panel_text(unsealed)
+    assert "Unsealed (author key)" in text
+    assert "sealed-set" not in text
+    assert "its accuracy file" in text
+    blank = _panel_text({"key": {"sealed": False}, "models": {}})
+    assert "Unsealed (author key)" in blank and "sealed-set" not in blank
+    assert "No accuracy scoring is saved for this run yet." in blank

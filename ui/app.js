@@ -405,6 +405,10 @@
   function accSealLabel(acc) {
     return acc && acc.key && acc.key.sealed === true ? 'Sealed set: ' : 'Unsealed (author key): ';
   }
+  // Red Team round 5 (finding 6): a shown rate is one model's counts, never a
+  // mix stitched from several models. The header line names the model and shows
+  // only the first model that has any counts; every model is listed separately
+  // in the Accuracy panel (accModelLines).
   function accuracyLineFrom(acc) {
     if (!acc || typeof acc !== 'object') return null;
     function part(x) {
@@ -414,26 +418,26 @@
       ['N', 'M', 'total'].forEach(function (k) { if (x[k] !== null && x[k] !== undefined) n = x[k]; });
       return n !== null ? (f !== null ? f : '?') + '/' + n : null;
     }
-    var v = part(acc.values) ||
-      (acc.table && acc.table.counts ? part({ found: acc.table.counts.found, N: acc.table.N }) : null);
-    var ev = part(acc.events) ||
-      (acc.events && acc.events.counts ? part({ found: acc.events.counts.found, M: acc.events.M }) : null);
-    var pl = part(acc.planted);
-    if (!v || !ev || !pl) {
-      // report shape: counts live per model — take the first model that has each part
-      var names = acc.models && typeof acc.models === 'object' ? Object.keys(acc.models) : [];
-      for (var i = 0; i < names.length; i++) {
-        var m = acc.models[names[i]] || {};
-        if (!v && m.values) { var pv = part(m.values); if (pv) v = pv; }
-        if (!ev && m.events) { var pe = part(m.events); if (pe) ev = pe; }
-        if (!pl && m.planted) { var pp = part(m.planted); if (pp) pl = pp; }
-      }
+    function bitsFrom(src) {
+      var b = [];
+      var v = part(src.values) ||
+        (src.table && src.table.counts ? part({ found: src.table.counts.found, N: src.table.N }) : null);
+      var ev = part(src.events) ||
+        (src.events && src.events.counts ? part({ found: src.events.counts.found, M: src.events.M }) : null);
+      var pl = part(src.planted);
+      if (v) b.push('values ' + v);
+      if (ev) b.push('events ' + ev);
+      if (pl) b.push('planted ' + pl);
+      return b;
     }
-    var bits = [];
-    if (v) bits.push('values ' + v);
-    if (ev) bits.push('events ' + ev);
-    if (pl) bits.push('planted ' + pl);
-    return bits.length ? accSealLabel(acc) + bits.join(' · ') : null;
+    var names = acc.models && typeof acc.models === 'object' ? Object.keys(acc.models) : [];
+    for (var i = 0; i < names.length; i++) {
+      var bits = bitsFrom(acc.models[names[i]] || {});
+      if (bits.length) return accSealLabel(acc) + names[i] + ': ' + bits.join(' · ');
+    }
+    // no per-model counts: the flat single-source shape, nothing to mix
+    var flat = bitsFrom(acc);
+    return flat.length ? accSealLabel(acc) + flat.join(' · ') : null;
   }
   function ensureAccuracyLine() {
     var slot = document.getElementById('audit-accuracy');
@@ -1103,18 +1107,27 @@
     accPanelHost.append(el('div', 'sh-t', 'Accuracy'));
     accPanelHost.append(el('div', 'sh-s', (meta.label || 'This run') + (meta.sample ? ' · sample data — not real events' : '')));
 
-    var sealedHead = el('h4', null, 'The sealed set');
+    var sealedHead = el('h4', null, 'The accuracy numbers');
     accPanelHost.append(sealedHead);
-    var sealedHost = el('div', null, 'Reading the sealed-set numbers…');
+    var sealedHost = el('div', null, 'Reading the saved scoring…');
     accPanelHost.append(sealedHost);
     var plantedHost = el('div');
     accPanelHost.append(plantedHost);
+    // Red Team round 5 (finding 7): an author-keyed file is not called a sealed
+    // set — the footer names the accuracy file unless the key is truly sealed
+    var foot = el('div', 'hint', 'Every number here comes from the saved run and its accuracy file — no model is called for this panel.');
+    foot.style.marginTop = '12px';
     accuracyProbe(detail.id).then(function (acc) {
-      sealedHead.textContent = acc && acc.key && acc.key.sealed === true ? 'The sealed set' : 'Unsealed (author key)';
+      var sealed = acc && acc.key && acc.key.sealed === true;
+      sealedHead.textContent = sealed ? 'The sealed set' : 'Unsealed (author key)';
+      foot.textContent = 'Every number here comes from the saved run and its ' +
+        (sealed ? 'sealed-set file' : 'accuracy file') + ' — no model is called for this panel.';
       clear(sealedHost);
       var lines = accModelLines(acc);
       if (!lines.length) {
-        sealedHost.append(el('div', 'hint', 'No sealed-set scoring is saved for this run yet.'));
+        sealedHost.append(el('div', 'hint',
+          sealed ? 'No sealed-set scoring is saved for this run yet.'
+                 : 'No accuracy scoring is saved for this run yet.'));
       } else {
         lines.forEach(function (l) {
           var d = el('div', 'accline');
@@ -1122,6 +1135,30 @@
           sealedHost.append(d);
         });
       }
+      // Job 16 window numbers, per model with scored events (only when the export
+      // carries them): 'Muse Spark — in the run’s window 2 of 5 key events ·
+      // outside the window 2 · unplaced 1'
+      var windowLines = function (doc) {
+        var out = [];
+        var models = doc && doc.models;
+        if (models && typeof models === 'object') {
+          Object.keys(models).forEach(function (name) {
+            var ev = (models[name] || {}).events;
+            if (!ev || ev.M_total === null || ev.M_total === undefined) return;
+            var inW = ev.M !== null && ev.M !== undefined ? ev.M : '?';
+            var bits = ['in the run’s window ' + inW + ' of ' + ev.M_total + ' key events'];
+            if (ev.outside_window) bits.push('outside the window ' + (ev.outside_window.count || 0));
+            if (ev.unplaced) bits.push('unplaced ' + (ev.unplaced.count || 0));
+            out.push(name + ' — ' + bits.join(' · '));
+          });
+        }
+        return out;
+      };
+      windowLines(acc).forEach(function (l) {
+        var d = el('div', 'accline');
+        d.append(el('span', 'what', l));
+        sealedHost.append(d);
+      });
       var planted = accPlantedLine(acc);
       clear(plantedHost);
       if (planted) plantedHost.append(el('div', 'hint', planted));
@@ -1154,8 +1191,7 @@
         });
       });
     }
-    var foot = el('div', 'hint', 'Every number here comes from the saved run and its sealed-set file — no model is called for this panel.');
-    foot.style.marginTop = '12px';
+    // footer goes last, under the mistake log
     accPanelHost.append(foot);
   }
 
