@@ -167,11 +167,15 @@ def _quote_run(want: str, words: list[dict], rect) -> list[dict] | None:
 
 
 def _gap(rect, run: list[dict]) -> float:
-    """The distance between the box and the box around the run (0 when they touch or overlap)."""
+    """The distance between the box and the nearest word of the run (0 when a word touches or overlaps the box)."""
     x0, y0, x1, y1 = rect
-    dx = max(min(w["x0"] for w in run) - x1, x0 - max(w["x1"] for w in run), 0.0)
-    dy = max(min(w["y0"] for w in run) - y1, y0 - max(w["y1"] for w in run), 0.0)
-    return (dx * dx + dy * dy) ** 0.5
+
+    def one(w: dict) -> float:
+        dx = max(w["x0"] - x1, x0 - w["x1"], 0.0)
+        dy = max(w["y0"] - y1, y0 - w["y1"], 0.0)
+        return (dx * dx + dy * dy) ** 0.5
+
+    return min(one(w) for w in run)
 
 
 def _quote_box(run: list[dict], rect, words: list[dict], result) -> CheckResult:

@@ -784,10 +784,22 @@ class Job:
                 return False
             reply = self.wonder.call(text, image=region)
             self.count_turn(reply)
-            self.job["wonder_spend_usd"] = round(self.job.get("wonder_spend_usd", 0.0) + (prices.cost_usd(
-                price_name(reply.model), reply.prompt_tokens, reply.completion_tokens) or 0.0), prices.ROUND_TO)
+            call_cost = prices.cost_usd(price_name(reply.model), reply.prompt_tokens, reply.completion_tokens)
+            self.job["wonder_spend_usd"] = round(self.job.get("wonder_spend_usd", 0.0) + (call_cost or 0.0),
+                                                 prices.ROUND_TO)
             if reply.error:
                 self.stop("failed", f"Muse Wonder: {reply.error} Resume to try again.")
+                return False
+            if call_cost is None and self.choices["spending_limit_usd"] is not None:
+                # the cost of this reply cannot be counted, so it cannot be shown to sit inside Wonder's share:
+                # the reading is not applied and the row stays as it was
+                row["trail"].append({"step": "Escalation result", "tag": "Code", "who": escalate.WHO,
+                                     "at": now_utc(), "text": f"The cost of {escalate.WONDER}'s call could not be "
+                                     f"counted, so its reading is not taken. The row stays as it was."})
+                self.job["escalated_rows"][row["id"]] = "kept"
+                done[sid] = "budget"
+                self.save()
+                self.stop("needs_input", self.unpriced_reason(self.choices["spending_limit_usd"], self.wonder))
                 return False
             events, _ = read_events.parse_events(reply.raw)
             events = events or []
@@ -881,11 +893,11 @@ class Job:
 
     @staticmethod
     def is_printed_sentence(quote: str, words_doc: dict) -> bool:
-        """True when `quote` equals a sentence of the page after the normalization used for page text. A mark the
-        normalization would drop (a leading "$") must be printed there too: the answer adds nothing."""
-        want, dollar = normalize(quote), quote.strip().startswith("$")
-        return any(normalize(s["text"]) == want and s["text"].strip().startswith("$") == dollar
-                   for s in coverage_sentences(words_doc["words"]))
+        """True when `quote` equals a sentence of the page after collapsing runs of whitespace, and nothing else:
+        no other character may differ."""
+        squash = lambda t: " ".join(str(t).split())
+        want = squash(quote)
+        return any(squash(s["text"]) == want for s in coverage_sentences(words_doc["words"]))
 
     def apply_send_back(self, row: dict, answer: dict | None, reading: dict, source: dict, words_doc: dict,
                         share: tuple, prompt: str, at: str) -> None:

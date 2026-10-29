@@ -394,8 +394,14 @@ _ANCHORS = {
 }
 
 
+def _word_re(word: str) -> re.Pattern:
+    """A fixed word as a whole word. The edge of a word is anything that is not a letter, digit, underscore, hyphen
+    or slash: data-room, data/set, data2, data_code are not 'data'; 'data.' and '(data)' are."""
+    return re.compile(rf"(?<![\w/-]){re.escape(word)}(?![\w/-])", re.I)
+
+
 def _has_word(text: str, word: str) -> bool:
-    return bool(re.search(rf"(?<!\w){re.escape(word)}(?!\w)", text.lower()))
+    return bool(_word_re(word).search(text))
 
 
 def event_type_for(text: str | None) -> str:
@@ -450,7 +456,7 @@ def event_anchors(event_type: str | None, title: str | None = None, program: str
 
 def _anchor_in(text: str, anchors: list[str]) -> str | None:
     for a in anchors:
-        if re.search(r"(?<!\w)" + re.escape(a) + r"(?!\w)", text, re.I):
+        if _has_word(text, a):
             return a
     return None
 
