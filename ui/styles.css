@@ -248,6 +248,15 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
 .chcard .when{color:var(--faint);font-size:11.5px;margin-top:5px}
 .chcard .since{color:var(--ink);font-size:12px;font-weight:600;margin-top:5px}
 
+/* export (U9) */
+#scr-export .pane.mid{background:var(--bg)}
+.sec2-t{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);padding:14px 4px 6px}
+.exrow{display:flex;gap:10px;width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;align-items:center;margin-bottom:8px;background:var(--panel)}
+.exrow .exic{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);display:grid;place-items:center;font-size:14px;background:var(--panel2);flex:0 0 30px}
+.exrow .exmeta{color:var(--faint);font-size:11.5px}
+.exrow .link{white-space:nowrap}
+.expfoot{padding:14px 22px 30px;color:var(--faint);font-size:12px;border-top:1px solid var(--line)}
+
 /* new run panel + job bar (U8) */
 .newrun{margin:12px 14px 0;width:calc(100% - 28px)}
 .sheet.sheet-wide{width:520px}

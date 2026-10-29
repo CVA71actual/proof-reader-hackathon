@@ -1,4 +1,4 @@
-/* Proof Reader — U7 What changed + U8 New run panel, on top of U1–U6.
+/* Proof Reader — U9 Export + second-reader details, on top of U1–U8.
    Reads runs through the local decisions server only; no external calls.
    One state per row comes from the server: run.json + decisions in order. */
 (function () {
@@ -13,7 +13,8 @@
   var GROUP_ORDER = ['kept', 'corrected', 'removed', 'unverified', 'open'];
   var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };
   var ACTION_WORDS = { keep: 'kept', fix: 'fixed', remove: 'removed' };
-  var FIX_FIELDS = ['date_text', 'date', 'date_end', 'event_type', 'title', 'quote', 'company', 'ticker'];
+  var FIX_FIELDS = ['date_text', 'date', 'date_end', 'event_type', 'title', 'quote', 'company', 'ticker',
+                    'program', 'indication'];
   var RULE_WORDS = {
     third_party_calendar_only: 'House rule: a third-party calendar is never a source on its own.',
     person_removed: 'Removed by you.',
@@ -31,7 +32,8 @@
   };
   var FIELD_WORDS = { date_text: 'Date as written', date: 'Start date', date_end: 'End date',
                       event_type: 'Event type', title: 'Title', quote: 'Quote',
-                      company: 'Company', ticker: 'Ticker' };
+                      company: 'Company', ticker: 'Ticker', program: 'Program',
+                      indication: 'Condition' };
   // run controls (U8): the job's plain status words and the panel's fixed choices
   var JOB_STATUS_WORDS = { queued: 'queued', running: 'running',
     paused_turn_limit: 'paused at the turn limit', needs_input: 'needs input',
@@ -236,6 +238,7 @@
   // '#/<run>/trail[/<rowId>]'
   // '#/<run>/calendar'
   // '#/<run>/changed[?a=<runId>&b=<runId>]'
+  // '#/<run>/export'
   function parseHash() {
     var h = location.hash || '';
     if (h === '' ) return null;
@@ -302,6 +305,7 @@
     else if (route.screen === 'trail') renderTrail();
     else if (route.screen === 'calendar') renderCalendar();
     else if (route.screen === 'changed') renderChanged();
+    else if (route.screen === 'export') renderExport();
     else renderAudit();
     updateJobBar();
 
@@ -659,6 +663,7 @@
     if (t.group === 'corrected') host.append(correctedSection(row, t));
     if (t.group === 'removed') host.append(removedSection(row, t));
     if (t.group === 'open' || t.group === 'unverified') host.append(whySection(row, t));
+    if (t.disagreement) host.append(disagreementSection(row, t));
 
     host.append(checksSection(row, t));
 
@@ -745,6 +750,25 @@
     sec.append(el('h4', null, t.group === 'open' ? 'Why it needs you' : 'Why it is unverified'));
     var box = el('div', 'ba' + (t.group === 'open' ? ' blue' : ''));
     box.textContent = t.reason || row.reason || 'Waiting for you.';
+    sec.append(box);
+    return sec;
+  }
+
+  // the second reader (R5): the field the two readers disagree on, both
+  // values, above the checks
+  function disagreementSection(row, t) {
+    var d = t.disagreement;
+    var sec = el('div', 'sec');
+    var fieldWord = FIELD_WORDS[d.field] || d.field;
+    sec.append(el('h4', null, 'The two readers disagree on the ' + fieldWord.toLowerCase()));
+    var box = el('div', 'ba blue');
+    function val(v) { return d.field === 'event_type' ? eventWord(v) : fmtField(d.field, v); }
+    var l1 = el('div');
+    l1.append(el('b', null, 'First reader · ' + (row.proposed_by || 'Muse Spark') + ': '), val(d.first_reader));
+    var l2 = el('div');
+    l2.style.marginTop = '4px';
+    l2.append(el('b', null, 'Second reader · Muse Spark Open: '), val(d.second_reader));
+    box.append(l1, l2);
     sec.append(box);
     return sec;
   }
@@ -1546,31 +1570,54 @@
   }
 
   function compareRuns(a, b) {
-    // match rows across the two files: exact identity first (ticker, type,
-    // program, title), then a looser pass (ticker, type, program) so a row
-    // whose title was corrected still compares instead of reading as
-    // add + remove. Whatever stays unmatched is added (B) or removed (A).
-    function fullKey(r) {
-      return rowKey(r) + '|' + (r.title || '').toLowerCase();
+    // match rows across the two files in three passes: exact (title, program,
+    // indication), then title (so a program or indication change compares as a
+    // corrected field instead of add + remove), then ticker · type · program
+    // (so a corrected title still compares). Whatever stays unmatched is
+    // added (B) or removed (A).
+    function kTitle(r) { return (r.ticker || '') + '|' + (r.event_type || '') + '|' + (r.title || '').toLowerCase(); }
+    function kExact(r) { return kTitle(r) + '|' + (r.program || '') + '|' + (r.indication || ''); }
+    function bucketize(rows, keyFn) {
+      var m = {};
+      rows.forEach(function (r) { (m[keyFn(r)] = m[keyFn(r)] || []).push(r); });
+      return m;
     }
-    var aFull = {};
-    a.run.rows.forEach(function (r) { if (!(fullKey(r) in aFull)) aFull[fullKey(r)] = r; });
+    var aExact = bucketize(a.run.rows, kExact);
     var pairs = [], onlyB = [];
     b.run.rows.forEach(function (rb) {
-      var ra = aFull[fullKey(rb)];
-      if (ra) { pairs.push([ra, rb]); delete aFull[fullKey(rb)]; }
+      var q = aExact[kExact(rb)];
+      if (q && q.length) pairs.push([q.shift(), rb]);
       else onlyB.push(rb);
     });
-    var onlyA = Object.keys(aFull).map(function (k) { return aFull[k]; });
-    var restA = {};
-    onlyA.forEach(function (r) { if (!(rowKey(r) in restA)) restA[rowKey(r)] = r; });
+    var aLeft = [];
+    Object.keys(aExact).forEach(function (k) { aLeft = aLeft.concat(aExact[k]); });
+    var aTitle = bucketize(aLeft, kTitle);
     var stillB = [];
     onlyB.forEach(function (rb) {
-      var ra = restA[rowKey(rb)];
-      if (ra) { pairs.push([ra, rb]); delete restA[rowKey(rb)]; }
-      else stillB.push(rb);
+      var q = aTitle[kTitle(rb)];
+      if (q && q.length) {
+        // same title twice (two programs): keep the pairing with the same program
+        var idx = 0, best = -1;
+        q.forEach(function (ra, i) {
+          var s = 0;
+          if (String(ra.program || '') === String(rb.program || '')) s += 2;
+          if (String(ra.indication || '') === String(rb.indication || '')) s += 1;
+          if (s > best) { best = s; idx = i; }
+        });
+        pairs.push([q.splice(idx, 1)[0], rb]);
+      } else stillB.push(rb);
     });
-    var stillA = Object.keys(restA).map(function (k) { return restA[k]; });
+    var aLeft2 = [];
+    Object.keys(aTitle).forEach(function (k) { aLeft2 = aLeft2.concat(aTitle[k]); });
+    var aLoose = bucketize(aLeft2, rowKey);
+    var lastB = [];
+    stillB.forEach(function (rb) {
+      var q = aLoose[rowKey(rb)];
+      if (q && q.length) pairs.push([q.shift(), rb]);
+      else lastB.push(rb);
+    });
+    var stillA = [];
+    Object.keys(aLoose).forEach(function (k) { stillA = stillA.concat(aLoose[k]); });
 
     var cards = [];
     function since(x, row) {
@@ -1581,8 +1628,9 @@
       return { text: 'Since then: ' + word + ' by you' + (d ? ' · ' + dateShort(d.at) : ''),
                    run: x };
     }
-    var FIELDS = ['date', 'date_end', 'date_text', 'title', 'event_type', 'company', 'ticker'];
-    stillB.forEach(function (rb) {
+    var FIELDS = ['date', 'date_end', 'date_text', 'title', 'event_type', 'company', 'ticker',
+                  'program', 'indication'];
+    lastB.forEach(function (rb) {
       cards.push({ kind: 'added', row: rb, x: b, fields: [],
                    line: 'New in ' + (b.run.run.label || 'the newer run') + '.', since: since(b, rb) });
     });
@@ -1679,6 +1727,92 @@
     }));
     sec4.append(br);
     det.append(sec4);
+  }
+
+  // ---------------------------------------------------------------- export (U9)
+  // The saved report files for the run, the build note, and the report's
+  // summary numbers from state (the same counts as the audit log).
+  var REPORT_BUILD_ENDPOINT = null;   // no build endpoint on main yet; command line it is
+  function reportFileNames(meta) {
+    var base = 'biotech-coverage-catalyst-calendar-run' + (meta.number || 0);
+    return [{ file: base + '.pdf', kind: 'PDF' }, { file: base + '.docx', kind: 'Word' }];
+  }
+  function reportUrl(name) {
+    return '/runs/' + encodeURIComponent(currentRunId()) + '/report/' +
+      name.split('/').map(encodeURIComponent).join('/');
+  }
+
+  function renderExport() {
+    var meta = detail.run.run || {};
+    var st = detail.state;
+    var mid = clear(document.getElementById('exp-mid'));
+    var det = clear(document.getElementById('exp-det'));
+
+    var head = el('div', 'ph');
+    head.style.background = 'var(--panel2)';
+    head.append(el('h2', null, 'Export'));
+    head.append(el('div', 'sub', 'The saved report and the run’s summary'));
+    head.append(el('div', 'runlabel' + (meta.sample ? ' sample' : ''), meta.label || ''));
+    mid.append(head);
+
+    var wrap = el('div', 'calwrap');
+    wrap.append(el('div', 'sec2-t', 'Saved report files'));
+    var listHost = el('div');
+    reportFileNames(meta).forEach(function (f) {
+      var row = el('div', 'exrow');
+      row.append(el('span', 'exic', '▤'));
+      var midCol = el('div');
+      midCol.style.flex = '1';
+      midCol.style.minWidth = '0';
+      midCol.append(el('div', null, 'Biotech Coverage Catalyst Calendar — run ' + (meta.number || '?') +
+        ' (' + f.kind + ')'));
+      var nameLine = el('div', 'exmeta mono', f.file);
+      midCol.append(nameLine);
+      var right = el('span');
+      right.style.marginLeft = 'auto';
+      right.append(el('span', 'exmeta', 'checking…'));
+      row.append(midCol, right);
+      listHost.append(row);
+      // served by the server at /runs/<id>/report/<file> when that route exists
+      fetch(reportUrl(f.file), { method: 'HEAD' }).then(function (r) {
+        clear(right);
+        if (r.ok) {
+          var a = el('a', 'link', 'Open');
+          a.href = reportUrl(f.file);
+          right.append(a);
+        } else {
+          right.append(el('span', 'exmeta', 'Open from the runs folder'));
+        }
+      }).catch(function () {
+        clear(right);
+        right.append(el('span', 'exmeta', 'Open from the runs folder'));
+      });
+    });
+    wrap.append(listHost);
+
+    var buildLine = REPORT_BUILD_ENDPOINT
+      ? null
+      : el('div', 'calfnote', 'Built from the command line: python -m report.build ' + currentRunId());
+    if (buildLine) wrap.append(buildLine);
+    mid.append(wrap);
+    var foot = el('div', 'expfoot', 'Built by code from the saved results');
+    mid.append(foot);
+
+    // the report's summary numbers: the same counts as the audit log
+    var sec = el('div', 'sec');
+    sec.append(el('h4', null, 'Summary — the same counts as the audit log'));
+    function kv(k, v) { var r = el('div', 'kv'); r.append(el('span', 'k', k), el('span', 'v', v)); sec.append(r); }
+    GROUP_ORDER.forEach(function (g) {
+      kv(GROUP_NAMES[g], String(st.counts.rows[g]));
+    });
+    kv('Needs attention', String(st.unresolved));
+    kv('Mistakes caught by code', String(st.mistakes.code));
+    kv('Mistakes caught by the second reader', String(st.mistakes.second_reader));
+    kv('Mistakes caught by a person', String(st.mistakes.person));
+    kv('Excluded by code', String(st.excluded.code));
+    kv('Excluded by you', String(st.excluded.person));
+    det.append(sec);
+    det.append(el('div', 'sec', ''));
   }
 
   // ---------------------------------------------------------------- new run (U8)
@@ -1887,7 +2021,7 @@
     });
   });
   document.querySelectorAll('#nav .ni[data-soon]').forEach(function (b) {
-    b.addEventListener('click', function () { toast('That screen lands in a later slice (U9).'); });
+    b.addEventListener('click', function () { toast('Every screen of this build is here.'); });
   });
   document.getElementById('src-back').addEventListener('click', function () {
     var first = null;

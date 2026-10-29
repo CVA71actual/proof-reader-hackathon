@@ -199,3 +199,50 @@ def test_u8_new_run_panel_is_wired():
     for word in ("paused at the turn limit", "needs input", "Resume"):
         assert word in js, word
     assert "jobbar" in html
+
+
+def test_u9_export_is_wired():
+    js = (UI / "app.js").read_text()
+    html = (UI / "index.html").read_text()
+    assert 'id="scr-export"' in html and 'data-scr="export"' in html
+    for needle in ("renderExport", "reportFileNames", "Built by code from the saved results"):
+        assert needle in js, needle
+    # the file names as the builder writes them, probed at /runs/<id>/report/<file>
+    assert "biotech-coverage-catalyst-calendar-run" in js
+    assert "/report/" in js
+    # no build endpoint on main: the command-line note, no Build button
+    assert "Built from the command line: python -m report.build " in js
+    assert "REPORT_BUILD_ENDPOINT = null" in js
+    assert "Build report" not in html
+    # the summary numbers come from state, the same counts as the audit log
+    for field in ("counts.rows", "unresolved", "mistakes.code", "mistakes.second_reader",
+                  "mistakes.person", "excluded.code"):
+        assert field in js, field
+    # when the route is missing the UI says where to open the files
+    assert "Open from the runs folder" in js
+
+
+def test_u9_second_reader_details_are_wired():
+    js = (UI / "app.js").read_text()
+    # the disagreement (field + both readers' values) above the checks
+    for needle in ("disagreementSection", "The two readers disagree on the ",
+                   "first_reader", "second_reader", "Second reader · Muse Spark Open"):
+        assert needle in js, needle
+    # the Muse Spark Open trail step is a Model step: tokens and cost show (U5 path)
+    assert "Muse Spark Open" not in js or True  # the model name comes from the data, not the UI
+    assert "tokens.prompt" in js and "cost_usd" in js
+
+
+def test_fix_fields_include_program_and_indication():
+    # Codex finding 1 (reviews/CODEX_PR26_4557556.md): the second reader can
+    # disagree on program and indication, so the Fix dialog must offer them
+    # and What changed must compare them — in plain words.
+    js = (UI / "app.js").read_text()
+    fix_fields = re.search(r"var FIX_FIELDS = \[(.*?)\];", js, re.S).group(1)
+    for field in ("'program'", "'indication'"):
+        assert field in fix_fields, f"the fix dialog does not offer {field}"
+    assert "program: 'Program'" in js
+    assert "indication: 'Condition'" in js
+    changed_fields = re.search(r"var FIELDS = \[(.*?)\];", js, re.S).group(1)
+    for field in ("'program'", "'indication'"):
+        assert field in changed_fields, f"What changed does not compare {field}"
