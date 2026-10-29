@@ -165,7 +165,7 @@ ROW = {"id": "e1", "ticker": "PTGX", "program": "PN-8047", "indication": None, "
 
 def test_events_are_matched_by_overlapping_quote_and_a_shared_name():
     other = {**ROW, "program": "PN-458o", "quote": "PN-458o Phase 1 initiation is anticipated in 2H 2027."}
-    ev = {**ROW, "quote": "PN-8047 (oral) Phase 1 initiation is anticipated in Q1 2027."}
+    ev = {**ROW, "quote": ROW["quote"] + " Further text follows."}       # one quote is a run of words of the other
     assert compare.match_events([ROW, other], [ev]) == {0: 0}
     assert compare.match_events([ROW], [{**ev, "program": "Something else"}]) == {}, "no shared name"
     assert compare.match_events([ROW], [{**ev, "program": None}]) == {0: 0}, "a name only one side gave is fine"

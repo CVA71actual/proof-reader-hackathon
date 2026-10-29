@@ -6,9 +6,10 @@
 The second reader (Muse Spark Open, capture/second_reader.py) read the same page without seeing the first
 reader's answer. Nothing here asks a model anything.
 
-Events. A first-reader row and a second-reader event are the same event when their quotes overlap (one holds the
-other, or one holds 80% of the other's words: the coverage check's own rule) and, when both name a program or an
-indication, they share a name. Each second event pairs with at most one row. For a pair these fields are compared:
+Events. A first-reader row and a second-reader event are the same event when one quote is a contiguous run of
+words of the other (after normalization: case, spacing and the punctuation at a word's edge ignored) and, when both
+name a program or an indication, they share a name. A handful of the same words in another order, or a bag of words
+that happens to overlap, never pairs two passages. Each second event pairs with at most one row. For a pair these fields are compared:
 date, date_end, event_type, program, indication (case and spacing ignored; none against a value is a difference).
 The quote is the match key: quotes that overlap but run to different lengths are not a disagreement.
 - Any difference: the row becomes `undecided` (`failed` if a check had failed), group `open`, and carries
@@ -31,7 +32,7 @@ from __future__ import annotations
 
 from checks import event_checks
 from checks.common import normalize
-from checks.coverage import sentence_covered
+from checks.event_checks import _norm_quote
 from checks.row_column_match import column_key
 from runs import build_entry, prices
 
@@ -53,8 +54,21 @@ def _names(item: dict) -> set[str]:
     return {n for n in (_norm(item.get("program")), _norm(item.get("indication"))) if n}
 
 
+_EDGE_PUNCT = ".,;:"
+
+
+def _words(text) -> list[str]:
+    return [w for w in (t.strip(_EDGE_PUNCT) for t in _norm_quote(text).lower().split()) if w]
+
+
 def _same_quote(a, b) -> bool:
-    return bool(a and b) and (sentence_covered(a, [b]) or sentence_covered(b, [a]))
+    """One quote is a contiguous run of the other's words. Token bags never pair: 'planned and is Q3 2027' is not
+    a run of 'Q3 2027 is planned and Q3 2027 is planned', however many of its words that sentence repeats."""
+    x, y = _words(a), _words(b)
+    if not x or not y:
+        return False
+    short, long_ = (x, y) if len(x) <= len(y) else (y, x)
+    return any(long_[i : i + len(short)] == short for i in range(len(long_) - len(short) + 1))
 
 
 def match_events(rows: list[dict], events: list[dict]) -> dict[int, int]:
@@ -161,6 +175,10 @@ def apply_events(rows: list[dict], second_events: list[dict], second_reading: di
     for j, ev in enumerate(second_events):
         if j in matched:
             continue
+        if not (source or {}).get("pages") or "words" not in (words_doc or {}):
+            row = _uncheckable_row(next_index + len(new_rows), ev, source, second_reading, shares[j], at)
+            new_rows.append(row)
+            continue
         row = build_entry.build_row(next_index + len(new_rows), ev, second_reading, source, words_doc, at,
                                     share=shares[j], model_name=SECOND, instructions_who=SECOND_WHO)
         failed = any(c["result"] == "fail" for c in row["checks"])
@@ -176,19 +194,41 @@ def apply_events(rows: list[dict], second_events: list[dict], second_reading: di
 SECOND_FIRST = "Muse Spark"
 
 
+def _uncheckable_row(index: int, ev: dict, source: dict | None, reading: dict, share: tuple, at: str) -> dict:
+    """An event only the second reader gave, on a page that was not captured (no source page or no words): it is kept as
+    a second-reader row, undecided and open, with no check run on it and the reason said plainly."""
+    return {
+        "id": f"e{index}", "ticker": ev.get("ticker") or "", "company": ev.get("company") or "",
+        "event_type": (ev.get("event_type") or "unknown"), "title": ev.get("title") or "",
+        "date_text": ev.get("date_text"), "date": ev.get("date"), "date_end": ev.get("date_end"),
+        "quote": ev.get("quote"), "program": ev.get("program"), "indication": ev.get("indication"),
+        "source_id": (source or {}).get("id"), "page_number": None, "box": None, "proposed_by": SECOND,
+        "found_by": "second_reader", "status": "undecided", "group": "open",
+        "reason": f"{ONLY_REASON} The page was not captured, so no check could run on it.", "sample": False,
+        "checks": [],
+        "trail": [*_instructions_steps(reading, at), _model_step(ev, share, at),
+                  {"step": "Compared", "tag": "Code", "who": WHO, "at": at,
+                   "text": f"No row from the first reader matches this event, and the page was not captured, so no "
+                           f"check ran. {AGREEMENT_NOTE}"}],
+    }
+
+
 def apply_table(first_table: dict, second_table: dict) -> list[str]:
-    """Mark each value the two readers read differently. Returns the ids of the cells marked."""
-    theirs = {}
+    """Mark each value the two readers read differently. Returns the ids of the cells marked. The second reader may give
+    more than one value for a cell (two rows with the same label, a repeated column): every one is kept, and a value that
+    differs from the first reader's is a disagreement even when another of its values agrees. None is dropped."""
+    theirs: dict[tuple, list] = {}
     for r in second_table.get("rows") or []:
         for c in r.get("cells") or []:
-            theirs.setdefault((_norm(r.get("label")), column_key(c.get("column"))), c.get("value"))
+            theirs.setdefault((_norm(r.get("label")), column_key(c.get("column"))), []).append(c.get("value"))
     marked = []
     for r in first_table.get("rows") or []:
         for c in r.get("cells") or []:
-            key = (_norm(r.get("label")), column_key(c.get("column")))
-            if key not in theirs or _norm(c.get("value")) == _norm(theirs[key]):
+            values = theirs.get((_norm(r.get("label")), column_key(c.get("column"))))
+            differing = [v for v in values or [] if _norm(c.get("value")) != _norm(v)]
+            if not differing:
                 continue
             c["status"] = "failed" if any(k["result"] == "fail" for k in c["checks"]) else "undecided"
-            c["disagreement"] = {"field": "value", "first_reader": c.get("value"), "second_reader": theirs[key]}
+            c["disagreement"] = {"field": "value", "first_reader": c.get("value"), "second_reader": differing[0]}
             marked.append(c["id"])
     return marked

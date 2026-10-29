@@ -197,8 +197,11 @@ its `job.json`) is under $20. It is given the same kind of prompt, built by the 
 and the run's choices; it is never given the first reader's answer (nothing in its interface takes one). Its tokens
 and cost are its own (`runs/prices.py`, "Muse Spark Open", placeholder prices).
 
-`runs/compare.py` compares the two readings by code, event by event. Two are the same event when their quotes overlap
-(one holds the other, or holds 80% of its words) and any program or indication name they both give is shared. Compared:
+`runs/compare.py` compares the two readings by code, event by event. Two are the same event when one quote is a
+**contiguous run of words** of the other (case, spacing and the punctuation at a word's edge ignored) and any program or
+indication name they both give is shared. A handful of the same words in another order, or a bag of words that merely
+overlaps, never pairs two passages: the second passage would be consumed and agreement written for text the first reader
+did not read. Compared:
 `date`, `date_end`, `event_type`, `program`, `indication` (case and spacing ignored; nothing against a value is a
 difference). The quote is the match key: quotes that run to different lengths are not a disagreement.
 
@@ -214,7 +217,11 @@ difference). The quote is the match key: quotes that run to different lengths ar
   first reader did not read it...". An open "Possible event not read" row for the same sentence is dropped.
 - Table values: the same row label and column (`column_key`) with a different value makes the cell `undecided`
   (`failed` if a check had failed) with `disagreement` {field "value", ...}; it sits in the "unverified" group until a
-  person fixes the value.
+  person fixes the value. The second reader may give a cell more than one value (two rows with one label, a repeated
+  column): every value is kept, and one that differs from the first reader's is a disagreement even when another of its
+  values agrees; the first differing value is the one recorded.
+- An event only the second reader gave, on a page that was not captured (no source page or no words), is kept as an open
+  second-reader row with no check run on it and the reason said ("The page was not captured...").
 
 Trail, one actor per step: "Instructions sent to the second reader" (Code, `capture.second_reader`, the exact prompt),
 "Second reading" (Model, Muse Spark Open, with its share of the call's tokens and cost), "Compared" (Code,

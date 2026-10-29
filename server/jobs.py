@@ -278,6 +278,10 @@ class Job:
             cost = prices.image_cost_usd(price_name(reply.model), reply.images)
         else:
             cost = prices.cost_usd(price_name(reply.model), reply.prompt_tokens, reply.completion_tokens)
+        if cost is None and self.choices["spending_limit_usd"] is not None and not reply.error:
+            models = self.job.setdefault("unpriced_models", [])      # the model the REPLY names, not the one asked for
+            if reply.model not in models:
+                models.append(reply.model)
         if cost is None and (reply.extra or {}).get("route") == "openrouter" and not reply.error:
             # a fallback call with no token counts cannot be held under the cap: no more fallback calls
             self.job["openrouter_unpriced_calls"] = self.job.get("openrouter_unpriced_calls", 0) + 1
@@ -301,13 +305,34 @@ class Job:
         if limit is None:
             return False
         if self.job["unpriced_calls"] or not prices.has_price(price_name(reader.model)):
-            self.stop("needs_input", f"The cost of a call could not be counted (runs/prices.py has no price for "
-                                     f"{reader.model}), so the spending limit of {money(limit)} cannot be "
-                                     f"kept. Nothing more was read.")
+            self.stop("needs_input", self.unpriced_reason(limit, reader))
             return True
         if (meta["spend_usd"] or 0) >= limit:
-            self.stop("needs_input", f"Stopped at the spending limit ({money(meta['spend_usd'] or 0)} of "
-                                     f"{money(limit)} used). Start a new run with a higher limit to read more.")
+            self.stop("needs_input", self.limit_reason(limit))
+            return True
+        return False
+
+    def limit_reason(self, limit: float) -> str:
+        return (f"Stopped at the spending limit ({money(self.meta['spend_usd'] or 0)} of {money(limit)} used): "
+                f"spending limit reached. Resume with a higher spending_limit_usd to read more.")
+
+    def unpriced_reason(self, limit: float, reader=None) -> str:
+        models = ", ".join(self.job.get("unpriced_models") or [getattr(reader, "model", "the model")])
+        return (f"The cost of a call could not be counted (runs/prices.py has no price for {models}), so the spending "
+                f"limit of {money(limit)} cannot be kept. Nothing more was read.")
+
+    def stopped_after_the_last_call(self) -> bool:
+        """The checks made when no call is left: a run is done only if every call stayed inside its spending limit. The
+        call that crosses the limit stops the run even when it was the last one, and a call whose cost could not be
+        counted (the reply named a model with no price) cannot be shown to have stayed inside."""
+        limit = self.choices["spending_limit_usd"]
+        if limit is None:
+            return False
+        if self.job["unpriced_calls"]:
+            self.stop("needs_input", self.unpriced_reason(limit))
+            return True
+        if (self.meta["spend_usd"] or 0) > limit:
+            self.stop("needs_input", self.limit_reason(limit))
             return True
         return False
 
@@ -328,6 +353,8 @@ class Job:
                     return
                 if not self.escalation_pass(page) and self.meta["status"] != "running":
                     return
+        if self.stopped_after_the_last_call():
+            return
         read = len(self.run["sources"])
         self.meta["finished_at"] = now_utc()
         self.meta["status"] = "done"

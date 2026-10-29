@@ -132,7 +132,12 @@ each call the job checks, in order: the reader is ready (a key), the turn budget
 
 - Turn limit reached: `paused_turn_limit`, "Stopped at the turn limit (40 turns). Resume to continue with a fresh
   budget of turns."
-- Spending limit reached: `needs_input`, "Stopped at the spending limit ($0.60 of $0.50 used)...". Spend is the sum
+- Spending limit reached: `needs_input`, "Stopped at the spending limit ($0.60 of $0.50 used): spending limit reached.
+  Resume with a higher spending_limit_usd to read more." The call that crosses the limit stops the run **even when it is the
+  last call** (and a second reader's call is inside the same limit, counted before the next page is read): status `done`
+  only when every call stayed inside the limit (landing exactly on it is inside). A call priced by the model its **reply**
+  names, not the one asked for: a reply naming a model not in `runs/prices.py` is unpriced, and under a limit the run stops
+  before the next call, or at the end if there is none, saying which model ("no price for ..."). Spend is the sum
   of each call's cost, from its token counts and `runs/prices.py` (placeholder prices, marked for confirmation). A
   model missing from that table has no cost, so no spend: with a limit set, the run stops before the first call
   with a plain reason, because a limit that cannot be counted is not kept.
