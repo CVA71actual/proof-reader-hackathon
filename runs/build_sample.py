@@ -423,6 +423,7 @@ def build_sample_run(run_dir: Path) -> tuple[dict, list[dict]]:
                 "note_for_agent": "Sample note: skip events that only appear on a calendar.",
             },
             "spend_usd": prices.run_spend_usd(rows),  # the sum of the sample's Model step costs
+            "prices": prices.snapshot(),
         },
         "sources": sources,
         "tables": [table],

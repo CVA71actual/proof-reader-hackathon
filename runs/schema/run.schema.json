@@ -54,6 +54,18 @@
           }
         },
         "spend_usd": {"type": ["number", "null"], "minimum": 0, "description": "The sum of the cost_usd of every Model step in the rows' trails; null when the spend was not recorded."},
+        "prices": {
+          "type": "object",
+          "description": "The price table in force when the run was made (runs/prices.py). Absent on a run saved before 2026-10-29: its recorded spend is kept as recorded.",
+          "required": ["per_1m_tokens_usd", "per_image_usd"],
+          "additionalProperties": false,
+          "properties": {
+            "per_1m_tokens_usd": {"type": "object", "additionalProperties": {
+              "type": "object", "required": ["input", "output"],
+              "properties": {"input": {"type": "number"}, "output": {"type": "number"}, "cached_input": {"type": "number"}}}},
+            "per_image_usd": {"type": "object", "additionalProperties": {"type": "number"}}
+          }
+        },
         "status": {"enum": ["queued", "running", "paused_turn_limit", "needs_input", "done", "failed"],
                    "description": "Run controls (server/jobs.py). Absent on a run saved before they existed: it is finished."},
         "status_reason": {"type": "string", "description": "One plain sentence for the status."},

@@ -195,7 +195,7 @@ string exactly `meta-models/muse-spark-open-1026`, base URL https://inference.ba
 (`meta/muse-spark-open`) is used only if `OPENROUTER_API_KEY` is present and the run's OpenRouter spend (kept in
 its `job.json`) is under $20. It is given the same kind of prompt, built by the same builder from the page's words
 and the run's choices; it is never given the first reader's answer (nothing in its interface takes one). Its tokens
-and cost are its own (`runs/prices.py`, "Muse Spark Open", a placeholder price until it is read from Baseten).
+and cost are its own (`runs/prices.py`, "Muse Spark Open", confirmed price, Baseten).
 
 `runs/compare.py` compares the two readings by code, event by event. Two are the same event when one quote is a
 **contiguous run of words** of the other (case, spacing and the punctuation at a word's edge ignored) and any program or
@@ -423,8 +423,11 @@ acted while the run was still going; everything after the run ends goes to decis
 Every Model step in a row's trail carries the tokens of its call (`tokens` {prompt, completion}) and `cost_usd`,
 priced from the fixed table in `runs/prices.py` (dollars per 1M input and output tokens). The confirmed prices
 (dev.meta.ai, 2026-10-29) are Muse Spark $1.25 in / $4.25 out (cached input $0.15), Muse Wonder $4.00 / $20.00 (cached $0.20) and
-SAM 3.1 $2.50 per 1,000 images; Muse Spark Open's ($0.20 / $0.80) is still a placeholder until it is read from Baseten
-(`PRICE_STATUS` says which is which). Cached tokens are not recorded in the saved readings, so every input token is priced at the
+SAM 3.1 $2.50 per 1,000 images; Muse Spark Open (Baseten, 2026-10-29) is $1.25 / $4.25 (cached $0.15)
+(`PRICE_STATUS` says where each comes from).
+
+Runs made before the price table was confirmed (Job 19; twelve-2, twelve-3 and twelve-4 among them) tallied Muse Spark Open at the placeholder ($0.20 / $0.80) and carry no price table; their recorded spend is kept. Runs made under this code carry the table in run.json (run.prices).
+ Cached tokens are not recorded in the saved readings, so every input token is priced at the
 input price. The builders take the tokens from the saved
 reading's `usage`; when one call proposed several rows, its tokens are split evenly across their Model steps
 (remainder to the first, `tokens.call_rows` says how many rows shared it), so the call is counted once. The first

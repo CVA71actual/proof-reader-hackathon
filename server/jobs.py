@@ -220,6 +220,7 @@ def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None, run
             "run": {
                 "id": run_dir.name, "number": number, "label": label_for(number, choices),
                 "sample": False, "started_at": now, "finished_at": None, "choices": choices, "spend_usd": None,
+                "prices": prices.snapshot(),
                 "status": "queued", "status_reason": "Waiting to start.", "turn_count": 0,
                 "turn_limit": DEFAULT_TURN_LIMIT if turn_limit is None else turn_limit, "turns_total": 0, "resumes": 0,
             },

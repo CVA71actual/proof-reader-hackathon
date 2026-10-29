@@ -5,7 +5,8 @@ saved reading's usage. Nothing is looked up at run time and nothing is estimated
 recorded has `tokens` null and `cost_usd` null, and a run with no recorded cost has `spend_usd` null.
 
 Prices: Muse Spark, Muse Wonder and SAM 3.1 are the prices dev.meta.ai lists, confirmed 2026-10-29. Muse Spark Open
-(Baseten) is still a PLACEHOLDER: its price is to be read from Baseten (PRICE_STATUS says which is which, and a test pins it).
+(Baseten, meta-models/muse-spark-open) is confirmed at input $1.25, output $4.25, cached input $0.15 per 1M tokens, read from
+baseten.co/library/muse-spark-open/ and /pricing/ on 2026-10-29 (PRICE_STATUS says where each price comes from, and a test pins it).
 A cached input price is kept for reference; the saved readings do not record cached tokens, so every input token is priced at the
 input price (the higher figure: a cost is never understated for it).
 """
@@ -15,7 +16,7 @@ from __future__ import annotations
 # US dollars per 1,000,000 tokens.
 PRICES_PER_1M_USD = {
     "Muse Spark": {"input": 1.25, "output": 4.25, "cached_input": 0.15},     # muse-spark-1.3 (confirmed)
-    "Muse Spark Open": {"input": 0.20, "output": 0.80},                      # the second reader: PLACEHOLDER (Baseten)
+    "Muse Spark Open": {"input": 1.25, "output": 4.25, "cached_input": 0.15},  # the second reader (Baseten, confirmed)
     "Muse Wonder": {"input": 4.00, "output": 20.00, "cached_input": 0.20},   # muse-wonder-1.0 (confirmed)
 }
 
@@ -24,12 +25,12 @@ PRICES_PER_IMAGE_USD = {
     "SAM 3.1": 0.0025,
 }
 
-# Where each price comes from. "confirmed ..." was read from the vendor's price list; "placeholder ..." was not.
+# Where each price comes from. "confirmed ..." was read from the vendor's price list; nothing is a placeholder now.
 PRICE_STATUS = {
     "Muse Spark": "confirmed 2026-10-29, dev.meta.ai",
     "Muse Wonder": "confirmed 2026-10-29, dev.meta.ai",
     "SAM 3.1": "confirmed 2026-10-29, dev.meta.ai",
-    "Muse Spark Open": "placeholder: to be read from Baseten",
+    "Muse Spark Open": "confirmed 2026-10-29, baseten.co",
 }
 
 ROUND_TO = 6  # cost figures are kept to a millionth of a dollar
@@ -51,6 +52,13 @@ def image_cost_usd(model: str, images: int | None) -> float | None:
     if price is None or not isinstance(images, int):
         return None
     return round(images * price, ROUND_TO)
+
+
+def snapshot() -> dict:
+    """The price table in force now, copied into run.json as run.prices when a run is made, so its cost can be
+    recomputed later at the prices it was tallied at."""
+    return {"per_1m_tokens_usd": {m: dict(p) for m, p in PRICES_PER_1M_USD.items()},
+            "per_image_usd": dict(PRICES_PER_IMAGE_USD)}
 
 
 def has_price(model: str) -> bool:

@@ -29,6 +29,7 @@ import pymupdf
 from capture import read_table
 from checks import event_checks, row_column_match, selector_match, text_layer_match
 from checks.status import UNREADABLE, check_reading
+from runs import prices
 
 REPO = Path(__file__).resolve().parent.parent
 FIXTURES = REPO / "fixtures"
@@ -211,6 +212,8 @@ def build_demo_run(reading: dict, run_dir: Path, *, finished_at: str | None = No
 
 def write_run(run: dict, run_dir: Path) -> Path:
     out = run_dir / "run.json"
+    if "prices" not in run["run"]:  # a run made now carries the price table in force (Job 19)
+        run["run"]["prices"] = prices.snapshot()
     out.write_text(json.dumps(run, indent=1, ensure_ascii=False) + "\n")
     return out
 

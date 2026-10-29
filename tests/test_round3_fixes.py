@@ -188,7 +188,8 @@ def test_a_run_stopped_by_its_last_call_finishes_when_resumed_with_a_higher_limi
 def test_a_limit_crossed_by_the_second_reader_after_a_cheap_first_read_stops_the_run(runs_dir):
     _, rid = start(runs_dir, FakeReader(cost=0.30), FakeSecond(tokens=(1_500_000, 0)))
     m = meta(runs_dir, rid)
-    assert m["status"] == "needs_input" and m["spend_usd"] == pytest.approx(0.60)
+    # Spark Open is priced at the confirmed $1.25 / $4.25 / cached $0.15, so 1.5M prompt tokens cost $1.875, not the old placeholder's $0.30.
+    assert m["status"] == "needs_input" and m["spend_usd"] == pytest.approx(2.175)
     assert m["status_reason"].startswith("Stopped at the spending limit") and m["finished_at"] is None
 
 
@@ -197,12 +198,14 @@ def test_the_second_readers_cost_is_counted_before_the_next_page_so_the_next_pag
     _, rid = start(runs_dir, first, FakeSecond(tokens=(1_500_000, 0)), companies=["PTGX", "IONS"])
     m = meta(runs_dir, rid)
     assert m["status"] == "needs_input" and len(first.prompts) == 1, "IONS was never asked for"
-    assert m["spend_usd"] == pytest.approx(0.60)
+    # Spark Open is priced at the confirmed $1.25 / $4.25 / cached $0.15, so 1.5M prompt tokens cost $1.875, not the old placeholder's $0.30.
+    assert m["spend_usd"] == pytest.approx(2.175)
 
 
 def test_a_second_reader_that_stays_inside_the_limit_leaves_the_run_done(runs_dir):
-    _, rid = start(runs_dir, FakeReader(cost=0.10), FakeSecond(tokens=(500_000, 0)))
+    _, rid = start(runs_dir, FakeReader(cost=0.10), FakeSecond(tokens=(80_000, 0)))
     m = meta(runs_dir, rid)
+    # Spark Open is priced at the confirmed $1.25 per 1M input, so 80k tokens cost $0.10 (500k would now cross the limit).
     assert m["status"] == "done" and m["spend_usd"] == pytest.approx(0.20)
 
 

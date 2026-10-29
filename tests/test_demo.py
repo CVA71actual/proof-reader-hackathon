@@ -17,6 +17,7 @@ from accuracy import export
 from capture import read_events, read_table
 from runs import build_run, demo, prices
 from tests.conftest import FIXTURES, REPO
+from tests.test_cost_and_words import cost_at, prices_of
 
 RUNS = REPO / "runs"
 PIN = read_events.PIN
@@ -41,8 +42,9 @@ def test_the_saved_ptgx_runs_cost_what_their_saved_tokens_cost_at_the_confirmed_
     second = json.loads((FIXTURES / f"{PIN}.events.second.json").read_text())["usage"]
     spark = prices.cost_usd("Muse Spark", first["prompt_tokens"], first["completion_tokens"])
     assert spark == pytest.approx(0.028184) and run_json("ptgx-r4a")["run"]["spend_usd"] == pytest.approx(spark, abs=1e-6)
-    both = spark + prices.cost_usd("Muse Spark Open", second["prompt_tokens"], second["completion_tokens"])
-    assert run_json("ptgx-r5")["run"]["spend_usd"] == pytest.approx(both, abs=5e-6)   # each step's cost is rounded to a millionth
+    r5 = run_json("ptgx-r5")   # no run.prices: tallied at the placeholder Spark Open price, spend kept as recorded
+    both = spark + cost_at(prices_of(r5), "Muse Spark Open", second["prompt_tokens"], second["completion_tokens"])
+    assert r5["run"]["spend_usd"] == pytest.approx(both, abs=5e-6)   # each step's cost is rounded to a millionth
 
 
 def test_the_scan_run_prices_its_sam_requests_per_image_and_its_read_per_token():
@@ -74,7 +76,7 @@ def test_the_live_wonder_fixture_is_priced_at_the_confirmed_wonder_price():
 def test_no_confirmed_price_is_still_called_a_placeholder_in_the_code_or_the_docs():
     """Every line of runs/prices.py that says PLACEHOLDER is about Muse Spark Open, the one price not yet read."""
     lines = [l for l in (REPO / "runs" / "prices.py").read_text().splitlines() if "PLACEHOLDER" in l]
-    assert lines and all("Spark Open" in l or "Baseten" in l for l in lines)
+    assert all("Spark Open" in l or "Baseten" in l for l in lines)
     for doc in ("README.md", "runs/README.md", "server/README.md"):
         for l in (REPO / doc).read_text().splitlines():
             if "placeholder" in l.lower() and ("price" in l.lower() or "cost" in l.lower()):

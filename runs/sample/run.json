@@ -29,7 +29,29 @@
    "spending_limit_usd": 5.0,
    "note_for_agent": "Sample note: skip events that only appear on a calendar."
   },
-  "spend_usd": 0.027569
+  "spend_usd": 0.041513,
+  "prices": {
+   "per_1m_tokens_usd": {
+    "Muse Spark": {
+     "input": 1.25,
+     "output": 4.25,
+     "cached_input": 0.15
+    },
+    "Muse Spark Open": {
+     "input": 1.25,
+     "output": 4.25,
+     "cached_input": 0.15
+    },
+    "Muse Wonder": {
+     "input": 4.0,
+     "output": 20.0,
+     "cached_input": 0.2
+    }
+   },
+   "per_image_usd": {
+    "SAM 3.1": 0.0025
+   }
+  }
  },
  "sources": [
   {
@@ -5875,7 +5897,7 @@
       "prompt": 1200,
       "completion": 140
      },
-     "cost_usd": 0.000352
+     "cost_usd": 0.002095
     }
    ]
   },
@@ -6078,7 +6100,7 @@
       "prompt": 1200,
       "completion": 140
      },
-     "cost_usd": 0.000352
+     "cost_usd": 0.002095
     }
    ]
   },
@@ -6318,7 +6340,7 @@
       "prompt": 1200,
       "completion": 140
      },
-     "cost_usd": 0.000352
+     "cost_usd": 0.002095
     }
    ]
   },
@@ -6527,7 +6549,7 @@
       "prompt": 1200,
       "completion": 140
      },
-     "cost_usd": 0.000352
+     "cost_usd": 0.002095
     },
     {
      "step": "Fixed",
@@ -6739,7 +6761,7 @@
       "prompt": 1200,
       "completion": 140
      },
-     "cost_usd": 0.000352
+     "cost_usd": 0.002095
     },
     {
      "step": "Changed by you",
@@ -6980,7 +7002,7 @@
       "prompt": 1200,
       "completion": 140
      },
-     "cost_usd": 0.000352
+     "cost_usd": 0.002095
     },
     {
      "step": "Removed",
@@ -7376,7 +7398,7 @@
       "prompt": 1200,
       "completion": 140
      },
-     "cost_usd": 0.000352
+     "cost_usd": 0.002095
     }
    ]
   },
@@ -7902,7 +7924,7 @@
       "prompt": 1200,
       "completion": 140
      },
-     "cost_usd": 0.000352
+     "cost_usd": 0.002095
     }
    ]
   }

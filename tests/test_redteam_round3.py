@@ -114,7 +114,8 @@ def test_the_second_readers_call_is_inside_the_same_spending_limit(tmp_path):
     """The first call stays under the limit and the second reader's call crosses it. That stops the run."""
     run, _job = _start(tmp_path, FakeReader(cost=0.30), FakeSecond(tokens=(1_500_000, 0)))
     meta = run["run"]
-    assert meta["spend_usd"] == pytest.approx(0.60)
+    # Spark Open is priced at the confirmed $1.25 / $4.25 / cached $0.15, so 1.5M prompt tokens cost $1.875, not the old placeholder's $0.30.
+    assert meta["spend_usd"] == pytest.approx(2.175)
     assert meta["status"] == "needs_input"
     assert meta["status_reason"].startswith("Stopped at the spending limit")
     assert meta["finished_at"] is None

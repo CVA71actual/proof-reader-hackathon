@@ -23,6 +23,7 @@ from runs.state import current_state
 from server import jobs
 from server.app import create_app
 from tests.conftest import FIXTURES, REPO
+from tests.test_cost_and_words import LEGACY_PRICES_BEFORE_2026_10_29
 from tests.test_run_controls import FakeReader
 
 RUNS = REPO / "runs"
@@ -528,7 +529,9 @@ def test_openrouter_spend_is_recorded_in_job_json_and_stops_the_fallback_at_twen
 # ---------------------------------------------------------------- the two-reader PTGX run, built from the saved live readings
 
 
-def test_the_committed_two_reader_run_is_what_the_builder_makes(tmp_path):
+def test_the_committed_two_reader_run_is_what_the_builder_makes(tmp_path, monkeypatch):
+    # the committed run was tallied at the placeholder Spark Open price (no run.prices), so rebuild it at that table
+    monkeypatch.setattr(prices, "PRICES_PER_1M_USD", LEGACY_PRICES_BEFORE_2026_10_29)
     reading = json.loads(read_events.READING_PATH.read_text())
     second = json.loads((FIXTURES / f"{PIN}.events.second.json").read_text())
     run = json.loads((RUNS / "ptgx-r5" / "run.json").read_text())

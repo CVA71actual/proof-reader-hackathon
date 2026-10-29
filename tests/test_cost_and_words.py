@@ -17,6 +17,26 @@ REPO = Path(__file__).resolve().parent.parent
 SCHEMA = json.loads((REPO / "runs" / "schema" / "run.schema.json").read_text())
 
 
+# These runs were tallied at the placeholder Muse Spark Open price ($0.20 / $0.80); their recorded spend is kept as
+# recorded and is never rewritten. A committed run with no run.prices is recomputed at this frozen table.
+LEGACY_PRICES_BEFORE_2026_10_29 = {
+    "Muse Spark": {"input": 1.25, "output": 4.25, "cached_input": 0.15},
+    "Muse Spark Open": {"input": 0.20, "output": 0.80},
+    "Muse Wonder": {"input": 4.00, "output": 20.00, "cached_input": 0.20},
+}
+
+
+def prices_of(run):
+    """The per-1M-token table a run was tallied at: its own snapshot, else the frozen legacy table."""
+    snap = run["run"].get("prices")
+    return snap["per_1m_tokens_usd"] if snap else LEGACY_PRICES_BEFORE_2026_10_29
+
+
+def cost_at(table, model, prompt_tokens, completion_tokens):
+    p = table[model]
+    return round((prompt_tokens * p["input"] + completion_tokens * p["output"]) / 1_000_000, prices.ROUND_TO)
+
+
 def load(name):
     return json.loads((REPO / "runs" / name / "run.json").read_text())
 
@@ -36,7 +56,7 @@ def test_price_table_is_used(monkeypatch):
     assert prices.model_cost_fields("Muse Spark", 2000, 300)["cost_usd"] == pytest.approx(0.05)
 
 
-def test_the_confirmed_prices_are_the_ones_dev_meta_ai_lists_and_only_spark_open_is_a_placeholder():
+def test_the_confirmed_prices_are_the_ones_dev_meta_ai_lists_and_spark_open_is_confirmed_from_baseten():
     t = prices.PRICES_PER_1M_USD
     assert (t["Muse Spark"]["input"], t["Muse Spark"]["output"], t["Muse Spark"]["cached_input"]) == (1.25, 4.25, 0.15)
     assert (t["Muse Wonder"]["input"], t["Muse Wonder"]["output"], t["Muse Wonder"]["cached_input"]) == (4.00, 20.00, 0.20)
@@ -45,11 +65,12 @@ def test_the_confirmed_prices_are_the_ones_dev_meta_ai_lists_and_only_spark_open
     assert prices.cost_usd("Muse Wonder", 1_000_000, 1_000_000) == 24.0
     status = prices.PRICE_STATUS
     assert set(status) == set(t) | set(prices.PRICES_PER_IMAGE_USD)
-    assert [m for m, s in status.items() if s.startswith("placeholder")] == ["Muse Spark Open"]
-    assert all(s.startswith("confirmed 2026-10-29") for m, s in status.items() if m != "Muse Spark Open")
+    assert (t["Muse Spark Open"]["input"], t["Muse Spark Open"]["output"], t["Muse Spark Open"]["cached_input"]) == (1.25, 4.25, 0.15)
+    assert status["Muse Spark Open"] == "confirmed 2026-10-29, baseten.co"
+    assert all(s.startswith("confirmed 2026-10-29") for s in status.values())
     src = (REPO / "runs" / "prices.py").read_text()
     assert "PRICE LIST" not in src and "price list to confirm against dev.meta.ai before submission" not in src
-    assert "PLACEHOLDER (Baseten)" in src and src.count("PLACEHOLDER") >= 2
+    assert "PLACEHOLDER" not in src
 
 
 def test_unknown_model_or_missing_tokens_cost_nothing_recorded():
@@ -74,7 +95,7 @@ def test_every_model_step_carries_tokens_and_cost(name):
     assert steps
     for s in steps:
         assert isinstance(s["tokens"]["prompt"], int) and isinstance(s["tokens"]["completion"], int)
-        assert s["cost_usd"] == prices.cost_usd(s["who"], s["tokens"]["prompt"], s["tokens"]["completion"])
+        assert s["cost_usd"] == cost_at(prices_of(run), s["who"], s["tokens"]["prompt"], s["tokens"]["completion"])
     assert run["run"]["spend_usd"] == pytest.approx(sum(s["cost_usd"] for s in steps))
     for r in run["rows"]:
         first = r["trail"][0]

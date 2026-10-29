@@ -125,7 +125,41 @@ reader. They are not the held-out result.
 | Protagonist 8-K exhibit 99.1, page 3 (`runs/ptgx-r4a`, arrives with R4a) | Muse Spark | events 2/2 (PN-8047 Q1 2027; PN-458o second half of 2027) |
 | Sample run mistake log | Muse Spark | 3: PERIOD_MISREAD by code, WRONG_COMPANY by the second reader, WRONG_EVENT_TYPE by the person |
 
-### The sealed run (R4b-2)
+### The sealed run: measured result
+
+**Sealed run 5** (seat 77). 15 live pages of run twelve-3; 53 upcoming events keyed; the keys are sealed in the record
+repo (SEAL 2967944a…b35c779e).
+
+- Inside the run's 6-month window there were 19 key events. Between them the two readers proposed all 19 (0 missed); not each reader alone. Code confirmed 6 ("found").
+  10 were proposed but held for a person ("unsupported": a check failed). 2 had the wrong date, 1 the wrong type, and 0 were missed.
+- Outside the window there were 22: 18 proposed and left out by the window rule, 1 proposed and kept, 3 never proposed.
+- Unplaced (vague dates such as "mid-2027"): 12.
+- Invented in-window rows: 17.
+- A single reader alone: 2 of 6 in-window.
+
+Source: proof-reader-ops `reviews/HELDOUT_RUN5_RESCORE.md`, main 37bfdbd. The run folder is outside git for size.
+
+**Earlier sealed runs on one page (runs 1-4).**
+
+- Run 1: Muse Spark alone, 10/40 values, 0/4 events.
+- Run 2: the same readings after the check fixes, 40/40.
+- Run 3: fresh reading, 40/40; planted errors 48/48; 0/4 events.
+- Run 4: both readers 40/40 each, 3/4 events each, 93% agreement, no shared wrong table value; both readers shared one wrong event type (CDX-622).
+
+The sealed run caught our own check bugs before the model's.
+
+**Live runs** (all 11 indexed companies, 313 pages).
+
+- twelve-2: 305 rows, $7.68, cost per kept row $0.15.
+- twelve-3: 295 rows, $7.79, cost per kept row $0.13.
+- Date-check failures went from 67 to 27 between the two runs. These are two live runs and the models are not
+  deterministic, so this is a comparison, not a measured effect.
+- Committed demo run twelve-4 (4 companies, 114 pages, $2.57, cost per kept row $0.10): against twelve-1, which covers 105 of
+  twelve-4's 114 pages: on the 105 pages both runs read, matched 20 -> 38 and failed 61 -> 23; twelve-4's whole-run totals are matched 41, failed 24 over 114 pages.
+
+Prices are the ones in `runs/prices.py` (`PRICE_STATUS` says where each comes from). Runs made before the price table was confirmed (Job 19; twelve-2, twelve-3 and twelve-4 among them) tallied Muse Spark Open at the placeholder ($0.20 / $0.80) and carry no price table; their recorded spend is kept. Runs made under this code carry the table in run.json (run.prices).
+
+#### How it was done
 
 1. Someone other than Claude picks 5 real public pages (SEC filings or IR decks with a text layer) from the 12
    companies and writes one key per page in the format above, with `"sealed": true` and each page's sha256.
@@ -135,3 +169,21 @@ reader. They are not the held-out result.
    for each page. A key that fails `check_key` is refused and fixed by its writer before anything is scored.
 4. The report (every miss listed) goes into the record; the audit header then reads "Accuracy (sealed set):
    <model> n/N values, m/M events; planted errors caught k/k".
+
+### A page where the second model changed the answer
+
+Run twelve-3, row `e3`: the Ionis (IONS) 8-K exhibit 99.1 page, page id
+`src-ions-8k-0001140361-26-037371-ex991-p1`, sha256 `5b558015e2f28510c98fd9c16457cf31f23ac0c4869a35d52fd6d2658ad6e569`.
+Muse Spark proposed the event as a conference; the check "Event type matches the quote" failed ("The quote's words
+(data) point to trial results, not conference"), so the page was sent to Muse Wonder. Wonder's reading passed every
+check. The trail step reads:
+
+> Escalation result: Muse Wonder's reading passed every check. The row takes it (event_type from conference to trial_results; title from Interim analysis data presentation to Interim analysis data presentation at upcoming medical congress; program from sefaxersen to IMagINATION; indication from primary IgA nephropathy to IgAN).
+
+Before and after: event_type conference → trial_results; title "Interim analysis data presentation" → "Interim analysis
+data presentation at upcoming medical congress"; program sefaxersen → IMagINATION; indication "primary IgA nephropathy" →
+IgAN. The page and the quote are the same; the checks, not the second model, decided.
+
+The twelve-3 run folder is held outside the repo for size (113 MB). Its `run.json` has sha256
+`e6703d1a41a934d428e3c485e9ea336fe667f888847836e6347659d65504cc4c`. The committed demo run twelve-4 sent 2 rows to
+Wonder and replaced 0.
