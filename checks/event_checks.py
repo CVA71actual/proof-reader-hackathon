@@ -294,7 +294,7 @@ def relative_period(text: str | None, filed: date | str | None) -> tuple[date, d
 _MONTH_WORDS = "|".join(sorted(_MONTHS, key=len, reverse=True))
 _ORD_WORDS = "first|second|third|fourth|1st|2nd|3rd|4th"
 _NAMED = re.compile(
-    r"\b(?:"
+    r"(?<![\w/])(?:"
     rf"(?:mid|early|late)[- ]?\s*(?:q[1-4]|[1-4]q|(?:{_ORD_WORDS}) quarter(?: of)?)\s*\d{{4}}"
     rf"|(?:{_MONTH_WORDS})\.?\s+\d{{1,2}},?\s+\d{{4}}"
     r"|\d{4}-\d{2}-\d{2}"
@@ -367,7 +367,7 @@ def event_anchors(event_type: str | None, title: str | None = None, program: str
 
 def _anchor_in(text: str, anchors: list[str]) -> str | None:
     for a in anchors:
-        if re.search(r"(?<![A-Za-z])" + re.escape(a), text, re.I):
+        if re.search(r"(?<!\w)" + re.escape(a) + r"(?!\w)", text, re.I):
             return a
     return None
 

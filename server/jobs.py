@@ -46,7 +46,8 @@ from pathlib import Path
 from accuracy import types as T
 from capture import read_events, read_table, sam as sam_module
 from capture.second_reader import CAP_REACHED, OPENROUTER_CAP_USD, UNPRICED
-from checks.coverage import sentence_covered
+from checks.common import normalize
+from checks.coverage import sentence_covered, sentences as coverage_sentences
 from capture.capture_source import load_entry
 from checks import event_checks
 from runs import build_entry, build_run, compare, coverage, escalate, prices, scan, sources
@@ -601,7 +602,10 @@ class Job:
         # The second reader reads the page IMAGE, with no word list: its read does not depend on the text layer. If
         # that answer cannot be read, the words are sent too, once, as a fallback; the run records which it got.
         parsed, why, reply, prompt, got = None, None, None, None, None
+        tried = self.job.setdefault("second_attempts", {}).setdefault(sid, [])     # paid for, unreadable: a resume skips them
         for got, prompt, png in attempts:
+            if got in tried:
+                continue
             if self.stopped_before_a_call(self.second):
                 return False
             reply = self.second.call(prompt, image=png)
@@ -612,6 +616,12 @@ class Job:
             parsed, why = parse(reply.raw)
             if parsed is not None:
                 break
+            tried.append(got)
+            self.save()
+        if reply is None:       # every attempt was made before a resume and none could be read
+            self.note_second(sid, "unreadable", "The answers could not be read before the run stopped.", None, got)
+            self.save("The second reader's answers could not be read; nothing was compared.")
+            return True
         name = price_name(reply.model)
         if parsed is None:
             self.note_second(sid, "unreadable", why, name, got)
@@ -762,9 +772,17 @@ class Job:
             trig = escalate.trigger(row, escalate.SENT_FOR)
             y_range = escalate.band(row, words_doc)
             text = escalate.prompt(entry, trig, y_range, words_doc, types, self.choices["note_for_agent"])
+            region = escalate.region_png(image, words_doc, y_range)
+            if self.wonder_would_cross(escalate.estimate_usd(text, region)):
+                done[sid] = "budget"
+                self.note_escalation("read", f"Muse Wonder's part of the spending limit "
+                                             f"({int(escalate.WONDER_SHARE * 100)}%) would be passed by the next call; "
+                                             f"it is not sent.")
+                self.save()
+                return True
             if self.stopped_before_a_call(self.wonder):
                 return False
-            reply = self.wonder.call(text, image=escalate.region_png(image, words_doc, y_range))
+            reply = self.wonder.call(text, image=region)
             self.count_turn(reply)
             self.job["wonder_spend_usd"] = round(self.job.get("wonder_spend_usd", 0.0) + (prices.cost_usd(
                 price_name(reply.model), reply.prompt_tokens, reply.completion_tokens) or 0.0), prices.ROUND_TO)
@@ -777,6 +795,15 @@ class Job:
                      "usage": {"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens}}
             reading = read_events._record(model=reply.model, prompt=text, raw=reply.raw, events=events, problem=None,
                                           entry=entry, extra=extra)
+            if self.wonder_budget_passed():     # the call cost more than the share allows: its reading is not taken
+                row["trail"].append({"step": "Escalation result", "tag": "Code", "who": escalate.WHO,
+                                     "at": now_utc(), "text": f"{escalate.WONDER}'s call took the run past "
+                                     f"{int(escalate.WONDER_SHARE * 100)}% of its spending limit. The row stays as it was."})
+                self.job["escalated_rows"][row["id"]] = "kept"
+                done[sid] = "budget"
+                self.note_escalation("read", "Muse Wonder's part of the spending limit is used; no more rows are sent.")
+                self.save()
+                return True
             chosen = escalate.pick(row, events)       # the band may hold other events: take this row's
             event = escalate.to_page_points(chosen, y_range, words_doc) if chosen else None
             share = (reply.prompt_tokens, reply.completion_tokens, 1)
@@ -793,6 +820,16 @@ class Job:
         """True when Muse Wonder has used its share of a limited run's spending limit (escalate.WONDER_SHARE)."""
         limit = self.choices["spending_limit_usd"]
         return limit is not None and self.job.get("wonder_spend_usd", 0.0) >= escalate.WONDER_SHARE * limit
+
+    def wonder_budget_passed(self) -> bool:
+        """True when Muse Wonder's spend is past its share of the limit (at the share exactly is not past it)."""
+        limit = self.choices["spending_limit_usd"]
+        return limit is not None and self.job.get("wonder_spend_usd", 0.0) > escalate.WONDER_SHARE * limit
+
+    def wonder_would_cross(self, estimate_usd: float) -> bool:
+        """True when a Wonder call of about `estimate_usd` would carry its spend past its share of the limit."""
+        limit = self.choices["spending_limit_usd"]
+        return limit is not None and self.job.get("wonder_spend_usd", 0.0) + estimate_usd > escalate.WONDER_SHARE * limit
 
     def date_send_back(self, page: dict, phase: str = "first") -> bool:
         """One send-back per row whose date text is not in its quote: the reader that wrote the row is asked once (one
@@ -842,6 +879,14 @@ class Job:
         self.save()
         return True
 
+    @staticmethod
+    def is_printed_sentence(quote: str, words_doc: dict) -> bool:
+        """True when `quote` equals a sentence of the page after the normalization used for page text. A mark the
+        normalization would drop (a leading "$") must be printed there too: the answer adds nothing."""
+        want, dollar = normalize(quote), quote.strip().startswith("$")
+        return any(normalize(s["text"]) == want and s["text"].strip().startswith("$") == dollar
+                   for s in coverage_sentences(words_doc["words"]))
+
     def apply_send_back(self, row: dict, answer: dict | None, reading: dict, source: dict, words_doc: dict,
                         share: tuple, prompt: str, at: str) -> None:
         who = "server.jobs"
@@ -856,6 +901,11 @@ class Job:
         if not (isinstance(quote, str) and quote.strip() and isinstance(date_text, str) and date_text.strip()):
             row["trail"].append({"step": "Send-back result", "tag": "Code", "who": who, "at": at,
                                  "text": "The reader gave no sentence for the date. The row stays as it was."})
+            return
+        if not self.is_printed_sentence(quote, words_doc):
+            row["trail"].append({"step": "Send-back result", "tag": "Code", "who": who, "at": at,
+                                 "text": "The sentence the reader gave is not printed on the page as a sentence, word "
+                                         "for word. The row stays as it was."})
             return
         event = {k: row.get(k) for k in ("ticker", "company", "event_type", "title", "date", "date_end", "program",
                                          "indication")}

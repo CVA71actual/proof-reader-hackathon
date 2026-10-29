@@ -156,14 +156,22 @@ def _fold(s: str) -> str:
 
 def _quote_run(want: str, words: list[dict], rect) -> list[dict] | None:
     """The run of page words that reads as the quote; when it is printed more than once, the run the box overlaps
-    most. None when the quote is not printed (the strict rule then reports what is in the box)."""
+    most, and among equal overlaps the run nearest the box. None when the quote is not printed (the strict rule then reports what is in the box)."""
     want = _fold(want)       # the same typographic marks quote_match folds: a quote it finds is found here too
     n = len(want.split(" ")) if want else 0
     runs = [words[i : i + n] for i in range(len(words) - n + 1)
             if n and _fold(normalize(join_words(words[i : i + n]))) == want]
     if not runs:
         return None
-    return max(runs, key=lambda r: sum(share_inside(rect, w) for w in r))
+    return max(runs, key=lambda r: (sum(share_inside(rect, w) for w in r), -_gap(rect, r)))
+
+
+def _gap(rect, run: list[dict]) -> float:
+    """The distance between the box and the box around the run (0 when they touch or overlap)."""
+    x0, y0, x1, y1 = rect
+    dx = max(min(w["x0"] for w in run) - x1, x0 - max(w["x1"] for w in run), 0.0)
+    dy = max(min(w["y0"] for w in run) - y1, y0 - max(w["y1"] for w in run), 0.0)
+    return (dx * dx + dy * dy) ** 0.5
 
 
 def _quote_box(run: list[dict], rect, words: list[dict], result) -> CheckResult:

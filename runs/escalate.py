@@ -35,6 +35,17 @@ MAX_PER_PAGE = 1     # rows sent to Wonder from one page: each is a counted, pri
 WONDER_SHARE = 0.25  # Wonder's part of a limited run's spending limit: past it nothing more is sent
 SENT_FOR = ("Date read as written", "Event type matches the quote")   # the failures worth Wonder's price
 PAD_PT = 60.0        # how far above and below the row the region reaches, in PDF points
+CHARS_PER_TOKEN = 4  # a rough count of prompt tokens from text, for the estimate made before a call
+BYTES_PER_IMAGE_TOKEN = 750  # the same for an image, from its PNG size
+
+
+def estimate_usd(prompt_text: str, image: bytes | None) -> float:
+    """What a Wonder call is likely to cost before it is sent: the prompt's size at Muse Wonder's input price.
+    Only the input is counted, so it is a floor; the reply's real cost is added once it comes."""
+    tokens = len(prompt_text) / CHARS_PER_TOKEN + (len(image) / BYTES_PER_IMAGE_TOKEN if image else 0)
+    return tokens * prices.PRICES_PER_1M_USD["Muse Wonder"]["input"] / 1_000_000
+
+
 FIELDS = ("event_type", "title", "date_text", "date", "date_end", "quote", "program", "indication", "box")
 
 

@@ -112,7 +112,7 @@ def sentence_covered(text: str, quotes: list[str | None]) -> bool:
         if not q:
             continue
         nq = _norm_quote(q).lower()
-        if s in nq:
+        if f" {s} " in f" {nq} ":
             return True
         have = Counter(nq.split())
         if total and sum(min(n, have[t]) for t, n in tokens.items()) / total >= COVERED_SHARE:
