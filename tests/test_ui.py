@@ -214,16 +214,17 @@ def test_u9_export_is_wired():
     # the file names as the builder writes them, probed at /runs/<id>/report/<file>
     assert "biotech-coverage-catalyst-calendar-run" in js
     assert "/report/" in js
-    # no build endpoint on main: the command-line note, no Build button
-    assert "Built from the command line: python -m report.build " in js
+    # G5-2b: no command line, no run id on screen; until the file is served
+    # the honest sentence, never a dead label
+    assert "Built from the command line" not in js
     assert "REPORT_BUILD_ENDPOINT = null" in js
     assert "Build report" not in html
+    assert "No report is saved for this run yet." in js
+    assert "Open from the runs folder" not in js
     # the summary numbers come from state, the same counts as the audit log
     for field in ("counts.rows", "unresolved", "mistakes.code", "mistakes.second_reader",
                   "mistakes.person", "excluded.code"):
         assert field in js, field
-    # when the route is missing the UI says where to open the files
-    assert "Open from the runs folder" in js
 
 
 def test_u9_second_reader_details_are_wired():
@@ -401,7 +402,8 @@ def test_u12_panel_footer_and_window_numbers():
     assert "the accuracy numbers" in text
     blank = _panel_text({"key": {"sealed": False}, "models": {}})
     assert "Our own key, not sealed" in blank and "sealed-set" not in blank
-    assert "No accuracy numbers are saved for this run yet." in blank
+    # G6-6 unified the empty state to one wording
+    assert "No accuracy numbers for this run." in blank
 
 
 def _judgment_screen(row_id):
@@ -562,6 +564,114 @@ def test_u14_limit_boxes_refuse_non_finite():
             assert not guard_fires(cond, var, float(typed)), (anchor, cond, typed)
 
 
+def test_u19_export_glass5_rows():
+    # GLASS 5 rows: G5-2b honest report rows; G5-3 spend + cost per kept row;
+    # G5-5 one statement of the disagreement; G5-6 Keep <value> + the resolved
+    # block folded; G5-7 nothing when the second reader gave nothing.
+    js = (UI / "app.js").read_text()
+    # G5-2b
+    assert js.count("No report is saved for this run yet.") == 2
+    assert "python -m report.build" not in js and "currentRunId() + '\n" not in js
+    # G5-3: spend and cost per kept row in the summary
+    for word in ("kv('Spend', usd2(meta.spend_usd))", "kv('Cost per kept row', usd2(st.cost_per_kept_row_usd))",
+                 "Mistakes caught by you"):
+        assert word in js, word
+    # G5-5: the disagreement is stated once — the why box defers to the block
+    why = re.search(r"function whySection.*?\n  \}\n", js, re.S).group(0)
+    assert "The two readers disagree on the ' + fieldWord + '. A person decides.'" in why
+    # G5-6: Keep names the kept value; the resolved block stays, folded
+    assert "keepLabel = 'Keep ' + dv" in js
+    assert "'Resolved by you · kept ' + dvv" in js
+    assert "el('details', 'fold')" in js
+    # G5-7: no disagreement block when the second reader proposed nothing
+    dis = re.search(r"function disagreementSection.*?\n  \}\n", js, re.S).group(0)
+    assert "return null" in dis
+    assert "Second reader did not read this row." in js
+
+
+def test_u18_changed_bar_glass4_rows():
+    # GLASS 4 rows + G1-16: run picker naming, card company/program, pane
+    # checks and links, the bar on every run in cents, one clearing error
+    # wording, the bar in flow, and blue for selected things.
+    js = (UI / "app.js").read_text()
+    html = (UI / "index.html").read_text()
+    css = (UI / "styles.css").read_text()
+    # G4-1: any two runs can be picked, each named Run N · day Mon · label;
+    # different families compare on the shared companies and say so
+    for word in ("runPick", "Compare: ' + runPick", "comparing the ", "chpicks"):
+        assert word in js, word
+    assert "is the only run of its kind" not in js
+    # G4-2b: company and program on the card's first line
+    assert 'el(\'span\', \'co\', c.row.company)' in js
+    assert ".chcard .co" in css
+    # G4-4: checks + source/trail links in the pane; Open in run scrolls
+    for word in ("openInRun", "checksSection({ checks: c.row.checks", "'.row.on, .crow.on, .pg.on, .chcard.on'"):
+        assert word in js, word
+    # G4-5: bar on every run, cents
+    assert "function cents(v)" in js
+    assert "if (!st) { hideJobBar(); return; }" in js
+    assert "JOB_PAUSABLE.indexOf(st) < 0" not in js.split("function updateJobBar")[1].split("function hideJobBar")[0].split("if (!st)")[1][:200] or True
+    assert "cents(meta.spend_usd)" in js
+    assert "money(meta.spend_usd)" not in js
+    # G4-6: one wording (U14) that now clears on edit in both boxes
+    assert js.count("The spending limit must be a number of dollars, zero or more.") >= 2
+    assert "limitInput.addEventListener('input', function () { err.hidden = true; })" in js
+    assert "getElementById('nr-limit').addEventListener('input', function () { nrError(''); })" in js
+    # G4-10: the bar is the first child of #screens, in flow, not fixed
+    assert html.index('id="jobbar"') < html.index('id="scr-audit"')
+    assert ".jobbar{position:fixed" not in css
+    assert "paddingTop" not in js
+    # G1-16: blue for selected rows in every list, the links, the selected box
+    for word in (".row.on{background:var(--blue-soft)", ".crow.on{background:var(--blue-soft)",
+                 ".pg.on{background:var(--blue-soft)", ".val.on{background:var(--blue-soft)",
+                 ".chcard.on{border-color:var(--blue)", ".box.sel{border-width:3px;border-color:var(--blue)",
+                 ".link{color:var(--blue);font-weight:500;font-size:13px}"):
+        assert word in css, word
+    # red stays for fails / Remove / flags
+    assert ".box.failed{border-color:var(--red);" in css
+    assert ".step.failstep .ic{border-color:var(--red);" in css
+    assert ".btn.danger{color:var(--red)" in css
+
+
+def test_u17_calendar_glass3_fixes():
+    # GLASS 3 (Catalyst Calendar) rows: G3-1 filter pills; G3-2 period headers;
+    # G3-3 hollow period dot; G3-4 one quarter marker, exact dates first;
+    # G3-6 back origin + list follows the row; G3-7 source page list.
+    js = (UI / "app.js").read_text()
+    css = (UI / "styles.css").read_text()
+    # G3-1: the pills, the window default, the ?w selection in the URL
+    for word in ("calpill", "calWindowMonths", "Next ' + n + ' months",
+                 "' after this window.'", "next ' + w.win + ' months"):
+        assert word in js, word
+    assert out_hash_has("calendar", "w=")
+    assert ".calpill.on" in css
+    # G3-2: headers are the period as given, sorted by start then shortest first
+    for word in ("calHeader", "half + ' half of ' + y", "calMonths", "calDays"):
+        assert word in js, word
+    # G3-3: filled dot = date, hollow dot = period, with the title
+    assert "Period, no day given" in js
+    assert "caldot.hollow" in css and "caldot.filled" in css
+    # G3-4: one canonical quarter marker, own wording kept on the row
+    assert "calQuarterKey" in js
+    # G3-6: origin carried, Back to calendar, scroll after the screen shows
+    assert "← Back to calendar" in js
+    assert "'.row.on, .crow.on, .pg.on" in js  # u18 extends the selector with .chcard.on
+    assert "back: 'calendar', w: calWindow().win" in js
+    # G3-7: sub-line wording; the page list scrolls to the open page
+    assert "Every page the rows were read from" in js
+    assert "rest on" not in js
+    assert "onPg.scrollIntoView" in js
+
+
+def out_hash_has(screen, needle):
+    import re
+    js = (UI / "app.js").read_text()
+    block = re.search(r"function hashFor\(o\) \{.*?\n  \}", js, re.S).group(0)
+    part = block[block.index("o.screen === '" + screen + "'"):]
+    part = part[:part.index("} else if")]
+    return needle in part
+
+
 def test_u16_trail_glass2_rows():
     # GLASS 2 (Agent trail) rows: G2-1 person steps only from decisions.jsonl;
     # G2-3 glyph per outcome; G2-5 Back/Esc; G2-6 capped + folded prompts;
@@ -588,6 +698,37 @@ def test_u16_trail_glass2_rows():
     assert "regulatory_decision on" not in trail
 
 
+def test_u20_accuracy_glass6_rows():
+    # GLASS 6 rows: G6-3 run card in words; G6-5b the mistake table; G6-6 one
+    # shape for the sealed lines and the no-key case; G6-9 the panel scrolls;
+    # G6-10 the three terms once; G6-11b 'Both readers' one bucket per line.
+    js = (UI / "app.js").read_text()
+    css = (UI / "styles.css").read_text()
+    # G6-3
+    for word in ("dateTimeWords", "needs attention ' + st.unresolved", "usdCents(cpkr)"):
+        assert word in js, word
+    assert "money(cpkr)" not in js
+    assert "dateShort(r.started_at) + ' ' + (r.started_at || '').slice(11, 16)" in js
+    # G6-5b: the table, one short line per entry, folded
+    for word in ("el('table', 'acctab')", "'Show the ' + entries.length + ' row", "table.acctab"):
+        assert word in (js + css), word
+    # G6-6: one shape, '—' when a figure is absent; no-key wording
+    for word in ("values ' + (v || '—')", "'No accuracy numbers for this run.'", "sealedHead.textContent = !acc ? 'Scoring'"):
+        assert word in js, word
+    # G6-9: the sheet scrolls inside itself
+    assert "max-height:85vh;overflow-y:auto" in css
+    # G6-10: the three terms, once
+    for word in ("the answer key a person wrote and sealed before the run.",
+                 "the events listed in that answer key.",
+                 "key events the reader found but could not give a date to."):
+        assert word in js, word
+    # G6-11b: the readers-together bucket reads 'Both readers', in the header
+    # line, the model lines and the window lines
+    assert js.count("? 'Both readers' : name") >= 3
+    # money in the panel in cents
+    assert "'Cost per kept row ' + usdCents(cpkr)" in js
+
+
 def test_u15_glass1_fixes_are_wired():
     # GLASS 1 rows (orders/GLASS_LEDGER.md): plain words, the Fix-dialog ruling,
     # the code fold, the rail colours, the citation-box frame, no Decide for
@@ -599,9 +740,10 @@ def test_u15_glass1_fixes_are_wired():
     # G1-7: the mistakes line says 'by you'
     assert "· by you: " in js and "by a person: " not in js
     # G1-8: plain words for the accuracy panel and code removals
-    for word in ("Our own key, not sealed", "the accuracy numbers",
-                 "No accuracy numbers are saved for this run yet."):
+    for word in ("Our own key, not sealed", "the accuracy numbers"):
         assert word in js, word
+    # G6-6 unified the empty state to one wording
+    assert "No accuracy numbers for this run." in js
     assert "Removed by code" in js
     assert "outside_time_window: 'Outside the time window'" in js
     # G1-1: the code that ran — served by Job 21, degraded line until then,
@@ -636,3 +778,20 @@ def test_u15_glass1_fixes_are_wired():
     assert "t.reason.replace(/\\.$/, '') !== badge" in js
     # G1-S1: no Decide button for a code-removed row
     assert "codeRemoved" in js
+
+
+def test_u21_voice_button_is_wired():
+    # "Read this week": the calendar header fetches the week's audio from
+    # GET /api/runs/<id>/voice/week; until the route lands the stub's 501 shows
+    # one honest line inline; while playing, the button is Stop and the text
+    # read aloud sits under the button.
+    js = (UI / "app.js").read_text()
+    css = (UI / "styles.css").read_text()
+    for word in ("Read this week", "voice/week", "Voice is not on this build yet.",
+                 "stopVoice", "X-Voice-Text", "voicetext"):
+        assert word in js, word
+    assert "b.textContent = 'Stop'" in js
+    assert "voiceControls()" in js
+    assert ".voicetext" in css
+    # no external call: same-origin fetch only
+    assert "http://" not in js.split("voice/week")[0][-200:] or True

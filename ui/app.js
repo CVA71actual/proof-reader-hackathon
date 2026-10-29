@@ -81,6 +81,16 @@
     if (c === null || c === undefined) return '';
     return '$' + Number(c).toFixed(6).replace(/0+$/, '').replace(/\.$/, '.00');
   }
+  // G6-3/G6-7: money in cents, one way, everywhere a person reads a total;
+  // below one cent the precise figure, so nothing ever reads "$0.00"
+  function usdCents(v) {
+    if (v === null || v === undefined) return '';
+    return v >= 0.01 ? '$' + Number(v).toFixed(2) : money(v);
+  }
+  function dateTimeWords(iso) {   // "29 Oct 2026 15:47" from an ISO timestamp
+    if (!iso) return 'no date';
+    return dateShort(iso) + ' ' + iso.slice(11, 16);
+  }
   function num(n) { return n === null || n === undefined ? '' : Number(n).toLocaleString('en-US'); }
 
   // ---------------------------------------------------------------- helpers
@@ -268,9 +278,11 @@
     if (out.screen === 'source') {
       out.srcId = seg[2] || null; out.page = seg[3] || null;
       out.valueId = q.v || null; out.back = q.back || null;
+      out.w = q.w ? Number(q.w) : null;
     }
     if (out.screen === 'judgment') { out.rowId = seg[2] || null; out.dialog = q.d || null; }
     if (out.screen === 'trail') { out.rowId = seg[2] || null; }
+    if (out.screen === 'calendar') { out.rowId = seg[2] || null; out.w = q.w ? Number(q.w) : null; }
     if (out.screen === 'changed') { out.a = q.a || null; out.b = q.b || null; }
     return out;
   }
@@ -285,9 +297,13 @@
       h += '/' + encodeURIComponent(o.srcId) + '/' + o.page;
       if (o.valueId) q.push('v=' + encodeURIComponent(o.valueId));
       if (o.back) q.push('back=' + o.back);
+      if (o.w) q.push('w=' + o.w);
     } else if (o.screen === 'judgment' || o.screen === 'trail') {
       if (o.rowId) h += '/' + encodeURIComponent(o.rowId);
       if (o.screen === 'judgment' && o.dialog) q.push('d=' + encodeURIComponent(o.dialog));
+    } else if (o.screen === 'calendar') {
+      if (o.rowId) h += '/' + encodeURIComponent(o.rowId);
+      if (o.w) q.push('w=' + o.w);
     } else if (o.screen === 'changed') {
       if (o.a) q.push('a=' + encodeURIComponent(o.a));
       if (o.b) q.push('b=' + encodeURIComponent(o.b));
@@ -335,8 +351,16 @@
                  (route.screen === 'trail' && !!route.rowId);
     document.querySelectorAll('.screen').forEach(function (s) { s.classList.toggle('on', s === scr); });
     if (scr) scr.classList.toggle('picked', narrow && (picked || route.screen === 'calendar'));
+    // G4-4: a jump to a row lands with it scrolled into view — screens only
+    // become visible here, so scrolls fired inside renderX() were no-ops
+    if (scr) {
+      var onIt = scr.querySelector('.row.on, .crow.on, .pg.on, .chcard.on');
+      if (onIt) onIt.scrollIntoView({ block: 'nearest' });
+    }
     document.getElementById('src-back').hidden = !(narrow && route.screen === 'source' && !route.back);
-    document.getElementById('src-back-audit').hidden = !(route.screen === 'source' && route.back === 'audit');
+    var backBtn = document.getElementById('src-back-audit');
+    backBtn.hidden = !(route.screen === 'source' && (route.back === 'audit' || route.back === 'calendar'));
+    backBtn.textContent = route.back === 'calendar' ? '← Back to calendar' : '← Back to Audit log';
     // G2-5: Back to rows is visible at desktop width whenever a row is open
     document.getElementById('trail-back').hidden = !(route.screen === 'trail' && route.rowId);
     // G1-5: a row opened from Audit log (Decide) offers a way back
@@ -347,20 +371,23 @@
   // ---------------------------------------------------------------- shell
   function renderShell() {
     var meta = detail.run.run || {};
+    var st = detail.state;
     document.getElementById('runcard').hidden = false;
     document.getElementById('runcard-title').textContent = meta.label || ('Run ' + meta.number);
+    // G6-3: the card in words — run, date, status, needs attention, cents
     document.getElementById('runcard-sub').textContent =
-      'Run ' + meta.number + ' · ' + (meta.started_at || '').replace('T', ' ').slice(0, 16);
+      'Run ' + meta.number + ' · ' + dateTimeWords(meta.started_at) +
+      (meta.status ? ' · ' + (JOB_STATUS_WORDS[meta.status] || meta.status) : '');
     var flag = document.getElementById('runcard-flag');
     flag.hidden = !meta.sample;
     if (meta.sample) flag.textContent = 'Sample data — not real events · click to switch runs';
     else flag.textContent = 'Click to switch runs';
     var cost = document.getElementById('runcard-cost');
-    var cpkr = detail.state.cost_per_kept_row_usd;
-    if (cpkr !== null && cpkr !== undefined) {
-      cost.textContent = 'cost per kept row ' + money(cpkr);
-      cost.hidden = false;
-    } else cost.hidden = true;
+    var cpkr = st.cost_per_kept_row_usd;
+    var bits = ['needs attention ' + st.unresolved];
+    if (cpkr !== null && cpkr !== undefined) bits.push('cost per kept row ' + usdCents(cpkr));
+    cost.textContent = bits.join(' · ');
+    cost.hidden = false;
     document.getElementById('side-foot').textContent =
       (meta.sample ? 'Sample data — not real events · ' : '') + 'Muse Spark reads · Code checks';
     document.title = 'Proof Reader — ' + (meta.label || '');
@@ -385,9 +412,47 @@
       var t = rowTarget(r);
       if (t.group !== 'kept' && t.group !== 'corrected') return;
       var d = (t.values && t.values.date) || r.date;
-      if (d) out.push({ row: r, t: t, date: d, period: !!(t.values && t.values.date_end) });
+      if (d) out.push({ row: r, t: t, date: d, period: !!(t.values && t.values.date_end),
+                        end: (t.values && t.values.date_end) || r.date_end || null });
     });
     return out;
+  }
+  // G3-2/G3-3: how long a period row runs — day ranges (a congress weekend)
+  // count as exact dates, not periods
+  function calDays(r) {
+    if (!r.period || !r.end) return 0;
+    return Math.round((new Date(r.end.slice(0, 10)) - new Date(r.date.slice(0, 10))) / 86400000);
+  }
+  function calIsExact(r) { return !r.period || calDays(r) <= 31; }
+  // whole months a period spans, inclusive: Jan 1 – Mar 31 is 3
+  function calMonths(r) {
+    if (!r.period || !r.end) return 1;
+    return (parseInt(r.end.slice(0, 4), 10) - parseInt(r.date.slice(0, 4), 10)) * 12 +
+           (parseInt(r.end.slice(5, 7), 10) - parseInt(r.date.slice(5, 7), 10)) + 1;
+  }
+  // G3-4: the canonical words for a quarter-length period — the one marker
+  // under which every writing of the same quarter sits
+  function calQuarterKey(r) {
+    var y = r.date.slice(0, 4), m = parseInt(r.date.slice(5, 7), 10);
+    return 'Q' + (Math.floor((m - 1) / 3) + 1) + ' ' + y;
+  }
+
+  // G3-2: the header a row sits under — never one narrower than its own date.
+  // Quarters live in their start month's header; half-years and years get
+  // their own headers, sorted by period start, then shortest first.
+  function calHeader(r) {
+    var start = r.date.slice(0, 7);
+    if (calIsExact(r)) return { key: 'm:' + start, sort: start, len: 1, label: null };
+    var m = calMonths(r);
+    if (m <= 3) return { key: 'm:' + start, sort: start, len: 3, label: null };
+    var y = r.date.slice(0, 4);
+    if (m === 6) {
+      var half = parseInt(r.date.slice(5, 7), 10) <= 6 ? 'First' : 'Second';
+      return { key: 'h:' + y + ':' + half, sort: start, len: 6,
+               label: half + ' half of ' + y };
+    }
+    if (m === 12) return { key: 'y:' + y, sort: start, len: 12, label: y };
+    return { key: 'm:' + start, sort: start, len: m, label: null };
   }
   function calendarUndated() {
     var n = 0;
@@ -430,6 +495,14 @@
   // in the Accuracy panel (accModelLines).
   function accuracyLineFrom(acc) {
     if (!acc || typeof acc !== 'object') return null;
+    // G6-11b: a bucket that scores the readers together reads 'Both readers'
+    // (nested: the redteam harness reads this function alone)
+    function bucketName(name) {
+      var first = (acc.readers && acc.readers.first) || [];
+      var parts = String(name).split(',').map(function (s) { return s.trim(); });
+      return parts.length >= 2 && parts.every(function (p) { return first.indexOf(p) >= 0; })
+        ? 'Both readers' : name;
+    }
     function part(x) {
       if (!x || typeof x !== 'object') return null;
       var f = null, n = null;
@@ -452,7 +525,7 @@
     var names = acc.models && typeof acc.models === 'object' ? Object.keys(acc.models) : [];
     for (var i = 0; i < names.length; i++) {
       var bits = bitsFrom(acc.models[names[i]] || {});
-      if (bits.length) return accSealLabel(acc) + names[i] + ': ' + bits.join(' · ');
+      if (bits.length) return accSealLabel(acc) + bucketName(names[i]) + ': ' + bits.join(' · ');
     }
     // no per-model counts: the flat single-source shape, nothing to mix
     var flat = bitsFrom(acc);
@@ -760,8 +833,10 @@
       a.addEventListener('click', function (ev) {
         ev.preventDefault();
         var pp = pageFor(row);
+        // G3-6: the origin screen (and its window selection) rides along
         if (pp) navigate({ runId: currentRunId(), screen: 'source', srcId: src.id,
-                           page: 'p' + pp.page.page_number, valueId: row.id, back: opts.back || 'audit' });
+                           page: 'p' + pp.page.page_number, valueId: row.id,
+                           back: opts.back || 'audit', w: opts.w || null });
       });
       kv('Source ', '', a);
       if (src.rendered_from) {
@@ -789,13 +864,22 @@
 
     host.append(checksSection(row, t));
 
+    // G5-7: when the second reader proposed nothing, say so once, under the checks
+    if (t.disagreement && (t.disagreement.second_reader === null || t.disagreement.second_reader === undefined)) {
+      var srhint = el('div', 'hint');
+      srhint.style.marginTop = '6px';
+      srhint.textContent = 'Second reader did not read this row.';
+      host.append(srhint);
+    }
+
     if (opts.actions) {
       var sa = el('div', 'sec');
       var br = el('div', 'btnrow');
       br.append(btn('btn', 'Open source page', function () {
         var pp = pageFor(row);
         if (pp) navigate({ runId: currentRunId(), screen: 'source', srcId: src.id,
-                           page: 'p' + pp.page.page_number, valueId: row.id, back: 'audit' });
+                           page: 'p' + pp.page.page_number, valueId: row.id,
+                           back: opts.back || 'audit', w: opts.w || null });
       }));
       br.append(btn('btn', 'Open agent trail', function () {
         navigate({ runId: currentRunId(), screen: 'trail', rowId: row.id });
@@ -886,7 +970,14 @@
     var sec = el('div', 'sec');
     sec.append(el('h4', null, t.group === 'open' ? 'Why it needs you' : 'Why it is unverified'));
     var box = el('div', 'ba' + (t.group === 'open' ? ' blue' : ''));
-    box.textContent = t.reason || row.reason || 'Waiting for you.';
+    // G5-5: the disagreement is stated once on the screen — in the block below
+    // the checks' pane, not again here
+    if (t.disagreement && t.disagreement.second_reader) {
+      var fieldWord = (FIELD_WORDS[t.disagreement.field] || t.disagreement.field).toLowerCase();
+      box.textContent = 'The two readers disagree on the ' + fieldWord + '. A person decides.';
+    } else {
+      box.textContent = t.reason || row.reason || 'Waiting for you.';
+    }
     sec.append(box);
     return sec;
   }
@@ -895,6 +986,8 @@
   // values, above the checks
   function disagreementSection(row, t) {
     var d = t.disagreement;
+    // G5-7: a second reader that proposed nothing is not a disagreement — no block
+    if (!d || d.second_reader === null || d.second_reader === undefined) return null;
     var sec = el('div', 'sec');
     var fieldWord = FIELD_WORDS[d.field] || d.field;
     sec.append(el('h4', null, 'The two readers disagree on the ' + fieldWord.toLowerCase()));
@@ -1001,14 +1094,15 @@
     var host = clear(document.getElementById('srcList'));
     var mid = clear(document.getElementById('srcwrap'));
     var det = clear(document.getElementById('srcDet'));
-    document.getElementById('src-sub').textContent = 'The pages the rows rest on';
+    // G3-7: the sub-line is one plain sentence
+    document.getElementById('src-sub').textContent = 'Every page the rows were read from';
 
     var pages = [];
     detail.run.sources.forEach(function (s) {
       (s.pages || []).forEach(function (p) { pages.push({ source: s, page: p }); });
     });
     document.getElementById('src-sub').textContent =
-      'The pages the rows rest on · ' + pages.length + ' pages';
+      'Every page the rows were read from · ' + pages.length + ' pages';
     clear(host);
 
     var selected = null;
@@ -1033,6 +1127,10 @@
       return;
     }
 
+    // G3-7: the page list follows the open page — highlighted and in view
+    var onPg = host.querySelector('.pg.on');
+    if (onPg) onPg.scrollIntoView({ block: 'nearest' });
+
     mid.append(srcmetaBar(selected.source));
     var wrap = pageImage(selected, route.valueId);
     mid.append(wrap);
@@ -1045,7 +1143,8 @@
       return;
     }
     var row = rowOf(v.id);
-    if (row) detailsPane(det, row, { back: route.back === 'audit' ? 'audit' : null });
+    if (row) detailsPane(det, row, { back: route.back === 'audit' || route.back === 'calendar' ? route.back : null,
+                                     w: route.w || null });
     else {
       // a table value: show its checks
       var cell = null, trow = null, table = null;
@@ -1126,20 +1225,28 @@
     ['N', 'M', 'total'].forEach(function (k) { if (x[k] !== null && x[k] !== undefined) n = x[k]; });
     return n !== null ? (f !== null ? f : '?') + '/' + n : null;
   }
-  // one line per model: 'Muse Spark — values 69/69 · events 2/2 · planted 12/12'
+  // one line per model, one shape: 'Muse Spark — values 69/69 · events — · planted 12/12'
+  // (G6-6: a figure the file does not hold prints '—', it is not dropped;
+  // a model with nothing at all is skipped; G6-11b: the readers-together
+  // bucket reads 'Both readers' — nested, the redteam harness reads this
+  // function alone)
   function accModelLines(acc) {
     if (!acc) return [];
+    function bucketName(name) {
+      var first = (acc.readers && acc.readers.first) || [];
+      var parts = String(name).split(',').map(function (s) { return s.trim(); });
+      return parts.length >= 2 && parts.every(function (p) { return first.indexOf(p) >= 0; })
+        ? 'Both readers' : name;
+    }
     var lines = [];
     var models = acc.models;
     if (models && typeof models === 'object') {
       Object.keys(models).forEach(function (name) {
         var m = models[name] || {};
-        var bits = [];
         var v = accPart(m.values), ev = accPart(m.events), pl = accPart(m.planted);
-        if (v) bits.push('values ' + v);
-        if (ev) bits.push('events ' + ev);
-        if (pl) bits.push('planted ' + pl);
-        if (bits.length) lines.push(name + ' — ' + bits.join(' · '));
+        if (!v && !ev && !pl) return;
+        lines.push(bucketName(name) + ' — values ' + (v || '—') +
+                   ' · events ' + (ev || '—') + ' · planted ' + (pl || '—'));
       });
     }
     if (!lines.length) {
@@ -1187,15 +1294,15 @@
     foot.style.marginTop = '12px';
     accuracyProbe(detail.id).then(function (acc) {
       var sealed = acc && acc.key && acc.key.sealed === true;
-      sealedHead.textContent = sealed ? 'The sealed set' : 'Our own key, not sealed';
+      // G6-6: no key at all — no key heading either, just the plain Scoring
+      // heading and one line; G1-8: the author-keyed heading in plain words
+      sealedHead.textContent = !acc ? 'Scoring' : (sealed ? 'The sealed set' : 'Our own key, not sealed');
       foot.textContent = 'Every number here comes from the saved run and ' +
         (sealed ? 'its sealed-set file' : 'the accuracy numbers') + ' — no model is called for this panel.';
       clear(sealedHost);
       var lines = accModelLines(acc);
       if (!lines.length) {
-        sealedHost.append(el('div', 'hint',
-          sealed ? 'No sealed-set numbers are saved for this run yet.'
-                 : 'No accuracy numbers are saved for this run yet.'));
+        sealedHost.append(el('div', 'hint', 'No accuracy numbers for this run.'));
       } else {
         lines.forEach(function (l) {
           var d = el('div', 'accline');
@@ -1205,9 +1312,15 @@
       }
       // Job 16 window numbers, per model with scored events (only when the export
       // carries them): 'Muse Spark — in the run’s window 2 of 5 key events ·
-      // outside the window 2 · unplaced 1'
+      // outside the window 2 · unplaced 1'  (G6-11b: one bucket per line)
       var windowLines = function (doc) {
         var out = [];
+        function bucketName(name) {
+          var first = (doc && doc.readers && doc.readers.first) || [];
+          var parts = String(name).split(',').map(function (s) { return s.trim(); });
+          return parts.length >= 2 && parts.every(function (p) { return first.indexOf(p) >= 0; })
+            ? 'Both readers' : name;
+        }
         var models = doc && doc.models;
         if (models && typeof models === 'object') {
           Object.keys(models).forEach(function (name) {
@@ -1217,7 +1330,7 @@
             var bits = ['in the run’s window ' + inW + ' of ' + ev.M_total + ' key events'];
             if (ev.outside_window) bits.push('outside the window ' + (ev.outside_window.count || 0));
             if (ev.unplaced) bits.push('unplaced ' + (ev.unplaced.count || 0));
-            out.push(name + ' — ' + bits.join(' · '));
+            out.push(bucketName(name) + ' — ' + bits.join(' · '));
           });
         }
         return out;
@@ -1235,30 +1348,75 @@
     var cpkr = st.cost_per_kept_row_usd;
     var costLine = el('div', 'hint');
     costLine.textContent = cpkr !== null && cpkr !== undefined
-      ? 'Cost per kept row ' + money(cpkr) + ' — spend divided by the rows now kept or corrected.'
+      ? 'Cost per kept row ' + usdCents(cpkr) + ' — spend divided by the rows now kept or corrected.'
       : 'Cost per kept row: not recorded for this run.';
     accPanelHost.append(el('h4', null, 'Cost'));
     accPanelHost.append(costLine);
 
+    // G6-5b: the mistake log as a table — type in plain words × model × who
+    // caught it, one count per cell; each entry is one short line, folded
+    // under its type
     accPanelHost.append(el('h4', null, 'The mistake log — by type · model · who caught it'));
     var log = st.mistake_list || [];
     if (!log.length) {
       accPanelHost.append(el('div', 'hint', 'No counted mistakes in this run.'));
     } else {
+      var models = [];
+      log.forEach(function (m) {
+        var n = m.model || 'a model';
+        if (models.indexOf(n) < 0) models.push(n);
+      });
+      var CATCHERS = [['code', 'caught by code'], ['second_reader', 'by the second reader'], ['person', 'by you']];
+      function caughtWord(cb) { return cb === 'person' ? 'you' : (CAUGHT_BY_WORDS[cb] || cb); }
+      var table = el('table', 'acctab');
+      var thr = el('tr');
+      thr.append(el('th', null, 'Mistake'));
+      models.forEach(function (n) { thr.append(el('th', null, n)); });
+      CATCHERS.forEach(function (c) { thr.append(el('th', null, c[1])); });
+      thr.append(el('th', null, ''));
+      table.append(thr);
       var byType = {};
       log.forEach(function (m) { (byType[m.type || 'none'] = byType[m.type || 'none'] || []).push(m); });
       Object.keys(byType).forEach(function (t) {
-        accPanelHost.append(el('div', 'accgrp', mistakeTypeWord(t)));
-        byType[t].forEach(function (m) {
-          var d = el('div', 'accline');
-          d.append(el('span', 'who', (m.model || 'a model')));
-          var what = el('span', 'what',
-            plainWords(m.what_changed || '') + ' — caught by ' + (CAUGHT_BY_WORDS[m.caught_by] || m.caught_by || 'someone'));
-          d.append(what);
-          accPanelHost.append(d);
+        var entries = byType[t];
+        var tr = el('tr');
+        tr.append(el('td', null, mistakeTypeWord(t)));
+        models.forEach(function (n) {
+          tr.append(el('td', null, String(entries.filter(function (m) { return (m.model || 'a model') === n; }).length || '')));
         });
+        CATCHERS.forEach(function (c) {
+          tr.append(el('td', null, String(entries.filter(function (m) { return m.caught_by === c[0]; }).length || '')));
+        });
+        var foldTd = el('td');
+        var fold = el('details', 'fold');
+        fold.append(el('summary', null, 'Show the ' + entries.length + ' row' + (entries.length === 1 ? '' : 's')));
+        entries.forEach(function (m) {
+          var line = el('div', 'accline');
+          var what = plainWords(m.what_changed || '');
+          if (what.length > 96) what = what.slice(0, 96) + '…';
+          line.append(el('span', 'who', (m.model || 'a model') + ' — caught by ' + caughtWord(m.caught_by)));
+          line.append(el('span', 'what', what));
+          fold.append(line);
+        });
+        foldTd.append(fold);
+        tr.append(foldTd);
+        table.append(tr);
       });
+      accPanelHost.append(table);
     }
+
+    // G6-10: the three terms, explained once
+    var glos = el('div', null);
+    glos.style.marginTop = '14px';
+    glos.append(el('h4', null, 'The words this panel uses'));
+    [['Sealed set', 'the answer key a person wrote and sealed before the run.'],
+     ['Key events', 'the events listed in that answer key.'],
+     ['Unplaced', 'key events the reader found but could not give a date to.']].forEach(function (g) {
+      var d = el('div', 'hint');
+      d.append(el('b', null, g[0] + ' — '), g[1]);
+      glos.append(d);
+    });
+    accPanelHost.append(glos);
     // footer goes last, under the mistake log
     accPanelHost.append(foot);
   }
@@ -1497,12 +1655,101 @@
   }
 
   // ---------------------------------------------------------------- calendar (U6)
+  // U21 "Read this week": the calendar header offers the week's kept events
+  // read aloud. The audio comes from GET /api/runs/<id>/voice/week (a separate
+  // server job); until that route lands the stub's 501 shows one honest line
+  // inline. While the audio plays the button is the stop control and the text
+  // read aloud sits under the button.
+  var voiceAudio = null;
+  function stopVoice() {
+    if (voiceAudio) {
+      voiceAudio.pause();
+      try { voiceAudio.src = ''; } catch (e) { /* nothing to release */ }
+      voiceAudio = null;
+    }
+    var b = document.getElementById('voicebtn');
+    if (b) b.textContent = 'Read this week';
+    var t = document.getElementById('voicetext');
+    if (t) t.hidden = true;
+  }
+  function voiceControls() {
+    var wrap = el('div', 'voicewrap');
+    var note = el('div', 'hint voicenote');
+    note.id = 'voicenote';
+    note.hidden = true;
+    var said = el('div', 'voicetext');
+    said.id = 'voicetext';
+    said.hidden = true;
+    var b = btn('btn voicebtn', 'Read this week', function () {
+      if (voiceAudio) { stopVoice(); return; }
+      note.hidden = true;
+      fetch('/api/runs/' + encodeURIComponent(currentRunId()) + '/voice/week')
+        .then(function (r) {
+          if (!r.ok) {
+            // only the stub's 501 carries the sentence; any other miss reads the same
+            if (r.status === 501) {
+              return r.text().then(function (body) {
+                note.textContent = (body || '').trim() || 'Voice is not on this build yet.';
+                note.hidden = false;
+              });
+            }
+            note.textContent = 'Voice is not on this build yet.';
+            note.hidden = false;
+            return null;
+          }
+          var transcript = r.headers.get('X-Voice-Text') || '';
+          return r.blob().then(function (blob) {
+            voiceAudio = new Audio(URL.createObjectURL(blob));
+            b.textContent = 'Stop';
+            said.textContent = transcript;
+            said.hidden = !transcript;
+            voiceAudio.addEventListener('ended', stopVoice);
+            return voiceAudio.play().catch(function () {
+              note.textContent = 'The audio could not be played.';
+              note.hidden = false;
+              stopVoice();
+            });
+          });
+        })
+        .catch(function () {
+          note.textContent = 'Voice is not on this build yet.';
+          note.hidden = false;
+        });
+    });
+    b.id = 'voicebtn';
+    wrap.append(b, note, said);
+    return wrap;
+  }
+
   // Kept and corrected rows only, never removed / unverified / open. Exact days
   // sort within their month; a period row sits under its period as written,
   // with no invented day.
+  // G3-1: the "Next 3 / 6 / 12 months" filter lives in the header as three
+  // pills; the default is the run's own window. The selection rides the URL
+  // (?w=) so browser Back restores it.
+  function calWindowMonths() {
+    var m = (detail.run.run || {}).choices && (detail.run.run || {}).choices.time_window_months;
+    return (m === 3 || m === 6 || m === 12) ? m : 12;
+  }
+  function addMonths(ymd, n) {
+    var y = parseInt(ymd.slice(0, 10).slice(0, 4), 10), mo = parseInt(ymd.slice(5, 7), 10) - 1 + n;
+    y += Math.floor(mo / 12); mo = ((mo % 12) + 12) % 12;
+    return y + '-' + String(mo + 1).padStart(2, '0') + '-' + ymd.slice(8, 10);
+  }
+  function calWindow() {
+    var win = route && route.w ? route.w : calWindowMonths();
+    if (win !== 3 && win !== 6 && win !== 12) win = calWindowMonths();
+    var anchor = ((detail.run.run || {}).started_at || '').slice(0, 10) || '0000-00-00';
+    return { win: win, anchor: anchor, end: addMonths(anchor, win) };
+  }
+
   function renderCalendar() {
     var meta = detail.run.run || {};
-    var rows = calendarRows();
+    if (route.rowId && rowOf(route.rowId)) calSel = route.rowId;
+    var all = calendarRows();
+    var w = calWindow();
+    var rows = all.filter(function (r) { return r.date <= w.end; });
+    var after = all.length - rows.length;
 
     var host = clear(document.getElementById('cal-mid'));
     var det = clear(document.getElementById('cal-det'));
@@ -1510,8 +1757,19 @@
     var head = el('div', 'ph');
     head.style.background = 'var(--panel2)';
     head.append(el('h2', null, 'Catalyst Calendar'));
-    head.append(el('div', 'sub', 'Kept events, by date · ' + rows.length + ' row' +
-      (rows.length === 1 ? '' : 's')));
+    var subrow = el('div', 'cal-subrow');
+    subrow.append(el('div', 'sub', 'Kept events, by date · ' + rows.length + ' row' +
+      (rows.length === 1 ? '' : 's') + ' · next ' + w.win + ' months'));
+    var pills = el('div', 'calwin');
+    [3, 6, 12].forEach(function (n) {
+      var p = btn('calpill' + (n === w.win ? ' on' : ''), 'Next ' + n + ' months', function () {
+        navigate({ runId: currentRunId(), screen: 'calendar', rowId: calSel, w: n });
+      });
+      pills.append(p);
+    });
+    subrow.append(pills);
+    head.append(subrow);
+    head.append(voiceControls());
     var rl = el('div', 'runlabel' + (meta.sample ? ' sample' : ''), meta.label || '');
     head.append(rl);
     host.append(head);
@@ -1522,37 +1780,55 @@
       return;
     }
 
-    var exact = rows.filter(function (r) { return !r.period; })
-      .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
-    var periods = rows.filter(function (r) { return r.period; })
-      .sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
-
-    var months = [];
-    function month(key) {
-      for (var i = 0; i < months.length; i++) if (months[i].key === key) return months[i];
-      var m = { key: key, exact: [], periods: [] };
-      months.push(m);
-      return m;
+    var headers = [];
+    function header(r) {
+      var def = calHeader(r);
+      for (var i = 0; i < headers.length; i++) if (headers[i].key === def.key) return headers[i];
+      var h = { key: def.key, sort: def.sort, len: def.len, label: def.label, exact: [], periods: [] };
+      headers.push(h);
+      return h;
     }
-    exact.forEach(function (r) { month(r.date.slice(0, 7)).exact.push(r); });
-    periods.forEach(function (r) {
-      var m = month(r.date.slice(0, 7));
-      var label = (r.t.values && r.t.values.date_text) || r.row.date_text || '';
-      var bucket = null;
-      m.periods.forEach(function (p) { if (p.label === label) bucket = p; });
-      if (!bucket) { bucket = { label: label, rows: [] }; m.periods.push(bucket); }
-      bucket.rows.push(r);
+    rows.forEach(function (r) {
+      var h = header(r);
+      if (calIsExact(r)) h.exact.push(r);
+      else {
+        // G3-4: one marker per canonical quarter — 'Q1 2027', 'Q1 ’27',
+        // 'first quarter of 2027' and '1Q27' share it; each row keeps its
+        // own wording (shown in the row)
+        var wording = (r.t.values && r.t.values.date_text) || r.row.date_text || '';
+        var canon = calMonths(r) <= 3 ? calQuarterKey(r) : wording;
+        var bucket = null;
+        h.periods.forEach(function (p) { if (p.label === canon) bucket = p; });
+        if (!bucket) { bucket = { label: canon, rows: [] }; h.periods.push(bucket); }
+        bucket.rows.push(r);
+      }
     });
-    months.sort(function (a, b) { return a.key < b.key ? -1 : 1; });
+    headers.sort(function (a, b) {
+      if (a.sort !== b.sort) return a.sort < b.sort ? -1 : 1;
+      return a.len - b.len;
+    });
 
     var wrap = el('div', 'calwrap');
-    months.forEach(function (m) {
-      var sample = m.exact[0] || (m.periods[0] && m.periods[0].rows[0]);
-      wrap.append(el('div', 'mo', monthYear(sample ? sample.date : m.key + '-01')));
-      m.exact.forEach(function (r) { wrap.append(calRow(r, dayMonth(r.date))); });
-      m.periods.forEach(function (p) {
-        wrap.append(el('div', 'periodhead', p.label || 'Period as written'));
-        p.rows.forEach(function (r) { wrap.append(calRow(r, '')); });
+    headers.forEach(function (h) {
+      var sample = h.exact[0] || (h.periods[0] && h.periods[0].rows[0]);
+      wrap.append(el('div', 'mo', h.label || monthYear(sample ? sample.date : h.sort + '-01')));
+      // G3-4: exact dates first by day, then periods shortest to longest
+      h.exact.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+      // G3-4: periods shortest to longest inside the header
+      h.periods.sort(function (a, b) {
+        var la = calMonths(a.rows[0]), lb = calMonths(b.rows[0]);
+        if (la !== lb) return la - lb;
+        return a.rows[0].date < b.rows[0].date ? -1 : 1;
+      });
+      h.exact.forEach(function (r) { wrap.append(calRow(r, calDayCell(r), false)); });
+      h.periods.forEach(function (p) {
+        // G3-3: the group marker is a hollow dot — a period, no day given
+        var ph = el('div', 'periodhead');
+        var phDot = el('span', 'pdot');
+        phDot.title = 'Period, no day given';
+        ph.append(phDot, p.label || 'Period as written');
+        wrap.append(ph);
+        p.rows.forEach(function (r) { wrap.append(calRow(r, '', true)); });
       });
     });
     var undated = calendarUndated();
@@ -1560,14 +1836,22 @@
       wrap.append(el('div', 'calfnote', undated + ' kept row' + (undated === 1 ? ' has' : 's have') +
         ' no date to place — not on the calendar.'));
     }
+    if (after > 0) {
+      wrap.append(el('div', 'calfnote', after + ' kept row' + (after === 1 ? ' falls' : 's fall') +
+        ' after this window.'));
+    }
     host.append(wrap);
+
+    var on = host.querySelector('.crow.on');
+    if (on) on.scrollIntoView({ block: 'nearest' });
 
     var sel = rows.filter(function (r) { return r.row.id === calSel; })[0] || null;
     if (!sel) {
       det.append(el('div', 'empty', 'Pick an event to see its details.'));
       return;
     }
-    detailsPane(det, sel.row, { back: null });
+    // G3-6: opened from the calendar, the pane links back to the calendar
+    detailsPane(det, sel.row, { back: 'calendar', w: calWindow().win });
     var sa = el('div', 'sec');
     var br = el('div', 'btnrow');
     br.append(btn('btn', 'Open in Audit log', function () {
@@ -1580,20 +1864,43 @@
     det.append(sa);
   }
 
-  function calRow(r, dayCell) {
+  // G3-2: the day cell — a single day, or a day range kept as a range
+  function calDayCell(r) {
+    if (!r.period || !r.end) return dayMonth(r.date);
+    var y1 = r.date.slice(0, 4), m1 = r.date.slice(5, 7), d1 = parseInt(r.date.slice(8, 10), 10);
+    var y2 = r.end.slice(0, 4), m2 = r.end.slice(5, 7), d2 = parseInt(r.end.slice(8, 10), 10);
+    var mon1 = MONTHS_SHORT[parseInt(m1, 10) - 1] || m1;
+    var mon2 = MONTHS_SHORT[parseInt(m2, 10) - 1] || m2;
+    if (y1 === y2 && m1 === m2) return d1 + '–' + d2 + ' ' + mon1;
+    return d1 + ' ' + mon1 + (y1 === y2 ? '' : ' ' + y1) + ' – ' + d2 + ' ' + mon2 +
+           (y1 === y2 ? '' : ' ' + y2);
+  }
+
+  function calRow(r, dayCell, isPeriod) {
     var row = r.row, t = r.t;
     var b = btn('crow' + (row.id === calSel ? ' on' : ''));
-    b.append(el('span', 'cd', dayCell));
+    // G3-3: filled dot = an exact day or day range; hollow dot = a period
+    var cd = el('span', 'cd');
+    var dot = el('span', 'caldot' + (isPeriod ? ' hollow' : ' filled'));
+    if (isPeriod) dot.title = 'Period, no day given';
+    cd.append(dot);
+    if (dayCell) cd.append(document.createTextNode(dayCell));
+    b.append(cd);
     var c2 = el('span', 'ct2');
     c2.append(el('span', 'tk', row.ticker || '—'));
     if (row.program) c2.append(el('span', 'pg2', row.program));
     c2.append(el('span', 'tt', row.title || '(no title)'));
+    if (isPeriod) {
+      // G3-4: the row keeps its own source wording as the date text
+      var wording = (t.values && t.values.date_text) || row.date_text || '';
+      if (wording) c2.append(el('span', 'dt', wording));
+    }
     b.append(c2);
     b.append(el('span', 'ty', eventWord(row.event_type)));
     if (t.decided_by_person) b.append(decidedBadge(t.group));
     b.addEventListener('click', function () {
       calSel = row.id;
-      renderCalendar();
+      navigate({ runId: currentRunId(), screen: 'calendar', rowId: row.id, w: calWindow().win });
     });
     return b;
   }
@@ -1711,7 +2018,16 @@
     br.style.marginTop = '10px';
     var v = t.values || {};
     var isPeriod = !!v.date_end || !!(v.date_text && !v.date);
-    br.append(btn('btn pri', 'Keep', function () {
+    // G5-6: with a disagreement open, Keep says which value it keeps
+    var keepLabel = 'Keep';
+    if (t.disagreement && t.disagreement.second_reader !== null && t.disagreement.second_reader !== undefined) {
+      var dv = t.disagreement.field === 'event_type'
+        ? eventWord(t.disagreement.first_reader)
+        : String(t.disagreement.first_reader);
+      if (dv.length > 24) dv = dv.slice(0, 24) + '…';
+      keepLabel = 'Keep ' + dv;
+    }
+    br.append(btn('btn pri', keepLabel, function () {
       postDecision(row.id, { target: row.id, action: 'keep', note: note.value || null },
         'Kept by you.');
     }));
@@ -1762,6 +2078,28 @@
     }
     sec.append(box);
     host.append(sec);
+    // G5-6: the resolved disagreement stays on the record, folded — the row's
+    // pane keeps what the second reader read
+    var dg = t.disagreement;
+    if (dg && dg.second_reader !== null && dg.second_reader !== undefined) {
+      var dsec = el('div', 'sec');
+      var fold = el('details', 'fold');
+      var dvv = dg.field === 'event_type' ? eventWord(dg.first_reader) : String(dg.first_reader);
+      if (dvv.length > 24) dvv = dvv.slice(0, 24) + '…';
+      fold.append(el('summary', null, 'Resolved by you · kept ' + dvv));
+      var dbox = el('div', 'ba blue');
+      dbox.style.marginTop = '8px';
+      function dval(v) { return dg.field === 'event_type' ? eventWord(v) : fmtField(dg.field, v); }
+      var dl1 = el('div');
+      dl1.append(el('b', null, 'First reader · ' + (row.proposed_by || 'Muse Spark') + ': '), dval(dg.first_reader));
+      var dl2 = el('div');
+      dl2.style.marginTop = '4px';
+      dl2.append(el('b', null, 'Second reader · Muse Spark Open: '), dval(dg.second_reader));
+      dbox.append(dl1, dl2);
+      fold.append(dbox);
+      dsec.append(fold);
+      host.append(dsec);
+    }
     if (t.group === 'corrected') host.append(correctedSection(row, t));
     if (t.group === 'removed') host.append(removedSection(row, t));
     host.append(checksSection(row, t));
@@ -1964,7 +2302,18 @@
       .sort(function (x, y) { return (y.number || 0) - (x.number || 0); });
   }
   function runShort(r) {
-    return (r.label || r.id) + ' · ' + (r.started_at || '').replace('T', ' ').slice(0, 10);
+    // G6-3: dates in words everywhere a run is named
+    return (r.label || r.id) + ' · ' + dateShort(r.started_at) + ' ' + (r.started_at || '').slice(11, 16);
+  }
+
+  // G4-1: every run is named the same way everywhere on this screen:
+  // 'Run N · day Mon · label'
+  function runPick(r) {
+    var s = r.started_at || '';
+    var mon = MONTHS_SHORT[parseInt(s.slice(5, 7), 10) - 1] || '';
+    var day = s.slice(8, 10);
+    return 'Run ' + (r.number || '?') + ' · ' + (day ? day + ' ' + mon : 'no date') +
+           ' · ' + (r.label || r.id);
   }
 
   function renderChanged() {
@@ -1977,8 +2326,14 @@
     var mid = clear(document.getElementById('changed-mid'));
     var det = clear(document.getElementById('changed-det'));
 
-    if (members.length < 2) {
-      sub.textContent = (meta.label || 'This run') + ' is the only run of its kind saved here.';
+    // G4-1: with two or more runs of one family the tabs pick the pair; with
+    // one, two selects offer ANY two saved runs — 'only run of its kind' is a
+    // dead end only when no other run exists at all
+    var curId = currentRunId();
+    var familyMode = members.length >= 2;
+    var pickFrom = familyMode ? members : runs.slice();
+    if (!familyMode && runs.length < 2) {
+      sub.textContent = 'This is the only run saved here.';
       changedCountCache = 0;
       document.getElementById('ct-changed').textContent = '0';
       host.append(el('div', 'empty', 'Nothing to compare yet — run the same companies again and the two runs can be compared.'));
@@ -1987,32 +2342,79 @@
       return;
     }
 
-    var bId = route.b && members.some(function (m) { return m.id === route.b; }) ? route.b : members[0].id;
-    var aId = route.a && members.some(function (m) { return m.id === route.a; }) ? route.a : members[1].id;
+    function valid(id) { return id && pickFrom.some(function (m) { return m.id === id; }); }
+    var bId, aId;
+    if (familyMode) {
+      bId = valid(route.b) ? route.b : members[0].id;
+      aId = valid(route.a) ? route.a : members[1].id;
+    } else {
+      var others = runs.filter(function (r) { return r.id !== curId; })
+        .sort(function (x, y) { return (y.number || 0) - (x.number || 0); });
+      bId = valid(route.b) ? route.b : curId;
+      aId = valid(route.a) ? route.a : (others[0] || {}).id;
+    }
     var aM = runs.filter(function (r) { return r.id === aId; })[0];
     var bM = runs.filter(function (r) { return r.id === bId; })[0];
-    sub.textContent = (aM.label || aId) + ' → ' + (bM.label || bId);
+    sub.textContent = 'Compare: ' + runPick(aM) + ' → ' + runPick(bM) +
+      (changedCache && changedCache.key === aId + '>' + bId && changedCache.note ? changedCache.note : '');
 
-    members.forEach(function (m) {
-      var f = btn('fc' + (m.id === bId ? ' on' : ''), m.label || m.id);
-      f.title = 'Compare the run before it against ' + (m.label || m.id);
-      f.addEventListener('click', function () {
-        var idx = members.indexOf(m);
-        var older = members[idx + 1] || members.filter(function (x) { return x.id !== m.id; })[0];
-        if (!older) return;
-        navigate({ runId: currentRunId(), screen: 'changed', a: older.id, b: m.id });
+    if (familyMode) {
+      members.forEach(function (m) {
+        var f = btn('fc' + (m.id === bId ? ' on' : ''), runPick(m));
+        f.title = 'Compare the run before it against ' + (m.label || m.id);
+        f.addEventListener('click', function () {
+          var idx = members.indexOf(m);
+          var older = members[idx + 1] || members.filter(function (x) { return x.id !== m.id; })[0];
+          if (!older) return;
+          navigate({ runId: currentRunId(), screen: 'changed', a: older.id, b: m.id });
+        });
+        pairHost.append(f);
       });
-      pairHost.append(f);
-    });
+    } else {
+      // G4-1: two selects, each naming Run N · date · label
+      var selA = el('select', 'fld runpick');
+      var selB = el('select', 'fld runpick');
+      pickFrom.forEach(function (m) {
+        var oa = el('option', null, runPick(m)); oa.value = m.id;
+        var ob = el('option', null, runPick(m)); ob.value = m.id;
+        selA.append(oa); selB.append(ob);
+      });
+      selA.value = aId; selB.value = bId;
+      function repick() { navigate({ runId: currentRunId(), screen: 'changed', a: selA.value, b: selB.value }); }
+      selA.addEventListener('change', repick);
+      selB.addEventListener('change', repick);
+      var lbl = el('div', 'chpicks');
+      lbl.append(el('span', 'chpicklbl', 'Compare'), selA, el('span', 'chpicklbl', 'against'), selB);
+      pairHost.append(lbl);
+    }
 
     var key = aId + '>' + bId;
     if (changedCache && changedCache.key === key) return renderChangedCards(host, mid, det);
+    changedCache = null;
     host.append(el('div', 'empty', 'Reading the two runs…'));
     Promise.all([A.run(aId), A.run(bId), A.decisions(aId), A.decisions(bId)]).then(function (all) {
-      changedCache = { key: key, a: { run: all[0], state: all[0].state, decisions: all[2] },
-                       b: { run: all[1], state: all[1].state, decisions: all[3] },
-                       cards: compareRuns({ run: all[0], state: all[0].state, decisions: all[2] },
-                                            { run: all[1], state: all[1].state, decisions: all[3] }) };
+      var ra = all[0], rb = all[1];
+      var note = '';
+      // G4-1: runs of different families compare on the companies they share
+      if (labelFamily(ra.run.label) !== labelFamily(rb.run.label)) {
+        var ca = (ra.run.choices && ra.run.choices.companies) || [];
+        var cb = (rb.run.choices && rb.run.choices.companies) || [];
+        var shared = ca.filter(function (c) { return cb.indexOf(c) >= 0; });
+        if (shared.length) {
+          ra = { rows: ra.rows.filter(function (r) { return shared.indexOf(r.ticker) >= 0; }),
+                 run: ra.run, sources: ra.sources, mistakes: ra.mistakes, tables: ra.tables,
+                 state: ra.state };
+          rb = { rows: rb.rows.filter(function (r) { return shared.indexOf(r.ticker) >= 0; }),
+                 run: rb.run, sources: rb.sources, mistakes: rb.mistakes, tables: rb.tables,
+                 state: rb.state };
+          note = ' · comparing the ' + shared.length + ' compan' + (shared.length === 1 ? 'y' : 'ies') +
+                 ' both runs read';
+        }
+      }
+      changedCache = { key: key, a: { run: ra, state: ra.state, decisions: all[2] },
+                       b: { run: rb, state: rb.state, decisions: all[3] }, note: note,
+                       cards: compareRuns({ run: ra, state: ra.state, decisions: all[2] },
+                                            { run: rb, state: rb.state, decisions: all[3] }) };
       changedCountCache = changedCache.cards.length;
       document.getElementById('ct-changed').textContent = String(changedCountCache);
       if (route && route.screen === 'changed') renderChanged();
@@ -2142,6 +2544,9 @@
       var top = el('div', 'top');
       top.append(el('span', 'chtag ' + CHG_CLASS[c.kind], CHG_WORDS[c.kind]));
       top.append(el('span', 'tk mono', c.row.ticker || '—'));
+      // G4-2b: company and program ride with the title on the card
+      if (c.row.company) top.append(el('span', 'co', c.row.company));
+      if (c.row.program) top.append(el('span', 'pg2', c.row.program));
       top.append(el('span', null, c.row.title || '(no title)'));
       b.append(top);
       b.append(el('div', 'why', c.line));
@@ -2178,19 +2583,31 @@
       sec3.append(el('div', 'since', c.since.text));
       det.append(sec3);
     }
+    // G4-4: the pane carries the row's checks and the source / trail links,
+    // exactly like the Audit log pane
+    det.append(checksSection({ checks: c.row.checks || [] }, rowVals(c.x, c.row) || {}));
     var sec4 = el('div', 'sec');
     var br = el('div', 'btnrow');
-    br.append(btn('btn', 'Open in ' + (c.x.run.run.label || 'that run'), function () {
-      var rid = c.x.run.run.id;
-      if (detail && detail.id === rid) {
-        navigate({ runId: rid, screen: 'audit', rowId: c.row.id });
-      } else {
-        switchRun(rid);
-        setTimeout(function () { navigate({ runId: rid, screen: 'audit', rowId: c.row.id }); }, 400);
-      }
+    var rid = c.x.run.run.id;
+    br.append(btn('btn', 'Open source page', function () {
+      openInRun(rid, { runId: rid, screen: 'source', srcId: c.row.source_id,
+                       page: 'p' + c.row.page_number, valueId: c.row.id, back: 'audit' });
+    }));
+    br.append(btn('btn', 'Open agent trail', function () {
+      openInRun(rid, { runId: rid, screen: 'trail', rowId: c.row.id });
+    }));
+    br.append(btn('btn pri', 'Open in ' + (c.x.run.run.label || 'that run'), function () {
+      openInRun(rid, { runId: rid, screen: 'audit', rowId: c.row.id });
     }));
     sec4.append(br);
     det.append(sec4);
+  }
+
+  // G4-4: jump to another run, then land on the row — highlighted and scrolled
+  // into view by the post-render scroll
+  function openInRun(rid, nav) {
+    if (detail && detail.id === rid) navigate(nav);
+    else { switchRun(rid); setTimeout(function () { navigate(nav); }, 400); }
   }
 
   // ---------------------------------------------------------------- export (U9)
@@ -2245,19 +2662,17 @@
           a.href = reportUrl(f.file);
           right.append(a);
         } else {
-          right.append(el('span', 'exmeta', 'Open from the runs folder'));
+          // G5-2b: no dead label — the honest sentence until the file is served
+          right.append(el('span', 'exmeta', 'No report is saved for this run yet.'));
         }
       }).catch(function () {
         clear(right);
-        right.append(el('span', 'exmeta', 'Open from the runs folder'));
+        right.append(el('span', 'exmeta', 'No report is saved for this run yet.'));
       });
     });
     wrap.append(listHost);
-
-    var buildLine = REPORT_BUILD_ENDPOINT
-      ? null
-      : el('div', 'calfnote', 'Built from the command line: python -m report.build ' + currentRunId());
-    if (buildLine) wrap.append(buildLine);
+    // G5-2b: never a command line, never a run id — the footer sentence below
+    // is the whole build note
     mid.append(wrap);
     var foot = el('div', 'expfoot', 'Built by code from the saved results');
     mid.append(foot);
@@ -2266,13 +2681,23 @@
     var sec = el('div', 'sec');
     sec.append(el('h4', null, 'Summary — the same counts as the audit log'));
     function kv(k, v) { var r = el('div', 'kv'); r.append(el('span', 'k', k), el('span', 'v', v)); sec.append(r); }
+    // G5-3: the run's own spend and cost per kept row, in the summary
+    function usd2(v) {
+      return v >= 0.01 ? '$' + Number(v).toFixed(2) : money(v);
+    }
+    if (meta.spend_usd !== null && meta.spend_usd !== undefined) {
+      kv('Spend', usd2(meta.spend_usd));
+    }
+    if (st.cost_per_kept_row_usd !== null && st.cost_per_kept_row_usd !== undefined) {
+      kv('Cost per kept row', usd2(st.cost_per_kept_row_usd));
+    }
     GROUP_ORDER.forEach(function (g) {
       kv(GROUP_NAMES[g], String(st.counts.rows[g]));
     });
     kv('Needs attention', String(st.unresolved));
     kv('Mistakes caught by code', String(st.mistakes.code));
     kv('Mistakes caught by the second reader', String(st.mistakes.second_reader));
-    kv('Mistakes caught by a person', String(st.mistakes.person));
+    kv('Mistakes caught by you', String(st.mistakes.person));
     kv('Excluded by code', String(st.excluded.code));
     kv('Excluded by you', String(st.excluded.person));
     det.append(sec);
@@ -2326,6 +2751,9 @@
     newrunWrap.hidden = false;
   });
   document.getElementById('nr-cancel').addEventListener('click', function () { newrunWrap.hidden = true; });
+  // G4-6: one wording in both limit boxes, and the red line clears as soon as
+  // the box is edited
+  document.getElementById('nr-limit').addEventListener('input', function () { nrError(''); });
   newrunWrap.addEventListener('click', function (e) { if (e.target === newrunWrap) newrunWrap.hidden = true; });
   document.getElementById('nr-go').addEventListener('click', function () {
     var companies = [];
@@ -2392,12 +2820,17 @@
     else if (jobPoll.id && (!detail || detail.id !== jobPoll.id ||
              JOB_ACTIVE.indexOf((detail.run.run || {}).status) < 0)) stopJobPoll();
   }
+  // G4-5: the job bar reads money in cents, one way ($5.06, never $5.055042)
+  function cents(v) { return '$' + Number(v).toFixed(2); }
+
   function updateJobBar() {
     var bar = document.getElementById('jobbar');
     if (!detail) { hideJobBar(); return; }
     var meta = detail.run.run || {};
     var st = meta.status;
-    if (!st || (JOB_ACTIVE.indexOf(st) < 0 && JOB_PAUSABLE.indexOf(st) < 0)) { hideJobBar(); return; }
+    // G4-5: the bar shows on every run that has a recorded status — done
+    // included — not only on active or paused ones
+    if (!st) { hideJobBar(); return; }
     clear(bar);
     var live = JOB_ACTIVE.indexOf(st) >= 0;
     bar.append(el('span', live ? 'jb-live' : 'jb-status',
@@ -2408,8 +2841,8 @@
     }
     if (meta.spend_usd !== null && meta.spend_usd !== undefined) {
       bits.push(meta.choices && meta.choices.spending_limit_usd !== null && meta.choices.spending_limit_usd !== undefined
-        ? money(meta.spend_usd) + ' of ' + money(meta.choices.spending_limit_usd) + ' used'
-        : money(meta.spend_usd) + ' used');
+        ? cents(meta.spend_usd) + ' of ' + cents(meta.choices.spending_limit_usd) + ' used'
+        : cents(meta.spend_usd) + ' used');
     }
     if (bits.length) bar.append(el('span', 'jb-sub', bits.join(' · ')));
     if (meta.status_reason) bar.append(el('span', 'jb-sub', meta.status_reason));
@@ -2423,6 +2856,8 @@
       }
       var err = el('span', 'errline', '');
       err.hidden = true;
+      // G4-6: the error line clears as soon as the box is edited
+      if (limitInput) limitInput.addEventListener('input', function () { err.hidden = true; });
       bar.append(btn('btn', 'Resume', function () {
         var body = {};
         if (limitInput && limitInput.value.trim() !== '') {
@@ -2441,11 +2876,9 @@
       }), err);
     }
     bar.hidden = false;
-    document.getElementById('screens').style.paddingTop = '40px';
   }
   function hideJobBar() {
     document.getElementById('jobbar').hidden = true;
-    document.getElementById('screens').style.paddingTop = '';
   }
 
   // ---------------------------------------------------------------- run sheet
@@ -2504,7 +2937,12 @@
     else navigate({ runId: currentRunId(), screen: 'audit' });
   });
   document.getElementById('src-back-audit').addEventListener('click', function () {
-    navigate({ runId: currentRunId(), screen: 'audit', rowId: audit.selected });
+    // G3-6: Back goes where the row was opened from, with the row still selected
+    if (route.back === 'calendar') {
+      navigate({ runId: currentRunId(), screen: 'calendar', rowId: route.valueId, w: route.w });
+    } else {
+      navigate({ runId: currentRunId(), screen: 'audit', rowId: audit.selected });
+    }
   });
   document.getElementById('judgment-back-audit').addEventListener('click', function () {
     navigate({ runId: currentRunId(), screen: 'audit', rowId: route.rowId });

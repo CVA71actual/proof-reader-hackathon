@@ -32,8 +32,12 @@
     </div>
   </aside>
 
-  <div class="screens" id="screens">
-    <section class="screen on" id="scr-audit">
+  <div class="main">
+    <!-- G4-10: the job bar sits in the page flow above the screens — it never
+         covers a heading or clips a pane title -->
+    <div class="jobbar" id="jobbar" hidden></div>
+    <div class="screens" id="screens">
+      <section class="screen on" id="scr-audit">
       <div class="pane list">
         <div class="ph">
           <h2>Audit log</h2>
@@ -110,9 +114,8 @@
       <div class="pane mid" id="exp-mid"></div>
       <div class="pane det" id="exp-det"></div>
     </section>
+    </div>
   </div>
-
-  <div class="jobbar" id="jobbar" hidden></div>
 </div>
 
 <div class="sheetwrap" id="accpanel-wrap" hidden>
