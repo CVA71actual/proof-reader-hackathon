@@ -415,7 +415,8 @@ def test_an_event_only_the_second_reader_found_is_an_open_row_with_its_own_check
                                                   "type_match"]
     assert [(t["step"], t["tag"], t["who"]) for t in row["trail"][:2]] == [
         ("Instructions sent", "Code", "capture.second_reader"), ("Proposed", "Model", "Muse Spark Open")]
-    assert row["trail"][-1]["step"] == "Compared"
+    steps = [t["step"] for t in row["trail"]]
+    assert "Compared" in steps and steps[-1] == "Send-back result"     # its date text is not in its quote: sent back once
     state = current_state(run, [])
     assert state["targets"][row["id"]]["group"] == "open"
 

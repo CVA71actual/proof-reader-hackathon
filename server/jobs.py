@@ -48,6 +48,7 @@ from capture import read_events, read_table, sam as sam_module
 from capture.second_reader import CAP_REACHED, OPENROUTER_CAP_USD, UNPRICED
 from checks.coverage import sentence_covered
 from capture.capture_source import load_entry
+from checks import event_checks
 from runs import build_entry, build_run, compare, coverage, escalate, prices, scan, sources
 
 DEFAULT_TURN_LIMIT = 40
@@ -428,6 +429,8 @@ class Job:
                     return
                 if not self.second_pass(page) and self.meta["status"] != "running":
                     return
+                if not self.date_send_back(page, "second") and self.meta["status"] != "running":
+                    return
                 if not self.escalation_pass(page) and self.meta["status"] != "running":
                     return
         self.current_page = None
@@ -791,30 +794,38 @@ class Job:
         limit = self.choices["spending_limit_usd"]
         return limit is not None and self.job.get("wonder_spend_usd", 0.0) >= escalate.WONDER_SHARE * limit
 
-    def date_send_back(self, page: dict) -> bool:
-        """One send-back per page for the rows whose date text is not in their quote: the same reader is asked once
-        (one counted, priced turn for the whole page) for the sentence that states the date. The new quote is taken
-        only if it is printed on the page; the checks then decide the row (runs/build_entry.build_row). True when the
-        page is finished with; False when the run stopped."""
+    def date_send_back(self, page: dict, phase: str = "first") -> bool:
+        """One send-back per row whose date text is not in its quote: the reader that wrote the row is asked once (one
+        counted, priced turn per page and reader, for all its rows) for the sentence that states the date. `phase`
+        "first": the first reader's rows, right after it read the page; "second": the second reader's rows, asked of the
+        second reader once it has read. The new quote is taken only if it is printed on the page; the checks then decide
+        the row (runs/build_entry.build_row). True when the page is finished with; False when the run stopped."""
         sid = page["source_id"]
+        key = sid if phase == "first" else f"{sid}#second"
         done = self.job.setdefault("sent_back", {})
         source = next((s for s in self.run["sources"] if s["id"] == sid), None)
-        if sid in done or source is None or page["kind"] != "events":
+        reader = self.reader if phase == "first" else self.second
+        if key in done or source is None or page["kind"] != "events" or reader is None:
             return True
-        rows = [r for r in self.run["rows"] if r["source_id"] == sid and r.get("found_by") != "coverage"
-                and r.get("group") != "removed" and r.get("quote") and any(
+        who_wrote = (lambda r: r.get("found_by") is None) if phase == "first" else (
+            lambda r: r.get("found_by") == "second_reader")
+        rows = [r for r in self.run["rows"] if r["source_id"] == sid and who_wrote(r) and r.get("group") != "removed"
+                and r.get("quote") and any(
                     c["name"] == "date_match" and c["result"] == "fail" and c["reason"].startswith("The date text is not")
                     for c in r.get("checks", []))]
         if not rows:
-            done[sid] = "nothing to send"
+            done[key] = "nothing to send"
+            return True
+        if phase == "second" and reader.ready():
+            done[key] = "not_run"
             return True
         page0 = source["pages"][0]
         words_doc = json.loads((self.dir / page0["words"]).read_text())
         entry = page["record"]
         prompt = read_events.build_send_back_prompt(words_doc, entry, rows)
-        if self.stopped_before_a_call():
+        if self.stopped_before_a_call(reader):
             return False
-        reply = self.reader.call(prompt)
+        reply = reader.call(prompt)
         self.count_turn(reply)
         if reply.error:
             self.stop("failed", f"{reply.error} Resume to try again.")
@@ -827,7 +838,7 @@ class Job:
         at = now_utc()
         for row in rows:
             self.apply_send_back(row, answers.get(row["id"]), reading, source, words_doc, share, prompt, at)
-        done[sid] = "done"
+        done[key] = "done"
         self.save()
         return True
 
@@ -850,7 +861,7 @@ class Job:
                                          "indication")}
         event.update(quote=quote, date_text=date_text, box=None)
         proposal = build_entry.build_row(0, event, reading, source, words_doc, at, share=share,
-                                         model_name=reading["model"])
+                                         model_name=price_name(reading["model"]))
         model_step = next((t for t in proposal["trail"] if t["tag"] == "Model"), None)
         if model_step:
             row["trail"].append({**model_step, "step": "Sentence for the date"})
@@ -865,6 +876,11 @@ class Job:
         old = next(c for c in row["checks"] if c["name"] == "date_match")
         for f in ("quote", "date_text", "date", "date_end", "box", "checks", "status", "group", "reason"):
             row[f] = proposal[f]
+        if row.get("found_by") == "second_reader":      # nobody else read it: it stays an open row of the second reader
+            failed = any(c["result"] == "fail" for c in row["checks"])
+            row["status"] = event_checks.row_status(row["checks"], second_reader_agrees=False)
+            row["group"] = "open"
+            row["reason"] = (f"{proposal['reason']} " if failed else "") + compare.ONLY_REASON
         row["trail"].append({"step": "Send-back result", "tag": "Code", "who": who, "at": at,
                              "text": f"The sentence is printed on the page. The row takes it; the checks decide: "
                                      f"{proposal['status']}."})

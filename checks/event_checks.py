@@ -190,6 +190,71 @@ def _canon(text: str | None) -> str:
     return re.sub(r"^(?:in |during |by )?(?:the )?", "", s)
 
 
+# A date as a slide or press release prints it: with a weekday ("Thursday, August 6, 2026"), a time of day ("Friday,
+# Sept. 4 at 10:00 a.m. ET"), "calendar year 2028", or no year at all ("Sept. 4"). clean_date_text takes off what is not
+# part of the date; yearless_day counts the year from the filing date: the first such day on or after it.
+_DAYS = (r"(?:today|tomorrow|yesterday|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?"
+         r"|sat(?:urday)?|sun(?:day)?)")
+_WEEKDAY = re.compile(rf"^{_DAYS}\.?,?\s+", re.I)
+_CLOCK = r"\d{1,2}(?::\d{2})?\s*[ap]\.?m\.?"
+_TIME = re.compile(rf",?\s*(?:at\s+)?{_CLOCK}(?:\s*[-–]\s*{_CLOCK})?(?:\s*(?:[A-Za-z]{{2,3}}|(?:eastern|pacific|central) time))?\.?$",
+                   re.I)
+_DAY_ONLY = re.compile(r"^([A-Za-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?$")
+
+
+def fix_commas(text: str) -> str:
+    """'November 14,2026' -> 'November 14, 2026' (the date parser wants a space after the comma)."""
+    return re.sub(r",(?=\d)", ", ", text or "")
+
+
+def clean_date_text(text: str | None) -> str:
+    """The date alone: no leading weekday, no trailing time of day, 'calendar year' read as 'year'."""
+    s = fix_commas(normalize(text))
+    s = _WEEKDAY.sub("", s)
+    s = _TIME.sub("", s)
+    s = re.sub(r"\bcalendar year\s+", "", s, flags=re.I)
+    return s.strip().strip("()*†‡¹²³ ").strip()          # brackets and footnote marks around a date are not the date
+
+
+_DAY_RANGE = re.compile(r"^([A-Za-z]+)\.?\s+(\d{1,2})\s*[-–—]\s*(\d{1,2}),?\s+(\d{4})$")
+
+
+def parse_day_range(text: str | None) -> tuple[date, date] | None:
+    """'November 14 – 17, 2026' -> (2026-11-14, 2026-11-17): days of one month. None for anything else."""
+    m = _DAY_RANGE.match(clean_date_text(text).rstrip("."))
+    if not m or m[1].lower() not in _MONTHS:
+        return None
+    try:
+        first, last = date(int(m[4]), _MONTHS[m[1].lower()], int(m[2])), date(int(m[4]), _MONTHS[m[1].lower()], int(m[3]))
+    except ValueError:
+        return None
+    return (first, last) if first <= last else None
+
+
+def yearless_day(text: str | None, filed: date | str | None) -> date | None:
+    """'Friday, Sept. 4 at 10:00 a.m. ET' filed 2026-08-05 -> 2026-09-04: a month and a day with no year take the first
+    such day on or after the filing date ('December 12' filed 2026-12-20 -> 2027-12-12). None for anything else, or when
+    there is no filing date."""
+    if isinstance(filed, str):
+        try:
+            filed = date.fromisoformat(filed[:10])
+        except ValueError:
+            return None
+    if filed is None:
+        return None
+    m = _DAY_ONLY.match(clean_date_text(text).rstrip("."))
+    if not m or m[1].lower() not in _MONTHS:
+        return None
+    for year in range(filed.year, filed.year + 5):          # five years reach any 29 February
+        try:
+            d = date(year, _MONTHS[m[1].lower()], int(m[2]))
+        except ValueError:
+            continue
+        if d >= filed:
+            return d
+    return None
+
+
 # Periods a filing states without a year ("by year-end", "later this year", "next quarter"): their year comes from the
 # source's filing date. Returns (first day, last day) of the window the words stand for, or None.
 _REL_YEAR_END = re.compile(r"^(?:year[- ]end|(?:the )?end of (?:the |this )?year)$")
@@ -418,7 +483,9 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
     (see _supporting_clause and runs/README.md, "Which date belongs to the event"), and that clause must not
     negate or replace it ('Q3 2027 is no longer expected'). When the quote does not show which date belongs
     to the event, the check could not run. The order of the dates in the quote is never evidence.
-    A period with no year ('Q3') fails. A relative period ('by year-end', 'this year', 'next quarter') takes its
+    A period with no year ('Q3') fails. A day with no year ('Friday, Sept. 4') is the first such day on or after
+    `filed` (yearless_day); a weekday or time of day around a date is not part of it (clean_date_text).
+    A relative period ('by year-end', 'this year', 'next quarter') takes its
     year from `filed`, the source's filing date (relative_period): the row's dates must lie inside that window.
     Anything vaguer ('later this year') with no date given: not_needed.
     """
@@ -451,6 +518,26 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
     if dt not in q:
         return result(FAIL, "The date text is not part of the quote.", found=None)
     dt, q = expand_short_year(dt), expand_short_year(q)     # 'Q1 ’27' is Q1 2027, in the quote as in the date text
+    day = yearless_day(dt, filed)
+    dt = clean_date_text(dt)                                 # no weekday or time of day; still printed in the quote
+    q = re.sub(r"\bcalendar year\s+", "", fix_commas(q), flags=re.I)
+    days = parse_day_range(dt)
+    if days is not None:
+        found = f"{days[0].isoformat()} to {days[1].isoformat()}"
+        if (days[0].isoformat(), days[1].isoformat()) == (date_iso, date_end):
+            return result(PASS, "The days in the row are the days printed in the quote.", found=found)
+        return result(FAIL, "The days in the row differ from the days printed in the quote.", found=found)
+    if day is not None:
+        found = day.isoformat()
+        how = "the year counted from the filing date"
+        if date_end is not None:
+            return result(FAIL, "The quote names one day but the row gives a period.", found=found)
+        if date_iso is None:
+            return result(FAIL, "The quote names a day but the row gives none.", found=found)
+        if date_iso == found:
+            return result(PASS, f"The day in the row is the day printed in the quote, with {how}.", found=found)
+        return result(FAIL, f"The day in the row differs from the day printed in the quote ({how}: {found}).",
+                      found=found)
     if _NAMED.fullmatch(_canon(dt)):
         named = list(_NAMED.finditer(q))
         same = [m for m in named if _canon(m[0]) == _canon(dt)]

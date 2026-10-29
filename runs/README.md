@@ -365,6 +365,23 @@ Found by reading the rows of `runs/twelve-1`:
   20YY (`event_checks.expand_short_year`), in the quote and in the date text alike. A judgment call: without the
   apostrophe `Aug 26` is a day and stays unread; a slide's `’27` is never read as 1927 or 2127.
 
+### Job 13: year-less dates, and what is around a date
+
+- **No year printed** ("Friday, Sept. 4 at 10:00 a.m. ET", "December 12"): the year is the first such day on or after
+  the source's filing date (`event_checks.yearless_day`). The row's trail has the Code step "Year inferred from the
+  filing date", a matched row's reason ends "Year inferred from the filing date.", and `date_match` compares the full
+  date (the row must give that day and no period).
+- **Around a date**: a leading weekday ("Thursday, "), "today,", a trailing time of day ("at 10:00 a.m. ET", "7:30 pm -
+  8:30 pm ET"), brackets and footnote marks ("(3Q’26)", "Feb ’27*") and "calendar year" are not part of the date
+  (`clean_date_text`); the date text must still be printed in the quote as written. A same-month range ("November 14 -
+  17, 2026") is two days: the row's date and date_end must be them.
+- **Send-back for the second reader's rows**: the same once-a-row rule, asked of the second reader, after it has read. The
+  row stays the second reader's open row.
+- Of the 60 twelve-2 rows that failed 'no day and no period', only 2 had no year printed; most were forms the parser did
+  not read. Now 22 pass, 19 could not run (the quote does not show which of its dates is the event's) and 19 still fail:
+  'today' (10: the date of the release is not the date of the filing), '1Q27', 'by the end of September 2026', 'Sept/Oct
+  2026', 'through at least December 31, 2027', and footnote digits ('(20261)').
+
 ### Dated sentences the reader did not turn into rows
 
 `checks/coverage.py` cuts the page's words into sentences (a leading bullet is dropped; abbreviations such as "Inc."

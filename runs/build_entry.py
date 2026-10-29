@@ -222,6 +222,12 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         trail.append({"step": "Year inferred from the filing date", "tag": "Code", "who": BUILDER,
                       "text": f"“{row['date_text']}” names no year. Counted from the filing date "
                               f"({source['published_date']}) it is {row['date']} to {row['date_end']}.", "at": at})
+    day = event_checks.yearless_day(row["date_text"], source.get("published_date"))
+    if day is not None:
+        row["date"] = row["date"] or day.isoformat()
+        trail.append({"step": "Year inferred from the filing date", "tag": "Code", "who": BUILDER,
+                      "text": f"“{row['date_text']}” names no year. Counted from the filing date "
+                              f"({source['published_date']}) it is {day.isoformat()}.", "at": at})
     located = locate_box(row.get("quote"), row["box"], words)
     if located is not None and not _same_box(located, row["box"]):
         was = f"the {reader}'s box {[round(v) for v in row['box']]}" if row["box"] else f"no box from the {reader}"
@@ -234,10 +240,12 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         trail.append({"step": "Checked", "tag": "Code", "who": r.check,
                       "text": f"{r.label}: {r.result.replace('_', ' ')}. {r.reason}", "at": at})
     status = event_checks.row_status(results)
+    inferred = any(t["step"] == "Year inferred from the filing date" for t in trail)
     row.update({
         "status": status,
         "group": START_GROUP.get(status, "unverified"),
-        "reason": row_reason(status, results, row),
+        "reason": row_reason(status, results, row) + (" Year inferred from the filing date." if inferred
+                                                      and status == event_checks.MATCHED else ""),
         "sample": False,
         "checks": [to_contract_check(r.to_dict()) for r in results],
         "trail": trail,
