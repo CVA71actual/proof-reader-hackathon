@@ -98,8 +98,7 @@ def test_every_model_step_carries_tokens_and_cost(name):
         assert s["cost_usd"] == cost_at(prices_of(run), s["who"], s["tokens"]["prompt"], s["tokens"]["completion"])
     assert run["run"]["spend_usd"] == pytest.approx(sum(s["cost_usd"] for s in steps))
     for r in run["rows"]:
-        first = r["trail"][0]
-        assert first["step"] == "Instructions sent"
+        first = next(t for t in r["trail"] if t["step"].startswith("Instructions sent"))
         assert isinstance(first["tokens"]["prompt"], int) and first["tokens"]["completion"] is None
         assert "cost_usd" not in first
 

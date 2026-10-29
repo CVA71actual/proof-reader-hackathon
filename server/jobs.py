@@ -809,9 +809,9 @@ class Job:
             if call_cost is None and self.choices["spending_limit_usd"] is not None:
                 # the cost of this reply cannot be counted, so it cannot be shown to sit inside Wonder's share:
                 # the reading is not applied and the row stays as it was
-                row["trail"].append({"step": "Escalation result", "tag": "Code", "who": escalate.WHO,
-                                     "at": now_utc(), "text": f"The cost of {escalate.WONDER}'s call could not be "
-                                     f"counted, so its reading is not taken. The row stays as it was."})
+                escalate.record_sent(row, reply.prompt_tokens, now_utc(), trig, text)
+                escalate.record_unused_call(row, reply, now_utc(), f"The cost of {escalate.WONDER}'s call could not "
+                                            f"be counted, so its reading is not taken.")
                 self.job["escalated_rows"][row["id"]] = "kept"
                 done[sid] = "budget"
                 self.save()
@@ -824,9 +824,10 @@ class Job:
             reading = read_events._record(model=reply.model, prompt=text, raw=reply.raw, events=events, problem=None,
                                           entry=entry, extra=extra)
             if self.wonder_budget_passed():     # the call cost more than the share allows: its reading is not taken
-                row["trail"].append({"step": "Escalation result", "tag": "Code", "who": escalate.WHO,
-                                     "at": now_utc(), "text": f"{escalate.WONDER}'s call took the run past "
-                                     f"{int(escalate.WONDER_SHARE * 100)}% of its spending limit. The row stays as it was."})
+                escalate.record_sent(row, reply.prompt_tokens, now_utc(), trig, text)
+                escalate.record_unused_call(row, reply, now_utc(), f"{escalate.WONDER}'s call took the run past "
+                                            f"{int(escalate.WONDER_SHARE * 100)}% of its spending limit, so its "
+                                            f"reading is not taken.")
                 self.job["escalated_rows"][row["id"]] = "kept"
                 done[sid] = "budget"
                 self.note_escalation("read", "Muse Wonder's part of the spending limit is used; no more rows are sent.")

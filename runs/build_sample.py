@@ -33,6 +33,7 @@ from capture import read_table
 from capture.capture_page import page_words
 from checks import event_checks
 from runs import prices, recheck
+from runs.build_entry import plain_type
 from runs.build_run import (
     IONS_SOURCE_ID,
     MUSE_SPARK,
@@ -285,6 +286,8 @@ def recheck_line(at_: str, row: dict, fix: dict, source: dict, words_doc: dict) 
 
 
 def when(row: dict) -> str:
+    if row.get("date_end") and row.get("date_text"):     # a period as the source wrote it
+        return row["date_text"]
     if row["date"] and row.get("date_end"):
         return f"{row['date']} to {row['date_end']}"
     return row["date"] or row["date_text"]
@@ -302,7 +305,10 @@ def build_row(spec: dict, source: dict, words_doc: dict, minute: int) -> tuple[d
         source["id"] != IONS_SOURCE_ID else source["pages"][0]["page_number"], "box": box,
         "proposed_by": MUSE_SPARK,
     }
-    trail = [{"step": "Instructions sent", "tag": "Code", "who": BUILDER,
+    trail = [{"step": f"Sent the page to {MUSE_SPARK}", "tag": "Code", "who": BUILDER,
+              "text": f"Code chose what {MUSE_SPARK} would read and sent it, with the instructions below.",
+              "at": at(minute)},
+             {"step": "Instructions sent", "tag": "Code", "who": BUILDER,
               "text": SAMPLE_EVENT_INSTRUCTIONS, "at": at(minute)}]
     readable = spec.get("readable", True)
     if not readable:
@@ -317,8 +323,11 @@ def build_row(spec: dict, source: dict, words_doc: dict, minute: int) -> tuple[d
         if "first_type" in spec:
             first["event_type"] = spec["first_type"]
         trail.append({"step": "Proposed", "tag": "Model", "who": MUSE_SPARK,
-                      "text": f"{first['ticker']} {first['event_type']} on {when(first)}: "
+                      "text": f"{first['ticker']} {plain_type(first['event_type'])} on {when(first)}: "
                               f"“{first['quote']}”", "at": at(minute, 5)})
+        trail.append({"step": "Took the reading into the row", "tag": "Code", "who": BUILDER,
+                      "text": "Copied the reader's answer for this row into the row as a proposal. Nothing is "
+                              "checked yet.", "at": at(minute, 6)})
         if "first_date" in spec:
             failed = event_checks.date_match(first["date_text"], first["date"], first["quote"],
                                              event_type=first["event_type"], title=first["title"])
@@ -348,11 +357,11 @@ def build_row(spec: dict, source: dict, words_doc: dict, minute: int) -> tuple[d
                       "at": at(minute + 1, 50)})
     elif second == "disagrees":
         trail.append({"step": "Second reading", "tag": "Model", "who": SECOND_READER,
-                      "text": f"Read the event type as {spec['second_type']}, not {spec['event_type']}.",
+                      "text": f"Read the event type as {plain_type(spec['second_type'])}, not {plain_type(spec['event_type'])}.",
                       "at": at(minute + 1, 40)})
     if "first_type" in spec:
         trail.append({"step": "Changed by you", "tag": "Person", "who": "person",
-                      "text": f"Event type changed from {spec['first_type']} to {spec['event_type']}.",
+                      "text": f"Event type changed from {plain_type(spec['first_type'])} to {plain_type(spec['event_type'])}.",
                       "at": at(minute + 2)})
         trail += check_steps(run_checks(row, source, words_doc), minute + 2)
     if spec["group"] == "removed":

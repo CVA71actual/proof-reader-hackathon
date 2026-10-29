@@ -17,7 +17,8 @@ settles a disagreement, and Wonder's reading is added to the trail as evidence.
 
 The trail, one actor per step: Code "Sent to Muse Wonder because <check> failed" (runs.escalate), Code "Instructions
 sent to Muse Wonder" (capture.wonder), Model "Muse Wonder" (its tokens and cost), Code "Checked" for each check on its
-proposal, Code "Escalation result" (runs.escalate).
+proposal, Code "Escalation result" (runs.escalate). A row that is sent and not replaced carries the same steps; its
+result says "the row stays as it was" and why.
 """
 
 from __future__ import annotations
@@ -73,9 +74,10 @@ def trigger(row: dict, labels: tuple[str, ...] | None = None) -> dict:
         if c["result"] == "fail" and (labels is None or c["label"] in labels):
             return {"kind": "check", "label": c["label"], "why": c["reason"]}
     d = row["disagreement"]
-    return {"kind": "disagreement", "label": f"the two readers disagree on {d['field']}",
-            "why": (f"Muse Spark read {d['first_reader'] if d['first_reader'] is not None else 'nothing'} and "
-                    f"Muse Spark Open read {d['second_reader'] if d['second_reader'] is not None else 'nothing'}.")}
+    f = d["field"]
+    return {"kind": "disagreement", "label": f"the two readers disagree on {build_entry.plain_field(f)}",
+            "why": (f"Muse Spark read {build_entry.plain_value(f, d['first_reader']) if d['first_reader'] is not None else 'nothing'} and "
+                    f"Muse Spark Open read {build_entry.plain_value(f, d['second_reader']) if d['second_reader'] is not None else 'nothing'}.")}
 
 
 def band(row: dict, words_doc: dict) -> tuple[float, float]:
@@ -140,9 +142,33 @@ def to_page_points(event: dict, y_range: tuple[float, float], words_doc: dict) -
 
 
 def _changes(old: dict, new: dict) -> list[str]:
-    return [f"{f} from {old.get(f)} to {new.get(f)}" for f in FIELDS
+    return [f"{build_entry.plain_field(f)} from {build_entry.plain_value(f, old.get(f))} to "
+            f"{build_entry.plain_value(f, new.get(f))}" for f in FIELDS
             if f != "box" and normalize(None if old.get(f) is None else str(old.get(f)))
             != normalize(None if new.get(f) is None else str(new.get(f)))]
+
+
+def record_sent(row: dict, reading_tokens: int | None, at: str, trig: dict, prompt_text: str) -> None:
+    """The two Code steps before Wonder answers: that the row was sent and why, and the exact instructions."""
+    row["trail"] += [
+        {"step": f"Sent to {WONDER}", "tag": "Code", "who": WHO, "at": at,
+         "text": (f"{trig['label'][:1].upper()}{trig['label'][1:]}"
+                  + (" failed" if trig["kind"] == "check" else "") + f". {trig['why']}")},
+        {"step": f"Instructions sent to {WONDER}", "tag": "Code", "who": WONDER_WHO, "at": at, "text": prompt_text,
+         "tokens": {"prompt": reading_tokens, "completion": None} if isinstance(reading_tokens, int) else None},
+    ]
+
+
+def record_unused_call(row: dict, reply, at: str, why: str) -> None:
+    """A Wonder call was made but its reading is not taken (its cost passed the run's limit, or could not be counted):
+    the Model step carries the tokens and cost, then the result says the row stays as it was and why."""
+    row["trail"] += [
+        {"step": WONDER, "tag": "Model", "who": WONDER, "at": at,
+         "text": f"{WONDER} answered. Its reading was not used.",
+         **prices.model_cost_fields(WONDER, reply.prompt_tokens, reply.completion_tokens)},
+        {"step": "Escalation result", "tag": "Code", "who": WHO, "at": at,
+         "text": f"{why} The row stays as it was."},
+    ]
 
 
 def apply(row: dict, event: dict | None, reading: dict, source: dict, words_doc: dict, at: str, trig: dict,
@@ -151,13 +177,12 @@ def apply(row: dict, event: dict | None, reading: dict, source: dict, words_doc:
     "replaced", "kept" (the re-read did not pass every check), "evidence" (a disagreement: nothing replaced) or
     "unreadable" (no event in the answer)."""
     pt = (reading.get("usage") or {}).get("prompt_tokens")
-    row["trail"] += [
-        {"step": f"Sent to {WONDER} because {trig['label']}" + (" failed" if trig["kind"] == "check" else ""),
-         "tag": "Code", "who": WHO, "at": at, "text": f"{trig['label']}. {trig['why']}"},
-        {"step": f"Instructions sent to {WONDER}", "tag": "Code", "who": WONDER_WHO, "at": at, "text": prompt_text,
-         "tokens": {"prompt": pt, "completion": None} if isinstance(pt, int) else None},
-    ]
+    record_sent(row, pt, at, trig, prompt_text)
     if event is None:
+        row["trail"].append({"step": WONDER, "tag": "Model", "who": WONDER, "at": at,
+                             "text": "Answered with no event for this row.",
+                             **prices.model_cost_fields(WONDER, reading.get("usage", {}).get("prompt_tokens"),
+                                                        reading.get("usage", {}).get("completion_tokens"))})
         row["trail"].append({"step": "Escalation result", "tag": "Code", "who": WHO, "at": at,
                              "text": f"{WONDER}'s answer held no event for this row. The row stays as it was."})
         return "unreadable"
@@ -174,7 +199,8 @@ def apply(row: dict, event: dict | None, reading: dict, source: dict, words_doc:
         agrees = [who for who, v in (("Muse Spark", d["first_reader"]), ("Muse Spark Open", d["second_reader"]))
                   if v is not None and normalize(str(v)).lower() == normalize(str(value)).lower()]
         row["trail"].append({"step": "Escalation result", "tag": "Code", "who": WHO, "at": at,
-                             "text": (f"{WONDER} read {d['field']} as {value if value is not None else 'nothing'}"
+                             "text": (f"{WONDER} read {build_entry.plain_field(d['field'])} as "
+                                      f"{build_entry.plain_value(d['field'], value) if value is not None else 'nothing'}"
                                       + (f", as {' and '.join(agrees)} did" if agrees else ", as neither reader did")
                                       + f"; its reading {'passed' if passed else 'did not pass'} every check. A "
                                         f"disagreement is settled only by a person's fix, so nothing was replaced.")})

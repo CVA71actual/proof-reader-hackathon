@@ -782,7 +782,7 @@ def type_match(event_type: str | None, quote: str | None) -> CheckResult:
 
     group = type_group(event_type)
     if group is None:
-        return result(NOT_NEEDED, f"The event type {event_type or '?'} has no fixed words to compare the quote with.")
+        return result(NOT_NEEDED, f"The event type {(event_type or '?').replace('_', ' ')} has no fixed words to compare the quote with.")
     if not normalize(quote):
         return result(COULD_NOT_RUN, "The row has no quote to compare the event type with.")
     if group in AMBIGUOUS_TYPES and all(_words_in(quote, g) for g in AMBIGUOUS_TYPES):

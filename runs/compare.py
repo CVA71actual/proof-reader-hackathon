@@ -98,11 +98,13 @@ def differences(row: dict, ev: dict) -> list[dict]:
     return out
 
 
-def _say(v) -> str:
-    return "nothing" if v in (None, "") else str(v)
+def _say(v, field: str = "") -> str:
+    return "nothing" if v in (None, "") else str(build_entry.plain_value(field, v))
 
 
 def _when(ev: dict) -> str:
+    if ev.get("date_text") and ev.get("date_end"):     # a period is shown as the source wrote it
+        return ev["date_text"]
     if ev.get("date") and ev.get("date_end"):
         return f"{ev['date']} to {ev['date_end']}"
     return ev.get("date") or ev.get("date_text") or "no date"
@@ -110,7 +112,7 @@ def _when(ev: dict) -> str:
 
 def _model_step(ev: dict, share: tuple, at: str) -> dict:
     return {"step": "Second reading", "tag": "Model", "who": SECOND, "at": at,
-            "text": (f"{ev.get('ticker') or ''} {ev.get('program') or ''} {(ev.get('event_type') or 'unknown')} on "
+            "text": (f"{ev.get('ticker') or ''} {ev.get('program') or ''} {build_entry.plain_type(ev.get('event_type'))} on "
                      f"{_when(ev)}, printed as “{ev.get('date_text')}”: “{ev.get('quote')}”").replace("  ", " "),
             **prices.model_cost_fields(SECOND, share[0], share[1], call_rows=share[2])}
 
@@ -128,7 +130,8 @@ def _instructions_steps(reading: dict, at: str) -> list[dict]:
     pt = (reading.get("usage") or {}).get("prompt_tokens")
     got = reading.get("input") or "words"
     return [
-        {"step": "Second reader input", "tag": "Code", "who": SECOND_WHO, "at": at, "text": INPUT_WORDS[got]},
+        {"step": build_entry.sent_text(SECOND, {"input": got}), "tag": "Code", "who": SECOND_WHO, "at": at,
+         "text": INPUT_WORDS[got]},
         {"step": "Instructions sent to the second reader", "tag": "Code", "who": SECOND_WHO, "at": at,
          "text": reading["prompt_text"], "tokens": {"prompt": pt, "completion": None} if isinstance(pt, int) else None},
     ]
@@ -147,30 +150,32 @@ def apply_events(rows: list[dict], second_events: list[dict], second_reading: di
     for i, row in enumerate(mine):
         j = pairs.get(i)
         if j is None:
-            row["trail"].append({"step": "Compared", "tag": "Code", "who": WHO, "at": at,
+            row["trail"].append({"step": "Compared the two readings", "tag": "Code", "who": WHO, "at": at,
                                  "text": f"The second reader's reading holds no matching event. Nothing changes. "
                                          f"{AGREEMENT_NOTE}"})
             continue
         ev, diffs = second_events[j], differences(row, second_events[j])
         row["trail"] += [*_instructions_steps(second_reading, at), _model_step(ev, shares[j], at)]
         if not diffs:
-            row["trail"].append({"step": "Compared", "tag": "Code", "who": WHO, "at": at,
+            row["trail"].append({"step": "Compared the two readings", "tag": "Code", "who": WHO, "at": at,
                                  "text": f"Both readers read the same date, event type, program and indication. "
                                          f"{AGREEMENT_NOTE}"})
             continue
         first = diffs[0]
-        said = "; ".join(f"{d['field']}: {SECOND_FIRST} read {_say(d['first_reader'])}, {SECOND} read "
-                         f"{_say(d['second_reader'])}" for d in diffs)
+        said = "; ".join(f"{build_entry.plain_field(d['field'])}: {SECOND_FIRST} read "
+                         f"{_say(d['first_reader'], d['field'])}, {SECOND} read {_say(d['second_reader'], d['field'])}"
+                         for d in diffs)
         row["disagreement"] = {**first, **({"also": diffs[1:]} if len(diffs) > 1 else {})}
         if row.get("group") != "removed":     # a time-window exclusion by code holds: a disagreement does not undo it
             row["status"] = "failed" if any(c["result"] == "fail" for c in row["checks"]) else "undecided"
             row["group"] = "open"
         row["reason"] = (f"{row['reason']} " if row["status"] == "failed" else "") + (
-            f"The two readers disagree on {first['field']}: {SECOND_FIRST} read {_say(first['first_reader'])}, "
-            f"{SECOND} read {_say(first['second_reader'])}. A person decides.")
-        row["trail"].append({"step": "Compared", "tag": "Code", "who": WHO, "at": at,
+            f"The two readers disagree on {build_entry.plain_field(first['field'])}: {SECOND_FIRST} read "
+            f"{_say(first['first_reader'], first['field'])}, {SECOND} read "
+            f"{_say(first['second_reader'], first['field'])}. A person decides.")
+        row["trail"].append({"step": "Compared the two readings", "tag": "Code", "who": WHO, "at": at,
                              "text": f"The readers differ on {len(diffs)} field{'s' if len(diffs) != 1 else ''}. {said}. "
-                                     f"The row goes to a person; the disagreement is on {first['field']}."})
+                                     f"The row goes to a person; the disagreement is on {build_entry.plain_field(first['field'])}."})
     new_rows = []
     matched = set(pairs.values())
     for j, ev in enumerate(second_events):
@@ -181,12 +186,12 @@ def apply_events(rows: list[dict], second_events: list[dict], second_reading: di
             new_rows.append(row)
             continue
         row = build_entry.build_row(next_index + len(new_rows), ev, second_reading, source, words_doc, at,
-                                    share=shares[j], model_name=SECOND, instructions_who=SECOND_WHO)
+                                    share=shares[j], model_name=SECOND, instructions_who=SECOND_WHO, second_reader=True)
         failed = any(c["result"] == "fail" for c in row["checks"])
         row["status"] = event_checks.row_status(row["checks"], second_reader_agrees=False)
         row["group"], row["found_by"] = "open", "second_reader"
         row["reason"] = (f"{row['reason']} " if failed else "") + ONLY_REASON
-        row["trail"].append({"step": "Compared", "tag": "Code", "who": WHO, "at": at,
+        row["trail"].append({"step": "Compared the two readings", "tag": "Code", "who": WHO, "at": at,
                              "text": f"No row from the first reader matches this event. {AGREEMENT_NOTE}"})
         new_rows.append(row)
     return rows, new_rows
@@ -208,7 +213,7 @@ def _uncheckable_row(index: int, ev: dict, source: dict | None, reading: dict, s
         "reason": f"{ONLY_REASON} The page was not captured, so no check could run on it.", "sample": False,
         "checks": [],
         "trail": [*_instructions_steps(reading, at), _model_step(ev, share, at),
-                  {"step": "Compared", "tag": "Code", "who": WHO, "at": at,
+                  {"step": "Compared the two readings", "tag": "Code", "who": WHO, "at": at,
                    "text": f"No row from the first reader matches this event, and the page was not captured, so no "
                            f"check ran. {AGREEMENT_NOTE}"}],
     }

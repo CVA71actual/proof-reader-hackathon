@@ -22,7 +22,7 @@ from runs import build_entry, compare, prices
 from runs.state import current_state
 from server import jobs
 from server.app import create_app
-from tests.conftest import FIXTURES, REPO
+from tests.conftest import FIXTURES, REPO, without_trails
 from tests.test_cost_and_words import LEGACY_PRICES_BEFORE_2026_10_29
 from tests.test_run_controls import FakeReader
 
@@ -216,9 +216,11 @@ def test_two_readers_that_agree_change_nothing_and_say_agreement_is_not_a_check(
     assert [(r["status"], r["group"]) for r in run["rows"]] == [(r["status"], r["group"]) for r in plain["rows"]]
     assert all("disagreement" not in r for r in run["rows"])
     for row in run["rows"]:
-        steps = [(t["step"], t["tag"], t["who"]) for t in row["trail"][-3:]]
-        assert steps == [("Instructions sent to the second reader", "Code", "capture.second_reader"),
-                         ("Second reading", "Model", "Muse Spark Open"), ("Compared", "Code", "runs.compare")]
+        steps = [(t["step"], t["tag"], t["who"]) for t in row["trail"][-4:]]
+        assert steps == [("Sent the page image to Muse Spark Open", "Code", "capture.second_reader"),
+                         ("Instructions sent to the second reader", "Code", "capture.second_reader"),
+                         ("Second reading", "Model", "Muse Spark Open"),
+                         ("Compared the two readings", "Code", "runs.compare")]
         assert "Agreement is not a check" in row["trail"][-1]["text"]
         model_step = row["trail"][-2]
         assert model_step["tokens"]["prompt"] > 0 and model_step["cost_usd"] > 0
@@ -241,8 +243,8 @@ def test_the_trail_says_what_the_second_reader_was_given(runs_dir):
     _, rid = start(runs_dir, FakeReader(), FakeSecond())
     for row in run_of(runs_dir, rid)["rows"]:
         steps = {t["step"]: t for t in row["trail"]}
-        assert steps["Second reader input"]["text"] == compare.INPUT_WORDS["image"]
-        assert "does not depend on the text layer" in steps["Second reader input"]["text"]
+        assert steps["Sent the page image to Muse Spark Open"]["text"] == compare.INPUT_WORDS["image"]
+        assert "does not depend on the text layer" in steps["Sent the page image to Muse Spark Open"]["text"]
         assert steps["Instructions sent to the second reader"]["text"] == read_events.build_image_prompt(
             load_entry(PIN))
 
@@ -263,7 +265,7 @@ def test_an_unreadable_image_answer_is_followed_once_by_the_words_as_a_fallback(
                                            "input": "image_and_words"}
     assert run["run"]["turn_count"] == 3, "the fallback is its own counted turn"
     row = run["rows"][0]
-    assert next(t for t in row["trail"] if t["step"] == "Second reader input")["text"] == \
+    assert next(t for t in row["trail"] if t["step"] == "Sent the page image and its words to Muse Spark Open")["text"] == \
         compare.INPUT_WORDS["image_and_words"]
 
 
@@ -297,8 +299,8 @@ def test_a_disagreement_on_the_date_makes_the_row_undecided_and_goes_to_a_person
     assert row["reason"].startswith("The two readers disagree on date: Muse Spark read 2027-01-01, Muse Spark Open "
                                     "read 2027-04-01.")
     compared = row["trail"][-1]
-    assert compared["step"] == "Compared" and "date: Muse Spark read 2027-01-01" in compared["text"]
-    assert "date_end: Muse Spark read 2027-03-31" in compared["text"]
+    assert compared["step"] == "Compared the two readings" and "date: Muse Spark read 2027-01-01" in compared["text"]
+    assert "end date: Muse Spark read 2027-03-31" in compared["text"]
     assert next(r for r in run["rows"] if r["date_text"] != "Q1 2027")["status"] == "matched", "the other row agrees"
     state = current_state(run, [])
     assert state["targets"][row["id"]]["group"] == "open" and state["unresolved"] == 1
@@ -414,10 +416,12 @@ def test_an_event_only_the_second_reader_found_is_an_open_row_with_its_own_check
                                                                            "keep it as an event, fix it, or remove it.")
     assert [c["name"] for c in row["checks"]] == ["quote_match", "selector_match", "date_match", "source_rule",
                                                   "type_match"]
-    assert [(t["step"], t["tag"], t["who"]) for t in row["trail"][:2]] == [
-        ("Instructions sent", "Code", "capture.second_reader"), ("Proposed", "Model", "Muse Spark Open")]
+    assert [(t["step"], t["tag"], t["who"]) for t in row["trail"][:4]] == [
+        ("Sent the page image to Muse Spark Open", "Code", "capture.second_reader"),
+        ("Instructions sent to the second reader", "Code", "capture.second_reader"),
+        ("Second reading", "Model", "Muse Spark Open"), ("Took the reading into the row", "Code", "runs.build_entry")]
     steps = [t["step"] for t in row["trail"]]
-    assert "Compared" in steps and steps[-1] == "Send-back result"     # its date text is not in its quote: sent back once
+    assert "Compared the two readings" in steps and steps[-1] == "Send-back result"     # its date text is not in its quote: sent back once
     state = current_state(run, [])
     assert state["targets"][row["id"]]["group"] == "open"
 
@@ -537,7 +541,7 @@ def test_the_committed_two_reader_run_is_what_the_builder_makes(tmp_path, monkey
     run = json.loads((RUNS / "ptgx-r5" / "run.json").read_text())
     fresh = build_entry.build_entry_run(reading, tmp_path / "ptgx-r5", finished_at=run["run"]["finished_at"],
                                         second_reading=second)
-    assert fresh == run
+    assert without_trails(fresh) == without_trails(run)
     RUN_SCHEMA.validate(run)
     assert run["run"]["label"] == "PTGX · two readers" and run["run"]["second_reader"]["status"] == "read"
     both = (reading["usage"]["prompt_tokens"] + second["usage"]["prompt_tokens"],

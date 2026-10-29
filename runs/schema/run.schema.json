@@ -316,7 +316,7 @@
         "trail": {
           "type": "array",
           "minItems": 1,
-          "prefixItems": [{"allOf": [{"$ref": "#/$defs/trail_step"}, {"properties": {"step": {"const": "Instructions sent"}}}]}],
+          "prefixItems": [{"allOf": [{"$ref": "#/$defs/trail_step"}, {"properties": {"step": {"anyOf": [{"const": "Instructions sent"}, {"pattern": "^Sent the page"}]}}}]}],
           "items": {"$ref": "#/$defs/trail_step"}
         }
       }

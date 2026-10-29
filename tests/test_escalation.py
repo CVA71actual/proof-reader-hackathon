@@ -148,8 +148,8 @@ def test_the_trigger_names_the_failed_check_or_the_disputed_field():
     split = {"checks": [], "disagreement": {"field": "event_type", "first_reader": "milestone",
                                             "second_reader": "trial_results"}}
     t = escalate.trigger(split)
-    assert t["kind"] == "disagreement" and t["label"] == "the two readers disagree on event_type"
-    assert "Muse Spark read milestone and Muse Spark Open read trial_results." == t["why"]
+    assert t["kind"] == "disagreement" and t["label"] == "the two readers disagree on event type"
+    assert "Muse Spark read milestone and Muse Spark Open read trial results." == t["why"]
 
 
 def test_the_region_is_a_full_width_band_around_the_quote(words_doc, tmp_path):
@@ -209,13 +209,10 @@ def test_a_row_that_fails_a_check_is_sent_to_wonder_and_takes_a_reread_that_pass
     assert row["reason"] == ("Re-read by Muse Wonder after Date read as written failed; its reading passed every "
                              "check.")
     steps = [(t["step"], t["tag"], t["who"]) for t in row["trail"] if t["step"] != "Checked"][-5:]
-    assert steps == [("Sent to Muse Wonder because Date read as written failed", "Code", "runs.escalate"),
+    assert steps[-4:] == [("Sent to Muse Wonder", "Code", "runs.escalate"),
                      ("Instructions sent to Muse Wonder", "Code", "capture.wonder"),
                      ("Muse Wonder", "Model", "Muse Wonder"),
-                     ("Escalation result", "Code", "runs.escalate")] or steps[-4:] == [
-        ("Sent to Muse Wonder because Date read as written failed", "Code", "runs.escalate"),
-        ("Instructions sent to Muse Wonder", "Code", "capture.wonder"),
-        ("Muse Wonder", "Model", "Muse Wonder"), ("Escalation result", "Code", "runs.escalate")]
+                     ("Escalation result", "Code", "runs.escalate")]
     model_step = next(t for t in row["trail"] if t["step"] == "Muse Wonder")
     assert model_step["tokens"]["prompt"] == 4000 and model_step["cost_usd"] > 0
     after_model = [t["step"] for t in row["trail"][row["trail"].index(model_step) + 1:]]

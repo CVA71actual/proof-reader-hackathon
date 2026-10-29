@@ -61,6 +61,15 @@ import copy
 from accuracy.types import primary_type, type_for_field
 from runs.prices import cost_per_kept_row_usd
 
+
+def _plain_field(field) -> str:
+    """A field name in words for a reason: event_type -> 'event type'."""
+    return str(field).replace("_", " ")
+
+
+def _plain_value(field, value):
+    return value.replace("_", " ") if field == "event_type" and isinstance(value, str) else value
+
 GROUPS = ("kept", "corrected", "removed", "unverified", "open")
 ACTIONS = ("keep", "fix", "remove", "undo", "recheck")
 PERSON_ACTIONS = ("keep", "fix", "remove", "undo")
@@ -145,7 +154,7 @@ def _apply(base: dict, stack: list[dict]) -> dict:
                                "recheck": rc, "settles": settles, "checked": covered or settles,
                                "second_reader_value": takes_second, **outcome})
             s["group"] = "corrected"
-            s["reason"] = note or f"Fixed by you: {fx['field']} changed from {fx['from']} to {fx['to']}."
+            s["reason"] = note or f"Fixed by you: {_plain_field(fx['field'])} changed from {_plain_value(fx['field'], fx['from'])} to {_plain_value(fx['field'], fx['to'])}."
             if rc is not None:
                 s["recheck"] = rc
                 if rc["result"] == "pass":
@@ -368,6 +377,6 @@ def _mistake_list(run: dict, states: dict) -> list[dict]:
             out.append({"id": None, "target": t, "type": primary_type(before) or type_for_field(f["field"]),
                         "caught_by": "second_reader" if f["second_reader_value"] else "person",
                         "model": models.get(t),
-                        "what_changed": f"{f['field']} changed from {f['from']} to {f['to']}.",
+                        "what_changed": f"{_plain_field(f['field'])} changed from {_plain_value(f['field'], f['from'])} to {_plain_value(f['field'], f['to'])}.",
                         "recorded_in": "decisions"})
     return out

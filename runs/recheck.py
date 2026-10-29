@@ -57,7 +57,7 @@ def page_not_captured(page_number) -> str:
 
 
 def uncovered_reason(field: str) -> str:
-    return f"No check compares {field}; the fix is recorded but not demonstrated."
+    return f"No check compares {field.replace('_', ' ')}; the fix is recorded but not demonstrated."
 
 
 def _not_captured(result: CheckResult, page_number) -> CheckResult:

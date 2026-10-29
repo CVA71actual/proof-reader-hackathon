@@ -173,7 +173,7 @@ def test_the_note_goes_in_under_a_fixed_heading_and_changes_no_check(runs_dir):
                for checks in _check_summary(rb))
     assert [r["status"] for r in ra["rows"]] == [r["status"] for r in rb["rows"]]
     # the exact text sent, note included, is the run's first trail step
-    assert rb["rows"][0]["trail"][0]["text"] == prompt
+    assert next(t for t in rb["rows"][0]["trail"] if t["step"] == "Instructions sent")["text"] == prompt
 
 
 def test_the_note_reaches_the_table_reader_too(runs_dir):

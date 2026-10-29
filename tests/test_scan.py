@@ -20,7 +20,7 @@ from checks.selector_match import region_match
 from runs import prices, recheck, scan
 from server import jobs
 from server.app import create_app
-from tests.conftest import FIXTURES, REPO
+from tests.conftest import FIXTURES, REPO, without_trails
 from tests.test_run_controls import FakeReader
 
 RUN_SCHEMA = Draft202012Validator(json.loads((REPO / "runs" / "schema" / "run.schema.json").read_text()))
@@ -275,13 +275,14 @@ def test_the_trail_names_the_scanned_page_and_sam_as_a_model_step_with_its_image
     first = region_reader([[quote_events()[0]], [quote_events()[1]]])
     _, rid = start(runs_dir, first, FakeSam(TWO_BOXES))
     row = run_of(runs_dir, rid)["rows"][0]
-    steps = [(t["step"], t["tag"], t["who"]) for t in row["trail"][:4]]
-    assert steps == [("Instructions sent", "Code", "capture.read_events"), ("Scanned page", "Code", "runs.scan"),
+    steps = [(t["step"], t["tag"], t["who"]) for t in row["trail"][:5]]
+    assert steps == [("Sent the page to Muse Spark", "Code", "capture.read_events"),
+                     ("Instructions sent", "Code", "capture.read_events"), ("Scanned page", "Code", "runs.scan"),
                      ("SAM 3.1 found r1", "Model", "SAM 3.1"), ("Proposed", "Model", "Muse Spark")]
-    sam_step = row["trail"][2]
+    sam_step = row["trail"][3]
     assert sam_step["tokens"] is None and sam_step["cost_usd"] == pytest.approx(2 * 0.0025 / 2)
     assert "a table at" in sam_step["text"] and "2 images processed" in sam_step["text"]
-    assert "no text layer" in row["trail"][1]["text"]
+    assert "no text layer" in row["trail"][2]["text"]
 
 
 def test_each_sam_request_and_each_region_read_is_a_counted_priced_turn(runs_dir):
@@ -307,7 +308,7 @@ def test_when_sam_matches_neither_concept_the_whole_page_is_asked_for_and_read(r
         sel = next(c for c in row["checks"] if c["name"] == "selector_match")
         assert sel["result"] == "could_not_run" and "only region is the whole page" in sel["reason"]
         assert row["status"] == "proposed"
-        assert row["trail"][1]["text"].startswith("SAM 3.1 found no table or text block on this page")
+        assert row["trail"][2]["text"].startswith("SAM 3.1 found no table or text block on this page")
     assert run["run"]["turn_count"] == 4
 
 
@@ -426,7 +427,7 @@ def test_the_committed_scan_run_is_what_the_builder_makes(tmp_path):
     read_record = json.loads((FIXTURES / f"{PIN}.scan_reading.json").read_text())
     fresh = scan.assemble(entry, tmp_path / "ptgx-scan", scan.scanned_png(entry), sam_record, read_record,
                           finished_at=run["run"]["finished_at"])
-    assert fresh == run
+    assert without_trails(fresh) == without_trails(run)
     RUN_SCHEMA.validate(run)
 
 

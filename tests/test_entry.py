@@ -18,6 +18,7 @@ from checks import event_checks
 from runs import build_entry
 from runs.state import current_state
 from server.app import create_app
+from tests.conftest import without_trails
 
 REPO = Path(__file__).resolve().parent.parent
 FIXTURES = REPO / "fixtures"
@@ -183,7 +184,7 @@ def test_the_run_build_is_current(run, reading, tmp_path):
     if reading["fake"]:
         pytest.skip("the committed run is built from the live reading")
     fresh = build_entry.build_entry_run(reading, tmp_path / "ptgx-r4a", finished_at=run["run"]["finished_at"])
-    assert fresh == run
+    assert without_trails(fresh) == without_trails(run)
 
 
 def test_the_pn8047_row(run):

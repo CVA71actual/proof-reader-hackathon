@@ -142,10 +142,43 @@ def _same_box(a, b, tol: float = 0.5) -> bool:
     return bool(b) and len(b) == 4 and all(abs(x - y) <= tol for x, y in zip(a, b))
 
 
+FIELD_WORDS = {"event_type": "event type", "date_text": "date text", "date_end": "end date", "word_ids": "word list"}
+
+
+def plain_field(field: str) -> str:
+    """A row field's name in words for a trail text: event_type -> 'event type'."""
+    return FIELD_WORDS.get(field, str(field).replace("_", " "))
+
+
+def plain_type(event_type) -> str:
+    """An event type in words: regulatory_decision -> 'regulatory decision'."""
+    return str(event_type).replace("_", " ") if event_type else "unknown"
+
+
+def plain_value(field: str, value):
+    """A field's value for a trail text: event types as words, anything else as it is."""
+    return plain_type(value) if field == "event_type" and isinstance(value, str) else value
+
+
 def when(row: dict) -> str:
+    """The date for a trail text. A period is shown as the source wrote it ('Q1 2027'), never as the two dates the
+    code worked out from it."""
+    if row.get("date_end") and row.get("date_text"):
+        return row["date_text"]
     if row["date"] and row.get("date_end"):
         return f"{row['date']} to {row['date_end']}"
     return row["date"] or row["date_text"] or "no date"
+
+
+def sent_text(model_name: str, reading: dict) -> str:
+    """The step name for what the code sent the model: the page, or for a reader that got only the image (or the
+    image and the words) say so."""
+    got = reading.get("input")
+    if got == "image":
+        return f"Sent the page image to {model_name}"
+    if got == "image_and_words":
+        return f"Sent the page image and its words to {model_name}"
+    return f"Sent the page to {model_name}"
 
 
 def row_reason(status: str, results: list, row: dict) -> str:
@@ -167,7 +200,7 @@ def row_reason(status: str, results: list, row: dict) -> str:
 
 def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict, at: str,
               share: tuple[int | None, int | None, int] = (None, None, 1), model_name: str = MUSE_SPARK,
-              instructions_who: str = READER) -> dict:
+              instructions_who: str = READER, second_reader: bool = False) -> dict:
     """`share` is this row's part of the one call's tokens: (prompt, completion, rows the call proposed).
     `model_name`: the model that proposed it (the second reader's rows are built by the same function)."""
     words = words_doc["words"]
@@ -196,19 +229,27 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
     }
     reader = "fake reading (no model called)" if fake else model_name
     prompt_tokens = (reading.get("usage") or {}).get("prompt_tokens")
-    trail = [{"step": "Instructions sent", "tag": "Code", "who": instructions_who, "text": reading["prompt_text"], "at": at,
-              "tokens": ({"prompt": prompt_tokens, "completion": None} if isinstance(prompt_tokens, int) and not fake
-                         else None)}]
+    trail = []
+    if not fake:    # the code that routes: one actor per step, so the page going out is its own Code step
+        trail.append({"step": sent_text(model_name, reading), "tag": "Code", "who": instructions_who, "at": at,
+                      "text": f"Code chose what {model_name} would read and sent it, with the instructions below."})
+    trail.append({"step": "Instructions sent to the second reader" if second_reader else "Instructions sent",
+                  "tag": "Code", "who": instructions_who, "text": reading["prompt_text"], "at": at,
+                  "tokens": ({"prompt": prompt_tokens, "completion": None} if isinstance(prompt_tokens, int) and not fake
+                             else None)})
     if fake:
         trail.append({"step": "Proposed", "tag": "Code", "who": "capture.read_events",
                       "text": f"FAKE: built by code from the words, no model called. {row['ticker']} "
-                              f"{row['event_type']} on {when(row)}: “{quote}”", "at": at})
+                              f"{plain_type(row['event_type'])} on {when(row)}: “{quote}”", "at": at})
     else:
-        trail.append({"step": "Proposed", "tag": "Model", "who": model_name,
-                      "text": f"{row['ticker']} {row['program'] or ''} {row['event_type']} on "
+        trail.append({"step": "Second reading" if second_reader else "Proposed", "tag": "Model", "who": model_name,
+                      "text": f"{row['ticker']} {row['program'] or ''} {plain_type(row['event_type'])} on "
                               f"{when({**row, 'date_text': printed})}, printed as “{printed}”: “{quote}”"
                               .replace("  ", " "), "at": at,
                       **prices.model_cost_fields(model_name, share[0], share[1], call_rows=share[2])})
+        trail.append({"step": "Took the reading into the row", "tag": "Code", "who": BUILDER, "at": at,
+                      "text": "Copied the reader's answer for this row into the row as a proposal, with its box from "
+                              "the reader or from the words it named. Nothing is checked yet."})
     if row["date_text"] != printed:
         trail.append({"step": "Tidied", "tag": "Code", "who": BUILDER,
                       "text": f"Date text “{printed}” kept as “{row['date_text']}”: the "

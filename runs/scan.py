@@ -191,7 +191,8 @@ def assemble_rows(reads: list[dict], source: dict, sam_calls: list[dict], at: st
                       f"requests); this row's share of the cost is recorded."),
              "tokens": None, "cost_usd": per_row},
         ]
-        row["trail"][1:1] = steps
+        at_instructions = next(i for i, t in enumerate(row["trail"]) if t["step"] == "Instructions sent")
+        row["trail"][at_instructions + 1:at_instructions + 1] = steps
         row["reason"] = (f"{row['reason']} The page is a scan: there is no text layer, so nothing printed was compared "
                          f"with this row.") if row["status"] != "failed" else row["reason"]
     return rows

@@ -172,7 +172,8 @@ def test_table_instructions_are_the_exact_prompt(name):
 
 def test_every_trail_starts_with_the_exact_instructions(sample):
     for row in sample["rows"]:
-        first = row["trail"][0]
+        sent, first = row["trail"][:2]
+        assert sent["step"] == "Sent the page to Muse Spark" and sent["tag"] == "Code"
         assert first["step"] == "Instructions sent"
         assert first["text"] == build_sample.SAMPLE_EVENT_INSTRUCTIONS
 
@@ -348,10 +349,10 @@ def screen_text(run):
         yield t["model"]["name"]
     for r in run["rows"]:
         yield r["reason"]
-        for step in r["trail"][1:]:
+        for step in r["trail"]:
             yield step["step"]
-            yield step["text"]
-        yield r["trail"][0]["step"]
+            if not step["step"].startswith("Instructions sent"):     # the exact instructions sent are not screen words
+                yield step["text"]
     for m in run["mistakes"]:
         yield m["what_changed"]
     for x in run["exclusions"]:

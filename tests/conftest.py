@@ -31,3 +31,9 @@ def find_word(words, text):
 def box_of(*ws, pad=0.5):
     return [min(w["x0"] for w in ws) - pad, min(w["y0"] for w in ws) - pad,
             max(w["x1"] for w in ws) + pad, max(w["y1"] for w in ws) + pad]
+
+
+def without_trails(run: dict) -> dict:
+    """A run with each row's trail left out. The committed real runs are not rewritten when the code's trail steps
+    change (Job 22), so their trails are older than the builder's; everything else about them must still match."""
+    return {**run, "rows": [{k: v for k, v in r.items() if k != "trail"} for r in run["rows"]]}

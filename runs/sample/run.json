@@ -5830,6 +5830,13 @@
    ],
    "trail": [
     {
+     "step": "Sent the page to Muse Spark",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Code chose what Muse Spark would read and sent it, with the instructions below.",
+     "at": "2026-10-27T15:01:00+00:00"
+    },
+    {
      "step": "Instructions sent",
      "tag": "Code",
      "who": "runs.build_sample",
@@ -5844,13 +5851,20 @@
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
-     "text": "SMPL1 trial_readout on 2027-03-12: “Topline results from the Phase 3 STAR-1 trial are expected on March 12, 2027.”",
+     "text": "SMPL1 trial readout on 2027-03-12: “Topline results from the Phase 3 STAR-1 trial are expected on March 12, 2027.”",
      "at": "2026-10-27T15:01:05+00:00",
      "tokens": {
       "prompt": 1200,
       "completion": 150
      },
      "cost_usd": 0.002138
+    },
+    {
+     "step": "Took the reading into the row",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Copied the reader's answer for this row into the row as a proposal. Nothing is checked yet.",
+     "at": "2026-10-27T15:01:06+00:00"
     },
     {
      "step": "Checked",
@@ -6033,6 +6047,13 @@
    ],
    "trail": [
     {
+     "step": "Sent the page to Muse Spark",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Code chose what Muse Spark would read and sent it, with the instructions below.",
+     "at": "2026-10-27T15:02:00+00:00"
+    },
+    {
      "step": "Instructions sent",
      "tag": "Code",
      "who": "runs.build_sample",
@@ -6047,13 +6068,20 @@
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
-     "text": "SMPL1 trial_results on 2027-07-01 to 2027-09-30: “The company plans to present 52-week data in Q3 2027.”",
+     "text": "SMPL1 trial results on Q3 2027: “The company plans to present 52-week data in Q3 2027.”",
      "at": "2026-10-27T15:02:05+00:00",
      "tokens": {
       "prompt": 1200,
       "completion": 150
      },
      "cost_usd": 0.002138
+    },
+    {
+     "step": "Took the reading into the row",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Copied the reader's answer for this row into the row as a proposal. Nothing is checked yet.",
+     "at": "2026-10-27T15:02:06+00:00"
     },
     {
      "step": "Checked",
@@ -6240,6 +6268,13 @@
    ],
    "trail": [
     {
+     "step": "Sent the page to Muse Spark",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Code chose what Muse Spark would read and sent it, with the instructions below.",
+     "at": "2026-10-27T15:03:00+00:00"
+    },
+    {
      "step": "Instructions sent",
      "tag": "Code",
      "who": "runs.build_sample",
@@ -6254,13 +6289,20 @@
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
-     "text": "SMPL2 regulatory_decision on 2027-06-03: “The FDA has set a target action date of June 30, 2027.”",
+     "text": "SMPL2 regulatory decision on 2027-06-03: “The FDA has set a target action date of June 30, 2027.”",
      "at": "2026-10-27T15:03:05+00:00",
      "tokens": {
       "prompt": 1200,
       "completion": 150
      },
      "cost_usd": 0.002138
+    },
+    {
+     "step": "Took the reading into the row",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Copied the reader's answer for this row into the row as a proposal. Nothing is checked yet.",
+     "at": "2026-10-27T15:03:06+00:00"
     },
     {
      "step": "Checked",
@@ -6469,7 +6511,7 @@
      "label": "Event type matches the quote",
      "kind": "Code",
      "result": "not_needed",
-     "reason": "The event type investor_day has no fixed words to compare the quote with.",
+     "reason": "The event type investor day has no fixed words to compare the quote with.",
      "compared": {
       "looked_for": "investor_day",
       "found": null
@@ -6481,6 +6523,13 @@
     }
    ],
    "trail": [
+    {
+     "step": "Sent the page to Muse Spark",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Code chose what Muse Spark would read and sent it, with the instructions below.",
+     "at": "2026-10-27T15:04:00+00:00"
+    },
     {
      "step": "Instructions sent",
      "tag": "Code",
@@ -6496,13 +6545,20 @@
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
-     "text": "SMPL2 investor_day on 2027-09-15: “Our partner Samplebio Three will host its investor day on September 15, 2027.”",
+     "text": "SMPL2 investor day on 2027-09-15: “Our partner Samplebio Three will host its investor day on September 15, 2027.”",
      "at": "2026-10-27T15:04:05+00:00",
      "tokens": {
       "prompt": 1200,
       "completion": 150
      },
      "cost_usd": 0.002138
+    },
+    {
+     "step": "Took the reading into the row",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Copied the reader's answer for this row into the row as a proposal. Nothing is checked yet.",
+     "at": "2026-10-27T15:04:06+00:00"
     },
     {
      "step": "Checked",
@@ -6536,7 +6592,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "type_match",
-     "text": "Event type matches the quote: not needed. The event type investor_day has no fixed words to compare the quote with.",
+     "text": "Event type matches the quote: not needed. The event type investor day has no fixed words to compare the quote with.",
      "at": "2026-10-27T15:05:14+00:00"
     },
     {
@@ -6681,7 +6737,7 @@
      "label": "Event type matches the quote",
      "kind": "Code",
      "result": "not_needed",
-     "reason": "The event type advisory_committee has no fixed words to compare the quote with.",
+     "reason": "The event type advisory committee has no fixed words to compare the quote with.",
      "compared": {
       "looked_for": "advisory_committee",
       "found": null
@@ -6693,6 +6749,13 @@
     }
    ],
    "trail": [
+    {
+     "step": "Sent the page to Muse Spark",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Code chose what Muse Spark would read and sent it, with the instructions below.",
+     "at": "2026-10-27T15:05:00+00:00"
+    },
     {
      "step": "Instructions sent",
      "tag": "Code",
@@ -6708,13 +6771,20 @@
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
-     "text": "SMPL1 regulatory_decision on 2027-05-04: “An FDA advisory committee meeting is scheduled for May 4, 2027.”",
+     "text": "SMPL1 regulatory decision on 2027-05-04: “An FDA advisory committee meeting is scheduled for May 4, 2027.”",
      "at": "2026-10-27T15:05:05+00:00",
      "tokens": {
       "prompt": 1200,
       "completion": 150
      },
      "cost_usd": 0.002138
+    },
+    {
+     "step": "Took the reading into the row",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Copied the reader's answer for this row into the row as a proposal. Nothing is checked yet.",
+     "at": "2026-10-27T15:05:06+00:00"
     },
     {
      "step": "Checked",
@@ -6748,7 +6818,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "type_match",
-     "text": "Event type matches the quote: not needed. The event type advisory_committee has no fixed words to compare the quote with.",
+     "text": "Event type matches the quote: not needed. The event type advisory committee has no fixed words to compare the quote with.",
      "at": "2026-10-27T15:06:14+00:00"
     },
     {
@@ -6767,7 +6837,7 @@
      "step": "Changed by you",
      "tag": "Person",
      "who": "person",
-     "text": "Event type changed from regulatory_decision to advisory_committee.",
+     "text": "Event type changed from regulatory decision to advisory committee.",
      "at": "2026-10-27T15:07:00+00:00"
     },
     {
@@ -6802,7 +6872,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "type_match",
-     "text": "Event type matches the quote: not needed. The event type advisory_committee has no fixed words to compare the quote with.",
+     "text": "Event type matches the quote: not needed. The event type advisory committee has no fixed words to compare the quote with.",
      "at": "2026-10-27T15:07:14+00:00"
     }
    ]
@@ -6935,6 +7005,13 @@
    ],
    "trail": [
     {
+     "step": "Sent the page to Muse Spark",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Code chose what Muse Spark would read and sent it, with the instructions below.",
+     "at": "2026-10-27T15:06:00+00:00"
+    },
+    {
      "step": "Instructions sent",
      "tag": "Code",
      "who": "runs.build_sample",
@@ -6949,13 +7026,20 @@
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
-     "text": "SMPL4 trial_readout on 2027-04-20: “SMPL4 Phase 2 data readout April 20, 2027”",
+     "text": "SMPL4 trial readout on 2027-04-20: “SMPL4 Phase 2 data readout April 20, 2027”",
      "at": "2026-10-27T15:06:05+00:00",
      "tokens": {
       "prompt": 1200,
       "completion": 150
      },
      "cost_usd": 0.002138
+    },
+    {
+     "step": "Took the reading into the row",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Copied the reader's answer for this row into the row as a proposal. Nothing is checked yet.",
+     "at": "2026-10-27T15:06:06+00:00"
     },
     {
      "step": "Checked",
@@ -7133,6 +7217,13 @@
    ],
    "trail": [
     {
+     "step": "Sent the page to Muse Spark",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Code chose what Muse Spark would read and sent it, with the instructions below.",
+     "at": "2026-10-27T15:07:00+00:00"
+    },
+    {
      "step": "Instructions sent",
      "tag": "Code",
      "who": "runs.build_sample",
@@ -7147,13 +7238,20 @@
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
-     "text": "SMPL6 trial_readout on 2027-07-09: “Samplebio Six will report final results on July 9, 2027.”",
+     "text": "SMPL6 trial readout on 2027-07-09: “Samplebio Six will report final results on July 9, 2027.”",
      "at": "2026-10-27T15:07:05+00:00",
      "tokens": {
       "prompt": 1200,
       "completion": 150
      },
      "cost_usd": 0.002138
+    },
+    {
+     "step": "Took the reading into the row",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Copied the reader's answer for this row into the row as a proposal. Nothing is checked yet.",
+     "at": "2026-10-27T15:07:06+00:00"
     },
     {
      "step": "Checked",
@@ -7331,6 +7429,13 @@
    ],
    "trail": [
     {
+     "step": "Sent the page to Muse Spark",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Code chose what Muse Spark would read and sent it, with the instructions below.",
+     "at": "2026-10-27T15:08:00+00:00"
+    },
+    {
      "step": "Instructions sent",
      "tag": "Code",
      "who": "runs.build_sample",
@@ -7345,13 +7450,20 @@
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
-     "text": "SMPL6 regulatory_decision on 2027-08-02: “Samplebio Six expects to file its application on August 2, 2027.”",
+     "text": "SMPL6 regulatory decision on 2027-08-02: “Samplebio Six expects to file its application on August 2, 2027.”",
      "at": "2026-10-27T15:08:05+00:00",
      "tokens": {
       "prompt": 1200,
       "completion": 150
      },
      "cost_usd": 0.002138
+    },
+    {
+     "step": "Took the reading into the row",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Copied the reader's answer for this row into the row as a proposal. Nothing is checked yet.",
+     "at": "2026-10-27T15:08:06+00:00"
     },
     {
      "step": "Checked",
@@ -7392,7 +7504,7 @@
      "step": "Second reading",
      "tag": "Model",
      "who": "Muse Spark Open",
-     "text": "Read the event type as regulatory_submission, not regulatory_decision.",
+     "text": "Read the event type as regulatory submission, not regulatory decision.",
      "at": "2026-10-27T15:09:40+00:00",
      "tokens": {
       "prompt": 1200,
@@ -7499,6 +7611,13 @@
     }
    ],
    "trail": [
+    {
+     "step": "Sent the page to Muse Spark",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Code chose what Muse Spark would read and sent it, with the instructions below.",
+     "at": "2026-10-27T15:09:00+00:00"
+    },
     {
      "step": "Instructions sent",
      "tag": "Code",
@@ -7664,6 +7783,13 @@
    ],
    "trail": [
     {
+     "step": "Sent the page to Muse Spark",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Code chose what Muse Spark would read and sent it, with the instructions below.",
+     "at": "2026-10-27T15:10:00+00:00"
+    },
+    {
      "step": "Instructions sent",
      "tag": "Code",
      "who": "runs.build_sample",
@@ -7685,6 +7811,13 @@
       "completion": 150
      },
      "cost_usd": 0.002138
+    },
+    {
+     "step": "Took the reading into the row",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Copied the reader's answer for this row into the row as a proposal. Nothing is checked yet.",
+     "at": "2026-10-27T15:10:06+00:00"
     },
     {
      "step": "Checked",
@@ -7857,6 +7990,13 @@
    ],
    "trail": [
     {
+     "step": "Sent the page to Muse Spark",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Code chose what Muse Spark would read and sent it, with the instructions below.",
+     "at": "2026-10-27T15:11:00+00:00"
+    },
+    {
      "step": "Instructions sent",
      "tag": "Code",
      "who": "runs.build_sample",
@@ -7871,13 +8011,20 @@
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
-     "text": "SMPL1 conference_presentation on later this year: “Samplebio One will present at a medical meeting later this year.”",
+     "text": "SMPL1 conference presentation on later this year: “Samplebio One will present at a medical meeting later this year.”",
      "at": "2026-10-27T15:11:05+00:00",
      "tokens": {
       "prompt": 1200,
       "completion": 150
      },
      "cost_usd": 0.002138
+    },
+    {
+     "step": "Took the reading into the row",
+     "tag": "Code",
+     "who": "runs.build_sample",
+     "text": "Copied the reader's answer for this row into the row as a proposal. Nothing is checked yet.",
+     "at": "2026-10-27T15:11:06+00:00"
     },
     {
      "step": "Checked",

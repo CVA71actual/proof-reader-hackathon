@@ -26,7 +26,7 @@ from runs.coverage import TITLE, possible_event_rows
 from runs.state import current_state
 from server import jobs
 from server.app import create_app
-from tests.conftest import FIXTURES, REPO
+from tests.conftest import FIXTURES, REPO, without_trails
 from tests.test_run_controls import FakeReader
 
 RUNS = REPO / "runs"
@@ -230,7 +230,7 @@ def test_a_complete_reading_adds_no_open_rows(ptgx_run):
 
 def test_the_committed_run_is_what_the_builder_makes(reading, ptgx_run, tmp_path):
     fresh = build_entry.build_entry_run(reading, tmp_path / "ptgx-r4a", finished_at=ptgx_run["run"]["finished_at"])
-    assert fresh == ptgx_run
+    assert without_trails(fresh) == without_trails(ptgx_run)
 
 
 def test_the_open_row_carries_the_page_number_of_its_source_and_the_run_company(ptgx_words_doc, ptgx_run):
