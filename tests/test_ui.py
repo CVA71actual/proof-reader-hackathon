@@ -246,3 +246,21 @@ def test_fix_fields_include_program_and_indication():
     changed_fields = re.search(r"var FIELDS = \[(.*?)\];", js, re.S).group(1)
     for field in ("'program'", "'indication'"):
         assert field in changed_fields, f"What changed does not compare {field}"
+
+
+def test_u10_polish_is_wired():
+    js = (UI / "app.js").read_text()
+    html = (UI / "index.html").read_text()
+    css = (UI / "styles.css").read_text()
+    # the accuracy line from runs/<id>/accuracy.json, hidden when absent
+    for needle in ("accuracy.json", "ensureAccuracyLine", "audit-accuracy"):
+        assert needle in js or needle in html, needle
+    for word in ("Sealed set: ", "'values '", "'events '", "'planted '"):
+        assert word in js, word
+    # rendered_from: the note shows in the details pane too, not only the source meta bar
+    assert js.count("Page rendered by code from the filed HTML") >= 2
+    assert "rendnote" in js and ".rendnote" in css
+    # cost per kept row in the run card, hidden when the run recorded no spend
+    assert "runcard-cost" in html
+    assert "cost_per_kept_row_usd" in js
+    assert "cost per kept row" in js

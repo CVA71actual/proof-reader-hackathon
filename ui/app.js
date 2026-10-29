@@ -181,6 +181,7 @@
   var changedCache = null;  // {key, a, b, cards}
   var pending = false;      // a decision POST is in flight
   var decisionsCache = { id: null, lines: null };   // decisions.jsonl lines, for the trail's person step
+  var accuracyCache = { id: null, line: null, tried: false };   // runs/<id>/accuracy.json, one line for the audit header
 
   function needsAttention(t) {
     if (t.group === 'open' || t.group === 'unverified') return true;
@@ -224,6 +225,7 @@
     decisionsCache = { id: null, lines: null };
     changedCache = null;
     changedCountCache = null;
+    accuracyCache = { id: null, line: null, tried: false };
     return A.run(detail.id).then(function (body) {
       detail = { id: detail.id, run: body, state: body.state };
       renderShell();
@@ -334,6 +336,12 @@
     flag.hidden = !meta.sample;
     if (meta.sample) flag.textContent = 'Sample data — not real events · click to switch runs';
     else flag.textContent = 'Click to switch runs';
+    var cost = document.getElementById('runcard-cost');
+    var cpkr = detail.state.cost_per_kept_row_usd;
+    if (cpkr !== null && cpkr !== undefined) {
+      cost.textContent = 'cost per kept row ' + money(cpkr);
+      cost.hidden = false;
+    } else cost.hidden = true;
     document.getElementById('side-foot').textContent =
       (meta.sample ? 'Sample data — not real events · ' : '') + 'Muse Spark reads · Code checks';
     document.title = 'Proof Reader — ' + (meta.label || '');
@@ -382,11 +390,63 @@
       calSel = null;
       chgSel = null;
       changedCache = null;
+      accuracyCache = { id: null, line: null, tried: false };
       decisionsCache = { id: null, lines: null };
       renderShell();
       if (nav !== false) navigate({ runId: runId, screen: 'audit' });
       else render();
     }).catch(function () { toast('That run could not be read.'); });
+  }
+
+  // the sealed-set accuracy line (U10): reads runs/<id>/accuracy.json, the latest
+  // sealed scoring of this run, when the server serves it; hidden when absent
+  function accuracyLineFrom(acc) {
+    if (!acc || typeof acc !== 'object') return null;
+    function part(x) {
+      if (!x || typeof x !== 'object') return null;
+      var f = null, n = null;
+      ['found', 'scored', 'caught'].forEach(function (k) { if (x[k] !== null && x[k] !== undefined) f = x[k]; });
+      ['N', 'M', 'total'].forEach(function (k) { if (x[k] !== null && x[k] !== undefined) n = x[k]; });
+      return n !== null ? (f !== null ? f : '?') + '/' + n : null;
+    }
+    var v = part(acc.values) ||
+      (acc.table && acc.table.counts ? part({ found: acc.table.counts.found, N: acc.table.N }) : null);
+    var ev = part(acc.events) ||
+      (acc.events && acc.events.counts ? part({ found: acc.events.counts.found, M: acc.events.M }) : null);
+    var pl = part(acc.planted);
+    var bits = [];
+    if (v) bits.push('values ' + v);
+    if (ev) bits.push('events ' + ev);
+    if (pl) bits.push('planted ' + pl);
+    return bits.length ? 'Sealed set: ' + bits.join(' · ') : null;
+  }
+  function ensureAccuracyLine() {
+    var slot = document.getElementById('audit-accuracy');
+    if (!detail) return;
+    var id = detail.id;
+    if (accuracyCache.id === id && accuracyCache.tried) {
+      slot.hidden = !accuracyCache.line;
+      if (accuracyCache.line) slot.textContent = accuracyCache.line;
+      return;
+    }
+    accuracyCache = { id: id, line: null, tried: true };
+    slot.hidden = true;
+    var urls = ['/runs/' + encodeURIComponent(id) + '/accuracy.json',
+                '/api/runs/' + encodeURIComponent(id) + '/accuracy'];
+    (function probe(i) {
+      if (i >= urls.length) return;
+      fetch(urls[i]).then(function (r) {
+        if (!r.ok) return probe(i + 1);
+        return r.json().then(function (acc) {
+          var line = accuracyLineFrom(acc);
+          accuracyCache = { id: id, line: line, tried: true };
+          if (line && route && route.screen === 'audit') {
+            slot.textContent = line;
+            slot.hidden = false;
+          }
+        });
+      }).catch(function () { probe(i + 1); });
+    })(0);
   }
 
   // ---------------------------------------------------------------- audit
@@ -408,6 +468,7 @@
       ' · by the second reader: ' + st.mistakes.second_reader +
       ' · by a person: ' + st.mistakes.person +
       ' · Excluded: ' + (st.excluded.code + st.excluded.person);
+    ensureAccuracyLine();
 
     var ab = document.getElementById('attnbtn');
     ab.textContent = (audit.filter === 'ATTN' ? 'Showing: needs attention · ' : 'Needs attention · ') + st.unresolved;
@@ -647,6 +708,11 @@
                            page: 'p' + pp.page.page_number, valueId: row.id, back: opts.back || 'audit' });
       });
       kv('Source ', '', a);
+      if (src.rendered_from) {
+        sec2.append(el('div', 'rendnote',
+          'Page rendered by code from the filed HTML · SHA-256 ' +
+          String(src.rendered_from.sha256 || '').slice(0, 16) + '…'));
+      }
     }
     host.append(sec2);
 
