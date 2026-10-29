@@ -208,7 +208,13 @@
     return detail.run.rows.filter(function (r) { return needsAttention(rowTarget(r)); });
   }
   function decidedRows() {
-    return detail.run.rows.filter(function (r) { return rowTarget(r).decided_by_person; });
+    // Red Team round 7: a corrected row that still needs a person (re-check could
+    // not run, or the two readers still undecided) is waiting, not decided — it
+    // is listed once, under Waiting for you
+    return detail.run.rows.filter(function (r) {
+      var t = rowTarget(r);
+      return t.decided_by_person && !needsAttention(t);
+    });
   }
   function sourceOf(row) {
     var id = row.source_id;
@@ -1523,8 +1529,10 @@
     }
     judgmentSel = row.id;
     var t = rowTarget(row);
-    if (t.decided_by_person) judgmentDecidedPane(det, row, t);
-    else judgmentPendingPane(det, row, t);
+    // a corrected row that still needs a person gets the pending pane (Keep is
+    // the answer the server accepts), not the decided one (Undo only)
+    if (needsAttention(t)) judgmentPendingPane(det, row, t);
+    else judgmentDecidedPane(det, row, t);
 
     if (route.dialog) openDialog(row, route.dialog);
     else closeDialog();
@@ -1539,9 +1547,13 @@
     l1.append(el('span', 'tt', row.title || ''));
     l1.append(el('span', 'dt', (t.values && t.values.date_text) || row.date_text || ''));
     var l2 = el('div', 'l2');
-    l2.append(t.decided_by_person ? decidedBadge(t.group) : statusBadge(t.status));
+    if (t.decided_by_person && needsAttention(t)) {
+      l2.append(el('span', 'st st-corrected open', (DECIDED_BADGE[t.group] || 'Fixed by you') + ' · still open'));
+    } else {
+      l2.append(t.decided_by_person ? decidedBadge(t.group) : statusBadge(t.status));
+    }
     l2.append(el('span', 'mdl', 'by ' + (row.proposed_by || 'Model')));
-    if (t.reason && !t.decided_by_person) {
+    if (t.reason && (!t.decided_by_person || needsAttention(t))) {
       l2.append(el('span', 'fixline', t.reason.length > 72 ? t.reason.slice(0, 72) + '…' : t.reason));
     }
     b.append(l1, l2);
@@ -1561,11 +1573,33 @@
 
   function judgmentPendingPane(host, row, t) {
     clear(host);
-    detailsPane(host, row, { back: null });
+    // a row the person corrected earlier but that still needs a person: show the
+    // fix and its re-check outcome, then ask for the call again (Red Team round 7)
+    var correctedOpen = t.decided_by_person && needsAttention(t);
+    if (correctedOpen) {
+      var hd = el('div', 'sec');
+      hd.append(el('div', 'ttl', row.title || '(no title)'));
+      var banner = el('div', 'ba');
+      banner.append(el('b', null, (DECIDED_BADGE[t.group] || 'Fixed by you') + ' · still open'));
+      if (t.reason) {
+        var br1 = el('div');
+        br1.style.cssText = 'margin-top:6px;color:var(--sub);font-size:12.5px';
+        br1.textContent = t.reason;
+        banner.append(br1);
+      }
+      hd.append(banner);
+      host.append(hd);
+      host.append(correctedSection(row, t));
+      if (t.disagreement) host.append(disagreementSection(row, t));
+      host.append(checksSection(row, t));
+    } else {
+      detailsPane(host, row, { back: null });
+    }
     // decision area replaces the action row: append at the end
     var sec = el('div', 'sec');
     sec.append(el('h4', null, 'Your call'));
-    var note = noteField('qnote');
+    var note = el('textarea', 'note');
+    note.id = 'qnote';
     sec.append(el('div', null, ''), note);
     note.placeholder = 'Why you decided this… (optional for Keep, required for Remove)';
     var br = el('div', 'btnrow');
@@ -1583,16 +1617,27 @@
           'Kept as stated — the period stays, no day invented.');
       }));
     }
-    br.append(btn('btn', 'Fix…', function () {
+    br.append(btn('btn', correctedOpen ? 'Fix again…' : 'Fix…', function () {
       navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id, dialog: 'fix' });
     }));
     br.append(btn('btn danger', 'Remove…', function () {
       navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id, dialog: 'remove' });
     }));
+    if (correctedOpen) {
+      // the earlier fix is still on the row — offer to take it back (round 7:
+      // the pane must not be Undo-only, but Undo stays one of the offers)
+      br.append(btn('btn', 'Undo', function () {
+        postDecision(row.id, { target: row.id, action: 'undo', note: null }, 'Undone.');
+      }));
+    }
     sec.append(br);
     if (isPeriod) {
       sec.append(el('div', 'hint', '“Keep as stated” keeps “' +
         ((t.values && t.values.date_text) || row.date_text) + '” as a period — the calendar shows no invented day.'));
+    }
+    if (correctedOpen) {
+      sec.append(el('div', 'hint',
+        'Keep accepts the fixed value as it stands; Fix again changes it; Undo takes your fix back.'));
     }
     host.append(sec);
   }

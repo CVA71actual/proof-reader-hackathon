@@ -398,3 +398,106 @@ def test_u12_panel_footer_and_window_numbers():
     blank = _panel_text({"key": {"sealed": False}, "models": {}})
     assert "Unsealed (author key)" in blank and "sealed-set" not in blank
     assert "No accuracy scoring is saved for this run yet." in blank
+
+
+def _judgment_screen(row_id):
+    """The Judgment needed screen under the same mock-element harness as the redteam tests.
+
+    Two corrected rows still need a person (re-check could not run; two readers still
+    undecided), one kept row is fully decided. Returns (list text, detail pane text).
+    """
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "checkDot", "checkResultWord",
+             "needsAttention", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
+             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
+             "judgmentDecidedPane", "renderJudgment")
+    rows = [
+        {"id": "r-cnr", "title": "ROW-COULD-NOT-RUN", "ticker": "ACME", "proposed_by": "Muse Spark",
+         "checks": [], "date_text": "Q3 2027"},
+        {"id": "r-und", "title": "ROW-STILL-UNDECIDED", "ticker": "ACME", "proposed_by": "Muse Spark",
+         "checks": [], "date_text": "Q3 2027"},
+        {"id": "r-kept", "title": "ROW-KEPT", "ticker": "ACME", "proposed_by": "Muse Spark",
+         "checks": [], "date_text": "August 5, 2026"},
+    ]
+    state = {"targets": {
+        "r-cnr": {"group": "corrected", "status": "proposed", "decided_by_person": True,
+                  "needs_recheck": False,
+                  "recheck": {"result": "could_not_run", "reason": "The quote is not on the page."},
+                  "values": {"date_text": "Q3 2027"},
+                  "fixes": [{"field": "date_text", "from": "today", "to": "Q3 2027"}],
+                  "reason": "Re-check could not run."},
+        "r-und": {"group": "corrected", "status": "undecided", "decided_by_person": True,
+                  "needs_recheck": False, "recheck": {"result": "pass"},
+                  "values": {"event_type": "filing"}, "fixes": [],
+                  "reason": "The two readers still disagree."},
+        "r-kept": {"group": "kept", "status": "matched", "decided_by_person": True,
+                   "needs_recheck": False, "recheck": None,
+                   "values": {"date_text": "August 5, 2026"}, "fixes": [], "reason": "Kept."},
+    }, "exclusions": [], "mistake_list": []}
+    detail = {"id": "run", "run": {"rows": rows, "mistakes": [], "sources": [], "run": {"label": "probe"}},
+              "state": state}
+    prelude = """
+var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed',
+                     unreadable: 'unreadable', undecided: 'undecided' };
+var CHECK_WORDS = { pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed' };
+var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };
+var FIELD_WORDS = { date_text: 'Date as printed', date: 'Date', event_type: 'Event type' };
+var NO_ERROR = 'The value already passed its checks before the edit.';
+var judgmentSel = null;
+var route = { screen: 'judgment', rowId: null, dialog: null };
+function navigate() {}
+function postDecision() {}
+function exclusionFor() { return null; }
+function closeDialog() {}
+function openDialog() {}
+function seeTheCheck() { return { textContent: '', children: [] }; }
+"""
+    script = prelude + "\n".join(_grab_fn(js, n) for n in names) + f"""
+var detail = {json.dumps(detail)};
+route.rowId = {json.dumps(row_id)};
+function textOf(node, out) {{
+  out = out || [];
+  if (node && node.textContent) out.push(node.textContent);
+  ((node && node.children) || []).forEach(function (c) {{ textOf(c, out); }});
+  return out.join('\\n');
+}}
+function make() {{
+  return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, hidden: false,
+    append: function () {{ for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); }},
+    addEventListener: function () {{}}, querySelector: function () {{ return null; }} }};
+}}
+var nodes = {{}};
+global.document = {{
+  createElement: function () {{ return make(); }},
+  getElementById: function (id) {{ if (!nodes[id]) nodes[id] = make(); return nodes[id]; }}
+}};
+renderJudgment();
+console.log(JSON.stringify({{ rows: textOf(nodes['judgment-rows']), det: textOf(nodes['judgment-det']) }}));
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stderr or got.stdout
+    out = json.loads(got.stdout)
+    return out["rows"], out["det"]
+
+
+def test_u13_corrected_open_row_waits_once_and_offers_keep():
+    # Red Team round 7: a corrected row that still needs a person sits in Waiting
+    # for you once (not also under Decided by you) and the pane offers Keep,
+    # Fix again, Remove and Undo.
+    js = (UI / "app.js").read_text()
+    assert "still open" in js
+    waiting, det = _judgment_screen("r-cnr")
+    cut = waiting.index("Decided by you")
+    wait_list, decided_list = waiting[:cut], waiting[cut:]
+    assert "ROW-COULD-NOT-RUN" in wait_list and "ROW-STILL-UNDECIDED" in wait_list
+    assert "ROW-KEPT" not in wait_list
+    assert "Fixed by you · still open" in wait_list
+    assert "ROW-KEPT" in decided_list
+    assert "ROW-COULD-NOT-RUN" not in decided_list and "ROW-STILL-UNDECIDED" not in decided_list
+    for word in ("Keep", "Fix again", "Remove", "Undo", "could not run"):
+        assert word in det, word
+    _, und = _judgment_screen("r-und")
+    for word in ("Keep", "Fix again", "Remove", "Undo"):
+        assert word in und, word
