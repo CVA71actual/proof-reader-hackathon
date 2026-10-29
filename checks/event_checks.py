@@ -24,6 +24,7 @@ import re
 from datetime import date
 
 from checks.common import COULD_NOT_RUN, FAIL, NOT_NEEDED, PASS, CheckResult, join_words, normalize
+from checks.selector_match import PICTURE_REASON, _valid_box, is_picture_at
 
 QUOTE_ID, QUOTE_LABEL = "quote_match", "Quote found on page"
 DATE_ID, DATE_LABEL = "date_match", "Date read as written"
@@ -44,8 +45,10 @@ def _norm_quote(text: str | None) -> str:
     return s
 
 
-def quote_match(quote: str | None, words: list[dict]) -> CheckResult:
-    """Pass if the quote equals some run of consecutive page words (any length)."""
+def quote_match(quote: str | None, words: list[dict], box=None) -> CheckResult:
+    """Pass if the quote equals some run of consecutive page words (any length).
+    `box`: the box the reader proposed. A quote that is not in the text layer, with little or no text under or near
+    that box, is a picture: the check could not run (it is not a failure)."""
     want = _norm_quote(quote)
 
     def result(res: str, reason: str, found=None, word_ids=None) -> CheckResult:
@@ -54,6 +57,7 @@ def quote_match(quote: str | None, words: list[dict]) -> CheckResult:
             compared["word_ids"] = word_ids
         return CheckResult(QUOTE_ID, QUOTE_LABEL, res, reason, compared)
 
+    picture = bool(words) and _valid_box(box) and is_picture_at(box, words)
     if not words:
         return result(COULD_NOT_RUN, "The page has no text layer to compare against.")
     if not want:
@@ -64,6 +68,8 @@ def quote_match(quote: str | None, words: list[dict]) -> CheckResult:
         if _norm_quote(join_words(run)) == want:
             return result(PASS, "The quote is printed on the page, word for word.",
                           found=join_words(run), word_ids=[w["id"] for w in run])
+    if picture:
+        return result(COULD_NOT_RUN, PICTURE_REASON)
     return result(FAIL, "The quote is not printed anywhere on the page.")
 
 
@@ -203,7 +209,7 @@ _DAYS = (r"(?:today|tomorrow|yesterday|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesda
          r"|sat(?:urday)?|sun(?:day)?)")
 _WEEKDAY = re.compile(rf"^{_DAYS}\.?,?\s+", re.I)
 _CLOCK = r"\d{1,2}(?::\d{2})?\s*[ap]\.?m\.?"
-_TIME = re.compile(rf",?\s*(?:at\s+)?{_CLOCK}(?:\s*[-–]\s*{_CLOCK})?(?:\s*(?:[A-Za-z]{{2,3}}|(?:eastern|pacific|central) time))?\.?$",
+_TIME = re.compile(rf",?\s*(?:at\s+)?{_CLOCK}(?:\s*[-–]\s*{_CLOCK})?(?:\s*(?:[A-Za-z]{{2,3}}|(?:eastern|pacific|central|mountain)(?: (?:standard |daylight )?time)?))?\.?$",
                    re.I)
 _MONTH_WORDS = "|".join(sorted(_MONTHS, key=len, reverse=True))
 _DAY_ONLY = re.compile(r"^([A-Za-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?$")
@@ -355,6 +361,21 @@ _NAMED = re.compile(
     rf"|(?:{_MONTH_WORDS})\.?,?\s+\d{{4}}"
     r"|(?:full[- ]year |fiscal year |fy\s*)?(?<![A-Za-z]-)\d{4}"
     r")\b", re.I)
+def _is_name_year(q: str, m: re.Match) -> bool:
+    """A bare year inside a name ("Truist 2026 BioPharma Symposium", "ASCO 2026 Annual Meeting"): a capitalised word
+    right before it and another right after it. It names the event; it is not the date the quote gives for it."""
+    if not re.fullmatch(r"\d{4}", m[0]):
+        return False
+    before, after = q[:m.start()].split()[-1:], q[m.end():].split()[:1]
+    return bool(before and after and before[0][0].isupper() and after[0][0].isupper()
+                and before[0].lower().strip(".,") not in _MONTHS)
+
+
+def named_dates(q: str) -> list[re.Match]:
+    """Every date or period the quote names (_NAMED), without a bare year that is part of a name."""
+    return [m for m in _NAMED.finditer(q) if not _is_name_year(q, m)]
+
+
 _YEARLESS = re.compile(
     rf"^(?:(?:(?:mid|early|late)[- ]?\s*)?(?:q[1-4]|[1-4]q|(?:{_ORD_WORDS}) quarter)|h[12]|[12]h|"
     rf"(?:{_ORD_WORDS}) half|mid|early|late|end of|"
@@ -482,11 +503,15 @@ def _is_old(q: str, m: re.Match, start: int) -> bool:
     return bool(_OLD_BEFORE.search(q[start:m.start()]))
 
 
-def _supporting_clause(dt: str, q: str, anchors: list[str]) -> tuple[str, str, str | None] | None:
+def _supporting_clause(dt: str, q: str, anchors: list[str],
+                       chosen: bool = False) -> tuple[str, str, str | None] | None:
     """Which clause of the quote gives the event's date, and what it says about date_text.
 
-    Returns None when the clause supports date_text, else (result, reason, found)."""
-    mentions = list(_NAMED.finditer(q))
+    Returns None when the clause supports date_text, else (result, reason, found).
+    `chosen`: a person typed this date as the event's date (a fix). Where the quote alone cannot say which of its
+    dates belongs to the event (no event word near the date, several event clauses), the person's choice settles
+    it; a clause that negates or replaces the date still counts against it."""
+    mentions = named_dates(q)
     want = _canon(dt)
     clauses = []
     for a, b in _clauses(q, mentions):
@@ -496,12 +521,21 @@ def _supporting_clause(dt: str, q: str, anchors: list[str]) -> tuple[str, str, s
                         "reference": bool(_REFERENCE.match(text.strip()))})
     events = [c for c in clauses if c["anchor"] and not c["reference"] and c["mentions"]]
     holding = [c for c in clauses if any(_canon(m[0]) == want for m in c["mentions"])]
+    if chosen and holding and not events:
+        events = [holding[0]]
+    if not events and holding and len({_canon(m[0]) for m in mentions}) == 1 and _anchor_in(q, anchors):
+        events = [holding[0]]       # the quote names one date only, and an event: no other date it could belong to
     own = next((c for c in holding if c in events), holding[0])
     if not events:
         return COULD_NOT_RUN, _UNSURE, None
     dates = {_canon(m[0]) for c in events for m in c["mentions"]}
     if len(events) > 1 and dates != {want}:
-        return COULD_NOT_RUN, _UNSURE, None
+        if chosen and any(c in events for c in holding):
+            events = [c for c in events if c in holding]
+        else:
+            return COULD_NOT_RUN, _UNSURE, None
+    if chosen and own not in events and not own["reference"]:
+        events = [own]      # the person picked the date of a clause that continues the event's ("... and is now Q4 2027")
     if own not in events:
         event = events[0]
         names = [m[0] for m in event["mentions"]]
@@ -512,13 +546,13 @@ def _supporting_clause(dt: str, q: str, anchors: list[str]) -> tuple[str, str, s
         role = "a comparison" if own["reference"] else "not the date the quote gives for the event"
         return FAIL, f"The quote attaches {other} to the {event['anchor']}; {dt} is {role}.", other
     for c in events:
-        verdict = _judge_clause(dt, q, c)
+        verdict = _judge_clause(dt, q, c, chosen)
         if verdict is not None:
             return verdict
     return None
 
 
-def _judge_clause(dt: str, q: str, c: dict) -> tuple[str, str, str | None] | None:
+def _judge_clause(dt: str, q: str, c: dict, chosen: bool = False) -> tuple[str, str, str | None] | None:
     """The clause names the event and holds date_text: is date_text negated or replaced there?"""
     want = _canon(dt)
     start, text = c["start"], c["text"]
@@ -541,7 +575,7 @@ def _judge_clause(dt: str, q: str, c: dict) -> tuple[str, str, str | None] | Non
             return FAIL, f"The quote says {dt} is no longer the expected period; it now names {names}.", names
         if dt_new and not new_others:
             return None
-        return COULD_NOT_RUN, _UNSURE, None
+        return None if chosen else (COULD_NOT_RUN, _UNSURE, None)
     if _NEGATION.search(text):
         return FAIL, f"The quote says the event is not in {dt}.", hit[0]
     for mv in _MOVED.finditer(text):
@@ -563,7 +597,7 @@ def vague_period_year(text: str | None) -> int | None:
 def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
                date_end: str | None = None, *, event_type: str | None = None, title: str | None = None,
                program: str | None = None, filed: date | str | None = None,
-               today: date | str | None = None) -> CheckResult:
+               today: date | str | None = None, chosen: bool = False) -> CheckResult:
     """Pass if date_text is printed in the quote and the row's date says the same thing.
 
     An exact day ('March 12, 2027'): the row's date must be that day and date_end must be empty.
@@ -651,13 +685,13 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
         return result(FAIL, f"The day in the row differs from the day printed in the quote ({how}: {found}).",
                       found=found)
     if _NAMED.fullmatch(_canon(dt)):
-        named = list(_NAMED.finditer(q))
+        named = named_dates(q)
         same = [m for m in named if _canon(m[0]) == _canon(dt)]
         if not same:
             around = next((m[0] for m in named if dt in m[0]), None) or (named[0][0] if named else None)
             claim = f"the whole of {dt}" if parse_period(dt) and re.fullmatch(r"\d{4}", _canon(dt)) else dt
             return result(FAIL, f"The quote names {around}, the row claims {claim}.", found=around)
-        verdict = _supporting_clause(dt, q, event_anchors(event_type, title, program))
+        verdict = _supporting_clause(dt, q, event_anchors(event_type, title, program), chosen)
         if verdict is not None:
             res, reason, found = verdict
             return result(res, reason, found=found)

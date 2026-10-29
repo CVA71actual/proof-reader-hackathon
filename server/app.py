@@ -21,6 +21,8 @@ run is served, and no decision is written to it.
 from __future__ import annotations
 
 import hashlib
+import importlib
+import inspect
 import json
 import re
 import threading
@@ -46,6 +48,9 @@ REPO = Path(__file__).resolve().parent.parent
 RUNS_DIR = REPO / "runs"
 UI_DIR = REPO / "ui"
 DECISION_SCHEMA = RUNS_DIR / "schema" / "decision.schema.json"
+
+_CODE_REF = re.compile(r"^checks/([A-Za-z0-9_]+)\.py:([A-Za-z_][A-Za-z0-9_]*)$")
+NO_SUCH_CHECK = "No check code has that reference; only functions under checks/ can be shown."
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 BODY_FIELDS = {"target", "action", "note", "fix", "by"}
@@ -258,6 +263,19 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
             raise HTTPException(e.status, e.message) from None
         start_job(run_id)
         return jobs_view(store, run_id)
+
+    @app.get("/api/checks/source")
+    def check_source(ref: str = "") -> dict:
+        """The source text of one check function, for refs like checks/event_checks.py:date_match. Only functions
+        defined in a module under checks/ are shown; any other ref is a plain 404."""
+        m = _CODE_REF.match(ref or "")
+        if not m or not (REPO / "checks" / f"{m[1]}.py").is_file():
+            raise HTTPException(404, NO_SUCH_CHECK)
+        module = importlib.import_module(f"checks.{m[1]}")
+        fn = getattr(module, m[2], None)
+        if not inspect.isfunction(fn) or fn.__module__ != module.__name__:
+            raise HTTPException(404, NO_SUCH_CHECK)
+        return {"ref": ref, "source": inspect.getsource(fn)}
 
     @app.get("/api/runs/{run_id}/calendar")
     def get_calendar(run_id: str) -> dict:

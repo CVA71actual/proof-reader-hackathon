@@ -36,7 +36,7 @@ from capture.capture_source import FIXTURES, load_entry
 from capture.read_table import FAKE_MODEL, sha256_text
 from checks import event_checks
 from checks.common import normalize
-from checks.selector_match import _quote_run, selector_match
+from checks.selector_match import MIN_WORD_HEIGHT_PT, _quote_run, selector_match
 from runs import coverage, prices, recheck
 from runs.build_run import MUSE_SPARK, RUNS, SCHEMA_VERSION, file_sha256, now_utc, render_page, to_contract_check
 from runs.build_run import write_run
@@ -130,7 +130,9 @@ def locate_box(quote: str | None, hint, words: list[dict]) -> list[float] | None
     if hint and selector_match(quote, hint, words, page[0], page[1], quote_lines=True).result == "pass":
         return None
     run = _quote_run(want, words, rect)
-    if not run:
+    if not run or any(w["y1"] - w["y0"] < MIN_WORD_HEIGHT_PT for w in run):
+        # Words shorter than a line of print are a hidden text layer, not where the page shows the quote: their
+        # bounds would replace the reader's box with a sliver at the wrong place (a slide page saved as a picture).
         return None
     return [min(w["x0"] for w in run), min(w["y0"] for w in run), max(w["x1"] for w in run),
             max(w["y1"] for w in run)]

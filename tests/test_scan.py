@@ -229,8 +229,9 @@ def test_the_row_checks_use_the_region_on_a_scan_and_the_text_layer_otherwise():
     assert got["quote_match"].result == COULD_NOT_RUN and "no text layer" in got["quote_match"].reason
     assert got["selector_match"].result == PASS and "SAM 3.1 found" in got["selector_match"].reason
     plain = {"kind": "filing", "pages": [{"page_number": 3}]}
-    assert {c.check: c for c in recheck.row_checks(row, plain, empty)}["selector_match"].result == FAIL, \
-        "no regions and no words: the strict check finds no text in the box"
+    no_text = {c.check: c for c in recheck.row_checks(row, plain, empty)}["selector_match"]
+    assert no_text.result == COULD_NOT_RUN and "a picture, not text" in no_text.reason, \
+        "no regions and no words: nothing is printed there, so the words are a picture"
     not_captured = {c.check: c for c in recheck.row_checks(row, scanned, None)}
     assert "SAM 3.1" not in not_captured["selector_match"].reason, "a page that was not captured has no regions to use"
 

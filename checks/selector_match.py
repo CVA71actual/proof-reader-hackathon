@@ -32,6 +32,25 @@ def _valid_box(box) -> bool:
     )
 
 
+PICTURE_REASON = "The words here are a picture, not text; the quote could not be checked"
+NEAR_PT = 18.0               # "near the box": the box grown by this much on every side
+MIN_WORD_HEIGHT_PT = 2.0     # a word shorter than this is not printed where the page shows it (a hidden text layer)
+LITTLE_TEXT_WORDS = 3        # fewer real words than this under or near the box: the page is a picture there
+
+
+def words_near(box, words: list[dict]) -> list[dict]:
+    """The words that really sit under or near the box: touching it grown by NEAR_PT, and tall enough to be
+    printed text."""
+    x0, y0, x1, y1 = (float(v) for v in box)
+    grown = (x0 - NEAR_PT, y0 - NEAR_PT, x1 + NEAR_PT, y1 + NEAR_PT)
+    return [w for w in words if w["y1"] - w["y0"] >= MIN_WORD_HEIGHT_PT and share_inside(grown, w) > 0]
+
+
+def is_picture_at(box, words: list[dict]) -> bool:
+    """True when the page has little or no text under or near the box: what is there is a picture, not text."""
+    return len(words_near(box, words)) < LITTLE_TEXT_WORDS
+
+
 INSIDE_SHARE = 0.6
 CUT_SHARE = 0.1
 
@@ -83,6 +102,8 @@ def selector_match(
         return result(FAIL, "The proposed box is off the page.")
 
     rect = (x0, y0, x1, y1)
+    if quote_lines and is_picture_at(rect, words):
+        return result(COULD_NOT_RUN, PICTURE_REASON)
     if quote_lines:
         quoted = _quote_run(want, words, rect)
         if quoted:

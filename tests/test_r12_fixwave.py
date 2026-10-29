@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from capture import read_events
 from checks.event_checks import date_match, relative_period
-from checks.selector_match import selector_match
+from checks.selector_match import MIN_WORD_HEIGHT_PT, selector_match
 from runs import build_entry
 from server.app import create_app
 from tests.conftest import FIXTURES, REPO
@@ -116,6 +116,14 @@ def test_recorded_rows_that_failed_the_box_and_whose_quote_is_printed_become_loc
         page = pages[row["source_id"]]
         doc = json.loads((RECORDED / page["words"]).read_text())
         box = build_entry.locate_box(row["quote"], row["box"], doc["words"])
+        if all(w["y1"] - w["y0"] < MIN_WORD_HEIGHT_PT for w in doc["words"]):
+            # a hidden text layer (a slide saved as a picture): the words are not where the page shows them,
+            # so the reader's box is kept and the citation check says the words are a picture
+            assert box is None, row["id"]
+            assert selector_match(row["quote"], row["box"], doc["words"], doc["page_width"], doc["page_height"],
+                                  quote_lines=True).result in ("could_not_run", "fail"), row["id"]
+            seen += 1
+            continue
         assert box is not None, row["id"]
         assert selector_match(row["quote"], box, doc["words"], doc["page_width"], doc["page_height"],
                               quote_lines=True).result == "pass", row["id"]

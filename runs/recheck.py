@@ -46,6 +46,7 @@ from runs.state import checked_fields
 
 PASSED_REASON = "The checks were run again on the fixed value and passed."
 FAILED_REASON = "The checks were run again on the fixed value and failed."
+COULD_NOT_RUN_FALLBACK = "The re-check could not run: a check had nothing to compare."
 SETTLES_PREFIX = "Settles the readers' disagreement by the person's fix. "
 
 BLANK_PAGE = {"words": [], "page_width": 612.0, "page_height": 792.0}
@@ -63,8 +64,21 @@ def _not_captured(result: CheckResult, page_number) -> CheckResult:
     return CheckResult(result.check, result.label, COULD_NOT_RUN, page_not_captured(page_number), result.compared)
 
 
-def row_checks(row: dict, source: dict, words_doc: dict | None) -> list:
-    """The five event-row checks, in the order the run shows them."""
+DATE_FIELDS = ("date_text", "date", "date_end")
+
+
+def as_iso(value):
+    """A day a person typed as it is printed ('March 12, 2027') is read as the day it names ('2027-03-12'); anything
+    else is returned as it was."""
+    if not isinstance(value, str):
+        return value
+    day = event_checks.parse_exact_date(event_checks.clean_date_text(value))
+    return day.isoformat() if day else value
+
+
+def row_checks(row: dict, source: dict, words_doc: dict | None, chosen: bool = False) -> list:
+    """The five event-row checks, in the order the run shows them. `chosen`: a person typed the date (a fix of
+    date_text, date or date_end), so the quote need not show by itself which of its dates is the event's."""
     words = words_doc["words"] if words_doc else []
     w, h = (words_doc["page_width"], words_doc["page_height"]) if words_doc else (612.0, 792.0)
     regions = next((p.get("regions") for p in source.get("pages", []) if p.get("page_number") == row.get("page_number")),
@@ -75,10 +89,10 @@ def row_checks(row: dict, source: dict, words_doc: dict | None) -> list:
     else:
         box_check = selector_match(row.get("quote"), row.get("box"), words, w, h, quote_lines=True)
     return [
-        event_checks.quote_match(row.get("quote"), words),
+        event_checks.quote_match(row.get("quote"), words, row.get("box")),
         box_check,
-        event_checks.date_match(row.get("date_text"), row.get("date"), row.get("quote"),
-                                date_end=row.get("date_end"), event_type=row.get("event_type"),
+        event_checks.date_match(row.get("date_text"), as_iso(row.get("date")), row.get("quote"),
+                                date_end=as_iso(row.get("date_end")), chosen=chosen, event_type=row.get("event_type"),
                                 title=row.get("title"), program=row.get("program"),
                                 filed=source.get("published_date"),
                                 today=(event_checks.release_day(words, source.get("published_date")) or (None,))[0]),
@@ -88,8 +102,15 @@ def row_checks(row: dict, source: dict, words_doc: dict | None) -> list:
 
 
 def could_not_run_reason(checks: list[dict]) -> str:
-    labels = [c["label"] for c in checks if c["result"] == COULD_NOT_RUN]
-    return f"The re-check could not run: {' and '.join(labels)} had nothing to compare."
+    """The reason of the first check that could not run, as that check gave it on the new value."""
+    first = next((c for c in checks if c["result"] == COULD_NOT_RUN), None)
+    return f"The re-check could not run: {first['reason']}" if first else COULD_NOT_RUN_FALLBACK
+
+
+def failed_reason(checks: list[dict]) -> str:
+    """The reason of the first check that failed, as that check gave it on the new value."""
+    first = next((c for c in checks if c["result"] == FAIL), None)
+    return f"The re-check failed: {first['reason']}" if first else FAILED_REASON
 
 
 def recheck_result(checks: list[dict], passed: bool) -> str:
@@ -103,8 +124,8 @@ def recheck_line(at: str, target: str, checks: list[dict], passed: bool, settles
                  reason_if_not_run: str | None = None) -> dict:
     """`settles`: the fix changed the field the two readers disagreed on."""
     result = recheck_result(checks, passed)
-    reason = ({"pass": PASSED_REASON, "fail": FAILED_REASON}.get(result)
-              or reason_if_not_run or could_not_run_reason(checks))
+    reason = (PASSED_REASON if result == "pass" else failed_reason(checks) if result == "fail"
+              else reason_if_not_run or could_not_run_reason(checks))
     if settles and result == "pass":
         reason = SETTLES_PREFIX + reason
     return {"at": at, "target": target, "action": "recheck", "note": None, "fix": None, "by": "code",
@@ -139,13 +160,15 @@ def recheck_row(at: str, row: dict, source: dict, words_doc: dict | None, settle
     """`row` already carries the fixed values; `field` is the field the fix changed (None: not given).
     `before`: the row as it was before the fix (the old value); the same checks run on it too.
     words_doc None: the row's page was not captured."""
-    before_line = None if before is None else recheck_row(at, before, source, words_doc, settles, field)
+    # the old value was typed by the reader, not chosen by the person: the quote alone must show its date
+    before_line = (None if before is None
+                   else _recheck_row(at, before, source, words_doc, settles, field, chosen=False))
     return _with_before(_recheck_row(at, row, source, words_doc, settles, field), before_line)
 
 
 def _recheck_row(at: str, row: dict, source: dict, words_doc: dict | None, settles: bool,
-                 field: str | None) -> dict:
-    results = row_checks(row, source, words_doc)
+                 field: str | None, chosen: bool = True) -> dict:
+    results = row_checks(row, source, words_doc, chosen=chosen and field in DATE_FIELDS)
     page_missing = None
     if words_doc is None:
         page_missing = row.get("page_number")
