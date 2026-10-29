@@ -16,9 +16,10 @@
       <button class="ni" data-scr="source">Source view<span class="ct" id="ct-source"></span></button>
       <button class="ni" data-scr="trail">Agent trail<span class="ct" id="ct-trail"></span></button>
       <button class="ni" data-scr="judgment" id="ni-judgment">Judgment needed<span class="ct" id="ct-judgment"></span></button>
-      <button class="ni" data-soon>What changed<span class="ct later">U7</span></button>
+      <button class="ni" data-scr="changed">What changed<span class="ct" id="ct-changed"></span></button>
       <button class="ni" data-soon>Export<span class="ct later">U9</span></button>
     </nav>
+    <button class="btn newrun" id="newrun">▸ New run</button>
     <button class="runcard" id="runcard" hidden>
       <div class="t1" id="runcard-title"></div>
       <div class="t2" id="runcard-sub"></div>
@@ -85,6 +86,48 @@
       <div class="pane mid" id="cal-mid"></div>
       <div class="pane det" id="cal-det"></div>
     </section>
+
+    <section class="screen" id="scr-changed">
+      <div class="pane list">
+        <div class="ph">
+          <h2>What changed</h2>
+          <div class="sub" id="changed-sub"></div>
+          <div class="facets" id="changed-pairs" style="padding:8px 0 0;border:0"></div>
+        </div>
+        <div class="rows" id="changed-rows"></div>
+      </div>
+      <div class="pane mid" id="changed-mid"></div>
+      <div class="pane det" id="changed-det"></div>
+    </section>
+  </div>
+
+  <div class="jobbar" id="jobbar" hidden></div>
+</div>
+
+<div class="sheetwrap" id="newrun-wrap" hidden>
+  <div class="sheet sheet-wide">
+    <div class="sh-t">New run</div>
+    <div class="sh-s">Choices only — nothing here calls a model until the run starts, and the checks never change.</div>
+    <h4>Companies</h4>
+    <div class="sh-grid" id="nr-cos"></div>
+    <h4>Event types</h4>
+    <div class="sh-grid" id="nr-types"></div>
+    <h4>Time window</h4>
+    <div class="btnrow" id="nr-win">
+      <button class="fc" data-win="3">Next 3 months</button>
+      <button class="fc" data-win="6">Next 6 months</button>
+      <button class="fc on" data-win="12">Next 12 months</button>
+    </div>
+    <h4>Spending limit <span class="opt">(USD — leave empty for no limit)</span></h4>
+    <input class="fld" id="nr-limit" inputmode="decimal" placeholder="2.00" style="width:130px">
+    <h4>Note for the agent <span class="opt">(optional)</span></h4>
+    <input class="fld" id="nr-note" maxlength="200" placeholder="e.g. focus on obesity readouts">
+    <div class="hint">Steers the focus only — a note can never turn off a check.</div>
+    <div class="errline" id="nr-error" hidden></div>
+    <div class="btnrow" style="margin-top:16px">
+      <button class="btn pri" id="nr-go">Run now</button>
+      <button class="btn" id="nr-cancel">Cancel</button>
+    </div>
   </div>
 </div>
 

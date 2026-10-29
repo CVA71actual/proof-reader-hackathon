@@ -233,7 +233,41 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
 .periodhead::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--blue);flex:0 0 7px;align-self:center}
 .calfnote{padding:12px 4px;color:var(--faint);font-size:12px}
 
+/* what changed (U7) */
+.chgwrap{padding:10px 14px 26px}
+.chcard{display:block;width:100%;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:12px 14px;margin-bottom:9px}
+.chcard:hover{border-color:var(--faint)}
+.chcard.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.chcard .top{display:flex;gap:8px;align-items:baseline}
+.chtag{font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:5px;white-space:nowrap}
+.chtag.st-kept{color:var(--green);background:var(--green-soft)}
+.chtag.st-corrected{color:var(--amber);background:var(--amber-soft)}
+.chtag.st-removed{color:var(--red);background:var(--red-soft)}
+.chtag.st-undecided{color:var(--blue);background:var(--blue-soft)}
+.chcard .why{font-size:12.5px;color:var(--sub);margin-top:6px;line-height:1.5;word-break:break-word}
+.chcard .when{color:var(--faint);font-size:11.5px;margin-top:5px}
+.chcard .since{color:var(--ink);font-size:12px;font-weight:600;margin-top:5px}
+
+/* new run panel + job bar (U8) */
+.newrun{margin:12px 14px 0;width:calc(100% - 28px)}
+.sheet.sheet-wide{width:520px}
+.sheet .opt{text-transform:none;letter-spacing:0;color:var(--faint);font-weight:500}
+.sh-grid{display:flex;flex-wrap:wrap;gap:6px}
+.tk2{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-weight:500;background:var(--panel2);cursor:pointer}
+.tk2:hover{border-color:var(--faint)}
+.tk2 input{accent-color:var(--accent)}
+.jobbar{position:fixed;top:0;left:232px;right:0;z-index:40;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 18px;background:var(--panel);border-bottom:1px solid var(--line);font-size:12.5px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+.jobbar .jb-status{font-weight:600}
+.jobbar .jb-sub{color:var(--sub)}
+.jobbar .jb-live{display:inline-flex;align-items:center;gap:6px;color:var(--blue);font-weight:600}
+.jobbar .jb-live::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--blue);animation:jpulse 1.4s infinite}
+@keyframes jpulse{0%,100%{opacity:1}50%{opacity:.35}}
+.jobbar input.fld{width:110px;padding:5px 9px;display:inline-block}
+.jobbar .btn{padding:5px 11px;font-size:12.5px}
+.jobbar .errline{margin:0}
+
 @media (max-width:900px){
+  .jobbar{left:0}
   .app{flex-direction:column;height:auto;min-height:100vh}
   .side{width:auto;flex:none;border-right:0;border-bottom:1px solid var(--line)}
   .brand{padding:12px 14px 8px}

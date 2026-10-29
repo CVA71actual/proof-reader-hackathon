@@ -1,4 +1,4 @@
-/* Proof Reader — U5 Agent trail + U6 Catalyst Calendar, on top of U1/U2/U4.
+/* Proof Reader — U7 What changed + U8 New run panel, on top of U1–U6.
    Reads runs through the local decisions server only; no external calls.
    One state per row comes from the server: run.json + decisions in order. */
 (function () {
@@ -32,6 +32,17 @@
   var FIELD_WORDS = { date_text: 'Date as written', date: 'Start date', date_end: 'End date',
                       event_type: 'Event type', title: 'Title', quote: 'Quote',
                       company: 'Company', ticker: 'Ticker' };
+  // run controls (U8): the job's plain status words and the panel's fixed choices
+  var JOB_STATUS_WORDS = { queued: 'queued', running: 'running',
+    paused_turn_limit: 'paused at the turn limit', needs_input: 'needs input',
+    done: 'done', failed: 'failed' };
+  var JOB_ACTIVE = ['queued', 'running'];
+  var JOB_PAUSABLE = ['paused_turn_limit', 'needs_input', 'failed'];
+  var NEW_RUN_COMPANIES = ['IONS', 'PTGX', 'ABVX', 'ROIV', 'ZLAB', 'CLDX',
+                           'VKTX', 'TSHA', 'MNPR', 'ENTA', 'RYTM', 'RVMD'];
+  var NEW_RUN_TYPES = [['trial_results', 'Trial results'], ['regulatory_decision', 'Regulatory decision'],
+                       ['launch', 'Launch'], ['conference', 'Conference'], ['filing', 'Filing'],
+                       ['milestone', 'Milestone']];
   function eventWord(t) {
     if (!t) return 'Unknown';
     return EVENT_WORDS[t] || t.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
@@ -130,6 +141,20 @@
       runs: function () { return getJSON('/api/runs'); },
       run: function (id) { return getJSON('/api/runs/' + encodeURIComponent(id)); },
       decisions: function (id) { return getJSON('/api/runs/' + encodeURIComponent(id) + '/decisions'); },
+      newRun: function (body) {
+        return fetch('/api/runs/new', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
+        }).then(function (r) {
+          return r.json().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+        });
+      },
+      resume: function (id, body) {
+        return fetch('/api/runs/' + encodeURIComponent(id) + '/resume', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {})
+        }).then(function (r) {
+          return r.json().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+        });
+      },
       decide: function (id, body) {
         return fetch('/api/runs/' + encodeURIComponent(id) + '/decisions', {
           method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
@@ -149,6 +174,9 @@
   var judgmentSel = null;
   var trailSel = null;
   var calSel = null;
+  var chgSel = null;        // selected card index on What changed
+  var changedCountCache = null;
+  var changedCache = null;  // {key, a, b, cards}
   var pending = false;      // a decision POST is in flight
   var decisionsCache = { id: null, lines: null };   // decisions.jsonl lines, for the trail's person step
 
@@ -192,6 +220,8 @@
 
   function refresh() {
     decisionsCache = { id: null, lines: null };
+    changedCache = null;
+    changedCountCache = null;
     return A.run(detail.id).then(function (body) {
       detail = { id: detail.id, run: body, state: body.state };
       renderShell();
@@ -205,6 +235,7 @@
   // '#/<run>/judgment[/<rowId>][?d=<action>]'
   // '#/<run>/trail[/<rowId>]'
   // '#/<run>/calendar'
+  // '#/<run>/changed[?a=<runId>&b=<runId>]'
   function parseHash() {
     var h = location.hash || '';
     if (h === '' ) return null;
@@ -228,6 +259,7 @@
     }
     if (out.screen === 'judgment') { out.rowId = seg[2] || null; out.dialog = q.d || null; }
     if (out.screen === 'trail') { out.rowId = seg[2] || null; }
+    if (out.screen === 'changed') { out.a = q.a || null; out.b = q.b || null; }
     return out;
   }
 
@@ -244,6 +276,9 @@
     } else if (o.screen === 'judgment' || o.screen === 'trail') {
       if (o.rowId) h += '/' + encodeURIComponent(o.rowId);
       if (o.screen === 'judgment' && o.dialog) q.push('d=' + encodeURIComponent(o.dialog));
+    } else if (o.screen === 'changed') {
+      if (o.a) q.push('a=' + encodeURIComponent(o.a));
+      if (o.b) q.push('b=' + encodeURIComponent(o.b));
     }
     return q.length ? h + '?' + q.join('&') : h;
   }
@@ -266,7 +301,9 @@
     else if (route.screen === 'judgment') renderJudgment();
     else if (route.screen === 'trail') renderTrail();
     else if (route.screen === 'calendar') renderCalendar();
+    else if (route.screen === 'changed') renderChanged();
     else renderAudit();
+    updateJobBar();
 
     document.querySelectorAll('#nav .ni[data-scr]').forEach(function (b) {
       b.classList.toggle('on', b.dataset.scr === (route.screen === 'none' ? 'audit' : route.screen));
@@ -306,6 +343,8 @@
     document.getElementById('ni-judgment').classList.toggle('alert', st.unresolved > 0);
     document.getElementById('ct-trail').textContent = nRows;
     document.getElementById('ct-calendar').textContent = calendarRows().length;
+    document.getElementById('ct-changed').textContent = changedCountCache || '';
+    ensureJobPoll();
   }
 
   // kept and corrected rows with a date — the ones that go on the calendar
@@ -337,6 +376,8 @@
       judgmentSel = null;
       trailSel = null;
       calSel = null;
+      chgSel = null;
+      changedCache = null;
       decisionsCache = { id: null, lines: null };
       renderShell();
       if (nav !== false) navigate({ runId: runId, screen: 'audit' });
@@ -917,14 +958,17 @@
     return b;
   }
 
-  function lastPersonDecision(rowId) {
+  function lastPersonDecisionIn(lines, rowId) {
     var last = null;
-    (decisionsCache.lines || []).forEach(function (l) {
+    (lines || []).forEach(function (l) {
       if (l.target !== rowId) return;
       if (l.action === 'undo') last = null;
       else if (l.action === 'keep' || l.action === 'fix' || l.action === 'remove') last = l;
     });
     return last;
+  }
+  function lastPersonDecision(rowId) {
+    return lastPersonDecisionIn(decisionsCache.lines, rowId);
   }
 
   function checkFnFor(row, who) {
@@ -1419,6 +1463,390 @@
     to.focus();
   }
 
+  // ---------------------------------------------------------------- what changed (U7)
+  // Compare two runs of the same label family: rows added, removed, corrected
+  // and date moves between the two run files. A card says which run it came
+  // from and, below, the person's later decision on that row, dated.
+  function labelFamily(label) {
+    var l = label || '';
+    return l.replace(/^\s*Run\s+\d+\s*(?:·\s*)?/, '') || l;
+  }
+  function familyMembers(fam) {
+    return runs.filter(function (r) { return labelFamily(r.label) === fam; })
+      .sort(function (x, y) { return (y.number || 0) - (x.number || 0); });
+  }
+  function runShort(r) {
+    return (r.label || r.id) + ' · ' + (r.started_at || '').replace('T', ' ').slice(0, 10);
+  }
+
+  function renderChanged() {
+    var meta = detail.run.run || {};
+    var fam = labelFamily(meta.label);
+    var members = familyMembers(fam);
+    var sub = document.getElementById('changed-sub');
+    var pairHost = clear(document.getElementById('changed-pairs'));
+    var host = clear(document.getElementById('changed-rows'));
+    var mid = clear(document.getElementById('changed-mid'));
+    var det = clear(document.getElementById('changed-det'));
+
+    if (members.length < 2) {
+      sub.textContent = (meta.label || 'This run') + ' is the only run of its kind saved here.';
+      changedCountCache = 0;
+      document.getElementById('ct-changed').textContent = '0';
+      host.append(el('div', 'empty', 'Nothing to compare yet — run the same companies again and the two runs can be compared.'));
+      mid.append(el('div', 'empty', 'Nothing to compare.'));
+      det.append(el('div', 'empty', 'Pick a change to see it.'));
+      return;
+    }
+
+    var bId = route.b && members.some(function (m) { return m.id === route.b; }) ? route.b : members[0].id;
+    var aId = route.a && members.some(function (m) { return m.id === route.a; }) ? route.a : members[1].id;
+    var aM = runs.filter(function (r) { return r.id === aId; })[0];
+    var bM = runs.filter(function (r) { return r.id === bId; })[0];
+    sub.textContent = (aM.label || aId) + ' → ' + (bM.label || bId);
+
+    members.forEach(function (m) {
+      var f = btn('fc' + (m.id === bId ? ' on' : ''), m.label || m.id);
+      f.title = 'Compare the run before it against ' + (m.label || m.id);
+      f.addEventListener('click', function () {
+        var idx = members.indexOf(m);
+        var older = members[idx + 1] || members.filter(function (x) { return x.id !== m.id; })[0];
+        if (!older) return;
+        navigate({ runId: currentRunId(), screen: 'changed', a: older.id, b: m.id });
+      });
+      pairHost.append(f);
+    });
+
+    var key = aId + '>' + bId;
+    if (changedCache && changedCache.key === key) return renderChangedCards(host, mid, det);
+    host.append(el('div', 'empty', 'Reading the two runs…'));
+    Promise.all([A.run(aId), A.run(bId), A.decisions(aId), A.decisions(bId)]).then(function (all) {
+      changedCache = { key: key, a: { run: all[0], state: all[0].state, decisions: all[2] },
+                       b: { run: all[1], state: all[1].state, decisions: all[3] },
+                       cards: compareRuns({ run: all[0], state: all[0].state, decisions: all[2] },
+                                            { run: all[1], state: all[1].state, decisions: all[3] }) };
+      changedCountCache = changedCache.cards.length;
+      document.getElementById('ct-changed').textContent = String(changedCountCache);
+      if (route && route.screen === 'changed') renderChanged();
+    }).catch(function () {
+      host.append(el('div', 'empty', 'The two runs could not be read.'));
+    });
+  }
+
+  function rowVals(x, row) {
+    var t = x.state.targets[row.id] || {};
+    return t.values || row;
+  }
+  function rowKey(row) {
+    return (row.ticker || '') + '|' + (row.event_type || '') + '|' + (row.program || '').toLowerCase();
+  }
+  function fmtField(field, value) {
+    if (value === null || value === undefined || value === '') return '(none)';
+    return field === 'event_type' ? eventWord(value) : String(value);
+  }
+
+  function compareRuns(a, b) {
+    // match rows across the two files: exact identity first (ticker, type,
+    // program, title), then a looser pass (ticker, type, program) so a row
+    // whose title was corrected still compares instead of reading as
+    // add + remove. Whatever stays unmatched is added (B) or removed (A).
+    function fullKey(r) {
+      return rowKey(r) + '|' + (r.title || '').toLowerCase();
+    }
+    var aFull = {};
+    a.run.rows.forEach(function (r) { if (!(fullKey(r) in aFull)) aFull[fullKey(r)] = r; });
+    var pairs = [], onlyB = [];
+    b.run.rows.forEach(function (rb) {
+      var ra = aFull[fullKey(rb)];
+      if (ra) { pairs.push([ra, rb]); delete aFull[fullKey(rb)]; }
+      else onlyB.push(rb);
+    });
+    var onlyA = Object.keys(aFull).map(function (k) { return aFull[k]; });
+    var restA = {};
+    onlyA.forEach(function (r) { if (!(rowKey(r) in restA)) restA[rowKey(r)] = r; });
+    var stillB = [];
+    onlyB.forEach(function (rb) {
+      var ra = restA[rowKey(rb)];
+      if (ra) { pairs.push([ra, rb]); delete restA[rowKey(rb)]; }
+      else stillB.push(rb);
+    });
+    var stillA = Object.keys(restA).map(function (k) { return restA[k]; });
+
+    var cards = [];
+    function since(x, row) {
+      var t = x.state.targets[row.id] || {};
+      if (!t.decided_by_person) return null;
+      var d = lastPersonDecisionIn(x.decisions || [], row.id);
+      var word = ACTION_WORDS[d ? d.action : t.last_action] || 'decided';
+      return { text: 'Since then: ' + word + ' by you' + (d ? ' · ' + dateShort(d.at) : ''),
+                   run: x };
+    }
+    var FIELDS = ['date', 'date_end', 'date_text', 'title', 'event_type', 'company', 'ticker'];
+    stillB.forEach(function (rb) {
+      cards.push({ kind: 'added', row: rb, x: b, fields: [],
+                   line: 'New in ' + (b.run.run.label || 'the newer run') + '.', since: since(b, rb) });
+    });
+    stillA.forEach(function (ra) {
+      cards.push({ kind: 'removed', row: ra, x: a, fields: [],
+                   line: 'In ' + (a.run.run.label || 'the older run') + ', not in ' + (b.run.run.label || 'the newer run') + '.',
+                   since: since(a, ra) });
+    });
+    pairs.forEach(function (pr) {
+      var ra = pr[0], rb = pr[1];
+      var diffs = [];
+      FIELDS.forEach(function (f) {
+        var va = rowVals(a, ra)[f], vb = rowVals(b, rb)[f];
+        if (String(va === null || va === undefined ? '' : va) !== String(vb === null || vb === undefined ? '' : vb)) {
+          diffs.push({ field: f, from: va, to: vb });
+        }
+      });
+      if (!diffs.length) return;
+      var datey = diffs.some(function (d) { return d.field === 'date' || d.field === 'date_end' || d.field === 'date_text'; });
+      var lines = diffs.map(function (d) {
+        return (FIELD_WORDS[d.field] || d.field) + ': ' + fmtField(d.field, d.from) + ' → ' + fmtField(d.field, d.to);
+      });
+      cards.push({ kind: datey ? 'moved' : 'corrected', row: rb, x: b, fields: diffs,
+                   line: lines.join(' · '), since: since(b, rb) });
+    });
+    var order = { added: 0, removed: 1, corrected: 2, moved: 3 };
+    cards.sort(function (x, y) { return order[x.kind] - order[y.kind]; });
+    return cards;
+  }
+
+  var CHG_WORDS = { added: 'added', removed: 'removed', corrected: 'corrected', moved: 'date moved' };
+  var CHG_CLASS = { added: 'st-kept', removed: 'st-removed', corrected: 'st-corrected', moved: 'st-undecided' };
+
+  function renderChangedCards(host, mid, det) {
+    var cards = changedCache.cards;
+    if (!cards.length) {
+      host.append(el('div', 'empty', 'The two runs propose the same rows — nothing changed between them.'));
+      mid.append(el('div', 'empty', 'Nothing changed.'));
+      det.append(el('div', 'empty', 'Pick a change to see it.'));
+      return;
+    }
+    if (chgSel === null || !cards[chgSel]) chgSel = 0;
+    cards.forEach(function (c, i) {
+      var b = btn('chcard' + (i === chgSel ? ' on' : ''));
+      var top = el('div', 'top');
+      top.append(el('span', 'chtag ' + CHG_CLASS[c.kind], CHG_WORDS[c.kind]));
+      top.append(el('span', 'tk mono', c.row.ticker || '—'));
+      top.append(el('span', null, c.row.title || '(no title)'));
+      b.append(top);
+      b.append(el('div', 'why', c.line));
+      if (c.since) b.append(el('div', 'since', c.since.text));
+      b.append(el('div', 'when', 'from ' + runShort({ label: c.x.run.run.label, started_at: c.x.run.run.started_at })));
+      b.addEventListener('click', function () {
+        chgSel = i;
+        renderChanged();
+      });
+      host.append(b);
+    });
+
+    var c = cards[chgSel];
+    mid.append(el('div', 'empty', 'Pick a change on the left.'));
+    clear(det);
+    var sec = el('div', 'sec');
+    sec.append(el('span', 'chtag ' + CHG_CLASS[c.kind], CHG_WORDS[c.kind]));
+    var ttl = el('div', 'ttl', c.row.title || '(no title)');
+    ttl.style.marginTop = '8px';
+    sec.append(ttl);
+    det.append(sec);
+    var sec2 = el('div', 'sec');
+    function kv(k, v) { var r = el('div', 'kv'); r.append(el('span', 'k', k), el('span', 'v', v)); sec2.append(r); }
+    kv('Company', (c.row.ticker || '') + ' · ' + (c.row.company || ''));
+    kv('Type', eventWord(c.row.event_type));
+    c.fields.forEach(function (d) {
+      kv(FIELD_WORDS[d.field] || d.field, fmtField(d.field, d.from) + ' → ' + fmtField(d.field, d.to));
+    });
+    if (!c.fields.length) kv('Date as written', (rowVals(c.x, c.row).date_text || '(none)'));
+    kv('Came from', c.x.run.run.label || '');
+    det.append(sec2);
+    if (c.since) {
+      var sec3 = el('div', 'sec');
+      sec3.append(el('div', 'since', c.since.text));
+      det.append(sec3);
+    }
+    var sec4 = el('div', 'sec');
+    var br = el('div', 'btnrow');
+    br.append(btn('btn', 'Open in ' + (c.x.run.run.label || 'that run'), function () {
+      var rid = c.x.run.run.id;
+      if (detail && detail.id === rid) {
+        navigate({ runId: rid, screen: 'audit', rowId: c.row.id });
+      } else {
+        switchRun(rid);
+        setTimeout(function () { navigate({ runId: rid, screen: 'audit', rowId: c.row.id }); }, 400);
+      }
+    }));
+    sec4.append(br);
+    det.append(sec4);
+  }
+
+  // ---------------------------------------------------------------- new run (U8)
+  var newrunWrap = document.getElementById('newrun-wrap');
+  var nrBuilt = false;
+  function buildNewRun() {
+    if (nrBuilt) return;
+    nrBuilt = true;
+    var cos = clear(document.getElementById('nr-cos'));
+    var all = el('label', 'tk2');
+    var allInput = el('input');
+    allInput.type = 'checkbox'; allInput.id = 'nr-all'; allInput.checked = true;
+    all.append(allInput, document.createTextNode(' All ' + NEW_RUN_COMPANIES.length));
+    cos.append(all);
+    NEW_RUN_COMPANIES.forEach(function (t) {
+      var l = el('label', 'tk2');
+      var i = el('input');
+      i.type = 'checkbox'; i.className = 'nr-co'; i.value = t; i.checked = true;
+      l.append(i, document.createTextNode(' ' + t));
+      cos.append(l);
+    });
+    allInput.addEventListener('change', function () {
+      document.querySelectorAll('.nr-co').forEach(function (c) { c.checked = allInput.checked; });
+    });
+    var types = clear(document.getElementById('nr-types'));
+    NEW_RUN_TYPES.forEach(function (t) {
+      var l = el('label', 'tk2');
+      var i = el('input');
+      i.type = 'checkbox'; i.className = 'nr-type'; i.value = t[0]; i.checked = true;
+      l.append(i, document.createTextNode(' ' + t[1]));
+      types.append(l);
+    });
+    document.getElementById('nr-win').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-win]');
+      if (!b) return;
+      document.querySelectorAll('#nr-win [data-win]').forEach(function (x) { x.classList.toggle('on', x === b); });
+    });
+  }
+  function nrError(msg) {
+    var e = document.getElementById('nr-error');
+    e.textContent = msg;
+    e.hidden = !msg;
+  }
+  document.getElementById('newrun').addEventListener('click', function () {
+    buildNewRun();
+    nrError('');
+    newrunWrap.hidden = false;
+  });
+  document.getElementById('nr-cancel').addEventListener('click', function () { newrunWrap.hidden = true; });
+  newrunWrap.addEventListener('click', function (e) { if (e.target === newrunWrap) newrunWrap.hidden = true; });
+  document.getElementById('nr-go').addEventListener('click', function () {
+    var companies = [];
+    document.querySelectorAll('.nr-co:checked').forEach(function (c) { companies.push(c.value); });
+    if (!companies.length) { nrError('Choose at least one company.'); return; }
+    var types = [];
+    document.querySelectorAll('.nr-type:checked').forEach(function (c) { types.push(c.value); });
+    var winBtn = document.querySelector('#nr-win [data-win].on');
+    var limitRaw = document.getElementById('nr-limit').value.trim();
+    var limit = null;
+    if (limitRaw !== '') {
+      limit = Number(limitRaw);
+      if (isNaN(limit) || limit < 0) { nrError('The spending limit must be a number of dollars, zero or more.'); return; }
+    }
+    var note = document.getElementById('nr-note').value.trim() || null;
+    nrError('');
+    A.newRun({ companies: companies, event_types: types,
+               time_window_months: winBtn ? Number(winBtn.dataset.win) : null,
+               spending_limit_usd: limit, note_for_agent: note }).then(function (res) {
+      if (!res.ok) { nrError((res.body && res.body.detail) || ('HTTP ' + res.status)); return; }
+      newrunWrap.hidden = true;
+      var id = res.body.id;
+      toast((res.body.label || 'Run ' + res.body.number) + ' — started.');
+      return A.runs().then(function (list) {
+        runs = list;
+        switchRun(id);
+      });
+    }).catch(function () { nrError('The server is not reachable.'); });
+  });
+
+  // the job bar: status, turns and spend from run.json while a run goes, and the
+  // stop reason with a Resume when it pauses
+  var jobPoll = { id: null, timer: null };
+  function stopJobPoll() {
+    if (jobPoll.timer) clearInterval(jobPoll.timer);
+    jobPoll = { id: null, timer: null };
+  }
+  function startJobPoll(id) {
+    if (jobPoll.id === id) return;
+    stopJobPoll();
+    jobPoll.id = id;
+    jobPoll.timer = setInterval(function () {
+      A.run(id).then(function (body) {
+        var st = (body.run || {}).status;
+        if (detail && detail.id === id) {
+          detail = { id: id, run: body, state: body.state };
+          decisionsCache = { id: null, lines: null };
+          renderShell();
+          render();
+        }
+        if (JOB_ACTIVE.indexOf(st) < 0) {
+          stopJobPoll();
+          A.runs().then(function (list) { runs = list; });
+        }
+      }).catch(function () { stopJobPoll(); });
+    }, 2500);
+  }
+  function ensureJobPoll() {
+    if (!detail) return;
+    var st = (detail.run.run || {}).status;
+    if (st && JOB_ACTIVE.indexOf(st) >= 0) startJobPoll(detail.id);
+    else if (jobPoll.id && (!detail || detail.id !== jobPoll.id ||
+             JOB_ACTIVE.indexOf((detail.run.run || {}).status) < 0)) stopJobPoll();
+  }
+  function updateJobBar() {
+    var bar = document.getElementById('jobbar');
+    if (!detail) { hideJobBar(); return; }
+    var meta = detail.run.run || {};
+    var st = meta.status;
+    if (!st || (JOB_ACTIVE.indexOf(st) < 0 && JOB_PAUSABLE.indexOf(st) < 0)) { hideJobBar(); return; }
+    clear(bar);
+    var live = JOB_ACTIVE.indexOf(st) >= 0;
+    bar.append(el('span', live ? 'jb-live' : 'jb-status',
+      (meta.label || 'Run ' + meta.number) + ' · ' + (JOB_STATUS_WORDS[st] || st)));
+    var bits = [];
+    if (meta.turn_count !== null && meta.turn_count !== undefined) {
+      bits.push('turn ' + meta.turn_count + ' of ' + (meta.turn_limit || '?'));
+    }
+    if (meta.spend_usd !== null && meta.spend_usd !== undefined) {
+      bits.push(meta.choices && meta.choices.spending_limit_usd !== null && meta.choices.spending_limit_usd !== undefined
+        ? money(meta.spend_usd) + ' of ' + money(meta.choices.spending_limit_usd) + ' used'
+        : money(meta.spend_usd) + ' used');
+    }
+    if (bits.length) bar.append(el('span', 'jb-sub', bits.join(' · ')));
+    if (meta.status_reason) bar.append(el('span', 'jb-sub', meta.status_reason));
+    if (JOB_PAUSABLE.indexOf(st) >= 0) {
+      var limitInput = null;
+      if (st === 'needs_input') {
+        limitInput = el('input', 'fld');
+        limitInput.placeholder = 'new limit $';
+        limitInput.inputMode = 'decimal';
+        bar.append(limitInput);
+      }
+      var err = el('span', 'errline', '');
+      err.hidden = true;
+      bar.append(btn('btn', 'Resume', function () {
+        var body = {};
+        if (limitInput && limitInput.value.trim() !== '') {
+          var v = Number(limitInput.value.trim());
+          if (isNaN(v) || v < 0) { err.textContent = 'The limit must be a number of dollars.'; err.hidden = false; return; }
+          body.spending_limit_usd = v;
+        }
+        A.resume(currentRunId(), body).then(function (res) {
+          if (!res.ok) { err.textContent = (res.body && res.body.detail) || ('HTTP ' + res.status); err.hidden = false; return; }
+          err.hidden = true;
+          toast('Resumed.');
+          startJobPoll(currentRunId());
+          return refresh();
+        }).catch(function () { err.textContent = 'The server is not reachable.'; err.hidden = false; });
+      }), err);
+    }
+    bar.hidden = false;
+    document.getElementById('screens').style.paddingTop = '40px';
+  }
+  function hideJobBar() {
+    document.getElementById('jobbar').hidden = true;
+    document.getElementById('screens').style.paddingTop = '';
+  }
+
   // ---------------------------------------------------------------- run sheet
   var runSheetWrap = document.getElementById('runsheet-wrap');
   document.getElementById('runcard').addEventListener('click', function () {
@@ -1427,7 +1855,8 @@
       var b = btn('runopt' + (detail && r.id === detail.id ? ' on' : ''));
       b.append(el('div', 'n', (r.label || r.id) + (r.sample ? ' · sample' : '')));
       b.append(el('div', 'm', 'Run ' + r.number + ' · ' + (r.started_at || '').replace('T', ' ').slice(0, 16) +
-        ' · needs attention ' + r.unresolved));
+        ' · needs attention ' + r.unresolved +
+        (r.status ? ' · ' + (JOB_STATUS_WORDS[r.status] || r.status) : '')));
       b.addEventListener('click', function () {
         runSheetWrap.hidden = true;
         if (!detail || r.id !== detail.id) switchRun(r.id);
@@ -1458,7 +1887,7 @@
     });
   });
   document.querySelectorAll('#nav .ni[data-soon]').forEach(function (b) {
-    b.addEventListener('click', function () { toast('That screen lands in a later slice (U7, U9).'); });
+    b.addEventListener('click', function () { toast('That screen lands in a later slice (U9).'); });
   });
   document.getElementById('src-back').addEventListener('click', function () {
     var first = null;
@@ -1477,6 +1906,7 @@
   window.addEventListener('hashchange', function () { render(); });
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
+    if (newrunWrap && !newrunWrap.hidden) { newrunWrap.hidden = true; return; }
     if (runSheetWrap && !runSheetWrap.hidden) { runSheetWrap.hidden = true; return; }
     if (dialogWrap && !dialogWrap.hidden && route && route.dialog) {
       navigate({ runId: currentRunId(), screen: 'judgment', rowId: route.rowId });

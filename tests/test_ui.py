@@ -162,3 +162,40 @@ def test_u5_u6_format_helpers():
     # the decision action words on screen are plain, never the raw action ids
     for word in ("kept", "fixed", "removed"):
         assert word in js
+
+
+def test_u7_what_changed_is_wired():
+    js = (UI / "app.js").read_text()
+    html = (UI / "index.html").read_text()
+    assert 'id="scr-changed"' in html and 'data-scr="changed"' in html
+    for needle in ("renderChanged", "compareRuns", "labelFamily", "Nothing to compare yet"):
+        assert needle in js, needle
+    # the four change kinds and their plain words
+    for word in ("added", "removed", "corrected", "date moved"):
+        assert word in js, word
+    # cards say where they came from and what the person did since
+    assert "Since then:" in js
+    assert "from " in js
+    # only runs of the same label family are compared, two at a time
+    assert "familyMembers" in js
+    assert "out.screen === 'changed'" in js
+
+
+def test_u8_new_run_panel_is_wired():
+    js = (UI / "app.js").read_text()
+    html = (UI / "index.html").read_text()
+    # the panel: twelve companies, plain event words, window, limit, note caption
+    for tk in ("IONS", "PTGX", "ABVX", "ROIV", "ZLAB", "CLDX", "VKTX", "TSHA", "MNPR", "ENTA", "RYTM", "RVMD"):
+        assert tk in js, tk
+    assert "Steers the focus only — a note can never turn off a check." in html
+    for word in ("Next 3 months", "Next 6 months", "Next 12 months"):
+        assert word in html, word
+    # Run now POSTs to the run-controls endpoints; nothing calls a model from the UI
+    assert "POST" in js and "/api/runs/new" in js
+    assert "/resume" in js
+    # status, turns and spend read from run.json; the pause reason is shown
+    for field in ("turn_count", "turn_limit", "spend_usd", "status_reason"):
+        assert field in js, field
+    for word in ("paused at the turn limit", "needs input", "Resume"):
+        assert word in js, word
+    assert "jobbar" in html
