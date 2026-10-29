@@ -21,7 +21,8 @@ page_number, page_file, page_sha256, words_file, words_sha256, captured_at. Plus
                   share a stem (compared without regard to case): the index is refused, because the second capture
                   would overwrite the first and break its hash.
 page_file and words_file may be absolute, or relative to the index file's folder, to ~/proof-reader-docs/filings, or to
-~/proof-reader-docs/filings/<TICKER>.
+~/proof-reader-docs/filings/<TICKER>. Optional local_path is the filed HTML relative to ~/proof-reader-docs/filings
+(never an absolute home path); the loader resolves it to local_file.
 
 capture_page(record, run_dir) is "capture on first use": the page file and the words file are checked against the hashes
 in the record (a changed byte refuses the page, with the reason), the page is rendered to an image in the run's folder,
@@ -98,6 +99,10 @@ def _normalize(raw: dict, base: Path | None, where: str) -> dict:
     r["file_stem"] = _SAFE.sub("-", r.get("file_stem") or r["id"]).strip("-")
     r["page_path"] = str(_resolve(r["page_file"], r["ticker"], base))
     r["words_path"] = str(_resolve(r["words_file"], r["ticker"], base))
+    # local_path in the index is relative to ~/proof-reader-docs/filings (never /Users/…);
+    # resolve it the same way as page_file for callers that need the HTML on disk.
+    if r.get("local_path"):
+        r["local_file"] = str(_resolve(str(r["local_path"]), r["ticker"], base))
     return r
 
 

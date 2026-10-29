@@ -408,6 +408,7 @@ def capture_exhibit(
     render: Callable[[Path, Path, Path | None], str] = render_html_to_pdf,
     exhibit: str | None = None,
     exhibit_title: str | None = None,
+    filings_root: Path = FILINGS,
 ) -> list[dict]:
     """Store one exhibit under dest_dir, render to PDF, cut pages; return MANIFEST-shaped page entries."""
     if fetcher is not None:
@@ -425,8 +426,13 @@ def capture_exhibit(
     exhibit = exhibit or exhibit_number(html_name)
     captured_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     source_url = urljoin(base_url, html_name)
-    # Paths relative to filings/<TICKER>/ so sources._resolve finds them under FILINGS/TICKER.
+    # page_file / words_file: relative to filings/<TICKER>/ (sources._resolve).
+    # local_path: relative to the filings root (never an absolute /Users/… path).
     rel_prefix = f"{accession}/"
+    try:
+        local_rel = (dest_dir / html_name).resolve().relative_to(filings_root.resolve()).as_posix()
+    except ValueError:
+        local_rel = f"{ticker}/{accession}/{html_name}"
     out = []
     for p in page_bits:
         ex_slug = exhibit.replace(".", "")
@@ -458,7 +464,7 @@ def capture_exhibit(
             # Order fields (also useful for humans reading the index):
             "html_sha256": source_sha,
             "pdf_sha256": rendered_sha,
-            "local_path": str(dest_dir / html_name),
+            "local_path": local_rel,
             "page_count": len(page_bits),
             "rendered_from": {"format": "html", "renderer": renderer, "sha256": source_sha},
         }
@@ -553,6 +559,7 @@ def fetch_ticker(
                 render=render,
                 exhibit=ex.get("exhibit"),
                 exhibit_title=ex.get("title"),
+                filings_root=filings_root,
             ))
     return pages
 

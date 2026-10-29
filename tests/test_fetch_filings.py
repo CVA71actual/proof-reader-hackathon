@@ -124,6 +124,10 @@ def test_fetch_ticker_offline_writes_files_and_index_shape(tmp_path):
     assert pages[0]["rendered_from"]["format"] == "html"
     assert (dest / Path(pages[0]["page_file"]).name).is_file()
     assert (dest / Path(pages[0]["words_file"]).name).is_file()
+    # local_path is relative to the filings root — never an absolute home path.
+    assert pages[0]["local_path"] == f"PTGX/{acc}/sample_ex99-1.htm"
+    assert not Path(pages[0]["local_path"]).is_absolute()
+    assert "/Users/" not in pages[0]["local_path"]
 
     doc = ff.build_index({"PTGX": pages})
     # Job 9 / runs.sources must accept the index.
@@ -134,6 +138,23 @@ def test_fetch_ticker_offline_writes_files_and_index_shape(tmp_path):
     resolved = sources._resolve(rec["page_file"], "PTGX", None)
     # parse_index already set page_path via FILINGS; point FILINGS at our temp root for a real check.
     assert pages[0]["page_file"].startswith(f"{acc}/")
+    assert rec["local_path"] == pages[0]["local_path"]
+    assert "local_file" in rec  # loader resolves relative local_path
+
+
+def test_twelve_index_holds_no_absolute_path():
+    """The committed twelve sources index must not contain /Users/ (or other absolute home paths)."""
+    import re
+    text = (REPO / "runs" / "sources_index.twelve.json").read_text()
+    assert not re.search(r"(?i)(/Users/|/home/|[A-Za-z]:\\)", text)
+    doc = json.loads(text)
+    for ticker, body in doc["companies"].items():
+        for page in body.get("pages") or []:
+            lp = page.get("local_path")
+            if not lp:
+                continue
+            assert not Path(lp).is_absolute(), lp
+            assert lp.startswith(f"{ticker}/"), lp
 
 
 def test_build_and_write_index_round_trip(tmp_path):
