@@ -119,6 +119,15 @@ def quarter_part_period(text: str | None) -> tuple[date, date] | None:
     return date(y, mo, 1), date.fromordinal(nxt.toordinal() - 1)
 
 
+_SHORT_YEAR = re.compile(r"(?<=[A-Za-z0-9])\s*['’‘](\d{2})\b")
+
+
+def expand_short_year(text: str | None) -> str:
+    """A two-digit year written with an apostrophe is 20YY: 'Q1 ’27' -> 'Q1 2027', 'Aug ’26' -> 'Aug 2026', '1H ’27' ->
+    '1H 2027'. Slide-style dates. Without the apostrophe 'Aug 26' is a day, so it is left alone."""
+    return _SHORT_YEAR.sub(lambda m: f" 20{m[1]}", text or "")
+
+
 def parse_period(text: str | None) -> tuple[date | None, date | None] | None:
     """A named period -> (first day, last day). 'Q3 2027' -> (2027-07-01, 2027-09-30).
 
@@ -127,7 +136,7 @@ def parse_period(text: str | None) -> tuple[date | None, date | None] | None:
     ('mid-2027', 'early 2027', 'late 2027') return (None, None): the words name a period but
     not where it starts or ends. Anything else (an exact day, 'later this year') -> None.
     """
-    s = normalize(text).rstrip(".").lower()
+    s = expand_short_year(normalize(text)).rstrip(".").lower()
     s = re.sub(r"^(?:in |during |by )?(?:the )?", "", s)
     part = quarter_part_period(s)
     if part is not None:
@@ -177,7 +186,7 @@ def vague_period_window(text: str | None) -> tuple[date, date, str] | None:
 
 
 def _canon(text: str | None) -> str:
-    s = normalize(text).rstrip(".").lower()
+    s = expand_short_year(normalize(text)).rstrip(".").lower()
     return re.sub(r"^(?:in |during |by )?(?:the )?", "", s)
 
 
@@ -441,6 +450,7 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
     q = _norm_quote(quote)
     if dt not in q:
         return result(FAIL, "The date text is not part of the quote.", found=None)
+    dt, q = expand_short_year(dt), expand_short_year(q)     # 'Q1 ’27' is Q1 2027, in the quote as in the date text
     if _NAMED.fullmatch(_canon(dt)):
         named = list(_NAMED.finditer(q))
         same = [m for m in named if _canon(m[0]) == _canon(dt)]

@@ -361,6 +361,10 @@ Found by reading the rows of `runs/twelve-1`:
   December, as `vague_period_window`. A row with no dates gets the period (trail "Year inferred from the filing date",
   Code); `date_match` passes when the row's dates lie inside it.
 
+- **Two-digit years (Codex P2).** A two-digit year written with an apostrophe (`Q1 ’27`, `Aug ’26`, `1H ’27`) is read as
+  20YY (`event_checks.expand_short_year`), in the quote and in the date text alike. A judgment call: without the
+  apostrophe `Aug 26` is a day and stays unread; a slide's `’27` is never read as 1927 or 2127.
+
 ### Dated sentences the reader did not turn into rows
 
 `checks/coverage.py` cuts the page's words into sentences (a leading bullet is dropped; abbreviations such as "Inc."
