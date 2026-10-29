@@ -33,7 +33,7 @@ WORDS_PATH = FIXTURES / f"{PIN}.words.json"
 READING_PATH = FIXTURES / f"{PIN}.events.json"
 FAKE_READING_PATH = FIXTURES / f"{PIN}.events.fake.json"
 
-EVENT_TYPES = ("trial_results", "regulatory_decision", "launch", "conference", "filing", "milestone")
+from checks.event_checks import EVENT_TYPES, type_guide   # the one event-type word table (checks/event_checks.py)
 
 INSTRUCTIONS = """\
 You are reading one page of a company's SEC filing: {company} (ticker {ticker}), {form} exhibit {exhibit}, filed
@@ -71,6 +71,8 @@ Rules:
 - "date" and "date_end": for an exact day, "date" is that day and "date_end" is null. For a quarter, half, month
   or year, "date" is its first day and "date_end" its last day. For anything vaguer ("mid-2027", "later this
   year"), both are null.
+- "event_type" goes by the words of the quote; a quote with words of more than one type takes the first listed:
+{guide}
 - "word_ids" are the ids of every word of the quote, in order.
 - "box" is your proposal for where the quote is printed: the smallest box, in PDF points, that encloses all the
   words of the quote (if the quote runs over several lines, the box encloses those lines). If you cannot place
@@ -115,6 +117,8 @@ Rules:
 - "date" and "date_end": for an exact day, "date" is that day and "date_end" is null. For a quarter, half, month
   or year, "date" is its first day and "date_end" its last day. For anything vaguer ("mid-2027", "later this
   year"), both are null.
+- "event_type" goes by the words of the quote; a quote with words of more than one type takes the first listed:
+{guide}
 - "box" is your proposal for where the quote is printed: the smallest box that encloses all the words of the
   quote (if the quote runs over several lines, the box encloses those lines), on a grid from 0 to 1000 over the
   image: x counts from the left edge and y from the top edge, and 1000 is the full width or height. If you cannot
@@ -129,7 +133,7 @@ def build_image_prompt(entry: dict, event_types: tuple[str, ...] = EVENT_TYPES, 
     The attached image is the page; boxes come back on a 0-1000 grid (grid_to_points turns them into PDF points)."""
     return read_table.append_note(INSTRUCTIONS_IMAGE.format(
         company=entry["company"], ticker=entry["ticker"], form=entry["form"], exhibit=entry["exhibit"],
-        filing_date=entry["filing_date"], types=", ".join(event_types)), note)
+        filing_date=entry["filing_date"], types=", ".join(event_types), guide=type_guide(event_types)), note)
 
 
 def grid_to_points(box, width_pt: float, height_pt: float) -> list[float] | None:
@@ -153,7 +157,7 @@ def build_prompt(words_doc: dict, entry: dict, event_types: tuple[str, ...] = EV
     head = read_table.add_note(INSTRUCTIONS.format(
         company=entry["company"], ticker=entry["ticker"], form=entry["form"], exhibit=entry["exhibit"],
         filing_date=entry["filing_date"], width=_num(words_doc["page_width"]),
-        height=_num(words_doc["page_height"]), types=", ".join(event_types),
+        height=_num(words_doc["page_height"]), types=", ".join(event_types), guide=type_guide(event_types),
     ), note)
     lines = [
         f"{w['id']}|{w['text']}|{_num(w['x0'])}|{_num(w['y0'])}|{_num(w['x1'])}|{_num(w['y1'])}"

@@ -228,6 +228,13 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         trail.append({"step": "Year inferred from the filing date", "tag": "Code", "who": BUILDER,
                       "text": f"“{row['date_text']}” names no year. Counted from the filing date "
                               f"({source['published_date']}) it is {day.isoformat()}.", "at": at})
+    if event_checks.is_today_word(row["date_text"]) and not row["date"] and not row["date_end"]:
+        found = event_checks.release_day(words, source.get("published_date"))
+        if found is not None:
+            row["date"] = found[0].isoformat()
+            trail.append({"step": f"Date taken from the {found[1]}", "tag": "Code", "who": BUILDER,
+                          "text": f"“{row['date_text']}” means the day of the release. Taken from the {found[1]}: "
+                                  f"{row['date']}.", "at": at})
     located = locate_box(row.get("quote"), row["box"], words)
     if located is not None and not _same_box(located, row["box"]):
         was = f"the {reader}'s box {[round(v) for v in row['box']]}" if row["box"] else f"no box from the {reader}"

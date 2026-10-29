@@ -120,12 +120,18 @@ def quarter_part_period(text: str | None) -> tuple[date, date] | None:
 
 
 _SHORT_YEAR = re.compile(r"(?<=[A-Za-z0-9])\s*['’‘](\d{2})\b")
+# '1Q27', '4Q26': digit, Q, two digits, no apostrophe. Read as a quarter only when the two digits are 20-39
+# ('1Q27' = Q1 2027); anything else ('2Q45', a part number) is left alone.
+_DIGIT_Q_YEAR = re.compile(r"(?<![A-Za-z0-9])([1-4])Q([23]\d)(?![A-Za-z0-9])", re.I)
+_CAL_YEAR = re.compile(r"\bcalendar year\s+", re.I)
 
 
 def expand_short_year(text: str | None) -> str:
     """A two-digit year written with an apostrophe is 20YY: 'Q1 ’27' -> 'Q1 2027', 'Aug ’26' -> 'Aug 2026', '1H ’27' ->
-    '1H 2027'. Slide-style dates. Without the apostrophe 'Aug 26' is a day, so it is left alone."""
-    return _SHORT_YEAR.sub(lambda m: f" 20{m[1]}", text or "")
+    '1H 2027'. Slide-style dates. Without the apostrophe 'Aug 26' is a day, so it is left alone. The quarter forms
+    '1Q27' and '4Q26' (no apostrophe) are Q1 2027 and Q4 2026 when the two digits are 20-39."""
+    s = _SHORT_YEAR.sub(lambda m: f" 20{m[1]}", text or "")
+    return _DIGIT_Q_YEAR.sub(lambda m: f"Q{m[1]} 20{m[2]}", s)
 
 
 def parse_period(text: str | None) -> tuple[date | None, date | None] | None:
@@ -136,7 +142,7 @@ def parse_period(text: str | None) -> tuple[date | None, date | None] | None:
     ('mid-2027', 'early 2027', 'late 2027') return (None, None): the words name a period but
     not where it starts or ends. Anything else (an exact day, 'later this year') -> None.
     """
-    s = expand_short_year(normalize(text)).rstrip(".").lower()
+    s = _CAL_YEAR.sub("", expand_short_year(normalize(text))).rstrip(".").lower()
     s = re.sub(r"^(?:in |during |by )?(?:the )?", "", s)
     part = quarter_part_period(s)
     if part is not None:
@@ -186,7 +192,7 @@ def vague_period_window(text: str | None) -> tuple[date, date, str] | None:
 
 
 def _canon(text: str | None) -> str:
-    s = expand_short_year(normalize(text)).rstrip(".").lower()
+    s = _CAL_YEAR.sub("", expand_short_year(normalize(text))).rstrip(".").lower()
     return re.sub(r"^(?:in |during |by )?(?:the )?", "", s)
 
 
@@ -199,6 +205,7 @@ _WEEKDAY = re.compile(rf"^{_DAYS}\.?,?\s+", re.I)
 _CLOCK = r"\d{1,2}(?::\d{2})?\s*[ap]\.?m\.?"
 _TIME = re.compile(rf",?\s*(?:at\s+)?{_CLOCK}(?:\s*[-–]\s*{_CLOCK})?(?:\s*(?:[A-Za-z]{{2,3}}|(?:eastern|pacific|central) time))?\.?$",
                    re.I)
+_MONTH_WORDS = "|".join(sorted(_MONTHS, key=len, reverse=True))
 _DAY_ONLY = re.compile(r"^([A-Za-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?$")
 
 
@@ -212,7 +219,7 @@ def clean_date_text(text: str | None) -> str:
     s = fix_commas(normalize(text))
     s = _WEEKDAY.sub("", s)
     s = _TIME.sub("", s)
-    s = re.sub(r"\bcalendar year\s+", "", s, flags=re.I)
+    s = _CAL_YEAR.sub("", s)
     return s.strip().strip("()*†‡¹²³ ").strip()          # brackets and footnote marks around a date are not the date
 
 
@@ -255,6 +262,47 @@ def yearless_day(text: str | None, filed: date | str | None) -> date | None:
     return None
 
 
+# "today", "announced today", "this morning", "earlier today" in a release mean the day the release is dated: the
+# dateline ("SOUTH SAN FRANCISCO, Calif., August 5, 2026") printed near the top of the words, found by code. With no
+# dateline on the page, the source's published (filing) date.
+_TODAY = re.compile(r"^(?:announced |reported |said )?(?:earlier )?(?:today|this (?:morning|afternoon|evening))$")
+_DATELINE = re.compile(
+    rf"(?<![\w,])([A-Z][A-Za-z.'\-]*(?: [A-Za-z.'\-]+){{0,3}}(?:, [A-Z][A-Za-z.]{{1,20}})?), "
+    rf"((?i:{_MONTH_WORDS}))\.? (\d{{1,2}}), (\d{{4}})\b")
+_WEEKDAY_NAMES = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+DATELINE_WORDS = 150        # the dateline is looked for in this many words from the top of the page
+
+
+def is_today_word(text: str | None) -> bool:
+    return bool(_TODAY.match(_canon(text)))
+
+
+def dateline_date(words: list[dict] | None) -> date | None:
+    """The date of the 'CITY, Month D, YYYY' line near the top of the words, or None when none is printed."""
+    head = " ".join(w["text"] for w in (words or [])[:DATELINE_WORDS])
+    for m in _DATELINE.finditer(head):
+        if m[1].split(" ")[-1].lower() in _WEEKDAY_NAMES:       # "Thursday, August 6, 2026" is a day, not a dateline
+            continue
+        try:
+            return date(int(m[4]), _MONTHS[m[2].lower()], int(m[3]))
+        except ValueError:
+            continue
+    return None
+
+
+def release_day(words: list[dict] | None, published: date | str | None) -> tuple[date, str] | None:
+    """(the day 'today' means, 'release dateline' or 'filing date'), or None when there is neither."""
+    d = dateline_date(words)
+    if d is not None:
+        return d, "release dateline"
+    if isinstance(published, str):
+        try:
+            published = date.fromisoformat(published[:10])
+        except ValueError:
+            return None
+    return (published, "filing date") if published is not None else None
+
+
 # Periods a filing states without a year ("by year-end", "later this year", "next quarter"): their year comes from the
 # source's filing date. Returns (first day, last day) of the window the words stand for, or None.
 _REL_YEAR_END = re.compile(r"^(?:year[- ]end|(?:the )?end of (?:the |this )?year)$")
@@ -291,7 +339,6 @@ def relative_period(text: str | None, filed: date | str | None) -> tuple[date, d
 
 # Every date or period a quote can name, longest form first, so '2027' inside 'Q3 2027' is not read
 # as the bare year. Four digits joined to a code by a hyphen ('PN-8047') are a name, not a year.
-_MONTH_WORDS = "|".join(sorted(_MONTHS, key=len, reverse=True))
 _ORD_WORDS = "first|second|third|fourth|1st|2nd|3rd|4th"
 _NAMED = re.compile(
     r"(?<![\w/])(?:"
@@ -326,17 +373,53 @@ _SPLIT_BEFORE = re.compile(r"(?<=\s)(?:that|which|and|but|while|follow(?:s|ed|in
                            r"versus|vs\.?|than|relative to)\b", re.I)
 _REFERENCE = re.compile(r"^(?:follow(?:s|ed|ing)?|compared (?:with|to)|versus|vs\.?|than|relative to)\b", re.I)
 
-# The event words for each kind of event (a small fixed list). The row's event_type picks one or more.
-_ANCHORS = {
-    "trial results": ("results", "data", "readout", "topline", "report"),
-    "regulatory decision": ("pdufa", "decision", "approval", "crl", "action date"),
+# ---- The event-type words: ONE table, used by the reader prompt (capture/read_events.py, both readers), by type_match,
+# and for the anchors that find the clause naming the event. A quote holding a word of a type reads as that type;
+# a quote holding none of the words of the other types is a milestone ("else milestone"). Whole words only.
+EVENT_WORDS = {
+    "trial_results": ("results", "data", "readout", "topline", "presentation of data", "report"),
+    "regulatory_decision": ("approval", "decision", "pdufa", "chmp opinion", "crl", "action date"),
     "launch": ("launch", "commercial availability"),
-    "conference": ("present", "presentation", "conference", "late-breaker"),
-    "filing": ("submit", "submission", "filing", "nda", "bla", "maa"),
+    "conference": ("conference", "symposium", "investor day", "webcast", "present", "presentation", "late-breaker"),
+    "filing": ("submit", "submitted", "submission", "nda", "bla", "maa", "ind", "filed", "filing"),
     "milestone": ("dosed", "enrolled", "initiated", "initiation", "completed", "first patient"),
+}
+EVENT_TYPES = tuple(EVENT_WORDS)
+# When one sentence holds words of several types, the first of these wins (a decision on a filing is a decision).
+TYPE_PRIORITY = ("regulatory_decision", "filing", "trial_results", "launch", "conference")
+_ANCHORS = {
+    **{t.replace("_", " "): w for t, w in EVENT_WORDS.items()},
     "earnings": ("results", "earnings", "revenue", "net loss", "quarter ended", "year ended"),
     "other": (),
 }
+
+
+def _has_word(text: str, word: str) -> bool:
+    return bool(re.search(rf"(?<!\w){re.escape(word)}(?!\w)", text.lower()))
+
+
+def event_type_for(text: str | None) -> str:
+    """The event type the words of `text` stand for: the first of TYPE_PRIORITY with a word in it, else 'milestone'."""
+    for t in TYPE_PRIORITY:
+        if any(_has_word(text or "", w) for w in EVENT_WORDS[t]):
+            return t
+    return "milestone"
+
+
+_ACRONYMS = ("nda", "bla", "maa", "ind", "pdufa", "crl", "chmp")
+
+
+def type_guide(types: tuple[str, ...] | None = None) -> str:
+    """The event-type words as the reader prompt prints them, one line per type, from EVENT_WORDS. `types`: only
+    the types the run asks for (default all)."""
+    types = types or EVENT_TYPES
+    caps = lambda w: " ".join(x.upper() if x in _ACRONYMS else x for x in w.split(" "))
+    lines = [f'  {t}: {", ".join(caps(w) for w in EVENT_WORDS[t])}' for t in TYPE_PRIORITY if t in types]
+    if "milestone" in types:
+        lines.append("  milestone: anything else (for example " + ", ".join(EVENT_WORDS["milestone"][:4]) + ")")
+    return "\n".join(lines)
+
+
 _TYPE_KEYS = (
     (("trial", "readout", "result", "topline", "data"), "trial results"),
     (("regulatory_decision", "decision", "approval", "pdufa", "crl"), "regulatory decision"),
@@ -469,7 +552,8 @@ def vague_period_year(text: str | None) -> int | None:
 
 def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
                date_end: str | None = None, *, event_type: str | None = None, title: str | None = None,
-               program: str | None = None, filed: date | str | None = None) -> CheckResult:
+               program: str | None = None, filed: date | str | None = None,
+               today: date | str | None = None) -> CheckResult:
     """Pass if date_text is printed in the quote and the row's date says the same thing.
 
     An exact day ('March 12, 2027'): the row's date must be that day and date_end must be empty.
@@ -487,6 +571,8 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
     `filed` (yearless_day); a weekday or time of day around a date is not part of it (clean_date_text).
     A relative period ('by year-end', 'this year', 'next quarter') takes its
     year from `filed`, the source's filing date (relative_period): the row's dates must lie inside that window.
+    'today' / 'announced today' / 'this morning' / 'earlier today' is the day in `today` (the release dateline, or the
+    filing date when no dateline is printed; release_day): the row's date must be that day.
     Anything vaguer ('later this year') with no date given: not_needed.
     """
     dt = _norm_quote(date_text)     # the same marks as the quote: a typographic apostrophe in both reads alike
@@ -497,6 +583,22 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
 
     if not dt:
         return result(COULD_NOT_RUN, "The reader gave no date text for this row.")
+    if is_today_word(dt):
+        if dt not in _norm_quote(quote):
+            return result(FAIL, "The date text is not part of the quote.", found=None)
+        if isinstance(today, str):
+            today = date.fromisoformat(today[:10])
+        if today is None:
+            return result(COULD_NOT_RUN, f"“{dt}” means the day of the release, and no release date is known.")
+        if date_end is not None:
+            return result(FAIL, f"“{dt}” is one day but the row gives a period.", found=today.isoformat())
+        if date_iso is None:
+            return result(FAIL, f"“{dt}” is {today.isoformat()} but the row gives no day.", found=today.isoformat())
+        if date_iso == today.isoformat():
+            return result(PASS, f"The day in the row is the release's own day ({today.isoformat()}), what “{dt}” means.",
+                          found=today.isoformat())
+        return result(FAIL, f"“{dt}” is the release's own day ({today.isoformat()}); the row says {date_iso}.",
+                      found=today.isoformat())
     rel = relative_period(dt, filed)
     if rel is not None:
         if dt not in _norm_quote(quote):
@@ -520,7 +622,7 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
     dt, q = expand_short_year(dt), expand_short_year(q)     # 'Q1 ’27' is Q1 2027, in the quote as in the date text
     day = yearless_day(dt, filed)
     dt = clean_date_text(dt)                                 # no weekday or time of day; still printed in the quote
-    q = re.sub(r"\bcalendar year\s+", "", fix_commas(q), flags=re.I)
+    q = _CAL_YEAR.sub("", fix_commas(q))
     days = parse_day_range(dt)
     if days is not None:
         found = f"{days[0].isoformat()} to {days[1].isoformat()}"
@@ -616,8 +718,7 @@ AMBIGUOUS_TYPES = ("milestone", "trial results")
 
 
 def _words_in(quote: str, group: str) -> list[str]:
-    q = quote.lower()
-    return [w for w in _ANCHORS[group] if re.search(rf"(?<![a-z]){re.escape(w)}(?![a-z])", q)]
+    return [w for w in _ANCHORS[group] if _has_word(quote, w)]
 
 
 def type_match(event_type: str | None, quote: str | None) -> CheckResult:

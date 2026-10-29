@@ -463,7 +463,10 @@ def test_the_saved_live_wonder_escalation_of_the_ptgx_page():
 def test_the_saved_live_image_second_reading_of_the_ptgx_page():
     rec = json.loads((FIXTURES / f"{PIN}.events.second.json").read_text())
     assert rec["input"] == "image" and rec["model"] == "meta-models/muse-spark-open-1026" and rec["route"] == "baseten"
-    assert rec["prompt_text"] == read_events.build_image_prompt(load_entry(PIN))
+    # sealed before Job 14: the saved prompt is today's prompt without the event-type word lines
+    now = read_events.build_image_prompt(load_entry(PIN))
+    rule = read_events.INSTRUCTIONS_IMAGE.split('- "event_type" goes by')[1].split("\n- ")[0]
+    assert rec["prompt_text"] == now.replace('- "event_type" goes by' + rule.format(guide=read_events.type_guide()) + "\n", "")
     assert "\nw0|" not in rec["prompt_text"] and "id|text|x0|y0|x1|y1" not in rec["prompt_text"], "no word list"
     assert [e["program"] for e in rec["events"]] == ["PN-458o", "PN-8047"]
     assert all(isinstance(e["box"], list) and len(e["box"]) == 4 and max(e["box"]) <= 1000 for e in rec["events"]), \
