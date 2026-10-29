@@ -35,6 +35,8 @@ from capture import read_events
 from capture.capture_source import FIXTURES, load_entry
 from capture.read_table import FAKE_MODEL, sha256_text
 from checks import event_checks
+from checks.common import normalize
+from checks.selector_match import _quote_run, selector_match
 from runs import coverage, prices, recheck
 from runs.build_run import MUSE_SPARK, RUNS, SCHEMA_VERSION, file_sha256, now_utc, render_page, to_contract_check
 from runs.build_run import write_run
@@ -116,6 +118,28 @@ def tidy_date_text(date_text: str | None, quote: str | None) -> str | None:
     return s if s and s != date_text and quote and s in quote else date_text
 
 
+def locate_box(quote: str | None, hint, words: list[dict]) -> list[float] | None:
+    """The box around the page words that read as the quote, when the quote is printed there (the run nearest the
+    reader's box if it is printed more than once). None when it is not printed, or the model's box already passes the
+    citation check: a box that is right is left as the reader drew it."""
+    want = normalize(quote)
+    if not want or not words:
+        return None
+    rect = tuple(hint) if isinstance(hint, list) and len(hint) == 4 else (0.0, 0.0, 1.0, 1.0)
+    page = (max(w["x1"] for w in words), max(w["y1"] for w in words))
+    if hint and selector_match(quote, hint, words, page[0], page[1], quote_lines=True).result == "pass":
+        return None
+    run = _quote_run(want, words, rect)
+    if not run:
+        return None
+    return [min(w["x0"] for w in run), min(w["y0"] for w in run), max(w["x1"] for w in run),
+            max(w["y1"] for w in run)]
+
+
+def _same_box(a, b, tol: float = 0.5) -> bool:
+    return bool(b) and len(b) == 4 and all(abs(x - y) <= tol for x, y in zip(a, b))
+
+
 def when(row: dict) -> str:
     if row["date"] and row.get("date_end"):
         return f"{row['date']} to {row['date_end']}"
@@ -192,6 +216,19 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         trail.append({"step": "Placed", "tag": "Code", "who": BUILDER,
                       "text": f"The {reader} gave no box, so the box was drawn around the words it named "
                               f"({len(event['word_ids'])} words).", "at": at})
+    inferred = event_checks.relative_period(row["date_text"], source.get("published_date"))
+    if inferred is not None and not row["date"] and not row["date_end"]:
+        row["date"], row["date_end"] = inferred[0].isoformat(), inferred[1].isoformat()
+        trail.append({"step": "Year inferred from the filing date", "tag": "Code", "who": BUILDER,
+                      "text": f"“{row['date_text']}” names no year. Counted from the filing date "
+                              f"({source['published_date']}) it is {row['date']} to {row['date_end']}.", "at": at})
+    located = locate_box(row.get("quote"), row["box"], words)
+    if located is not None and not _same_box(located, row["box"]):
+        was = f"the {reader}'s box {[round(v) for v in row['box']]}" if row["box"] else f"no box from the {reader}"
+        row["box"] = located
+        trail.append({"step": "Box located by code", "tag": "Code", "who": BUILDER,
+                      "text": f"The quote is printed on the page, so the box is the words found there; "
+                              f"{was} was only a hint.", "at": at})
     results = recheck.row_checks(row, source, words_doc)
     for r in results:
         trail.append({"step": "Checked", "tag": "Code", "who": r.check,

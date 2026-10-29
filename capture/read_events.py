@@ -222,6 +222,43 @@ def _record(*, model, prompt, raw, events, problem, entry, extra=None) -> dict:
     return rec
 
 
+# ---------------------------------------------------------------- the date send-back
+
+SEND_BACK = """\
+You read this page earlier and proposed the events below, each with a date text. For each one the date text you gave is
+NOT printed in the quote you gave, so the quote does not show the date.
+Find, on the page below, the sentence that states the date for the event, and copy it exactly as printed: the quote
+must be one run of consecutive words from the page, and the date text must be printed inside it. If the page states
+no date for the event, answer null for it. Do not guess a date.
+Answer with JSON only: {{"rows": [{{"id": "<the id below>", "quote": "<sentence or null>", "date_text": "<the date as
+printed in it or null>"}}]}}
+
+{company} ({ticker}), {form} exhibit {exhibit}, filed {filing_date}.
+
+Events:
+{rows}
+
+Page text:
+"""
+
+
+def build_send_back_prompt(words_doc: dict, entry: dict, rows: list[dict]) -> str:
+    listed = "\n".join(f"{r['id']}: {r.get('program') or r.get('title') or 'event'}, {r['event_type']}; you gave date text "
+                       f"“{r.get('date_text')}” and quote “{r.get('quote')}”" for r in rows)
+    text = " ".join(w["text"] for w in words_doc["words"])
+    return SEND_BACK.format(company=entry["company"], ticker=entry["ticker"], form=entry.get("form") or "8-K",
+                            exhibit=entry.get("exhibit") or "", filing_date=entry["filing_date"], rows=listed) + text + "\n"
+
+
+def parse_send_back(raw: str | None) -> list[dict] | None:
+    """[{id, quote, date_text}] from the answer, or None when it is not that shape. Nothing is guessed."""
+    events, _ = parse_events(re.sub(r'"rows"\s*:', '"events":', raw or "", count=1))
+    if events is None:
+        return None
+    return [{"id": e.get("id"), "quote": e.get("quote"), "date_text": e.get("date_text")} for e in events
+            if isinstance(e.get("id"), str)]
+
+
 # ---------------------------------------------------------------- live reading
 
 

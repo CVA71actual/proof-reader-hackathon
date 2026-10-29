@@ -31,7 +31,9 @@ from runs import build_entry, prices
 WONDER = "Muse Wonder"
 WHO = "runs.escalate"
 WONDER_WHO = "capture.wonder"
-MAX_PER_PAGE = 3     # rows sent to Wonder from one page: each is a counted, priced turn
+MAX_PER_PAGE = 1     # rows sent to Wonder from one page: each is a counted, priced turn
+WONDER_SHARE = 0.25  # Wonder's part of a limited run's spending limit: past it nothing more is sent
+SENT_FOR = ("Date read as written", "Event type matches the quote")   # the failures worth Wonder's price
 PAD_PT = 60.0        # how far above and below the row the region reaches, in PDF points
 FIELDS = ("event_type", "title", "date_text", "date", "date_end", "quote", "program", "indication", "box")
 
@@ -46,10 +48,18 @@ def candidates(rows: list[dict]) -> list[dict]:
     return out
 
 
-def trigger(row: dict) -> dict:
-    """{kind, label, why}: the first failed check, else the readers' disagreement."""
+def budgeted(rows: list[dict]) -> list[dict]:
+    """The candidates Wonder is worth sending: a failed date or event type check. A box or quote failure is mended by
+    code (runs.build_entry.locate_box) or is a paraphrase Wonder cannot cure; a disagreement is settled only by a person,
+    so Wonder's reading would be evidence only."""
+    return [r for r in candidates(rows) if any(c["result"] == "fail" and c["label"] in SENT_FOR
+                                               for c in r.get("checks", []))]
+
+
+def trigger(row: dict, labels: tuple[str, ...] | None = None) -> dict:
+    """{kind, label, why}: the first failed check (of `labels`, if given), else the readers' disagreement."""
     for c in row.get("checks", []):
-        if c["result"] == "fail":
+        if c["result"] == "fail" and (labels is None or c["label"] in labels):
             return {"kind": "check", "label": c["label"], "why": c["reason"]}
     d = row["disagreement"]
     return {"kind": "disagreement", "label": f"the two readers disagree on {d['field']}",

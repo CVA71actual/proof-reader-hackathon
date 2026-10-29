@@ -150,12 +150,17 @@ def region_match(box, regions: list[dict] | None, page_width: float, page_height
                   found=", ".join(r["id"] for r in regions))
 
 
+def _fold(s: str) -> str:
+    return s.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
+
+
 def _quote_run(want: str, words: list[dict], rect) -> list[dict] | None:
     """The run of page words that reads as the quote; when it is printed more than once, the run the box overlaps
     most. None when the quote is not printed (the strict rule then reports what is in the box)."""
+    want = _fold(want)       # the same typographic marks quote_match folds: a quote it finds is found here too
     n = len(want.split(" ")) if want else 0
     runs = [words[i : i + n] for i in range(len(words) - n + 1)
-            if n and normalize(join_words(words[i : i + n])) == want]
+            if n and _fold(normalize(join_words(words[i : i + n]))) == want]
     if not runs:
         return None
     return max(runs, key=lambda r: sum(share_inside(rect, w) for w in r))

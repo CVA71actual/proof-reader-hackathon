@@ -181,6 +181,40 @@ def _canon(text: str | None) -> str:
     return re.sub(r"^(?:in |during |by )?(?:the )?", "", s)
 
 
+# Periods a filing states without a year ("by year-end", "later this year", "next quarter"): their year comes from the
+# source's filing date. Returns (first day, last day) of the window the words stand for, or None.
+_REL_YEAR_END = re.compile(r"^(?:year[- ]end|(?:the )?end of (?:the |this )?year)$")
+_REL_THIS_YEAR = re.compile(r"^(?:this year|(?:later|further) (?:this|in the) year)$")
+_REL_QUARTER = re.compile(r"^(this|next|the (?:current|next)) quarter$")
+
+
+def relative_period(text: str | None, filed: date | str | None) -> tuple[date, date] | None:
+    """'year-end' filed 2026-08-05 -> (2026-09-01, 2026-12-31) (the same September-to-December window as
+    vague_period_window); 'this year' -> that year; 'later this year' -> the filing date to its year end; 'this quarter'
+    and 'next quarter' -> that calendar quarter. None for anything else, or when there is no filing date."""
+    if isinstance(filed, str):
+        try:
+            filed = date.fromisoformat(filed[:10])
+        except ValueError:
+            return None
+    if filed is None:
+        return None
+    s = _canon(text)
+    y = filed.year
+    if _REL_YEAR_END.match(s):
+        return date(y, 9, 1), date(y, 12, 31)
+    if _REL_THIS_YEAR.match(s):
+        return (filed if s.startswith(("later", "further")) else date(y, 1, 1)), date(y, 12, 31)
+    m = _REL_QUARTER.match(s)
+    if m:
+        q = (filed.month - 1) // 3 + (1 if m[1].endswith("next") or m[1] == "next" else 0)
+        qy, q = y + q // 4, q % 4 + 1
+        first, last, end_day = _QUARTER_START[q]
+        return date(qy, first, 1), date(qy, last, end_day)
+    return None
+
+
+
 # Every date or period a quote can name, longest form first, so '2027' inside 'Q3 2027' is not read
 # as the bare year. Four digits joined to a code by a hyphen ('PN-8047') are a name, not a year.
 _MONTH_WORDS = "|".join(sorted(_MONTHS, key=len, reverse=True))
@@ -361,7 +395,7 @@ def vague_period_year(text: str | None) -> int | None:
 
 def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
                date_end: str | None = None, *, event_type: str | None = None, title: str | None = None,
-               program: str | None = None) -> CheckResult:
+               program: str | None = None, filed: date | str | None = None) -> CheckResult:
     """Pass if date_text is printed in the quote and the row's date says the same thing.
 
     An exact day ('March 12, 2027'): the row's date must be that day and date_end must be empty.
@@ -375,7 +409,8 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
     (see _supporting_clause and runs/README.md, "Which date belongs to the event"), and that clause must not
     negate or replace it ('Q3 2027 is no longer expected'). When the quote does not show which date belongs
     to the event, the check could not run. The order of the dates in the quote is never evidence.
-    A period with no year ('Q3') fails.
+    A period with no year ('Q3') fails. A relative period ('by year-end', 'this year', 'next quarter') takes its
+    year from `filed`, the source's filing date (relative_period): the row's dates must lie inside that window.
     Anything vaguer ('later this year') with no date given: not_needed.
     """
     dt = _norm_quote(date_text)     # the same marks as the quote: a typographic apostrophe in both reads alike
@@ -386,6 +421,20 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
 
     if not dt:
         return result(COULD_NOT_RUN, "The reader gave no date text for this row.")
+    rel = relative_period(dt, filed)
+    if rel is not None:
+        if dt not in _norm_quote(quote):
+            return result(FAIL, "The date text is not part of the quote.", found=None)
+        start, end = rel
+        found = f"{start.isoformat()} to {end.isoformat()}"
+        if date_iso is None and date_end is None:
+            return result(PASS, f"“{dt}” is counted from the filing date ({found}); the row gives no day.", found=found)
+        if date_iso is None or date_end is None:
+            return result(FAIL, f"“{dt}” is a period ({found}) but the row gives only one day.", found=found)
+        if not (start.isoformat() <= date_iso <= date_end <= end.isoformat()):
+            return result(FAIL, f"“{dt}” counted from the filing date is {found}; the row's dates are not in it.",
+                          found=found)
+        return result(PASS, f"The row's dates fall inside {dt}, counted from the filing date ({found}).", found=found)
     if _YEARLESS.match(_canon(dt)):
         return result(FAIL, f"“{dt}” names no year; a period needs a year before it can be compared.",
                       found=dt)

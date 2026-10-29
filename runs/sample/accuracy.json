@@ -3,9 +3,9 @@
  "run": "sample",
  "sample": true,
  "date": "2026-10-29",
- "made_at": "2026-10-29T04:12:53+00:00",
- "product_tip": "16504bc",
- "product_dirty": false,
+ "made_at": "2026-10-29T06:21:52+00:00",
+ "product_tip": "9ce1ea0",
+ "product_dirty": true,
  "key": {
   "path": "accuracy/keys/ions_ars_2026_p95.key.json",
   "sealed": false,
@@ -100,6 +100,6 @@
    "person": 1
   }
  },
- "run_sha256": "f8efbda463b4b203223404078a714bf997aa28dc7a3d25934ea7b5b225823953",
- "content_sha256": "82d2945036e6b9e9216f051a705de26a7e424d32ac3d5f033c0df74abed02028"
+ "run_sha256": "06b6db220554501854109b364f871898045671c59b7789ff1848367869bcbc3f",
+ "content_sha256": "31320aaf7002922c3a20438d50fe363f319941e90558b6df13c3dcb6aa39118b"
 }

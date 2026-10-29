@@ -7791,11 +7791,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "not_needed",
-     "reason": "The quote names no exact day and no period, so there is nothing to compare.",
+     "result": "pass",
+     "reason": "“later this year” is counted from the filing date (2026-10-01 to 2026-12-31); the row gives no day.",
      "compared": {
       "looked_for": "later this year",
-      "found": "later this year"
+      "found": "2026-10-01 to 2026-12-31"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -7875,7 +7875,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "date_match",
-     "text": "Date read as written: not needed. The quote names no exact day and no period, so there is nothing to compare.",
+     "text": "Date read as written: pass. “later this year” is counted from the filing date (2026-10-01 to 2026-12-31); the row gives no day.",
      "at": "2026-10-27T15:12:12+00:00"
     },
     {

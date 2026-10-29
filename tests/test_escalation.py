@@ -262,7 +262,8 @@ def test_an_answer_with_no_event_changes_nothing(runs_dir):
         "Muse Wonder's answer held no event for this row.")
 
 
-def test_a_row_the_readers_disagree_on_is_sent_but_only_a_person_settles_it(runs_dir, words_doc):
+def test_a_row_the_readers_disagree_on_is_not_sent_to_wonder(runs_dir, words_doc):
+    """A disagreement is settled only by a person, so Wonder's reading would be evidence only: not worth its price."""
     events = right_events()
     other = copy.deepcopy(events)
     for e in other:
@@ -272,15 +273,34 @@ def test_a_row_the_readers_disagree_on_is_sent_but_only_a_person_settles_it(runs
     _, rid = start(runs_dir, FakeReader(), FakeSecond(answer=lambda p, n: json.dumps({"events": other})), wonder)
     run = run_of(runs_dir, rid)
     row = next(r for r in run["rows"] if r.get("disagreement"))
-    assert (row["status"], row["group"]) == ("undecided", "open"), "nothing was replaced"
-    assert row["disagreement"]["field"] == "date" and row["date"] == "2027-01-01"
-    assert [t["step"] for t in row["trail"] if "Muse Wonder" in t["step"]] == [
-        "Sent to Muse Wonder because the two readers disagree on date", "Instructions sent to Muse Wonder",
-        "Muse Wonder"]
-    result = next(t for t in row["trail"] if t["step"] == "Escalation result")
-    assert result["text"].startswith("Muse Wonder read date as 2027-01-01, as Muse Spark did; its reading passed "
-                                     "every check. A disagreement is settled only by a person's fix")
+    assert (row["status"], row["group"]) == ("undecided", "open")
+    assert not wonder.prompts and "Muse Wonder" not in json.dumps(row["trail"])
     assert run["mistakes"] == [] and current_state(run, [])["unresolved"] == 1
+
+
+def test_only_a_date_or_event_type_failure_is_sent(runs_dir):
+    box = {"id": "e1", "status": "failed", "group": "open", "checks": [{"result": "fail", "label": "Citation located"}]}
+    date = {"id": "e2", "status": "failed", "group": "open",
+            "checks": [{"result": "fail", "label": "Citation located"}, {"result": "fail", "label": "Date read as written", "reason": "x"}]}
+    kind = {"id": "e3", "status": "failed", "group": "open",
+            "checks": [{"result": "fail", "label": "Event type matches the quote"}]}
+    quote = {"id": "e4", "status": "failed", "group": "open", "checks": [{"result": "fail", "label": "Quote found on page"}]}
+    assert [r["id"] for r in escalate.budgeted([box, date, kind, quote])] == ["e2", "e3"]
+    assert escalate.trigger(date, escalate.SENT_FOR)["label"] == "Date read as written"
+
+
+def test_a_spent_wonder_budget_sends_no_more_rows(runs_dir, monkeypatch):
+    monkeypatch.setattr(escalate, "WONDER_SHARE", 0.0)
+    first = FakeReader(answer=lambda p, n: json.dumps({"events": wrong_date_events()}))
+    wonder = FakeWonder()
+    _, rid = start(runs_dir, first, None, wonder, spending_limit_usd=5)
+    assert not wonder.prompts
+    assert job_of(runs_dir, rid)["escalated"] == {"src-ptgx-8k-2026-08-05-ex991": "budget"}
+    assert "part of the spending limit" in run_of(runs_dir, rid)["run"]["escalation"]["reason"]
+
+
+def test_wonders_share_of_a_limited_run_is_a_quarter():
+    assert escalate.WONDER_SHARE == 0.25
 
 
 def test_nothing_to_send_means_no_call(runs_dir):
@@ -306,15 +326,15 @@ def test_no_wonder_key_is_not_run_and_the_run_still_finishes(runs_dir):
                                         "rows_replaced": 0, "reason": "No model key was found, so nothing was read."}
 
 
-def test_at_most_three_rows_a_page_are_sent(runs_dir):
+def test_at_most_one_row_a_page_is_sent(runs_dir):
     many = [copy.deepcopy(e) for e in wrong_date_events() * 3]
     for i, e in enumerate(many):
         e["date"] = "2027-02-01"
         e["program"] = f"PN-{i}"
     wonder = FakeWonder()
     _, rid = start(runs_dir, FakeReader(answer=lambda p, n: json.dumps({"events": many})), None, wonder)
-    assert len(wonder.prompts) == escalate.MAX_PER_PAGE == 3
-    assert run_of(runs_dir, rid)["run"]["escalation"]["rows_sent"] == 3
+    assert len(wonder.prompts) == escalate.MAX_PER_PAGE == 1
+    assert run_of(runs_dir, rid)["run"]["escalation"]["rows_sent"] == 1
 
 
 def test_each_escalation_is_a_counted_priced_turn_and_resume_does_not_send_a_row_twice(runs_dir, monkeypatch):
@@ -322,18 +342,18 @@ def test_each_escalation_is_a_counted_priced_turn_and_resume_does_not_send_a_row
     for i, e in enumerate(many):
         e["date"] = "2027-02-01"
         e["program"] = f"PN-{i}"
-    monkeypatch.setattr(jobs, "DEFAULT_TURN_LIMIT", 2)        # the first read, then one escalation
+    monkeypatch.setattr(jobs, "DEFAULT_TURN_LIMIT", 1)        # the first read, then the turn limit before Wonder
     wonder = FakeWonder(tokens=(1_000_000, 500_000))
     client, rid = start(runs_dir, FakeReader(answer=lambda p, n: json.dumps({"events": many})), None, wonder)
     m = run_of(runs_dir, rid)["run"]
-    assert (m["status"], m["turn_count"], len(wonder.prompts)) == ("paused_turn_limit", 2, 1)
-    price = prices.PRICES_PER_1M_USD["Muse Wonder"]
-    assert m["spend_usd"] == pytest.approx(0.01 + price["input"] + 0.5 * price["output"])
+    assert (m["status"], m["turn_count"], len(wonder.prompts)) == ("paused_turn_limit", 1, 0)
     assert client.post(f"/api/runs/{rid}/resume").status_code == 202
     m = run_of(runs_dir, rid)["run"]
     assert m["status"] == "done" and m["resumes"] == 1
-    assert len(wonder.prompts) == 3, "three rows a page in all, one call each, none repeated across the resume"
-    assert len(job_of(runs_dir, rid)["escalated_rows"]) == 3 and m["escalation"]["rows_sent"] == 3
+    assert len(wonder.prompts) == 1, "one row a page, one call, none repeated across the resume"
+    price = prices.PRICES_PER_1M_USD["Muse Wonder"]
+    assert m["spend_usd"] == pytest.approx(0.01 + price["input"] + 0.5 * price["output"])
+    assert len(job_of(runs_dir, rid)["escalated_rows"]) == 1 and m["escalation"]["rows_sent"] == 1
 
 
 def test_the_spending_limit_covers_a_wonder_call(runs_dir):

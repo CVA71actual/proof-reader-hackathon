@@ -43,6 +43,7 @@ import calendar as _calendar
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+from accuracy import types as T
 from capture import read_events, read_table, sam as sam_module
 from capture.second_reader import CAP_REACHED, OPENROUTER_CAP_USD, UNPRICED
 from checks.coverage import sentence_covered
@@ -423,6 +424,8 @@ class Job:
                     continue
                 if sid not in done and not self.read_page(page) and self.meta["status"] != "running":
                     return
+                if not self.date_send_back(page) and self.meta["status"] != "running":
+                    return
                 if not self.second_pass(page) and self.meta["status"] != "running":
                     return
                 if not self.escalation_pass(page) and self.meta["status"] != "running":
@@ -731,7 +734,7 @@ class Job:
         sent = self.job.setdefault("escalated_rows", {})
         page_rows = [r for r in self.run["rows"] if r["source_id"] == sid]
         left = escalate.MAX_PER_PAGE - sum(1 for r in page_rows if r["id"] in sent)    # the cap holds across resumes
-        rows = [r for r in escalate.candidates(page_rows) if r["id"] not in sent][: max(left, 0)]
+        rows = [r for r in escalate.budgeted(page_rows) if r["id"] not in sent][: max(left, 0)]
         if not rows:
             done[sid] = "nothing to send"
             return True
@@ -747,13 +750,21 @@ class Job:
         entry = page["record"]
         types = tuple(t for t in read_events.EVENT_TYPES if t in self.choices["event_types"])
         for row in rows:
-            trig = escalate.trigger(row)
+            if self.wonder_budget_spent():
+                done[sid] = "budget"
+                self.note_escalation("read", f"Muse Wonder's part of the spending limit "
+                                             f"({int(escalate.WONDER_SHARE * 100)}%) is used; no more rows are sent.")
+                self.save()
+                return True
+            trig = escalate.trigger(row, escalate.SENT_FOR)
             y_range = escalate.band(row, words_doc)
             text = escalate.prompt(entry, trig, y_range, words_doc, types, self.choices["note_for_agent"])
             if self.stopped_before_a_call(self.wonder):
                 return False
             reply = self.wonder.call(text, image=escalate.region_png(image, words_doc, y_range))
             self.count_turn(reply)
+            self.job["wonder_spend_usd"] = round(self.job.get("wonder_spend_usd", 0.0) + (prices.cost_usd(
+                price_name(reply.model), reply.prompt_tokens, reply.completion_tokens) or 0.0), prices.ROUND_TO)
             if reply.error:
                 self.stop("failed", f"Muse Wonder: {reply.error} Resume to try again.")
                 return False
@@ -774,6 +785,96 @@ class Job:
         self.note_escalation("read")
         self.save()
         return True
+
+    def wonder_budget_spent(self) -> bool:
+        """True when Muse Wonder has used its share of a limited run's spending limit (escalate.WONDER_SHARE)."""
+        limit = self.choices["spending_limit_usd"]
+        return limit is not None and self.job.get("wonder_spend_usd", 0.0) >= escalate.WONDER_SHARE * limit
+
+    def date_send_back(self, page: dict) -> bool:
+        """One send-back per page for the rows whose date text is not in their quote: the same reader is asked once
+        (one counted, priced turn for the whole page) for the sentence that states the date. The new quote is taken
+        only if it is printed on the page; the checks then decide the row (runs/build_entry.build_row). True when the
+        page is finished with; False when the run stopped."""
+        sid = page["source_id"]
+        done = self.job.setdefault("sent_back", {})
+        source = next((s for s in self.run["sources"] if s["id"] == sid), None)
+        if sid in done or source is None or page["kind"] != "events":
+            return True
+        rows = [r for r in self.run["rows"] if r["source_id"] == sid and r.get("found_by") != "coverage"
+                and r.get("group") != "removed" and r.get("quote") and any(
+                    c["name"] == "date_match" and c["result"] == "fail" and c["reason"].startswith("The date text is not")
+                    for c in r.get("checks", []))]
+        if not rows:
+            done[sid] = "nothing to send"
+            return True
+        page0 = source["pages"][0]
+        words_doc = json.loads((self.dir / page0["words"]).read_text())
+        entry = page["record"]
+        prompt = read_events.build_send_back_prompt(words_doc, entry, rows)
+        if self.stopped_before_a_call():
+            return False
+        reply = self.reader.call(prompt)
+        self.count_turn(reply)
+        if reply.error:
+            self.stop("failed", f"{reply.error} Resume to try again.")
+            return False
+        answers = {a["id"]: a for a in (read_events.parse_send_back(reply.raw) or [])}
+        usage = {"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens}
+        reading = read_events._record(model=reply.model, prompt=prompt, raw=reply.raw, events=[], problem=None,
+                                      entry=entry, extra={**(reply.extra or {}), "usage": usage})
+        share = (reply.prompt_tokens, reply.completion_tokens, len(rows))
+        at = now_utc()
+        for row in rows:
+            self.apply_send_back(row, answers.get(row["id"]), reading, source, words_doc, share, prompt, at)
+        done[sid] = "done"
+        self.save()
+        return True
+
+    def apply_send_back(self, row: dict, answer: dict | None, reading: dict, source: dict, words_doc: dict,
+                        share: tuple, prompt: str, at: str) -> None:
+        who = "server.jobs"
+        pt = reading["usage"]["prompt_tokens"]
+        row["trail"].append({"step": "Sent back for the date", "tag": "Code", "who": who, "at": at,
+                             "text": "The date text is not part of the quote. The same reader was asked once for the "
+                                     "sentence printed on the page that states the date."})
+        row["trail"].append({"step": "Instructions sent", "tag": "Code", "who": "capture.read_events", "at": at,
+                             "text": prompt, "tokens": {"prompt": pt, "completion": None} if isinstance(pt, int) else None})
+        quote = (answer or {}).get("quote")
+        date_text = (answer or {}).get("date_text")
+        if not (isinstance(quote, str) and quote.strip() and isinstance(date_text, str) and date_text.strip()):
+            row["trail"].append({"step": "Send-back result", "tag": "Code", "who": who, "at": at,
+                                 "text": "The reader gave no sentence for the date. The row stays as it was."})
+            return
+        event = {k: row.get(k) for k in ("ticker", "company", "event_type", "title", "date", "date_end", "program",
+                                         "indication")}
+        event.update(quote=quote, date_text=date_text, box=None)
+        proposal = build_entry.build_row(0, event, reading, source, words_doc, at, share=share,
+                                         model_name=reading["model"])
+        model_step = next((t for t in proposal["trail"] if t["tag"] == "Model"), None)
+        if model_step:
+            row["trail"].append({**model_step, "step": "Sentence for the date"})
+        row["trail"] += [t for t in proposal["trail"] if t["step"] in ("Checked", "Box located by code",
+                                                                       "Year inferred from the filing date")]
+        printed = next(c for c in proposal["checks"] if c["name"] == "quote_match")["result"] == "pass"
+        if not printed:
+            row["trail"].append({"step": "Send-back result", "tag": "Code", "who": who, "at": at,
+                                 "text": "The sentence the reader gave is not printed on the page. The row stays as "
+                                         "it was."})
+            return
+        old = next(c for c in row["checks"] if c["name"] == "date_match")
+        for f in ("quote", "date_text", "date", "date_end", "box", "checks", "status", "group", "reason"):
+            row[f] = proposal[f]
+        row["trail"].append({"step": "Send-back result", "tag": "Code", "who": who, "at": at,
+                             "text": f"The sentence is printed on the page. The row takes it; the checks decide: "
+                                     f"{proposal['status']}."})
+        if proposal["status"] == "matched":
+            ids = [int(m["id"][1:]) for m in self.run["mistakes"] if m["id"][1:].isdigit()]
+            self.run["mistakes"].append({
+                "id": f"m{max(ids, default=0) + 1}", "target": row["id"], "caught_by": "code",
+                "what_changed": f"The date text was not in the quote; the reader, sent back once, gave the sentence "
+                                f"that states “{date_text}”.",
+                **({"type": T.check_type(old)} if T.check_type(old) else {})})
 
     def mark_fake(self, reading: dict) -> None:
         if reading.get("fake"):

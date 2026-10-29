@@ -79,7 +79,8 @@ def row_checks(row: dict, source: dict, words_doc: dict | None) -> list:
         box_check,
         event_checks.date_match(row.get("date_text"), row.get("date"), row.get("quote"),
                                 date_end=row.get("date_end"), event_type=row.get("event_type"),
-                                title=row.get("title"), program=row.get("program")),
+                                title=row.get("title"), program=row.get("program"),
+                                filed=source.get("published_date")),
         event_checks.source_rule(source["kind"], []),
         event_checks.type_match(row.get("event_type"), row.get("quote")),
     ]

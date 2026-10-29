@@ -325,14 +325,17 @@ cheap-first-pass item was dropped (the Operator's ruling, 2026-10-29). The cost 
 `runs/escalate.py`. When a row fails a check, or the two readers disagree on it, that one row's **page region** (a
 full-width band of the page image around its quote, 60 points above and below) and the **failing check's label and
 reason** go to Muse Wonder (`muse-wonder-1.0` on the Meta Model API, `capture/wonder.py`, key `MODEL_API_KEY`) for a
-re-read. At most 3 rows a page; each is one counted, priced turn. Its answer is a new proposal, built with the same
+re-read. Only for a failed **date** or **event type** check (a box or quote failure is mended by code or is a
+paraphrase Wonder cannot cure; a disagreement is settled only by a person, so Wonder's reading would be evidence
+only), at most **1 row a page**, and Wonder's spend stops at **25% of a limited run's spending limit**
+(`escalate.WONDER_SHARE`; the job log notes it). Each call is one counted, priced turn. Its answer is a new proposal, built with the same
 builder as every row, so the same five checks run on it:
 
 - A row sent for a failed check, whose re-read passes **every** check, takes the re-read's values (group `corrected`,
   status `matched`), and the failure is added to `mistakes[]` as caught by `code` (the check) with its type.
 - A re-read that does not pass every check changes nothing: the row stays as it was and its trail says why.
-- A row sent because the readers disagree is never replaced: only a person's fix settles a disagreement. Wonder's
-  reading is added as evidence ("as Muse Spark did" / "as neither reader did").
+- (A row the readers disagree on is no longer sent. Older runs may hold Wonder's reading of one as evidence: "as Muse
+  Spark did" / "as neither reader did"; such a row is never replaced.)
 
 Trail, one actor per step: Code "Sent to Muse Wonder because <check> failed" (`runs.escalate`), Code "Instructions
 sent to Muse Wonder" (`capture.wonder`), Model "Muse Wonder" (tokens and cost), Code "Checked" for each of the five checks on its
@@ -341,6 +344,22 @@ it. `fixtures/ptgx_..._p3.wonder.json` is one live escalation: the PTGX first re
 date moved) so a row fails; Wonder, shown that row's band and the failed check, read the right event and period
 (2027-01-01 to 2027-03-31), and the row stayed as it was because Wonder's box reached below the quote's last line and
 Citation located failed (976 prompt and 2,631 completion tokens).
+
+### The fix wave (Job 12)
+
+Found by reading the rows of `runs/twelve-1`:
+
+- **Box located by code.** When the quote is printed on the page (as `quote_match` reads it, typographic marks folded) and
+  the reader's box does not pass the citation check, the box is the words found there (`build_entry.locate_box`) and
+  the trail has a Code step "Box located by code"; the reader's box was a hint. A box that already passes is left as the
+  reader drew it. Both readers' rows go through the same builder. A quote that is not printed (a paraphrase) gets no box.
+- **One date send-back.** For the rows of a page whose date text is not in their quote, the same reader is asked once
+  (one counted turn for the page) for the sentence that states the date. It is taken only if it is printed on the page;
+  the checks then decide the row. Trail: "Sent back for the date", "Sentence for the date" (Model), "Send-back result".
+- **Relative periods from the filing date.** "by year-end", "this year", "later this year", "this quarter", "next
+  quarter" take their year from the source's filing date (`event_checks.relative_period`): year-end is September to
+  December, as `vague_period_window`. A row with no dates gets the period (trail "Year inferred from the filing date",
+  Code); `date_match` passes when the row's dates lie inside it.
 
 ### Dated sentences the reader did not turn into rows
 
