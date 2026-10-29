@@ -42,6 +42,7 @@ import re
 from accuracy import types as T
 from accuracy.key import cell_id, event_id, program_names
 from checks.common import FAIL, normalize
+from checks.coverage import sentence_covered
 from checks.event_checks import parse_exact_date, parse_period, vague_period_window
 from checks.status import FAILED, MATCHED, check_cell
 
@@ -186,11 +187,15 @@ def _strip(text: str | None) -> str:
 
 
 def _program_of(row: dict, names: dict[str, str]) -> str | None:
-    """The key program a row is about: its program (or an alias of one), else the one key program named in its
-    title or quote. A program the key does not hold is returned as printed."""
+    """The key program a row is about: its program or its indication when either is the key's program or an
+    alias of it, else the one key program named in its title or quote. A program the key does not hold is
+    returned as printed."""
+    for field in ("program", "indication"):
+        said = normalize(row.get(field)).lower()
+        if said in names:
+            return names[said]
     if row.get("program"):
-        said = normalize(row["program"]).lower()
-        return names.get(said, said)
+        return normalize(row["program"]).lower()
     hay = " ".join(normalize(row.get(f)) for f in ("title", "quote")).lower()
     hits = {names[n] for n in sorted(names, key=len, reverse=True) if n and n in hay}
     return hits.pop() if len(hits) == 1 else None
@@ -213,6 +218,10 @@ def _expected(k: dict) -> dict:
 def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = None,
                  model: str | None = None) -> dict:
     key_events = {event_id(e): e for e in key.get("events") or []}
+    # Rows code found (a dated sentence no reader row quotes) are not proposals: they are never scored as
+    # events, and they name the key events the reader missed that the coverage check surfaced.
+    surfaced = [r for r in rows if r.get("found_by") == "coverage"]
+    rows = [r for r in rows if r.get("found_by") != "coverage"]
     names = program_names(key)
     complete = is_complete(key)
     excluded = {x.get("target"): x.get("rule") for x in exclusions or []}
@@ -272,9 +281,12 @@ def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = No
         out["wrong_type"].append(_event_item(row, _expected(key_events[free[0]]), T.WRONG_EVENT_TYPE))
     for kid, k in key_events.items():
         if kid not in taken:
+            seen = next((c for c in surfaced if sentence_covered(k["quote"], [c.get("quote")])), None)
             out["missed"].append({"ticker": k["ticker"], "program": k["program"], "event_type": k["event_type"],
-                                  "date_text": None, "expected": _expected(k), "type": None, "types": [],
-                                  "status": None, "caught": False})
+                                  "date_text": None, "expected": _expected(k),
+                                  "type": T.MISSED_DATED_SENTENCE if seen else None,
+                                  "types": [T.MISSED_DATED_SENTENCE] if seen else [], "status": None,
+                                  "caught": bool(seen), "surfaced_as": seen["id"] if seen else None})
     models = sorted({model_family(r.get("proposed_by")) for r in rows if r.get("proposed_by")})
     out["model"] = model_family(model) if model else (", ".join(models) if models else "unknown model")
     out["complete"] = complete

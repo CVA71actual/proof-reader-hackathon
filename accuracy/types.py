@@ -24,6 +24,7 @@ WRONG_COMPANY = "WRONG_COMPANY"
 SOURCE_NOT_ALLOWED = "SOURCE_NOT_ALLOWED"
 DUPLICATE = "DUPLICATE"
 UNREADABLE_OUTPUT = "UNREADABLE_OUTPUT"
+MISSED_DATED_SENTENCE = "MISSED_DATED_SENTENCE"
 
 LABELS = {
     WRONG_VALUE: "Value not as printed",
@@ -39,6 +40,7 @@ LABELS = {
     SOURCE_NOT_ALLOWED: "Source not allowed on its own",
     DUPLICATE: "Same item proposed twice",
     UNREADABLE_OUTPUT: "Reader's answer could not be read",
+    MISSED_DATED_SENTENCE: "A dated sentence the reader did not turn into a row",
 }
 CODES = tuple(LABELS)
 

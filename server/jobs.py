@@ -41,7 +41,7 @@ from pathlib import Path
 
 from capture import read_events, read_table
 from capture.capture_source import load_entry
-from runs import build_entry, build_run, prices
+from runs import build_entry, build_run, coverage, prices
 
 DEFAULT_TURN_LIMIT = 40
 UNREADABLE_LIMIT = 3
@@ -358,6 +358,9 @@ class Job:
             first = len(self.run["rows"]) + 1
             new_rows = [build_entry.build_row(first + i, ev, reading, source, words_doc, at, share=shares[i])
                         for i, ev in enumerate(parsed)]
+            new_rows += coverage.possible_event_rows(words_doc, new_rows, source, first_index=first + len(new_rows),
+                                                     at=at, today=today(), ticker=entry["ticker"],
+                                                     company=entry["company"])
             self.apply_window(new_rows, at)
             self.run["rows"] += new_rows
             self.mark_fake(reading)

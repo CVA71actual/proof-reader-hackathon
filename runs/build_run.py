@@ -52,6 +52,7 @@ CHECK_FUNCTIONS = {
     event_checks.QUOTE_ID: event_checks.quote_match,
     event_checks.DATE_ID: event_checks.date_match,
     event_checks.SOURCE_ID: event_checks.source_rule,
+    event_checks.TYPE_ID: event_checks.type_match,
 }
 
 

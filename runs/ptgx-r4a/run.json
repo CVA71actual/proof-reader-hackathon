@@ -66,6 +66,7 @@
    "date_end": "2027-12-31",
    "quote": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
    "program": "PN-458o",
+   "indication": null,
    "source_id": "src-ptgx-8k-2026-08-05-ex991",
    "page_number": 3,
    "box": [
@@ -189,6 +190,21 @@
       "file": "checks/event_checks.py",
       "function": "source_rule"
      }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote's words (initiation) fit milestone.",
+     "compared": {
+      "looked_for": "milestone",
+      "found": "initiation"
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
     }
    ],
    "trail": [
@@ -250,6 +266,13 @@
      "who": "source_rule",
      "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
      "at": "2026-10-28T19:18:31+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: pass. The quote's words (initiation) fit milestone.",
+     "at": "2026-10-28T19:18:31+00:00"
     }
    ]
   },
@@ -264,6 +287,7 @@
    "date_end": "2027-03-31",
    "quote": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
    "program": "PN-8047",
+   "indication": null,
    "source_id": "src-ptgx-8k-2026-08-05-ex991",
    "page_number": 3,
    "box": [
@@ -385,6 +409,21 @@
       "file": "checks/event_checks.py",
       "function": "source_rule"
      }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote's words (initiation) fit milestone.",
+     "compared": {
+      "looked_for": "milestone",
+      "found": "initiation"
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
     }
    ],
    "trail": [
@@ -445,6 +484,13 @@
      "tag": "Code",
      "who": "source_rule",
      "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
+     "at": "2026-10-28T19:18:31+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: pass. The quote's words (initiation) fit milestone.",
      "at": "2026-10-28T19:18:31+00:00"
     }
    ]

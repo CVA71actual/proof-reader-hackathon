@@ -5,6 +5,8 @@ The citation box is checked with the same selector_match used for table values. 
     date_match     "Date read as written"        the date the reader gave is the date printed in the quote;
                                                   the date must sit in the part of the quote that names the
                                                   event, not negated or replaced there; a period needs a year
+    type_match     "Event type matches the quote"    the row's event type is one the quote's own words fit
+                                                      (the fixed words in _ANCHORS), not another kind of event
     source_rule    "Source is more than a calendar"  a third-party calendar is never a source on its own
 
 Row statuses (same words as table values, plus two):
@@ -26,6 +28,7 @@ from checks.common import COULD_NOT_RUN, FAIL, NOT_NEEDED, PASS, CheckResult, jo
 QUOTE_ID, QUOTE_LABEL = "quote_match", "Quote found on page"
 DATE_ID, DATE_LABEL = "date_match", "Date read as written"
 SOURCE_ID, SOURCE_LABEL = "source_rule", "Source is more than a calendar"
+TYPE_ID, TYPE_LABEL = "type_match", "Event type matches the quote"
 
 THIRD_PARTY_CALENDAR = "third_party_calendar"
 
@@ -443,6 +446,54 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
         return result(NOT_NEEDED, "The quote names no exact day and no period, so there is nothing to compare.",
                       found=dt)
     return result(FAIL, "The row gives a date but the quote names no day and no period.", found=dt)
+
+
+# ---------------------------------------------------------------- event type
+
+
+# The six kinds of event the reader may name (capture/read_events.py), each with the fixed words from _ANCHORS.
+TYPE_GROUPS = ("trial results", "regulatory decision", "launch", "conference", "filing", "milestone")
+
+
+def type_group(event_type: str | None) -> str | None:
+    """'trial_results' -> 'trial results'; None for a type with no fixed words (earnings, other, unknown)."""
+    et = (event_type or "").lower()
+    for keys, group in _TYPE_KEYS:
+        if any(k in et for k in keys):
+            return group if group in TYPE_GROUPS else None
+    return None
+
+
+def _words_in(quote: str, group: str) -> list[str]:
+    q = quote.lower()
+    return [w for w in _ANCHORS[group] if re.search(rf"(?<![a-z]){re.escape(w)}(?![a-z])", q)]
+
+
+def type_match(event_type: str | None, quote: str | None) -> CheckResult:
+    """The row's event type must be one the quote's words fit. pass: the quote holds a fixed word for the row's
+    type. fail: it holds none for that type but does for another ("results, data" in a quote saved as a
+    milestone). not_needed: the quote holds no fixed word for any kind of event (nothing to compare, and a row is
+    not held back for it), or the type has no fixed words (earnings, other). could_not_run: the row has no quote."""
+    compared = {"value": event_type, "found": None}
+
+    def result(res: str, reason: str, found: str | None = None) -> CheckResult:
+        return CheckResult(TYPE_ID, TYPE_LABEL, res, reason, {**compared, "found": found})
+
+    group = type_group(event_type)
+    if group is None:
+        return result(NOT_NEEDED, f"The event type {event_type or '?'} has no fixed words to compare the quote with.")
+    if not normalize(quote):
+        return result(COULD_NOT_RUN, "The row has no quote to compare the event type with.")
+    own = _words_in(quote, group)
+    if own:
+        return result(PASS, f"The quote's words ({', '.join(own)}) fit {group}.", ", ".join(own))
+    other = {g: w for g in TYPE_GROUPS if g != group and (w := _words_in(quote, g))}
+    if other:
+        found = "; ".join(f"{g}: {', '.join(w)}" for g, w in other.items())
+        first_group, first_words = next(iter(other.items()))
+        return result(FAIL, f"The quote's words ({', '.join(first_words)}) point to {first_group}, not {group}.", found)
+    return result(NOT_NEEDED, f"The quote holds no fixed word for {group} or any other kind of event, so there is "
+                              f"nothing to compare the type with.")
 
 
 # ---------------------------------------------------------------- house rule

@@ -163,7 +163,8 @@ def test_fix_the_quote_supports_is_rechecked_and_counted(client, runs_dir):
     assert st["group"] == "corrected" and st["status"] == "matched" and not st["needs_recheck"]
     assert st["recheck"]["result"] == "pass"
     assert {c["name"]: c["result"] for c in st["recheck"]["checks"]} == {
-        "quote_match": "pass", "selector_match": "pass", "date_match": "pass", "source_rule": "pass"}
+        "quote_match": "pass", "selector_match": "pass", "date_match": "pass", "source_rule": "pass",
+        "type_match": "pass"}
     assert body["mistakes"]["person"] == person0 + 1
     assert body["counts"]["fixes_pending"] == 0
     assert len(lines(runs_dir)) == n + 6                       # each fix: the person's line + code's re-check
@@ -396,7 +397,7 @@ def test_codex1_resolving_the_disputed_field_records_the_person_apart_from_the_c
     assert (rc["action"], rc["by"]) == ("recheck", "code")                                 # what code checked
     assert rc["recheck"]["reason"].startswith(SETTLES)
     assert {c["name"] for c in rc["recheck"]["checks"]} == {"quote_match", "selector_match", "date_match",
-                                                             "source_rule"}
+                                                             "source_rule", "type_match"}
     assert all(c["kind"] == "Code" for c in rc["recheck"]["checks"])
 
 

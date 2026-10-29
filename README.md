@@ -73,7 +73,7 @@ mistake by type, model and who caught it.
   says whether the checks flagged it.
 - **Mistake types** (`accuracy/types.py`, fixed list): WRONG_VALUE, WRONG_ROW, WRONG_COLUMN, BOX_DRIFT,
   QUOTE_NOT_ON_PAGE, DATE_NOT_IN_QUOTE, PERIOD_MISREAD, DATE_IN_PAST, WRONG_EVENT_TYPE, WRONG_COMPANY,
-  SOURCE_NOT_ALLOWED, DUPLICATE, UNREADABLE_OUTPUT, each with plain words for the screen. A failed check maps to
+  SOURCE_NOT_ALLOWED, DUPLICATE, UNREADABLE_OUTPUT, MISSED_DATED_SENTENCE, each with plain words for the screen. A failed check maps to
   one code; when several checks fail on one item, the value check names it first, then row and column, then the
   box. `mistakes[]` in run.json carries an optional `type`; the state rule lists every counted mistake with its
   type and model (`current_state(...)["mistake_list"]`), and `accuracy/mistake_log.py` counts them by type x

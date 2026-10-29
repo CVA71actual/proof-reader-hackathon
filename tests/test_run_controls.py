@@ -168,7 +168,7 @@ def test_the_note_goes_in_under_a_fixed_heading_and_changes_no_check(runs_dir):
     assert prompt.replace(f"{read_table.NOTE_HEADING}\n{note}\n\n", "") == plain.prompts[0]
     ra, rb = run_json(runs_dir, a["id"]), run_json(runs_dir, b["id"])
     assert _check_summary(ra) == _check_summary(rb)
-    assert all([n for n, _ in checks] == ["quote_match", "selector_match", "date_match", "source_rule"]
+    assert all([n for n, _ in checks] == ["quote_match", "selector_match", "date_match", "source_rule", "type_match"]
                for checks in _check_summary(rb))
     assert [r["status"] for r in ra["rows"]] == [r["status"] for r in rb["rows"]]
     # the exact text sent, note included, is the run's first trail step

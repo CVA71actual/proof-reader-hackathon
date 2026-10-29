@@ -59,7 +59,7 @@ curl -s -X POST 127.0.0.1:8777/api/runs/sample/decisions -H 'content-type: appli
 
 A fix is re-checked at once with the same functions that checked the run (`runs/recheck.py`):
 event rows get Quote found on page, Citation located, Date read as written (periods read as periods) and
-Source is more than a calendar; table values get Matches source text, Citation located and Right row and column. Code then writes
+Source is more than a calendar and Event type matches the quote; table values get Matches source text, Citation located and Right row and column. Code then writes
 its own `recheck` line (`by: "code"`). The re-check passes only when the fixed item comes out `matched`.
 Its result is `pass`, `fail`, or `could_not_run` when no check failed but one had nothing to compare (for example
 no box): the row then stays corrected but proposed, under Needs attention, and is not counted as a mistake.

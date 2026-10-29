@@ -5789,6 +5789,21 @@
       "file": "checks/event_checks.py",
       "function": "source_rule"
      }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote's words (results, topline) fit trial results.",
+     "compared": {
+      "looked_for": "trial_readout",
+      "found": "results, topline"
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
     }
    ],
    "trail": [
@@ -5842,6 +5857,13 @@
      "who": "source_rule",
      "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
      "at": "2026-10-27T15:02:13+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: pass. The quote's words (results, topline) fit trial results.",
+     "at": "2026-10-27T15:02:14+00:00"
     },
     {
      "step": "Second reading",
@@ -5970,6 +5992,21 @@
       "file": "checks/event_checks.py",
       "function": "source_rule"
      }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote's words (present) fit conference.",
+     "compared": {
+      "looked_for": "conference_presentation",
+      "found": "present"
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
     }
    ],
    "trail": [
@@ -6023,6 +6060,13 @@
      "who": "source_rule",
      "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
      "at": "2026-10-27T15:03:13+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: pass. The quote's words (present) fit conference.",
+     "at": "2026-10-27T15:03:14+00:00"
     },
     {
      "step": "Second reading",
@@ -6155,6 +6199,21 @@
       "file": "checks/event_checks.py",
       "function": "source_rule"
      }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote's words (action date) fit regulatory decision.",
+     "compared": {
+      "looked_for": "regulatory_decision",
+      "found": "action date"
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
     }
    ],
    "trail": [
@@ -6241,6 +6300,13 @@
      "who": "source_rule",
      "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
      "at": "2026-10-27T15:04:13+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: pass. The quote's words (action date) fit regulatory decision.",
+     "at": "2026-10-27T15:04:14+00:00"
     },
     {
      "step": "Second reading",
@@ -6375,6 +6441,21 @@
       "file": "checks/event_checks.py",
       "function": "source_rule"
      }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "The event type investor_day has no fixed words to compare the quote with.",
+     "compared": {
+      "looked_for": "investor_day",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
     }
    ],
    "trail": [
@@ -6428,6 +6509,13 @@
      "who": "source_rule",
      "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
      "at": "2026-10-27T15:05:13+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: not needed. The event type investor_day has no fixed words to compare the quote with.",
+     "at": "2026-10-27T15:05:14+00:00"
     },
     {
      "step": "Second reading",
@@ -6565,6 +6653,21 @@
       "file": "checks/event_checks.py",
       "function": "source_rule"
      }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "The event type advisory_committee has no fixed words to compare the quote with.",
+     "compared": {
+      "looked_for": "advisory_committee",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
     }
    ],
    "trail": [
@@ -6620,6 +6723,13 @@
      "at": "2026-10-27T15:06:13+00:00"
     },
     {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: not needed. The event type advisory_committee has no fixed words to compare the quote with.",
+     "at": "2026-10-27T15:06:14+00:00"
+    },
+    {
      "step": "Second reading",
      "tag": "Model",
      "who": "Muse Spark Open",
@@ -6665,6 +6775,13 @@
      "who": "source_rule",
      "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
      "at": "2026-10-27T15:07:13+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: not needed. The event type advisory_committee has no fixed words to compare the quote with.",
+     "at": "2026-10-27T15:07:14+00:00"
     }
    ]
   },
@@ -6777,6 +6894,21 @@
       "file": "checks/event_checks.py",
       "function": "source_rule"
      }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote's words (data, readout) fit trial results.",
+     "compared": {
+      "looked_for": "trial_readout",
+      "found": "data, readout"
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
     }
    ],
    "trail": [
@@ -6830,6 +6962,13 @@
      "who": "source_rule",
      "text": "Source is more than a calendar: fail. A third-party calendar is never a source on its own.",
      "at": "2026-10-27T15:07:13+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: pass. The quote's words (data, readout) fit trial results.",
+     "at": "2026-10-27T15:07:14+00:00"
     },
     {
      "step": "Second reading",
@@ -6953,6 +7092,21 @@
       "file": "checks/event_checks.py",
       "function": "source_rule"
      }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote's words (results, report) fit trial results.",
+     "compared": {
+      "looked_for": "trial_readout",
+      "found": "results, report"
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
     }
    ],
    "trail": [
@@ -7006,6 +7160,13 @@
      "who": "source_rule",
      "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
      "at": "2026-10-27T15:08:13+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: pass. The quote's words (results, report) fit trial results.",
+     "at": "2026-10-27T15:08:14+00:00"
     }
    ]
   },
@@ -7129,6 +7290,21 @@
       "file": "checks/event_checks.py",
       "function": "source_rule"
      }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "The quote holds no fixed word for regulatory decision or any other kind of event, so there is nothing to compare the type with.",
+     "compared": {
+      "looked_for": "regulatory_decision",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
     }
    ],
    "trail": [
@@ -7182,6 +7358,13 @@
      "who": "source_rule",
      "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
      "at": "2026-10-27T15:09:13+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: not needed. The quote holds no fixed word for regulatory decision or any other kind of event, so there is nothing to compare the type with.",
+     "at": "2026-10-27T15:09:14+00:00"
     },
     {
      "step": "Second reading",
@@ -7276,6 +7459,21 @@
       "file": "checks/event_checks.py",
       "function": "source_rule"
      }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "The event type unknown has no fixed words to compare the quote with.",
+     "compared": {
+      "looked_for": "unknown",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
     }
    ],
    "trail": [
@@ -7329,6 +7527,13 @@
      "who": "source_rule",
      "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
      "at": "2026-10-27T15:10:13+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: not needed. The event type unknown has no fixed words to compare the quote with.",
+     "at": "2026-10-27T15:10:14+00:00"
     }
    ]
   },
@@ -7418,6 +7623,21 @@
       "file": "checks/event_checks.py",
       "function": "source_rule"
      }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "The event type earnings has no fixed words to compare the quote with.",
+     "compared": {
+      "looked_for": "earnings",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
     }
    ],
    "trail": [
@@ -7471,6 +7691,13 @@
      "who": "source_rule",
      "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
      "at": "2026-10-27T15:11:13+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: not needed. The event type earnings has no fixed words to compare the quote with.",
+     "at": "2026-10-27T15:11:14+00:00"
     }
    ]
   },
@@ -7589,6 +7816,21 @@
       "file": "checks/event_checks.py",
       "function": "source_rule"
      }
+    },
+    {
+     "name": "type_match",
+     "label": "Event type matches the quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote's words (present) fit conference.",
+     "compared": {
+      "looked_for": "conference_presentation",
+      "found": "present"
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     }
     }
    ],
    "trail": [
@@ -7642,6 +7884,13 @@
      "who": "source_rule",
      "text": "Source is more than a calendar: pass. The source is not a third-party calendar.",
      "at": "2026-10-27T15:12:13+00:00"
+    },
+    {
+     "step": "Checked",
+     "tag": "Code",
+     "who": "type_match",
+     "text": "Event type matches the quote: pass. The quote's words (present) fit conference.",
+     "at": "2026-10-27T15:12:14+00:00"
     },
     {
      "step": "Second reading",

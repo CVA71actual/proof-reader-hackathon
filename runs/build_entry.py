@@ -28,13 +28,14 @@ import hashlib
 import json
 import shutil
 import sys
+from datetime import date
 from pathlib import Path
 
 from capture import read_events
 from capture.capture_source import FIXTURES, load_entry
 from capture.read_table import FAKE_MODEL, sha256_text
 from checks import event_checks
-from runs import prices, recheck
+from runs import coverage, prices, recheck
 from runs.build_run import MUSE_SPARK, RUNS, SCHEMA_VERSION, file_sha256, now_utc, render_page, to_contract_check
 from runs.build_run import write_run
 
@@ -158,6 +159,7 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         "date_end": _str(event.get("date_end")),
         "quote": quote,
         "program": _str(event.get("program")),
+        "indication": _str(event.get("indication")),
         "source_id": source["id"],
         "page_number": source["pages"][0]["page_number"],
         "box": [float(v) for v in box] if box_ok else from_ids,
@@ -221,6 +223,10 @@ def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = N
                       prices.split_tokens(usage.get("completion_tokens"), n), [n] * n))
     rows = [build_row(i, ev, reading, source, words_doc, at, share=shares[i - 1])
             for i, ev in enumerate(reading["events"], start=1)]
+    # a dated sentence the reader did not turn into a row becomes an open row, so a person sees what was skipped
+    rows += coverage.possible_event_rows(words_doc, rows, source, first_index=len(rows) + 1, at=at,
+                                         today=date.fromisoformat(at[:10]), ticker=entry["ticker"],
+                                         company=entry["company"])
     return {
         "schema_version": SCHEMA_VERSION,
         "run": {

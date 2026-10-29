@@ -76,7 +76,7 @@ UNRESOLVED = ("open", "unverified")
 ROW_FIELDS = ("ticker", "company", "event_type", "title", "date_text", "date", "date_end", "quote")
 CELL_FIELDS = ("value",)
 # The fields the checks compare. A fix to any other field cannot be shown right or wrong by a re-check.
-ROW_CHECKED_FIELDS = ("quote", "date_text", "date", "date_end")
+ROW_CHECKED_FIELDS = ("quote", "date_text", "date", "date_end", "event_type")
 CELL_CHECKED_FIELDS = ("value",)
 
 _CELL_GROUP = {"matched": "kept", "failed": "open"}

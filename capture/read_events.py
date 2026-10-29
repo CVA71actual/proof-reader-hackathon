@@ -49,6 +49,7 @@ period the page gives for it. Answer with JSON only, in exactly this shape:
       "ticker": "{ticker}",
       "company": "{company}",
       "program": "<the drug or program name as printed, or null>",
+      "indication": "<the disease or condition the program is for, as printed, or null>",
       "event_type": "<one of: {types}>",
       "title": "<a short title for the event>",
       "date_text": "<the date or period exactly as printed>",
@@ -64,6 +65,8 @@ period the page gives for it. Answer with JSON only, in exactly this shape:
 Rules:
 - Use only the words given below. Do not add or reword anything.
 - "quote" is the printed words in page order joined by single spaces, exactly as printed, punctuation included.
+- "program" is the drug or program name exactly as printed; "indication" is the disease or condition it is for,
+  as printed (null if the page does not say). Give both whenever the page names both.
 - "date_text" is copied exactly as printed in the quote.
 - "date" and "date_end": for an exact day, "date" is that day and "date_end" is null. For a quarter, half, month
   or year, "date" is its first day and "date_end" its last day. For anything vaguer ("mid-2027", "later this

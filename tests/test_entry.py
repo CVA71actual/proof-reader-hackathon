@@ -227,7 +227,8 @@ def test_the_second_half_row_if_read(run):
 
 def test_every_row_is_checked_by_the_real_functions(run):
     for row in run["rows"]:
-        assert [c["name"] for c in row["checks"]] == ["quote_match", "selector_match", "date_match", "source_rule"]
+        assert [c["name"] for c in row["checks"]] == ["quote_match", "selector_match", "date_match", "source_rule",
+                                                      "type_match"]
         assert row["status"] == event_checks.row_status(row["checks"])
         assert row["group"] == build_entry.START_GROUP.get(row["status"], "unverified")
         assert row["sample"] is False and row["source_id"] == run["sources"][0]["id"]
@@ -239,7 +240,7 @@ def test_every_trail_starts_with_the_exact_instructions(run, reading):
         assert (first["step"], first["tag"], first["who"]) == ("Instructions sent", "Code", "capture.read_events")
         assert first["text"] == reading["prompt_text"]
         steps = [s["step"] for s in row["trail"]]
-        assert steps[1] == "Proposed" and steps.count("Checked") == 4
+        assert steps[1] == "Proposed" and steps.count("Checked") == 5
         for s in row["trail"]:
             if s["tag"] == "Code":
                 assert "Muse" not in s["who"]

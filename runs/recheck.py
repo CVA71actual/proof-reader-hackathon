@@ -4,7 +4,7 @@ Used by the sample build (its example fix on e7) and by the decisions server (ev
 Nothing here is re-judged by hand: the checks are the same functions that checked the run.
 
     row_checks(row, source, words_doc)   event row: quote_match, selector_match, date_match (period-aware),
-                                         source_rule
+                                         source_rule, type_match
     recheck_row(at, row, source, words_doc)
     recheck_cell(at, cell, words_doc)    table value: text_layer_match + selector_match + row_column_match
                                          (checks.status)
@@ -64,7 +64,7 @@ def _not_captured(result: CheckResult, page_number) -> CheckResult:
 
 
 def row_checks(row: dict, source: dict, words_doc: dict | None) -> list:
-    """The four event-row checks, in the order the run shows them."""
+    """The five event-row checks, in the order the run shows them."""
     words = words_doc["words"] if words_doc else []
     w, h = (words_doc["page_width"], words_doc["page_height"]) if words_doc else (612.0, 792.0)
     return [
@@ -74,6 +74,7 @@ def row_checks(row: dict, source: dict, words_doc: dict | None) -> list:
                                 date_end=row.get("date_end"), event_type=row.get("event_type"),
                                 title=row.get("title"), program=row.get("program")),
         event_checks.source_rule(source["kind"], []),
+        event_checks.type_match(row.get("event_type"), row.get("quote")),
     ]
 
 

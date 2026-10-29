@@ -250,6 +250,8 @@
                      "description": "Optional. The last day of the period when the source names a period (\"Q3 2027\"); null for an exact day."},
         "quote": {"type": ["string", "null"]},
         "program": {"type": ["string", "null"], "description": "Optional. The drug or program name as printed (\"PN-8047\"); an event word for Date read as written."},
+        "indication": {"type": ["string", "null"], "description": "Optional. The disease or condition the program is for, as printed; the scorer and the key may alias it like the program."},
+        "found_by": {"enum": ["reader", "coverage"], "description": "Optional. \"coverage\": code found the dated sentence the reader did not turn into a row (checks/coverage.py); no model proposed it."},
         "source_id": {"$ref": "#/$defs/id"},
         "page_number": {"type": "integer", "minimum": 1},
         "box": {"$ref": "#/$defs/box"},
@@ -301,7 +303,8 @@
         "caught_by": {"enum": ["code", "second_reader", "person"]},
         "type": {"enum": ["WRONG_VALUE", "WRONG_ROW", "WRONG_COLUMN", "BOX_DRIFT", "QUOTE_NOT_ON_PAGE",
                           "DATE_NOT_IN_QUOTE", "PERIOD_MISREAD", "DATE_IN_PAST", "WRONG_EVENT_TYPE",
-                          "WRONG_COMPANY", "SOURCE_NOT_ALLOWED", "DUPLICATE", "UNREADABLE_OUTPUT"],
+                          "WRONG_COMPANY", "SOURCE_NOT_ALLOWED", "DUPLICATE", "UNREADABLE_OUTPUT",
+                          "MISSED_DATED_SENTENCE"],
                  "description": "Optional. The mistake type code (accuracy/types.py); the mistake log counts by type, model and who caught it."}
       }
     }

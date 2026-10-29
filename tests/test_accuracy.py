@@ -266,7 +266,7 @@ def _d(r):
 def test_type_codes_are_the_fixed_list():
     assert T.CODES == ("WRONG_VALUE", "WRONG_ROW", "WRONG_COLUMN", "BOX_DRIFT", "QUOTE_NOT_ON_PAGE",
                        "DATE_NOT_IN_QUOTE", "PERIOD_MISREAD", "DATE_IN_PAST", "WRONG_EVENT_TYPE", "WRONG_COMPANY",
-                       "SOURCE_NOT_ALLOWED", "DUPLICATE", "UNREADABLE_OUTPUT")
+                       "SOURCE_NOT_ALLOWED", "DUPLICATE", "UNREADABLE_OUTPUT", "MISSED_DATED_SENTENCE")
     assert all(T.LABELS[c] for c in T.CODES)
     schema = json.loads((REPO / "runs" / "schema" / "run.schema.json").read_text())
     assert tuple(schema["$defs"]["mistake"]["properties"]["type"]["enum"]) == T.CODES

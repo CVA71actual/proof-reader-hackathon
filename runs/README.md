@@ -57,7 +57,8 @@ Every path inside `run.json` (page images, words files) is relative to the run's
   `date_text` is the date as printed. `date` is the exact day, or the first day of the period when `date_end` is set.
   `date_end` (optional, ISO or null) is the last day of the period when the source names one ("Q3 2027",
   "2H 2027", "mid-2027"): "Q3 2027" is `date` 2027-07-01, `date_end` 2027-09-30. `program` (optional) is the drug or
-  program name as printed ("PN-8047"). "Keep as stated" is a normal
+  program name as printed ("PN-8047"); `indication` (optional) is the disease or condition it is for, as printed. The
+  scorer and the key may alias either. `found_by` (optional) is "coverage" on a row code found (below). "Keep as stated" is a normal
   outcome for period dates; the calendar must place periods.
 - `mistakes[]`: genuine errors only: a proposed value that was wrong and got changed, or a row removed because its
   content was wrong. Each says what changed on which row or value, and who caught it: `code`, `second_reader` or
@@ -164,6 +165,30 @@ function in this repo that ran it. Today's checks:
 | Quote found on page | `checks/event_checks.py` `quote_match` |
 | Date read as written | `checks/event_checks.py` `date_match` |
 | Source is more than a calendar | `checks/event_checks.py` `source_rule` |
+| Event type matches the quote | `checks/event_checks.py` `type_match` |
+
+**Event type matches the quote** (event rows). The row's `event_type` must be a kind of event its own quote's words
+fit: the fixed words per kind in `event_checks.py` `_ANCHORS` (trial results: results, data, readout, topline,
+report; regulatory decision: PDUFA, decision, approval, CRL, action date; launch; conference; filing; milestone:
+dosed, enrolled, initiated, initiation, completed, first patient), matched as whole words, case ignored. `pass`: the
+quote holds a word for the row's kind ("The quote's words (initiation) fit milestone."). `fail`: it holds none for
+that kind but does for another ("The quote's words (results, topline) point to trial results, not milestone.").
+`not_needed`: the quote holds no fixed word for any kind of event, or the type has no fixed words (earnings, other,
+unknown): there is nothing to compare, and the row is not held back for it. `could_not_run`: the row has no quote.
+A person's fix of the event type is re-checked by it like a fix of the date.
+
+### Dated sentences the reader did not turn into rows
+
+`checks/coverage.py` cuts the page's words into sentences (a leading bullet is dropped; abbreviations such as "Inc."
+do not end one; more than 80 words with no sentence end is a table or list, not a sentence) and looks in each for a
+date or period that starts after the day the reading was made (the date parsers are the date check's own: exact
+days, quarters, halves, months, "mid-2027", "in 2028"). A sentence that no proposed row quotes (a quote that holds
+it, that it holds, or that holds 80% of its words) becomes one open row (`runs/coverage.py`): title "Possible
+event not read: <sentence>", `status` undecided, `group` open, the sentence as its `quote` with its box, the date
+or period it names, no checks, `found_by` "coverage", and a trail that says no model was asked and code found it.
+A person keeps it as an event, fixes it, or removes it; until then it is under Needs attention and never on the
+calendar. The scorer never counts these rows as proposals; a key event the reader missed that one of them surfaced
+is typed `MISSED_DATED_SENTENCE` and counted as caught by code.
 
 ### Trail
 
@@ -224,8 +249,8 @@ before the fix (the old value); `after` is the run on the fixed item and equals 
   Only a fix of the row's `disagreement.field` settles the readers' disagreement; when its re-check passes the row
   becomes `matched` and the reason starts with "Settles the readers' disagreement by the person's fix. " A fix of
   any other field leaves the row `undecided` (group `corrected` if its re-check passed) and under Needs attention.
-  The checks compare quote, date_text, date and date_end (a table value: value). A fix of any other field (title,
-  company, ticker, event_type unless it is the disputed field) is not shown right by a re-check: unless a check
+  The checks compare quote, date_text, date, date_end and event_type (a table value: value). A fix of any other
+  field (title, company, ticker) is not shown right by a re-check: unless a check
   fails, the re-check is `could_not_run` with "No check compares <field>; the fix is recorded but not
   demonstrated.", the status stays what the checks said, and the fix stays pending. If the cited page was not
   captured, the page checks could not run ("Page N was not captured."); no other page is used.
@@ -250,8 +275,8 @@ It also returns:
   If `before` is `pass` and `after` is `pass`, the fix is an edit without an error, for example 115,315 changed
   to $115,315 on a value that already matched: the edit is recorded and the row stays `corrected` / `matched`,
   but it is not counted; it adds 1 to `counts.edits_without_error` with the reason "The value already passed its
-  checks before the edit." Settling the readers' disagreement by choosing the disputed value (event_type, which no
-  check compares) is such an edit: it settles the row but shows no old error, so it is not counted.
+  checks before the edit." Settling the readers' disagreement by choosing the disputed value (event_type) is such an edit when
+  the quote fits both types: it settles the row but shows no old error, so it is not counted.
   A re-check line with no `before` run is not counted. A fix waiting for its re-check is in `fixes_pending`, not
   here; a fix whose re-check failed is not counted, whatever `before` said. A fix always changes the value (one
   with from == to is ignored). A person's remove is not a mistake. Undo of a fix takes back exactly what that fix
@@ -280,7 +305,7 @@ holds both fingerprints, `capture/capture_source.py` refuses any other file, and
 `capture/read_events.py` sends the page words to Muse Spark (strict JSON, the fixed event types trial_results,
 regulatory_decision, launch, conference, filing, milestone) and saves the exact prompt, its SHA-256, the raw
 answer and the parsed events to `fixtures/ptgx_8k_2026-08-05_ex991_p3.events.json`; `--fake` builds a labelled
-fake reading offline. `runs/build_entry.py` turns each proposed event into a row: the same four checks the server
+fake reading offline. `runs/build_entry.py` turns each proposed event into a row: the same five checks the server
 re-runs on a fix (`runs/recheck.py` `row_checks`), status from `row_status`, starting group from the status
 (matched -> kept, failed -> open, anything else -> unverified). A full stop the reader copied from the end of the
 sentence into `date_text` ("Q1 2027.") is dropped by code in its own "Tidied" step. `decisions.jsonl` starts empty.
