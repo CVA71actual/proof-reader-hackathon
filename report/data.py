@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import calendar as _calendar
 import json
+from datetime import date
 from pathlib import Path
 
 from runs.state import current_state
@@ -63,11 +65,40 @@ def _calendar_date_key(values: dict) -> tuple:
     return (d, end, values.get("date_text") or "")
 
 
+def _period_word(start: str, end: str) -> str | None:
+    """The word for a whole month, quarter, half or year ('Q1 2027'), or None when the period has no such name."""
+    try:
+        a, b = date.fromisoformat(start), date.fromisoformat(end)
+    except (TypeError, ValueError):
+        return None
+    if a.year != b.year or a.day != 1 or b.day != _calendar.monthrange(b.year, b.month)[1]:
+        return None
+    months = (a.month, b.month)
+    if a.month == b.month:
+        return f"{_calendar.month_name[a.month]} {a.year}"
+    if months == (1, 12):
+        return str(a.year)
+    if months in ((1, 6), (7, 12)):
+        return f"H{1 if a.month == 1 else 2} {a.year}"
+    if b.month - a.month == 2 and a.month % 3 == 1:
+        return f"Q{a.month // 3 + 1} {a.year}"
+    return None
+
+
+def _period_display(start: str | None, end: str) -> str:
+    """A period with no stated text: first day to last day, led by its word when the code can name it."""
+    if not start:
+        return end
+    span = f"{start} to {end}"
+    word = _period_word(start, end)
+    return f"{word} ({span})" if word else span
+
+
 def _date_display(values: dict) -> str:
     """Period rows show the period as stated; never invent a day."""
     text = (values.get("date_text") or "").strip()
     if values.get("date_end"):
-        return text or values.get("date") or "—"
+        return text or _period_display(values.get("date"), values["date_end"])
     if text:
         return text
     return values.get("date") or "—"
@@ -166,9 +197,11 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         if st["kind"] != "row" or st["group"] != "corrected":
             continue
         for fx in st.get("fixes") or []:
-            if any(c["id"] == rid and fx["field"] in (c.get("what") or "") for c in corrections):
-                continue
             line = f"{fx['field']}: {fx['from']} → {fx['to']}"
+            said = f"{fx['field']} changed from {fx['from']} to {fx['to']}"
+            if any(c["id"] == rid and (line in (c.get("what") or "") or said in (c.get("what") or ""))
+                   for c in corrections):
+                continue
             check = None
             rc = fx.get("recheck") or {}
             for c in rc.get("checks") or []:

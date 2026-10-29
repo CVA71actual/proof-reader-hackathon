@@ -36,6 +36,7 @@ date is not touched.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import threading
@@ -123,6 +124,16 @@ def _number(v, *, integer: bool = False) -> bool:
     return isinstance(v, int if integer else (int, float)) and not isinstance(v, bool)
 
 
+def _finite_limit(v) -> bool:
+    """A spending limit: a number of dollars, finite, zero or more."""
+    if not _number(v):
+        return False
+    try:
+        return math.isfinite(v) and v >= 0
+    except OverflowError:       # an integer too large to be a float (JSON 1 followed by 1000 zeros)
+        return False
+
+
 def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
     """The New run panel's choices, or a ValueError with one plain sentence. `companies` may be ["all"]: every company in
     the sources index (the scanned variant of a page is not one of them), recorded as the list it stands for."""
@@ -159,8 +170,8 @@ def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
                            body.get("note_for_agent"))
     if window is not None and not (_number(window, integer=True) and 1 <= window <= TIME_WINDOW_MAX):
         raise ValueError(f"The time window must be a whole number of months from 1 to {TIME_WINDOW_MAX}, or null.")
-    if limit is not None and not (_number(limit) and limit >= 0):
-        raise ValueError("The spending limit must be a number of dollars, zero or more, or null.")
+    if limit is not None and not _finite_limit(limit):
+        raise ValueError("The spending limit must be a finite number of dollars, zero or more, or null.")
     if note is not None and not isinstance(note, str):
         raise ValueError("The note for the agent must be text or null.")
     return {"companies": list(companies), "event_types": list(types), "time_window_months": window,
@@ -210,7 +221,7 @@ def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None, run
                 "id": run_dir.name, "number": number, "label": label_for(number, choices),
                 "sample": False, "started_at": now, "finished_at": None, "choices": choices, "spend_usd": None,
                 "status": "queued", "status_reason": "Waiting to start.", "turn_count": 0,
-                "turn_limit": turn_limit or DEFAULT_TURN_LIMIT, "turns_total": 0, "resumes": 0,
+                "turn_limit": DEFAULT_TURN_LIMIT if turn_limit is None else turn_limit, "turns_total": 0, "resumes": 0,
             },
             "sources": [], "tables": [], "rows": [], "mistakes": [], "exclusions": [],
         }
@@ -240,8 +251,8 @@ def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None) -> dict:
         choices = meta["choices"]
         limit = choices["spending_limit_usd"]
         if spending_limit_usd is not None:
-            if not (_number(spending_limit_usd) and spending_limit_usd >= 0):
-                raise JobError(422, "The new spending limit must be a number of dollars, zero or more.")
+            if not _finite_limit(spending_limit_usd):
+                raise JobError(422, "The new spending limit must be a finite number of dollars, zero or more.")
             if limit is None:
                 raise JobError(409, "This run has no spending limit to raise.")
             if spending_limit_usd <= limit:
@@ -370,6 +381,10 @@ class Job:
             return True
         if limit is None:
             return False
+        if not _finite_limit(limit):
+            self.stop("needs_input", "The spending limit stored for this run is not a finite number of dollars, "
+                                     "so it cannot be kept. Nothing more was read.")
+            return True
         if self.job["unpriced_calls"] or not prices.has_price(price_name(reader.model)):
             self.stop("needs_input", self.unpriced_reason(limit, reader))
             return True
