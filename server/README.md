@@ -167,6 +167,12 @@ Dated-sentence coverage counts dates after each source's published date, or afte
 (or `run_job(..., as_of=...)`) is given one. The default server (no reader given) uses the live readers; one built with a fake
 reader has no second reader unless it is given one.
 
+**The sources index.** What pages a company has is `runs/sources_index.json` (else the built-in index; `index=` in `create_app`):
+a run reads every indexed page of each chosen company, captured into its folder on first use with the index's hashes
+checked (a mismatch stops the run `failed` with the reason; resume carries on and reads no page twice). `companies:
+["all"]` is every company in the index. The label comes from the choices ("12 companies · 6 months"). `python -m runs.twelve`
+runs the same thing from the command line (see `runs/README.md`).
+
 **Image read and escalation.** The second reader is shown the page image with no word list (words only as a fallback
 after an unreadable answer; `run.second_reader.input` says which). After the second pass, each row of an events page
 that failed a check or that the readers disagree on is sent to Muse Wonder (`wonder_reader`, default

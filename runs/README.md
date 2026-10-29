@@ -236,6 +236,28 @@ and both rows stay `matched` by their checks.
 .venv/bin/python -m runs.build_entry --second fixtures/ptgx_8k_2026-08-05_ex991_p3.events.second.json
 ```
 
+### The sources index and the twelve-company run
+
+`runs/sources.py`. Which pages exist for which company is **the sources index**: `runs/sources_index.json` (written by
+`capture/fetch_filings.py`: recent 8-K exhibits for the twelve tickers, each rendered to a PDF page exactly like the PTGX
+pin, hashed, stored under `~/proof-reader-docs/filings/<TICKER>/`). When that file is absent the built-in index is used (the
+PTGX 8-K exhibit page 3, the IONS annual report page 95, and the PTGX page as a scan), so nothing changes without it.
+`runs/sources_index.sample.json` is a two-page SAMPLE with the format. A page record has the fields of a `fixtures/MANIFEST.json`
+entry (ticker, company, form, exhibit, exhibit_title, filing_date, accession, source_url, source_format, source_sha256,
+rendered_pdf_sha256, renderer, page_number, page_file, page_sha256, words_file, words_sha256, captured_at) and, optionally,
+`id`, `kind` (`events`, the default, or `table`), `source_id` and `file_stem`. A run reads **every indexed page** of each company
+it is asked for. Each page is **captured on first use** into the run's folder (`pages/<id>.png`, `pages/<id>.words.json`):
+the page and words files are checked against the index's hashes (a changed byte stops the run with the reason, `failed`,
+resumable), the page is rendered to an image, and the source is described with the hashes. Event pages go through both readers
+(and Wonder for a row that fails a check), table pages through the table reader; coverage, the time window and the turn and
+spending limits are as for any run. `companies: ["all"]` means every company in the index.
+
+A run's label is made from its choices ("12 companies · 6 months", "PTGX · 12 months", "IONS"); its number is the next in the
+sequence. `python -m runs.twelve --companies all --window 6 --limit 5.00` creates and runs such a run from the command line
+by the same code as `POST /api/runs/new`, resumes it through turn-limit pauses, builds its PDF and Word report when it is
+done, and prints the audit counts (rows and values by group, needs attention, mistakes caught by code / second reader /
+person, exclusions), the calendar count, the cost and the cost per kept row.
+
 ### The second reader reads the image
 
 The second reader is given the **page image** (the run's own `pages/pN.png`, the bytes `run.json` hashed) and a prompt

@@ -46,7 +46,7 @@ from capture import read_events, read_table, sam as sam_module
 from capture.second_reader import CAP_REACHED, OPENROUTER_CAP_USD, UNPRICED
 from checks.coverage import sentence_covered
 from capture.capture_source import load_entry
-from runs import build_entry, build_run, compare, coverage, escalate, prices, scan
+from runs import build_entry, build_run, compare, coverage, escalate, prices, scan, sources
 
 DEFAULT_TURN_LIMIT = 40
 UNREADABLE_LIMIT = 3
@@ -54,13 +54,9 @@ THREE_REFUSALS = "The reader's answer could not be read three times; sent to a p
 RESUMABLE = ("paused_turn_limit", "needs_input", "failed")
 TIME_WINDOW_MAX = 120
 
-# The sources already captured, by ticker. "events" pages go to the event reader, "table" pages to the table reader.
-PAGES = {
-    "PTGX": [{"kind": "events", "source_id": build_entry.SOURCE_ID}],
-    "IONS": [{"kind": "table", "source_id": build_run.IONS_SOURCE_ID}],
-    # the PTGX page again, rendered to an image with no text layer: SAM 3.1 finds its regions (runs/scan.py)
-    "PTGX-SCAN": [{"kind": "scan_events", "source_id": scan.SOURCE_ID}],
-}
+# Which pages exist for which company is the sources index (runs/sources.py): runs/sources_index.json when it exists, else
+# the built-in one (PTGX 8-K exhibit page 3, IONS annual report page 95, and the PTGX page as a scan: no text layer, regions
+# from SAM 3.1). "events" pages go to the event reader (both readers), "table" pages to the table reader.
 CHOICE_FIELDS = ("companies", "event_types", "time_window_months", "spending_limit_usd", "note_for_agent")
 
 # One lock for the run.json / job.json files of every run in this process.
@@ -122,8 +118,10 @@ def _number(v, *, integer: bool = False) -> bool:
     return isinstance(v, int if integer else (int, float)) and not isinstance(v, bool)
 
 
-def validate_choices(body: dict) -> dict:
-    """The New run panel's choices, or a ValueError with one plain sentence."""
+def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
+    """The New run panel's choices, or a ValueError with one plain sentence. `companies` may be ["all"]: every company in
+    the sources index (the scanned variant of a page is not one of them), recorded as the list it stands for."""
+    index = index or sources.load_index()
     if not isinstance(body, dict):
         raise ValueError("The choices must be a JSON object.")
     extra = set(body) - set(CHOICE_FIELDS)
@@ -132,10 +130,12 @@ def validate_choices(body: dict) -> dict:
     companies, types = body.get("companies"), body.get("event_types")
     if not isinstance(companies, list) or not companies or not all(isinstance(c, str) for c in companies):
         raise ValueError("Choose at least one company.")
-    unknown = [c for c in companies if c not in PAGES]
+    if companies == ["all"]:
+        companies = [t for t in index.tickers if any(p["kind"] != "scan_events" for p in index.pages(t))]
+    unknown = [c for c in companies if c not in index.tickers]
     if unknown:
         raise ValueError(f"No source has been captured for {', '.join(unknown)} yet. "
-                         f"Captured so far: {', '.join(sorted(PAGES))}.")
+                         f"Captured so far: {', '.join(sorted(index.tickers))}.")
     if len(set(companies)) != len(companies):
         raise ValueError("A company is listed twice.")
     if not isinstance(types, list) or not all(isinstance(t, str) for t in types):
@@ -155,8 +155,17 @@ def validate_choices(body: dict) -> dict:
             "spending_limit_usd": limit, "note_for_agent": note.strip() or None if isinstance(note, str) else None}
 
 
-def create_run(runs_dir: Path, choices: dict) -> dict:
-    """Make runs/<id>/ with run.json (queued), an empty decisions.jsonl and job.json. Returns the run.json dict."""
+def label_for(number: int, choices: dict) -> str:
+    """The run's label, from its choices: "12 companies · 6 months", "PTGX · 12 months", "IONS" (no window)."""
+    companies = choices["companies"]
+    who = companies[0] if len(companies) == 1 else f"{len(companies)} companies"
+    window = choices.get("time_window_months")
+    return f"{who} · {window} month{'s' if window != 1 else ''}" if window else who
+
+
+def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None) -> dict:
+    """Make runs/<id>/ with run.json (queued), an empty decisions.jsonl and job.json. Returns the run.json dict.
+    `turn_limit`: the budget of model calls before the run pauses (default DEFAULT_TURN_LIMIT)."""
     runs_dir = Path(runs_dir)
     with RUN_LOCK:
         numbers = []
@@ -174,10 +183,10 @@ def create_run(runs_dir: Path, choices: dict) -> dict:
         run = {
             "schema_version": build_run.SCHEMA_VERSION,
             "run": {
-                "id": run_dir.name, "number": number, "label": f"Run {number} · {', '.join(choices['companies'])}",
+                "id": run_dir.name, "number": number, "label": label_for(number, choices),
                 "sample": False, "started_at": now, "finished_at": None, "choices": choices, "spend_usd": None,
                 "status": "queued", "status_reason": "Waiting to start.", "turn_count": 0,
-                "turn_limit": DEFAULT_TURN_LIMIT, "turns_total": 0, "resumes": 0,
+                "turn_limit": turn_limit or DEFAULT_TURN_LIMIT, "turns_total": 0, "resumes": 0,
             },
             "sources": [], "tables": [], "rows": [], "mistakes": [], "exclusions": [],
         }
@@ -234,14 +243,15 @@ def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None) -> dict:
 
 
 def run_job(runs_dir: Path, run_id: str, reader, second=None, as_of: date | None = None, wonder=None,
-            sam=None) -> None:
+            sam=None, index: sources.Index | None = None) -> None:
     """Carry the run on until it is done or a limit stops it. Never raises: an unexpected error ends it as failed.
     `second`: the second reader (capture/second_reader.py), or None for a run with one reader.
+    `index`: the sources index (default: runs/sources_index.json, else the built-in one).
     `sam`: SAM 3.1 (capture/sam.py), which finds the regions of a scanned page.
     `wonder`: the escalation model (capture/wonder.py, Muse Wonder), or None for a run that never escalates.
     `as_of`: the day a date must be after to count as upcoming for the dated-sentence coverage; by default the
     source's published date, so an old filing's already-past dates raise no open rows."""
-    job = Job(Path(runs_dir) / run_id, reader, second, as_of, wonder, sam)
+    job = Job(Path(runs_dir) / run_id, reader, second, as_of, wonder, sam, index)
     try:
         job.drive()
     except Exception as e:  # the type only: nothing that could carry request details
@@ -249,9 +259,11 @@ def run_job(runs_dir: Path, run_id: str, reader, second=None, as_of: date | None
 
 
 class Job:
-    def __init__(self, run_dir: Path, reader, second=None, as_of: date | None = None, wonder=None, sam=None):
+    def __init__(self, run_dir: Path, reader, second=None, as_of: date | None = None, wonder=None, sam=None,
+                 index: sources.Index | None = None):
         self.dir, self.reader, self.second, self.as_of, self.wonder = run_dir, reader, second, as_of, wonder
         self.sam = sam
+        self.index = index or sources.load_index()
         self.run = json.loads((run_dir / "run.json").read_text())
         self.job = json.loads((run_dir / "job.json").read_text())
         self.meta = self.run["run"]
@@ -346,7 +358,10 @@ class Job:
             return self.stop("needs_input", problem)
         done = {s["id"] for s in self.run["sources"]}
         for ticker in self.choices["companies"]:
-            for page in PAGES[ticker]:
+            pages = self.index.pages(ticker)
+            if not pages:
+                return self.stop("needs_input", f"No page is indexed for {ticker}, so nothing was read for it.")
+            for page in pages:
                 if page["source_id"] not in done and not self.read_page(page) and self.meta["status"] != "running":
                     return
                 if not self.second_pass(page) and self.meta["status"] != "running":
@@ -368,23 +383,25 @@ class Job:
         kind = page["kind"]
         if kind == "scan_events":
             return self.read_scan_page(page)
+        entry = page["record"]            # the index's record of the page: ticker, company, filing date, hashes, ...
         if kind == "events":
-            entry = load_entry(read_events.PIN)
             types = tuple(t for t in read_events.EVENT_TYPES if t in self.choices["event_types"])
             if not types:
                 self.job["log"].append({"at": now_utc(), "note": f"{entry['ticker']} page skipped: no event type "
                                                                  f"was chosen."})
                 return False
-            source, words_doc = build_entry.ptgx_source(entry, self.dir)
+        try:
+            source, words_doc = sources.capture_page(entry, self.dir)      # captured on first use, hashes checked
+        except sources.SourcesError as e:
+            self.stop("failed", f"{e} Resume to try again.")
+            return False
+        if kind == "events":
             prompt = read_events.build_prompt(words_doc, entry, types, self.choices["note_for_agent"])
             who, parse = "capture.read_events", read_events.parse_events
         else:
-            manifest = {k: v for k, v in json.loads((build_run.FIXTURES / "MANIFEST.json").read_text()).items()
-                        if k != "entries"}
-            entry = manifest
-            source, words_doc = build_run.ions_source(manifest, self.dir)
             prompt = read_table.build_prompt(words_doc, self.choices["note_for_agent"])
             who, parse = "capture.read_table", read_table.parse_table
+        page_facts = {"words_sha256": entry["words_sha256"], "page_sha256": entry["page_sha256"], "pin": entry["id"]}
 
         attempts = self.job["attempts"].setdefault(source["id"], [])
         reply, parsed = None, None
@@ -408,8 +425,8 @@ class Job:
         if parsed is None:
             self.run["rows"].append(self.refused_row(entry, source, prompt, who, attempts, at))
         elif kind == "events":
-            extra = {**(reply.extra or {}), "usage": {"prompt_tokens": reply.prompt_tokens,
-                                                      "completion_tokens": reply.completion_tokens}}
+            extra = {**(reply.extra or {}), **page_facts, "usage": {"prompt_tokens": reply.prompt_tokens,
+                                                                    "completion_tokens": reply.completion_tokens}}
             reading = read_events._record(model=reply.model, prompt=prompt, raw=reply.raw, events=parsed,
                                           problem=None, entry=entry, extra=extra)
             usage = {} if reading["fake"] else reading["usage"]
@@ -427,7 +444,7 @@ class Job:
             self.mark_fake(reading)
         else:
             reading = read_table._reading_record(model=reply.model, prompt=prompt, raw=reply.raw, table=parsed,
-                                                 problem=None, extra=reply.extra)
+                                                 problem=None, extra={**(reply.extra or {}), **page_facts})
             self.run["tables"].append(build_run.build_table(
                 reading, words_doc, table_id=f"t{len(self.run['tables']) + 1}", source_id=source["id"],
                 page_number=source["pages"][0]["page_number"]))
@@ -501,15 +518,13 @@ class Job:
         words_doc = json.loads((self.dir / page0["words"]).read_text())
         image = (self.dir / page0["image"]).read_bytes()      # the page as the second reader sees it
         note = self.choices["note_for_agent"]
+        entry = page["record"]
         if page["kind"] == "events":
-            entry = load_entry(read_events.PIN)
             types = tuple(t for t in read_events.EVENT_TYPES if t in self.choices["event_types"])
             attempts = [("image", read_events.build_image_prompt(entry, types, note), image),
                         ("image_and_words", read_events.build_prompt(words_doc, entry, types, note), image)]
             parse = read_events.parse_events
         else:
-            entry = {k: v for k, v in json.loads((build_run.FIXTURES / "MANIFEST.json").read_text()).items()
-                     if k != "entries"}
             attempts = [("image", read_table.build_image_prompt(note), image),
                         ("image_and_words", read_table.build_prompt(words_doc, note), image)]
             parse = read_table.parse_table
@@ -533,7 +548,8 @@ class Job:
             self.save(f"The second reader's answer could not be read ({why}); nothing was compared.")
             return True
         at = now_utc()
-        extra = {**(reply.extra or {}), "input": got,
+        extra = {**(reply.extra or {}), "input": got, "words_sha256": entry["words_sha256"],
+                 "page_sha256": entry["page_sha256"], "pin": entry["id"],
                  "usage": {"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens}}
         if page["kind"] == "events" and got == "image":     # boxes came back on the 0-1000 grid over the image
             for ev in parsed:
@@ -664,7 +680,7 @@ class Job:
         page0 = source["pages"][0]
         words_doc = json.loads((self.dir / page0["words"]).read_text())
         image = (self.dir / page0["image"]).read_bytes()
-        entry = load_entry(read_events.PIN)
+        entry = page["record"]
         types = tuple(t for t in read_events.EVENT_TYPES if t in self.choices["event_types"])
         for row in rows:
             trig = escalate.trigger(row)
