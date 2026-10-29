@@ -56,8 +56,9 @@ def parse_boxes(text: str | None) -> list[dict]:
 def to_points(box: dict, page_width_pt: float, page_height_pt: float) -> list[float]:
     """A SAM box in image pixels -> [x0, y0, x1, y1] in PDF points (the inclusive far edge counts its last pixel)."""
     sx, sy = page_width_pt / box["w"], page_height_pt / box["h"]
-    return [round(box["x1"] * sx, 2), round(box["y1"] * sy, 2),
-            round((box["x2"] + 1) * sx, 2), round((box["y2"] + 1) * sy, 2)]
+    x0, y0, x1, y1 = box["x1"] * sx, box["y1"] * sy, (box["x2"] + 1) * sx, (box["y2"] + 1) * sy
+    clamp = lambda v, hi: round(min(max(v, 0.0), hi), 2)      # a box never leaves the page it was found on
+    return [clamp(x0, page_width_pt), clamp(y0, page_height_pt), clamp(x1, page_width_pt), clamp(y1, page_height_pt)]
 
 
 class SamReader:

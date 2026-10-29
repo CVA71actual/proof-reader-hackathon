@@ -65,6 +65,8 @@ def quote_match(quote: str | None, words: list[dict], box=None) -> CheckResult:
     n = len(want.split(" "))
     for i in range(0, len(words) - n + 1):
         run = words[i : i + n]
+        if any(w.get("break") for w in run):        # rebuilt picture words: a run never crosses a region break
+            continue
         if _norm_quote(join_words(run)) == want:
             return result(PASS, "The quote is printed on the page, word for word.",
                           found=join_words(run), word_ids=[w["id"] for w in run])

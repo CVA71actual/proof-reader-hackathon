@@ -51,7 +51,7 @@ from checks.common import normalize
 from checks.coverage import sentence_covered, sentences as coverage_sentences
 from capture.capture_source import load_entry
 from checks import event_checks
-from runs import build_entry, build_run, compare, coverage, escalate, prices, scan, sources
+from runs import picture, build_entry, build_run, compare, coverage, escalate, prices, scan, sources
 
 DEFAULT_TURN_LIMIT = 40
 MAX_PAGE_FAILURES = 2      # a page that stops the run this many times is skipped, and the run goes on with the rest
@@ -482,6 +482,12 @@ class Job:
             # a page whose files are missing or no longer match the index will not mend on a retry: skip it, go on
             self.skip_page(page, str(e))
             return False
+        picture_state = None
+        if kind == "events" and picture.is_picture_page(words_doc):
+            rebuilt = self.rebuild_picture(source, words_doc)
+            if rebuilt is None:
+                return False                      # the run stopped (a limit, a failed call); a resume goes on from here
+            words_doc, picture_state = rebuilt
         if kind == "events":
             prompt = read_events.build_prompt(words_doc, entry, types, self.choices["note_for_agent"])
             who, parse = "capture.read_events", read_events.parse_events
@@ -526,6 +532,7 @@ class Job:
             new_rows += coverage.possible_event_rows(words_doc, new_rows, source, first_index=first + len(new_rows),
                                                      at=at, today=self.coverage_date(source), ticker=entry["ticker"],
                                                      company=entry["company"])
+            self.add_picture_trail(new_rows, picture_state, at)
             self.apply_window(new_rows, at)
             self.run["rows"] += new_rows
             self.mark_fake(reading)
@@ -557,7 +564,9 @@ class Job:
             when = (f"is before today ({now})" if day < now else
                     f"is later than {months} month{'s' if months != 1 else ''} from today ({last})")
             reason = f"Outside the time window: the date {row['date']} {when}."
-            row["group"], row["reason"] = "removed", reason
+            old = row.get("reason") or ""
+            note = old[old.find("Source note:"):] if "Source note:" in old else ""     # a picture page's source note stays
+            row["group"], row["reason"] = "removed", f"{reason} {note}".strip()
             row["trail"].append({"step": "Left out", "tag": "Code", "who": "server.jobs", "text": reason, "at": at})
             self.run["exclusions"].append({"id": f"x{len(self.run['exclusions']) + 1}", "target": row["id"],
                                            "rule": "outside_time_window", "reason": reason, "by": "code"})
@@ -581,6 +590,111 @@ class Job:
         self.meta["second_reader"] = {"model": pick["model"], "status": pick["status"], "reason": reason,
                                       **({"input": pick["input"]} if pick.get("input") else {})}
 
+    def second_problem(self) -> str | None:
+        """Why the second reader cannot be used now (None: it can). The $20 fallback cap is applied first."""
+        if self.second is None:
+            return "No second reader is available."
+        if hasattr(self.second, "openrouter_allowed"):      # the cap, before readiness is asked
+            unpriced = self.job.get("openrouter_unpriced_calls", 0)
+            self.second.openrouter_allowed = (self.job.get("openrouter_spend_usd", 0.0) < OPENROUTER_CAP_USD
+                                              and not unpriced)
+            self.second.openrouter_blocked = None if self.second.openrouter_allowed else (
+                UNPRICED if unpriced else CAP_REACHED)
+        return self.second.ready()
+
+    # ------------------------------------------------------------ a picture page: SAM 3.1 regions + the image reader
+
+    def rebuild_picture(self, source: dict, words_doc: dict):
+        """A page whose text layer is hidden (runs/picture.py): SAM 3.1 finds regions (one counted, priced turn per
+        concept), the image reader transcribes each region's crop (one turn each), and the words file in the run's folder
+        is rebuilt from the transcriptions. Returns (new words_doc, state), or (words_doc, None) when it cannot be done
+        (no SAM 3.1 or no image reader, no region, nothing transcribed: the page is read from its own words, as before,
+        and the log says so), or None when the run stopped. What each call returned is kept in job.json."""
+        sid = source["id"]
+        page0 = source["pages"][0]
+        why = None
+        if self.sam is None or self.sam.ready():
+            why = self.sam.ready() if self.sam is not None else "No SAM 3.1 reader is available."
+        elif self.second_problem():
+            why = self.second_problem()
+        if why:
+            self.job["log"].append({"at": now_utc(), "note": f"{sid} is a picture page; its words were not rebuilt: {why}"})
+            return words_doc, None
+        w, h = float(page0["width_pt"]), float(page0["height_pt"])
+        png = (self.dir / page0["image"]).read_bytes()
+        st = self.job.setdefault("picture", {}).setdefault(sid, {"by_concept": {}, "calls": [], "reads": {}})
+        if "words_doc" not in st:
+            for concept in picture.CONCEPTS + (sam_module.FALLBACK,):
+                if concept in st["by_concept"]:
+                    continue
+                if concept == sam_module.FALLBACK and not picture.needs_fallback(st["by_concept"]):
+                    break
+                if self.stopped_before_a_call(self.sam):
+                    return None
+                reply = self.sam.segment(png, concept)
+                self.count_turn(reply)
+                if reply.error:
+                    self.stop("failed", f"SAM 3.1: {reply.error} Resume to try again.")
+                    return None
+                st["by_concept"][concept] = [sam_module.to_points(b, w, h) for b in sam_module.parse_boxes(reply.raw)]
+                st["calls"].append({"concept": concept, "images": reply.images,
+                                    "cost_usd": prices.image_cost_usd(sam_module.NAME, reply.images)})
+                self.save()
+            regions = picture.merge_regions(st["by_concept"], (w, h))
+            for region in regions:
+                if region["id"] in st["reads"]:
+                    continue
+                if self.stopped_before_a_call(self.second):
+                    return None
+                crop = scan.crop_box(region, w, h)
+                prompt = picture.transcribe_prompt(region)
+                reply = self.second.call(prompt, image=scan.crop_png(png, crop, w))
+                self.count_turn(reply)
+                if reply.error:
+                    self.stop("failed", f"The image reader: {reply.error} Resume to try again.")
+                    return None
+                st["reads"][region["id"]] = {"region_id": region["id"], "crop": crop, "model": reply.model,
+                                             "text": picture.parse_transcription(reply.raw),
+                                             "usage": {"prompt_tokens": reply.prompt_tokens,
+                                                       "completion_tokens": reply.completion_tokens}}
+                self.save()
+            st["regions"] = regions
+            made = [{"region": r, "text": st["reads"][r["id"]]["text"]} for r in regions]
+            built = picture.build_words(w, h, page0["page_number"], [t for t in made if t["text"]])
+            st["words_doc"] = built if built["words"] else None
+            st["kept_regions"] = [r["region"] for r in made if r["text"]]
+            self.save()
+        if not st["words_doc"]:
+            page0["note"] = picture.ALL_EMPTY_NOTE
+            self.job["log"].append({"at": now_utc(), "note": f"{sid} is a picture page; SAM 3.1 and the image reader "
+                                                              f"gave no words, so it is read from its own words."})
+            return words_doc, st            # the state goes on: every attempted call still gets its trail step
+        rebuilt = st["words_doc"]
+        words_path = self.dir / page0["words"]
+        words_path.write_text(json.dumps(rebuilt, indent=1, ensure_ascii=False) + "\n")
+        page0.update({"words_sha256": build_run.file_sha256(words_path), "kind": picture.KIND,
+                      "words_from": picture.WORDS_FROM, "note": picture.source_note(st["kept_regions"]),
+                      "regions": st["kept_regions"]})
+        return rebuilt, st
+
+    def add_picture_trail(self, rows: list[dict], st: dict | None, at: str, costs: bool = True) -> None:
+        """Put the picture-page steps first in every row's trail. `costs` False: the page's calls were already counted on
+        the rows read first, so these steps carry no cost."""
+        if not st or "regions" not in st or not rows:
+            return
+        regions = st["regions"]
+        reads = [st["reads"][r["id"]] for r in regions]          # every attempted call, empty ones too
+        made = [{"region": r, "text": st["reads"][r["id"]]["text"]} for r in regions]
+        n_words = len((st.get("words_doc") or {}).get("words", []))
+        note = picture.source_note([r for r, t in zip(regions, made) if t["text"]]) if n_words else picture.ALL_EMPTY_NOTE
+        for i, row in enumerate(rows):
+            steps = picture.trail_steps(regions, made, st["calls"], reads, n_words, at, len(rows), i)
+            if not costs:
+                steps = [{**s_, "tokens": None, "cost_usd": None} if s_["tag"] == "Model" else s_ for s_ in steps]
+            row["trail"][1:1] = steps          # the schema keeps "Instructions sent" first
+            if row.get("reason"):
+                row["reason"] = f"{row['reason']} Source note: {note}."
+
     def second_pass(self, page: dict) -> bool:
         """The second reader's independent read of a page the first reader has read, compared by code. True when
         the page is finished with (read, skipped or unreadable); False when the run stopped."""
@@ -590,13 +704,7 @@ class Job:
         source = next((s for s in self.run["sources"] if s["id"] == sid), None)
         if self.second is None or source is None or sid in self.job["second"]:
             return True
-        if hasattr(self.second, "openrouter_allowed"):      # the cap, before readiness is asked
-            unpriced = self.job.get("openrouter_unpriced_calls", 0)
-            self.second.openrouter_allowed = (self.job.get("openrouter_spend_usd", 0.0) < OPENROUTER_CAP_USD
-                                              and not unpriced)
-            self.second.openrouter_blocked = None if self.second.openrouter_allowed else (
-                UNPRICED if unpriced else CAP_REACHED)
-        problem = self.second.ready()
+        problem = self.second_problem()
         if problem:
             self.note_second(sid, "not_run", problem)
             self.save(problem)
@@ -657,6 +765,7 @@ class Job:
             ids = [int(r["id"][1:]) for r in self.run["rows"] if r["id"][1:].isdigit()]
             _, new_rows = compare.apply_events(rows, parsed, reading, source, words_doc, at,
                                                next_index=max(ids, default=0) + 1)
+            self.add_picture_trail(new_rows, self.job.get("picture", {}).get(sid), at, costs=False)
             self.apply_window(new_rows, at)
             # a dated sentence the second reader turned into a row no longer needs its "not read" row
             quotes = [r["quote"] for r in new_rows]
