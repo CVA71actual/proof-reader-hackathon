@@ -6,6 +6,12 @@ A word counts as inside the box when at least INSIDE_SHARE of its area is inside
 centre alone does not hold the word. A word the box cuts through (more than CUT_SHARE of its area inside,
 but less than INSIDE_SHARE) makes the box fail: the box reaches into text that is not the value, for
 example the neighbouring cell. Words the box only grazes (CUT_SHARE or less) are ignored.
+
+Quote boxes (`quote_lines=True`, used for event rows): a quote is a sentence, and a sentence rarely starts at the
+margin or ends at the other one, so the strict rule above would fail a box that is right. The box passes when every
+word of the quote lies inside it and it does not reach above the quote's first line or below its last line; other
+words on those same lines (the end of the sentence before, the start of the next) are allowed. Table values keep
+the strict rule.
 """
 
 from __future__ import annotations
@@ -57,8 +63,10 @@ def selector_match(
     words: list[dict],
     page_width: float,
     page_height: float,
+    quote_lines: bool = False,
 ) -> CheckResult:
-    """Pass if the words inside the box read exactly as the value and the box cuts through no other word."""
+    """Pass if the words inside the box read exactly as the value and the box cuts through no other word.
+    `quote_lines`: the value is a quote; use the quote rule in the module note instead."""
     want = normalize(value)
 
     def result(res: str, reason: str, **compared) -> CheckResult:
@@ -75,6 +83,10 @@ def selector_match(
         return result(FAIL, "The proposed box is off the page.")
 
     rect = (x0, y0, x1, y1)
+    if quote_lines:
+        quoted = _quote_run(want, words, rect)
+        if quoted:
+            return _quote_box(quoted, rect, words, result)
     inside = words_in_box(rect, words)
     cut = words_cut_by_box(rect, words)
     touched = [w for w in words if share_inside(rect, w) > CUT_SHARE]  # page order
@@ -100,6 +112,39 @@ def selector_match(
         found=found,
         word_ids=ids,
     )
+
+
+def _quote_run(want: str, words: list[dict], rect) -> list[dict] | None:
+    """The run of page words that reads as the quote; when it is printed more than once, the run the box overlaps
+    most. None when the quote is not printed (the strict rule then reports what is in the box)."""
+    n = len(want.split(" ")) if want else 0
+    runs = [words[i : i + n] for i in range(len(words) - n + 1)
+            if n and normalize(join_words(words[i : i + n])) == want]
+    if not runs:
+        return None
+    return max(runs, key=lambda r: sum(share_inside(rect, w) for w in r))
+
+
+def _quote_box(run: list[dict], rect, words: list[dict], result) -> CheckResult:
+    x0, y0, x1, y1 = rect
+    ids = [w["id"] for w in run]
+    out = [w for w in run if share_inside(rect, w) < INSIDE_SHARE]
+    if out:
+        say = ", ".join(w["text"] for w in out[:4]) + (" ..." if len(out) > 4 else "")
+        return result(FAIL, f"The box does not hold every word of the quote (missing {say}).",
+                      found=join_words(words_in_box(rect, words)), word_ids=ids)
+    heights = sorted(w["y1"] - w["y0"] for w in words)
+    tol = max(1.0, 0.25 * heights[len(heights) // 2])
+    first_top = min(w["y0"] for w in run if abs(((w["y0"] + w["y1"]) / 2) - ((run[0]["y0"] + run[0]["y1"]) / 2))
+                    <= (run[0]["y1"] - run[0]["y0"]) / 2 + tol)
+    last_bottom = max(w["y1"] for w in run if abs(((w["y0"] + w["y1"]) / 2) - ((run[-1]["y0"] + run[-1]["y1"]) / 2))
+                      <= (run[-1]["y1"] - run[-1]["y0"]) / 2 + tol)
+    if y0 < first_top - tol:
+        return result(FAIL, "The box reaches above the first line of the quote.", found=join_words(run), word_ids=ids)
+    if y1 > last_bottom + tol:
+        return result(FAIL, "The box reaches below the last line of the quote.", found=join_words(run), word_ids=ids)
+    return result(PASS, "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+                  found=join_words(run), word_ids=ids)
 
 
 def _extra_words(inside: list[dict], want: str) -> list[dict]:

@@ -523,8 +523,10 @@ def test_key_aliases_are_checked(words_doc):
     assert check_key(ok, words) == []
     bad_type = {**key, "events": [{**key["events"][0], "aliases": "x"}, key["events"][1]]}
     assert [p["problem"] for p in check_key(bad_type, words)] == ["The aliases must be a list of names."]
-    clash = {**key, "events": [{**key["events"][0], "aliases": ["pn-458o"]}, key["events"][1]]}
-    assert [p["problem"] for p in check_key(clash, words)] == ["The name 'pn-458o' is used for two different programs."]
+    shared = {**key, "events": [{**key["events"][0], "aliases": ["pn-458o"]}, key["events"][1]]}
+    assert check_key(shared, words) == [], "the same alias may stand on several events"
+    bad_ind = {**key, "events": [{**key["events"][0], "indication_aliases": [""]}, key["events"][1]]}
+    assert [p["problem"] for p in check_key(bad_ind, words)] == ["The indication aliases must be a list of names."]
 
 
 def test_the_report_lists_right_value_check_failed_apart_with_the_checks_reason(checked, key, reading, words_doc):

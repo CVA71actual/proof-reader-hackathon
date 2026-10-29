@@ -58,15 +58,18 @@ mistake by type, model and who caught it.
   `"complete": true` (it lists every value and event the page holds) or `false` (a partial key); a key silent on
   it is refused. A column is the same column however the year is printed ("2025", "FY2025", "December 31, 2025",
   "Dec. 31, 2025"): key and scorer compare columns by `checks.row_column_match.column_key`. A key event may carry
-  `aliases` (other names for its program, such as the drug for an indication); the scorer matches any, and a name
-  used for two programs is refused.
+  `aliases` (other names for its program) and an `indication` with `indication_aliases`. One drug with three
+  indications on a page is three key events (same program, different indication and date); the same alias may stand
+  on all of them.
 - **Scorer** (`accuracy/score.py`): `score_table` counts, out of the key's N values: found (right value, saved
   under the right row and column, every check passed), wrong value, wrong place (right value but a box or
   row/column check failed), missed; on a complete key, values the key does not hold are extra (a second copy is
   `DUPLICATE`); on a partial key they are **unscored**: not a mistake, no type, never in the mistake log (the key
   holds 10 of 40 values and the reader read all 40 right: 10/10 found, 30 unscored).
-  `score_events` counts, out of the key's M events: found (same ticker, program, event type and day or period,
-  every check passed), wrong date, wrong type, not backed by the checks, missed, and invented (another program,
+  `score_events` counts, out of the key's M events: found (same ticker and day or period, the row's program OR its
+  indication is a name of the key event, every check passed; the kind of event is compared after the match, and
+  milestone against trial results is not held against the reader when the quote holds words of both: found, with a
+  note), wrong date, wrong type, not backed by the checks, missed, and invented (another program,
   another company, a duplicate, an unreadable answer; on a partial key a program the key does not hold is
   unscored instead). `score_planted` plants wrong values into copies of real
   cells, runs the real checks and counts how many were caught. Every item not found carries a type code and

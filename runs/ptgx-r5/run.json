@@ -128,7 +128,7 @@
      "label": "Citation located",
      "kind": "Code",
      "result": "pass",
-     "reason": "The text inside the box reads the same as the value.",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "compared": {
       "looked_for": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
       "found": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
@@ -255,7 +255,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "selector_match",
-     "text": "Citation located: pass. The text inside the box reads the same as the value.",
+     "text": "Citation located: pass. Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "at": "2026-10-28T19:18:31+00:00"
     },
     {
@@ -379,7 +379,7 @@
      "label": "Citation located",
      "kind": "Code",
      "result": "pass",
-     "reason": "The text inside the box reads the same as the value.",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "compared": {
       "looked_for": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
       "found": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
@@ -505,7 +505,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "selector_match",
-     "text": "Citation located: pass. The text inside the box reads the same as the value.",
+     "text": "Citation located: pass. Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "at": "2026-10-28T19:18:31+00:00"
     },
     {

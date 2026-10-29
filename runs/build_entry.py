@@ -209,7 +209,7 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
 
 
 def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = None,
-                    second_reading: dict | None = None) -> dict:
+                    second_reading: dict | None = None, as_of: date | None = None) -> dict:
     """`second_reading`: the second reader's saved reading of the same page (capture/second_reader.py); when it is
     given and readable, runs/compare.py records where the two readers differ and adds what only the second found."""
     entry = load_entry(PIN)
@@ -242,7 +242,7 @@ def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = N
         second = {"model": compare.SECOND, "status": "read", "reason": None}
     # a dated sentence no reader turned into a row becomes an open row, so a person sees what was skipped
     rows += coverage.possible_event_rows(words_doc, rows, source, first_index=len(rows) + 1, at=at,
-                                         today=date.fromisoformat(at[:10]), ticker=entry["ticker"],
+                                         today=as_of or date.fromisoformat(entry["filing_date"]), ticker=entry["ticker"],
                                          company=entry["company"])
     return {
         "schema_version": SCHEMA_VERSION,

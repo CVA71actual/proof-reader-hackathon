@@ -160,12 +160,20 @@ function in this repo that ran it. Today's checks:
 | Label | Function |
 |---|---|
 | Matches source text | `checks/text_layer_match.py` `text_layer_match` |
-| Citation located | `checks/selector_match.py` `selector_match` |
+| Citation located | `checks/selector_match.py` `selector_match` (table values: strict; event quotes: the quote rule below) |
 | Right row and column | `checks/row_column_match.py` `row_column_match` (table values; `compared` reads "row <label>, column <header>") |
 | Quote found on page | `checks/event_checks.py` `quote_match` |
 | Date read as written | `checks/event_checks.py` `date_match` |
 | Source is more than a calendar | `checks/event_checks.py` `source_rule` |
 | Event type matches the quote | `checks/event_checks.py` `type_match` |
+
+**Citation located for a quote box** (event rows, `selector_match(..., quote_lines=True)`). A quote is a sentence, and a
+sentence rarely starts at the margin or ends at the other one, so the box passes when every word of the quote lies
+inside it and it does not reach above the quote's first line or below its last line; other words on those same
+lines (the end of the sentence before, the start of the next) are allowed. Fails say which: "The box does not hold
+every word of the quote (missing ...)", "The box reaches above the first line of the quote.", "... below the last
+line of the quote." A quote printed more than once is checked against the run the box covers; a quote not printed
+at all falls back to the strict check. Table values keep the strict rule.
 
 **Event type matches the quote** (event rows). The row's `event_type` must be a kind of event its own quote's words
 fit: the fixed words per kind in `event_checks.py` `_ANCHORS` (trial results: results, data, readout, topline,
@@ -175,7 +183,10 @@ quote holds a word for the row's kind ("The quote's words (initiation) fit miles
 that kind but does for another ("The quote's words (results, topline) point to trial results, not milestone.").
 `not_needed`: the quote holds no fixed word for any kind of event, or the type has no fixed words (earnings, other,
 unknown): there is nothing to compare, and the row is not held back for it. `could_not_run`: the row has no quote.
-A person's fix of the event type is re-checked by it like a fix of the date.
+When the quote holds words of both milestone and trial results (one sentence often does: "Phase 1 initiation ...
+data"), it does not say which the event is, and the check returns `not_needed` ("... nothing decisive to compare
+the type with"); when it holds only one family's words, the check decides. A person's fix of the event type is
+re-checked by it like a fix of the date.
 
 ### The second reader
 
@@ -222,9 +233,12 @@ and both rows stay `matched` by their checks.
 
 `checks/coverage.py` cuts the page's words into sentences (a leading bullet is dropped; abbreviations such as "Inc."
 do not end one; more than 80 words with no sentence end is a table or list, not a sentence) and looks in each for a
-date or period that starts after the day the reading was made (the date parsers are the date check's own: exact
-days, quarters, halves, months, "mid-2027", "in 2028"). A sentence that no proposed row quotes (a quote that holds
-it, that it holds, or that holds 80% of its words) becomes one open row (`runs/coverage.py`): title "Possible
+date or period that starts after the **source's published date** (a filing's own date: an old filing's already-past
+dates raise nothing, whatever day the run is made; a run may be given an explicit date instead). The date parsers are
+the date check's own: exact days, quarters, halves, months, "mid-2027", "in 2028". A sentence that no proposed row
+quotes (a quote that holds the whole sentence, or that holds 80% of its tokens counting repeats: a word that occurs
+three times in the sentence needs three in the quote; a quote that is only a piece of the sentence does not cover it)
+becomes one open row (`runs/coverage.py`): title "Possible
 event not read: <sentence>", `status` undecided, `group` open, the sentence as its `quote` with its box, the date
 or period it names, no checks, `found_by` "coverage", and a trail that says no model was asked and code found it.
 A person keeps it as an event, fixes it, or removes it; until then it is under Needs attention and never on the

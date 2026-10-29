@@ -5728,7 +5728,7 @@
      "label": "Citation located",
      "kind": "Code",
      "result": "pass",
-     "reason": "The text inside the box reads the same as the value.",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "compared": {
       "looked_for": "Topline results from the Phase 3 STAR-1 trial are expected on March 12, 2027.",
       "found": "Topline results from the Phase 3 STAR-1 trial are expected on March 12, 2027.",
@@ -5841,7 +5841,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "selector_match",
-     "text": "Citation located: pass. The text inside the box reads the same as the value.",
+     "text": "Citation located: pass. Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "at": "2026-10-27T15:02:11+00:00"
     },
     {
@@ -5935,7 +5935,7 @@
      "label": "Citation located",
      "kind": "Code",
      "result": "pass",
-     "reason": "The text inside the box reads the same as the value.",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "compared": {
       "looked_for": "The company plans to present 52-week data in Q3 2027.",
       "found": "The company plans to present 52-week data in Q3 2027.",
@@ -6044,7 +6044,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "selector_match",
-     "text": "Citation located: pass. The text inside the box reads the same as the value.",
+     "text": "Citation located: pass. Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "at": "2026-10-27T15:03:11+00:00"
     },
     {
@@ -6140,7 +6140,7 @@
      "label": "Citation located",
      "kind": "Code",
      "result": "pass",
-     "reason": "The text inside the box reads the same as the value.",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "compared": {
       "looked_for": "The FDA has set a target action date of June 30, 2027.",
       "found": "The FDA has set a target action date of June 30, 2027.",
@@ -6284,7 +6284,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "selector_match",
-     "text": "Citation located: pass. The text inside the box reads the same as the value.",
+     "text": "Citation located: pass. Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "at": "2026-10-27T15:04:11+00:00"
     },
     {
@@ -6381,7 +6381,7 @@
      "label": "Citation located",
      "kind": "Code",
      "result": "pass",
-     "reason": "The text inside the box reads the same as the value.",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "compared": {
       "looked_for": "Our partner Samplebio Three will host its investor day on September 15, 2027.",
       "found": "Our partner Samplebio Three will host its investor day on September 15, 2027.",
@@ -6493,7 +6493,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "selector_match",
-     "text": "Citation located: pass. The text inside the box reads the same as the value.",
+     "text": "Citation located: pass. Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "at": "2026-10-27T15:05:11+00:00"
     },
     {
@@ -6595,7 +6595,7 @@
      "label": "Citation located",
      "kind": "Code",
      "result": "pass",
-     "reason": "The text inside the box reads the same as the value.",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "compared": {
       "looked_for": "An FDA advisory committee meeting is scheduled for May 4, 2027.",
       "found": "An FDA advisory committee meeting is scheduled for May 4, 2027.",
@@ -6705,7 +6705,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "selector_match",
-     "text": "Citation located: pass. The text inside the box reads the same as the value.",
+     "text": "Citation located: pass. Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "at": "2026-10-27T15:06:11+00:00"
     },
     {
@@ -6759,7 +6759,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "selector_match",
-     "text": "Citation located: pass. The text inside the box reads the same as the value.",
+     "text": "Citation located: pass. Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "at": "2026-10-27T15:07:11+00:00"
     },
     {
@@ -6839,7 +6839,7 @@
      "label": "Citation located",
      "kind": "Code",
      "result": "pass",
-     "reason": "The text inside the box reads the same as the value.",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "compared": {
       "looked_for": "SMPL4 Phase 2 data readout April 20, 2027",
       "found": "SMPL4 Phase 2 data readout April 20, 2027",
@@ -6946,7 +6946,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "selector_match",
-     "text": "Citation located: pass. The text inside the box reads the same as the value.",
+     "text": "Citation located: pass. Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "at": "2026-10-27T15:07:11+00:00"
     },
     {
@@ -7232,7 +7232,7 @@
      "label": "Citation located",
      "kind": "Code",
      "result": "pass",
-     "reason": "The text inside the box reads the same as the value.",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "compared": {
       "looked_for": "Samplebio Six expects to file its application on August 2, 2027.",
       "found": "Samplebio Six expects to file its application on August 2, 2027.",
@@ -7342,7 +7342,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "selector_match",
-     "text": "Citation located: pass. The text inside the box reads the same as the value.",
+     "text": "Citation located: pass. Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "at": "2026-10-27T15:09:11+00:00"
     },
     {
@@ -7758,7 +7758,7 @@
      "label": "Citation located",
      "kind": "Code",
      "result": "pass",
-     "reason": "The text inside the box reads the same as the value.",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "compared": {
       "looked_for": "Samplebio One will present at a medical meeting later this year.",
       "found": "Samplebio One will present at a medical meeting later this year.",
@@ -7868,7 +7868,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "selector_match",
-     "text": "Citation located: pass. The text inside the box reads the same as the value.",
+     "text": "Citation located: pass. Every word of the quote is inside the box, and the box stays on the quote's lines.",
      "at": "2026-10-27T15:12:11+00:00"
     },
     {

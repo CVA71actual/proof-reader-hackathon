@@ -32,6 +32,9 @@ BASETEN_MODEL = "meta-models/muse-spark-open-1026"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODEL = "meta/muse-spark-open"
 OPENROUTER_CAP_USD = 20.0
+CAP_REACHED = "The OpenRouter fallback has reached its $20 cap, so there was no second read."
+UNPRICED = ("The OpenRouter fallback returned no token counts, so its spend cannot be held under the $20 cap; no "
+            "more fallback calls were made.")
 NO_KEY = ("No second-reader key was found (BASETEN_API_KEY, or OPENROUTER_API_KEY for the fallback), so there was "
           "no second read.")
 
@@ -42,7 +45,8 @@ class SecondReader:
     name = NAME
 
     def __init__(self) -> None:
-        self.openrouter_allowed = True   # the job turns this off once the $20 cap is reached
+        self.openrouter_allowed = True   # the job turns this off once the $20 cap is reached (or a call went unpriced)
+        self.openrouter_blocked: str | None = None   # and says why, in one plain sentence
 
     def _key(self, name: str) -> str:
         read_table.load_env_file()
@@ -60,12 +64,16 @@ class SecondReader:
         return OPENROUTER_MODEL if self.route() == "openrouter" else BASETEN_MODEL
 
     def ready(self) -> str | None:
-        return None if self.route() else NO_KEY
+        if self.route():
+            return None
+        if not self._key("BASETEN_API_KEY") and self._key("OPENROUTER_API_KEY") and not self.openrouter_allowed:
+            return self.openrouter_blocked or CAP_REACHED     # a key is there; the cap, not the key, is why not
+        return NO_KEY
 
     def call(self, prompt: str) -> Reply:
         route = self.route()
         if route is None:
-            return Reply(None, BASETEN_MODEL, error=NO_KEY)
+            return Reply(None, BASETEN_MODEL, error=self.ready() or NO_KEY)
         reply = self._ask(route, prompt)
         if reply.error and route == "baseten" and self._key("OPENROUTER_API_KEY") and self.openrouter_allowed:
             reply = self._ask("openrouter", prompt)     # Baseten did not answer: the fallback, under its cap

@@ -100,7 +100,13 @@ def test_the_route_is_baseten_first_and_openrouter_only_with_its_key_and_under_i
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
     assert (r.route(), r.model) == ("openrouter", OPENROUTER_MODEL) and r.ready() is None
     r.openrouter_allowed = False
-    assert r.route() is None and r.ready() == NO_KEY
+    assert r.route() is None and r.ready() == second_reader.CAP_REACHED, "the key is there; the cap is why not"
+    r.openrouter_blocked = second_reader.UNPRICED
+    assert r.ready() == second_reader.UNPRICED
+    monkeypatch.delenv("OPENROUTER_API_KEY")
+    assert r.ready() == NO_KEY
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
+    r.openrouter_allowed, r.openrouter_blocked = True, None
     monkeypatch.setenv("BASETEN_API_KEY", "bt-test")
     assert (r.route(), r.model) == ("baseten", BASETEN_MODEL), "Baseten stays the route even past the cap"
 
@@ -501,3 +507,92 @@ def test_a_two_reader_build_refuses_a_second_reading_of_another_page():
     with pytest.raises(ValueError):
         build_entry.build_entry_run(reading, Path("/tmp/never-built"),
                                     second_reading={**second, "prompt_text": second["prompt_text"] + "x"})
+
+
+# ---------------------------------------------------------------- Job 6: the OpenRouter cap fails closed (Codex P2-2, P2-3)
+
+
+@pytest.fixture
+def openrouter_only(monkeypatch, tmp_path):
+    """The real SecondReader with only an OpenRouter key; its network call replaced. Returns the list of calls."""
+    monkeypatch.setattr(read_table, "ENV_FILE", tmp_path / "absent")
+    monkeypatch.delenv("BASETEN_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
+    return []
+
+
+def _stub_ask(monkeypatch, calls, tokens):
+    def ask(self, route, prompt):
+        calls.append(route)
+        return Reply(FakeReader.default(prompt), OPENROUTER_MODEL, prompt_tokens=tokens[0],
+                     completion_tokens=tokens[1], extra={"route": route})
+
+    monkeypatch.setattr(SecondReader, "_ask", ask)
+
+
+def test_reaching_the_cap_skips_the_next_pages_second_read_and_the_run_still_finishes(runs_dir, monkeypatch,
+                                                                                      openrouter_only):
+    """Codex P2-3: with only an OpenRouter key, the page after the one that reached the cap used to fail the whole
+    run with 'No second-reader key was found'. It is skipped, with the reason, and the run finishes."""
+    calls = openrouter_only
+    one = prices.cost_usd("Muse Spark Open", 10_000_000, 0)
+    monkeypatch.setattr(jobs, "OPENROUTER_CAP_USD", one / 2)             # the first call reaches the cap
+    _stub_ask(monkeypatch, calls, (10_000_000, 0))
+    _, rid = start(runs_dir, FakeReader(), SecondReader(), companies=["PTGX", "IONS"])
+    run, job = run_of(runs_dir, rid), job_of(runs_dir, rid)
+    assert run["run"]["status"] == "done", run["run"]["status_reason"]
+    assert calls == ["openrouter"], "one fallback call, then none"
+    assert job["second"]["src-ptgx-8k-2026-08-05-ex991"]["status"] == "read"
+    assert job["second"]["src-ions-ars-2026"] == {"status": "not_run", "reason": second_reader.CAP_REACHED,
+                                                  "model": None}
+    sr = run["run"]["second_reader"]
+    assert sr["status"] == "read" and second_reader.CAP_REACHED in sr["reason"]
+    assert job["openrouter_spend_usd"] == pytest.approx(one)
+
+
+def test_a_fallback_call_with_no_token_counts_cannot_stay_under_the_cap_so_the_route_is_closed(runs_dir, monkeypatch,
+                                                                                               openrouter_only):
+    """Codex P2-2: no usage in the reply used to leave openrouter_spend_usd at 0.0 forever. The next fallback call is
+    refused instead, with no user spending limit set."""
+    calls = openrouter_only
+    _stub_ask(monkeypatch, calls, (None, None))
+    _, rid = start(runs_dir, FakeReader(), SecondReader(), companies=["PTGX", "IONS"])
+    run, job = run_of(runs_dir, rid), job_of(runs_dir, rid)
+    assert run["run"]["status"] == "done" and calls == ["openrouter"]
+    assert job["openrouter_unpriced_calls"] == 1 and job["openrouter_spend_usd"] == 0.0
+    assert job["second"]["src-ions-ars-2026"]["reason"] == second_reader.UNPRICED
+    assert run["run"]["choices"]["spending_limit_usd"] is None
+
+
+def test_the_cap_is_refreshed_before_readiness_is_asked(runs_dir, monkeypatch, openrouter_only):
+    seen = []
+    real_ready = SecondReader.ready
+
+    def ready(self):
+        seen.append(self.openrouter_allowed)
+        return real_ready(self)
+
+    monkeypatch.setattr(SecondReader, "ready", ready)
+    one = prices.cost_usd("Muse Spark Open", 10_000_000, 0)
+    monkeypatch.setattr(jobs, "OPENROUTER_CAP_USD", one / 2)
+    _stub_ask(monkeypatch, openrouter_only, (10_000_000, 0))
+    start(runs_dir, FakeReader(), SecondReader(), companies=["PTGX", "IONS"])
+    assert seen == [True, False], "allowed for the first page, closed when the second page asks"
+
+
+def test_a_priced_openrouter_run_under_the_cap_is_not_stopped_by_any_of_this(runs_dir, monkeypatch, openrouter_only):
+    _stub_ask(monkeypatch, openrouter_only, (1000, 500))
+    _, rid = start(runs_dir, FakeReader(), SecondReader(), companies=["PTGX", "IONS"])
+    job = job_of(runs_dir, rid)
+    assert openrouter_only == ["openrouter", "openrouter"] and job["openrouter_unpriced_calls"] == 0
+    assert run_of(runs_dir, rid)["run"]["second_reader"] == {"model": "Muse Spark Open", "status": "read",
+                                                              "reason": None}
+
+
+def test_baseten_stays_available_after_the_openrouter_cap_is_reached(monkeypatch, tmp_path):
+    monkeypatch.setattr(read_table, "ENV_FILE", tmp_path / "absent")
+    monkeypatch.setenv("BASETEN_API_KEY", "bt-test")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
+    r = SecondReader()
+    r.openrouter_allowed, r.openrouter_blocked = False, second_reader.CAP_REACHED
+    assert r.ready() is None and r.route() == "baseten"

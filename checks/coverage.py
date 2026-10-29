@@ -16,6 +16,7 @@ This is how a person sees what the reader skipped: runs/coverage.py turns each u
 from __future__ import annotations
 
 import re
+from collections import Counter
 from datetime import date
 
 from checks.event_checks import _norm_quote, parse_exact_date, parse_period, vague_period_window
@@ -101,15 +102,20 @@ def dated_sentences(words: list[dict], today: date) -> list[dict]:
 
 
 def sentence_covered(text: str, quotes: list[str | None]) -> bool:
+    """True when a quote holds the whole sentence as a run of words, or holds COVERED_SHARE of the sentence's tokens
+    counting repeats (a word that occurs three times in the sentence needs three in the quote to be covered three
+    times). A quote that is only a piece of the sentence does not cover it."""
     s = _norm_quote(text).lower()
-    tokens = s.split()
+    tokens = Counter(s.split())
+    total = sum(tokens.values())
     for q in quotes:
         if not q:
             continue
         nq = _norm_quote(q).lower()
-        if s in nq or (nq and nq in s):
+        if s in nq:
             return True
-        if tokens and sum(t in set(nq.split()) for t in tokens) / len(tokens) >= COVERED_SHARE:
+        have = Counter(nq.split())
+        if total and sum(min(n, have[t]) for t, n in tokens.items()) / total >= COVERED_SHARE:
             return True
     return False
 

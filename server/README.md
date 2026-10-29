@@ -154,7 +154,12 @@ limit, it is priced (`runs/prices.py`) and added to `spend_usd`, and the spendin
 key does not stop the run: `run.second_reader` says `not_run` and why. An unreadable answer from it compares nothing
 (`unreadable`). A page whose second read is still to do when a limit stops the run is finished on resume; no page is
 read twice. If the OpenRouter fallback is used, its spend is kept in `job.json` (`openrouter_spend_usd`) and the
-fallback is switched off at $20. The default server (no reader given) uses the live readers; one built with a fake
+fallback is switched off at $20, and it fails closed: a fallback call that returns no token counts (`openrouter_unpriced_calls`)
+cannot be held under the cap, so no further fallback call is made. The cap is applied before readiness is asked; a
+page reached after the cap (or an unpriced call) closed the fallback is skipped with the reason ("The OpenRouter
+fallback has reached its $20 cap...", `not_run` for that page) and the run finishes: it is never failed for this.
+Dated-sentence coverage counts dates after each source's published date, or after `coverage_as_of` when the server
+(or `run_job(..., as_of=...)`) is given one. The default server (no reader given) uses the live readers; one built with a fake
 reader has no second reader unless it is given one.
 
 **Three refusals.** A page whose answer could not be read (not JSON, or the wrong shape) is asked again; the

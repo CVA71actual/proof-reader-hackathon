@@ -43,7 +43,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from capture import read_events, read_table
-from capture.second_reader import OPENROUTER_CAP_USD
+from capture.second_reader import CAP_REACHED, OPENROUTER_CAP_USD, UNPRICED
 from checks.coverage import sentence_covered
 from capture.capture_source import load_entry
 from runs import build_entry, build_run, compare, coverage, prices
@@ -177,6 +177,7 @@ def create_run(runs_dir: Path, choices: dict) -> dict:
         }
         (run_dir / "decisions.jsonl").write_text("")
         _write(run_dir / "job.json", {"attempts": {}, "unpriced_calls": 0, "second": {}, "openrouter_spend_usd": 0.0,
+                                      "openrouter_unpriced_calls": 0,
                                       "log": [snapshot(run["run"], "Run created.")]})
         _write(run_dir / "run.json", run)
         return run
@@ -226,10 +227,12 @@ def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None) -> dict:
         return run
 
 
-def run_job(runs_dir: Path, run_id: str, reader, second=None) -> None:
+def run_job(runs_dir: Path, run_id: str, reader, second=None, as_of: date | None = None) -> None:
     """Carry the run on until it is done or a limit stops it. Never raises: an unexpected error ends it as failed.
-    `second`: the second reader (capture/second_reader.py), or None for a run with one reader."""
-    job = Job(Path(runs_dir) / run_id, reader, second)
+    `second`: the second reader (capture/second_reader.py), or None for a run with one reader.
+    `as_of`: the day a date must be after to count as upcoming for the dated-sentence coverage; by default the
+    source's published date, so an old filing's already-past dates raise no open rows."""
+    job = Job(Path(runs_dir) / run_id, reader, second, as_of)
     try:
         job.drive()
     except Exception as e:  # the type only: nothing that could carry request details
@@ -237,8 +240,8 @@ def run_job(runs_dir: Path, run_id: str, reader, second=None) -> None:
 
 
 class Job:
-    def __init__(self, run_dir: Path, reader, second=None):
-        self.dir, self.reader, self.second = run_dir, reader, second
+    def __init__(self, run_dir: Path, reader, second=None, as_of: date | None = None):
+        self.dir, self.reader, self.second, self.as_of = run_dir, reader, second, as_of
         self.run = json.loads((run_dir / "run.json").read_text())
         self.job = json.loads((run_dir / "job.json").read_text())
         self.meta = self.run["run"]
@@ -262,6 +265,9 @@ class Job:
         self.meta["turn_count"] += 1
         self.meta["turns_total"] += 1
         cost = prices.cost_usd(price_name(reply.model), reply.prompt_tokens, reply.completion_tokens)
+        if cost is None and (reply.extra or {}).get("route") == "openrouter" and not reply.error:
+            # a fallback call with no token counts cannot be held under the cap: no more fallback calls
+            self.job["openrouter_unpriced_calls"] = self.job.get("openrouter_unpriced_calls", 0) + 1
         if cost is not None:
             self.meta["spend_usd"] = round((self.meta["spend_usd"] or 0) + cost, prices.ROUND_TO)
             if (reply.extra or {}).get("route") == "openrouter":   # the fallback route has its own $20 cap
@@ -370,7 +376,7 @@ class Job:
             new_rows = [build_entry.build_row(first + i, ev, reading, source, words_doc, at, share=shares[i])
                         for i, ev in enumerate(parsed)]
             new_rows += coverage.possible_event_rows(words_doc, new_rows, source, first_index=first + len(new_rows),
-                                                     at=at, today=today(), ticker=entry["ticker"],
+                                                     at=at, today=self.coverage_date(source), ticker=entry["ticker"],
                                                      company=entry["company"])
             self.apply_window(new_rows, at)
             self.run["rows"] += new_rows
@@ -408,6 +414,11 @@ class Job:
             self.run["exclusions"].append({"id": f"x{len(self.run['exclusions']) + 1}", "target": row["id"],
                                            "rule": "outside_time_window", "reason": reason, "by": "code"})
 
+    def coverage_date(self, source: dict) -> date:
+        """A dated sentence counts when its date is after this day: `as_of` if the run was given one, else the day the
+        source was published (a filing's own date), never the day the run was made."""
+        return self.as_of or date.fromisoformat(source["published_date"])
+
     # ------------------------------------------------------------ the second reader
 
     def note_second(self, sid: str, status: str, reason: str | None = None, model: str | None = None) -> None:
@@ -415,7 +426,10 @@ class Job:
         self.job["second"][sid] = {"status": status, "reason": reason, "model": model}
         seen = list(self.job["second"].values())
         pick = next((v for v in seen if v["status"] == "read"), seen[-1])
-        self.meta["second_reader"] = {"model": pick["model"], "status": pick["status"], "reason": pick["reason"]}
+        skipped = [v["reason"] for v in seen if v["status"] != "read" and v["reason"]]
+        reason = pick["reason"] if pick["status"] != "read" else (
+            "Not every page was read by the second reader: " + " ".join(dict.fromkeys(skipped)) if skipped else None)
+        self.meta["second_reader"] = {"model": pick["model"], "status": pick["status"], "reason": reason}
 
     def second_pass(self, page: dict) -> bool:
         """The second reader's independent read of a page the first reader has read, compared by code. True when
@@ -424,6 +438,12 @@ class Job:
         source = next((s for s in self.run["sources"] if s["id"] == sid), None)
         if self.second is None or source is None or sid in self.job["second"]:
             return True
+        if hasattr(self.second, "openrouter_allowed"):      # the cap, before readiness is asked
+            unpriced = self.job.get("openrouter_unpriced_calls", 0)
+            self.second.openrouter_allowed = (self.job.get("openrouter_spend_usd", 0.0) < OPENROUTER_CAP_USD
+                                              and not unpriced)
+            self.second.openrouter_blocked = None if self.second.openrouter_allowed else (
+                UNPRICED if unpriced else CAP_REACHED)
         problem = self.second.ready()
         if problem:
             self.note_second(sid, "not_run", problem)
@@ -440,8 +460,6 @@ class Job:
                      if k != "entries"}
             prompt = read_table.build_prompt(words_doc, self.choices["note_for_agent"])
             parse = read_table.parse_table
-        if hasattr(self.second, "openrouter_allowed"):
-            self.second.openrouter_allowed = self.job.get("openrouter_spend_usd", 0.0) < OPENROUTER_CAP_USD
         if self.stopped_before_a_call(self.second):
             return False
         reply = self.second.call(prompt)

@@ -14,8 +14,13 @@ Format (JSON, one file per page):
       "written_by": "...", "note": "...",  optional, plain words
       "cells":  [{"row_label": "...", "column": "...", "value": "..."}],
       "events": [{"ticker": "...", "program": "...", "event_type": "...", "date_text": "...", "quote": "...",
-                  "aliases": ["..."]}]             aliases (optional): other names the page or a reader uses for
-                                                   the program (the drug for an indication); the scorer matches any
+                  "aliases": ["..."], "indication": "...", "indication_aliases": ["..."]}]
+                                                   aliases (optional): other names for the program; indication and
+                                                   indication_aliases (optional): the disease or condition and its
+                                                   other names. One drug with three indications on a page is three
+                                                   events (same program, different indication and date); the
+                                                   scorer matches a row by its date period and its program OR its
+                                                   indication, and the same alias may appear on several events
     }
 
 check_key(key, words_doc) refuses a key that cannot be trusted, with every offending entry listed: every value
@@ -62,20 +67,26 @@ def cell_id(c: dict) -> tuple[str, str]:
     return normalize(c.get("row_label")), column_key(c.get("column"))
 
 
-def event_id(e: dict) -> tuple[str, str, str]:
+def event_id(e: dict) -> tuple[str, str, str, str, str]:
+    """One drug may have several events on a page (one per indication, or per date): the identity is the company,
+    the program, the indication, the kind of event and the date text."""
     return (normalize(e.get("ticker")).upper(), normalize(e.get("program")).lower(),
-            normalize(e.get("event_type")).lower())
+            normalize(e.get("indication")).lower(), normalize(e.get("event_type")).lower(),
+            normalize(e.get("date_text")).lower())
 
 
-def program_names(key: dict) -> dict[str, str]:
-    """Every name the scorer accepts for a key program (lower case) -> the key's program (lower case)."""
-    names: dict[str, str] = {}
-    for e in key.get("events") or []:
-        prog = normalize(e.get("program")).lower()
-        for name in [prog, *[normalize(a).lower() for a in e.get("aliases") or [] if isinstance(a, str)]]:
-            if name:
-                names.setdefault(name, prog)
-    return names
+def _names(values) -> set[str]:
+    return {normalize(v).lower() for v in values if isinstance(v, str) and normalize(v)}
+
+
+def event_program_names(e: dict) -> set[str]:
+    """The names the scorer accepts for the program of a key event: `program` and its `aliases` (lower case)."""
+    return _names([e.get("program"), *(e.get("aliases") or [])])
+
+
+def event_indication_names(e: dict) -> set[str]:
+    """The names it accepts for the indication: `indication` and its `indication_aliases` (lower case)."""
+    return _names([e.get("indication"), *(e.get("indication_aliases") or [])])
 
 
 def _printed(text: str | None, words: list[dict]) -> bool:
@@ -136,7 +147,7 @@ def check_key(key: dict, words_doc: dict, words_bytes: bytes | None = None) -> l
         if e["event_type"] not in EVENT_TYPES:
             bad("events", i, e, f"The event type {e['event_type']} is not one of the fixed event types.")
         if event_id(e) in seen_events:
-            bad("events", i, e, "The key lists this ticker, program and event type twice.")
+            bad("events", i, e, "The key lists this ticker, program, indication, event type and date twice.")
         seen_events.add(event_id(e))
         if quote_match(e["quote"], words).result != PASS:
             bad("events", i, e, "The quote is not printed on the page, word for word.")
@@ -144,18 +155,12 @@ def check_key(key: dict, words_doc: dict, words_bytes: bytes | None = None) -> l
             bad("events", i, e, f"The date text '{e['date_text']}' is not part of the quote.")
         if normalize(e["program"]).lower() not in _norm_quote(e["quote"]).lower():
             bad("events", i, e, f"The program '{e['program']}' is not named in the quote.")
-        aliases = e.get("aliases", [])
-        if not isinstance(aliases, list) or not all(isinstance(a, str) and normalize(a) for a in aliases):
-            bad("events", i, e, "The aliases must be a list of names.")
-    owner: dict[str, str] = {}
-    for i, e in enumerate(events):
-        if not isinstance(e, dict) or not isinstance(e.get("program"), str) or \
-                not isinstance(e.get("aliases", []), list):
-            continue
-        prog = normalize(e["program"]).lower()
-        for name in [prog, *[normalize(a).lower() for a in e.get("aliases", []) if isinstance(a, str)]]:
-            if name and owner.setdefault(name, prog) != prog:
-                bad("events", i, e, f"The name '{name}' is used for two different programs.")
+        for field, what in (("aliases", "The aliases"), ("indication_aliases", "The indication aliases")):
+            names = e.get(field, [])
+            if not isinstance(names, list) or not all(isinstance(a, str) and normalize(a) for a in names):
+                bad("events", i, e, f"{what} must be a list of names.")
+        if e.get("indication") is not None and not (isinstance(e["indication"], str) and normalize(e["indication"])):
+            bad("events", i, e, "The indication must be a name.")
     return problems
 
 

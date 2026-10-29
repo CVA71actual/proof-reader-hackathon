@@ -584,7 +584,10 @@ def test_no_window_leaves_nothing_out_and_an_undated_row_is_never_touched(runs_d
 
     client2, _ = make(runs_dir, FakeReader(answer=undated))
     run = run_json(runs_dir, start(client2, time_window_months=1)["id"])
-    assert run["exclusions"] == [] and run["rows"][0]["group"] != "removed"
+    undated = run["rows"][0]
+    assert undated["group"] != "removed" and undated["id"] not in {x["target"] for x in run["exclusions"]}
+    # the only exclusion is the dated 'not read' row the coverage check added for the other event
+    assert [r["found_by"] for r in run["rows"] if r["id"] in {x["target"] for x in run["exclusions"]}] == ["coverage"]
 
 
 def test_the_window_is_checked_in_the_choices(runs_dir):

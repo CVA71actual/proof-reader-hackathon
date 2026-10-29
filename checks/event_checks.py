@@ -464,6 +464,11 @@ def type_group(event_type: str | None) -> str | None:
     return None
 
 
+# Two kinds of event that one sentence often has both kinds of words for ("Phase 1 initiation ... data"): when a quote
+# holds words of both, the quote does not say which the event is, and the type is not held against the reader.
+AMBIGUOUS_TYPES = ("milestone", "trial results")
+
+
 def _words_in(quote: str, group: str) -> list[str]:
     q = quote.lower()
     return [w for w in _ANCHORS[group] if re.search(rf"(?<![a-z]){re.escape(w)}(?![a-z])", q)]
@@ -473,7 +478,8 @@ def type_match(event_type: str | None, quote: str | None) -> CheckResult:
     """The row's event type must be one the quote's words fit. pass: the quote holds a fixed word for the row's
     type. fail: it holds none for that type but does for another ("results, data" in a quote saved as a
     milestone). not_needed: the quote holds no fixed word for any kind of event (nothing to compare, and a row is
-    not held back for it), or the type has no fixed words (earnings, other). could_not_run: the row has no quote."""
+    not held back for it), or the type has no fixed words (earnings, other), or the quote holds words of both milestone and trial results (it does not say
+    which; the quote's words decide only when they are one family's). could_not_run: the row has no quote."""
     compared = {"value": event_type, "found": None}
 
     def result(res: str, reason: str, found: str | None = None) -> CheckResult:
@@ -484,6 +490,10 @@ def type_match(event_type: str | None, quote: str | None) -> CheckResult:
         return result(NOT_NEEDED, f"The event type {event_type or '?'} has no fixed words to compare the quote with.")
     if not normalize(quote):
         return result(COULD_NOT_RUN, "The row has no quote to compare the event type with.")
+    if group in AMBIGUOUS_TYPES and all(_words_in(quote, g) for g in AMBIGUOUS_TYPES):
+        both = "; ".join(f"{g}: {', '.join(_words_in(quote, g))}" for g in AMBIGUOUS_TYPES)
+        return result(NOT_NEEDED, f"The quote holds words of both milestone and trial results ({both}), so there is "
+                                  f"nothing decisive to compare the type with.", both)
     own = _words_in(quote, group)
     if own:
         return result(PASS, f"The quote's words ({', '.join(own)}) fit {group}.", ", ".join(own))

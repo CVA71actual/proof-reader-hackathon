@@ -40,10 +40,11 @@ from __future__ import annotations
 import re
 
 from accuracy import types as T
-from accuracy.key import cell_id, event_id, program_names
+from accuracy.key import cell_id, event_indication_names, event_program_names
 from checks.common import FAIL, normalize
 from checks.coverage import sentence_covered
-from checks.event_checks import parse_exact_date, parse_period, vague_period_window
+from checks.event_checks import (AMBIGUOUS_TYPES, _words_in, parse_exact_date, parse_period, type_group,
+                                 vague_period_window)
 from checks.status import FAILED, MATCHED, check_cell
 
 TABLE_BUCKETS = ("found", "wrong_value", "wrong_place", "missed", "extra", "unscored")
@@ -186,101 +187,138 @@ def _strip(text: str | None) -> str:
     return re.sub(r"^(?:in |during |by )?(?:the )?", "", normalize(text).rstrip(".").lower())
 
 
-def _program_of(row: dict, names: dict[str, str]) -> str | None:
-    """The key program a row is about: its program or its indication when either is the key's program or an
-    alias of it, else the one key program named in its title or quote. A program the key does not hold is
-    returned as printed."""
-    for field in ("program", "indication"):
-        said = normalize(row.get(field)).lower()
-        if said in names:
-            return names[said]
-    if row.get("program"):
-        return normalize(row["program"]).lower()
+def _row_names(row: dict, every_name: set[str]) -> set[str]:
+    """The names a row goes by: its program and its indication; a row that gives neither is searched for the one key
+    name its title or quote holds (the longest names first)."""
+    own = {normalize(row.get(f)).lower() for f in ("program", "indication") if normalize(row.get(f))}
+    if own:
+        return own
     hay = " ".join(normalize(row.get(f)) for f in ("title", "quote")).lower()
-    hits = {names[n] for n in sorted(names, key=len, reverse=True) if n and n in hay}
-    return hits.pop() if len(hits) == 1 else None
+    hits = [n for n in sorted(every_name, key=len, reverse=True) if n in hay]
+    return {hits[0]} if hits else set()
 
 
-def _event_item(row: dict, expected: dict | None, typ, types=None) -> dict:
+def _event_item(row: dict, expected: dict | None, typ, types=None, note: str | None = None) -> dict:
     checks = row.get("checks") or []
-    return {"id": row.get("id"), "ticker": row.get("ticker"), "program": row.get("program"),
-            "event_type": row.get("event_type"), "date_text": row.get("date_text"),
-            "page_number": row.get("page_number"), "expected": expected, "type": typ,
-            "types": types if types is not None else T.failed_types(checks), "status": row.get("status"),
-            "caught": _caught(checks) or row.get("status") in ("unreadable", FAILED),
+    item = {"id": row.get("id"), "ticker": row.get("ticker"), "program": row.get("program"),
+            "indication": row.get("indication"), "event_type": row.get("event_type"),
+            "date_text": row.get("date_text"), "page_number": row.get("page_number"), "expected": expected,
+            "type": typ, "types": types if types is not None else T.failed_types(checks),
+            "status": row.get("status"), "caught": _caught(checks) or row.get("status") in ("unreadable", FAILED),
             "stopped_by": check_reason(checks)}
+    if note:
+        item["note"] = note
+    return item
 
 
 def _expected(k: dict) -> dict:
-    return {f: k[f] for f in ("ticker", "program", "event_type", "date_text")}
+    out = {f: k[f] for f in ("ticker", "program", "event_type", "date_text")}
+    if k.get("indication"):
+        out["indication"] = k["indication"]
+    return out
+
+
+def _type_tie(row_type: str | None, key_type: str | None, quote: str | None) -> bool:
+    """The reader and the key differ on milestone versus trial results, and the quote holds words of both: it does not
+    say which, so the key's choice is not held against the reader (checks.event_checks.AMBIGUOUS_TYPES)."""
+    groups = {type_group(row_type), type_group(key_type)}
+    return (len(groups) == 2 and groups == set(AMBIGUOUS_TYPES)
+            and all(_words_in(quote or "", g) for g in AMBIGUOUS_TYPES))
+
+
+TIE_NOTE = ("The quote holds words of both milestone and trial results, so the event type the reader gave "
+            "({row}) is not held against it; the key says {key}.")
 
 
 def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = None,
                  model: str | None = None) -> dict:
-    key_events = {event_id(e): e for e in key.get("events") or []}
+    """Match each proposed row to a key event: the same company and the same date or period, and the row's program OR
+    its indication is a name of the key event (a program name or alias, an indication or indication alias). One drug
+    with three indications on a page is three key events, matched by their dates and indications; a key may carry the
+    same drug alias on several. The kind of event is compared after the match: a different kind is `wrong_type`
+    unless the quote holds words of both milestone and trial results (then found, with a note)."""
+    kes = list(key.get("events") or [])
+    complete = is_complete(key)
     # Rows code found (a dated sentence no reader row quotes) are not proposals: they are never scored as
     # events, and they name the key events the reader missed that the coverage check surfaced.
     surfaced = [r for r in rows if r.get("found_by") == "coverage"]
     rows = [r for r in rows if r.get("found_by") != "coverage"]
-    names = program_names(key)
-    complete = is_complete(key)
+    prog = [event_program_names(e) for e in kes]
+    ind = [event_indication_names(e) for e in kes]
+    every = set().union(*prog, *ind) if kes else set()
     excluded = {x.get("target"): x.get("rule") for x in exclusions or []}
     out = {b: [] for b in EVENT_BUCKETS}
-    taken: set = set()
+    taken: set[int] = set()
 
-    def ident(row):
-        return (normalize(row.get("ticker")).upper(), _program_of(row, names),
-                normalize(row.get("event_type")).lower())
+    def hits(row) -> list[int]:
+        names = _row_names(row, every)
+        return [i for i in range(len(kes)) if names & (prog[i] | ind[i])]
+
+    def same_period(row, i) -> bool:
+        return period_of(row.get("date_text")) == period_of(kes[i]["date_text"])
+
+    def best(row, idx: list[int]) -> int:
+        """Prefer the key event whose indication the row names, then one whose program it names, then key order."""
+        mine = _row_names(row, every)
+        return max(idx, key=lambda i: (2 if mine & ind[i] else 1 if mine & prog[i] else 0, -i))
+
+    def same_ticker(row, i) -> bool:
+        return normalize(row.get("ticker")).upper() == normalize(kes[i].get("ticker")).upper()
+
+    def type_state(row, i) -> str | None:
+        """'same', 'tie' (found with a note) or None."""
+        a, b = normalize(row.get("event_type")).lower(), normalize(kes[i].get("event_type")).lower()
+        if a == b:
+            return "same"
+        return "tie" if _type_tie(a, b, row.get("quote")) else None
 
     rest = []
     for row in rows:
-        k = key_events.get(ident(row))
-        if k and ident(row) not in taken and row.get("status") == MATCHED and row.get("id") not in excluded \
-                and period_of(row.get("date_text")) == period_of(k["date_text"]):
-            taken.add(ident(row))
-            out["found"].append(_event_item(row, _expected(k), None, []))
+        c = [i for i in hits(row) if i not in taken and same_ticker(row, i) and same_period(row, i)
+             and type_state(row, i)]
+        if c and row.get("status") == MATCHED and row.get("id") not in excluded:
+            i = best(row, c)
+            taken.add(i)
+            note = (TIE_NOTE.format(row=row.get("event_type"), key=kes[i]["event_type"])
+                    if type_state(row, i) == "tie" else None)
+            out["found"].append(_event_item(row, _expected(kes[i]), None, [], note))
         else:
             rest.append(row)
     for row in rest:
-        tk, prog, et = ident(row)
         checks = row.get("checks") or []
         if row.get("status") == "unreadable":
             out["invented"].append(_event_item(row, None, T.UNREADABLE_OUTPUT, [T.UNREADABLE_OUTPUT]))
             continue
-        same_prog = [k for k in key_events if k[1] == prog]
-        if not same_prog and not complete:
+        named = hits(row)
+        if not named and not complete:
             out["unscored"].append(_event_item(row, None, None, []))
             continue
-        if not same_prog:
+        if not named:
             typ = T.type_for_exclusion(excluded.get(row.get("id"))) or T.primary_type(checks)
             out["invented"].append(_event_item(row, None, typ))
             continue
-        same_co = [k for k in same_prog if k[0] == tk]
-        if not same_co:
-            k = key_events[same_prog[0]]
-            out["invented"].append(_event_item(row, _expected(k), T.WRONG_COMPANY))
+        co = [i for i in named if same_ticker(row, i)]
+        if not co:
+            out["invented"].append(_event_item(row, _expected(kes[named[0]]), T.WRONG_COMPANY))
             continue
-        if (tk, prog, et) in key_events:
-            kid = (tk, prog, et)
-            k = key_events[kid]
-            if kid in taken:
-                out["invented"].append(_event_item(row, _expected(k), T.DUPLICATE))
-                continue
-            taken.add(kid)
-            if period_of(row.get("date_text")) != period_of(k["date_text"]):
-                out["wrong_date"].append(_event_item(row, _expected(k), T.PERIOD_MISREAD))
-            else:
-                typ = T.type_for_exclusion(excluded.get(row.get("id"))) or T.primary_type(checks)
-                out["unsupported"].append(_event_item(row, _expected(k), typ))
+        free = [i for i in co if i not in taken]
+        on_date = [i for i in free if same_period(row, i)]
+        again = [i for i in co if i in taken and same_period(row, i)]
+        if not free or (again and not on_date):      # a second row for an event already matched, on its own date
+            out["invented"].append(_event_item(row, _expected(kes[(again or co)[0]]), T.DUPLICATE))
             continue
-        free = [kid for kid in same_co if kid not in taken]
-        if not free:
-            out["invented"].append(_event_item(row, _expected(key_events[same_co[0]]), T.DUPLICATE))
-            continue
-        taken.add(free[0])
-        out["wrong_type"].append(_event_item(row, _expected(key_events[free[0]]), T.WRONG_EVENT_TYPE))
-    for kid, k in key_events.items():
-        if kid not in taken:
+        i = best(row, on_date or free)
+        taken.add(i)
+        k, kind = kes[i], type_state(row, i)
+        if on_date and kind:
+            typ = T.type_for_exclusion(excluded.get(row.get("id"))) or T.primary_type(checks)
+            out["unsupported"].append(_event_item(row, _expected(k), typ))
+        elif kind:
+            out["wrong_date"].append(_event_item(row, _expected(k), T.PERIOD_MISREAD))
+        else:
+            out["wrong_type"].append(_event_item(row, _expected(k), T.WRONG_EVENT_TYPE))
+    for i, k in enumerate(kes):
+        if i not in taken:
             seen = next((c for c in surfaced if sentence_covered(k["quote"], [c.get("quote")])), None)
             out["missed"].append({"ticker": k["ticker"], "program": k["program"], "event_type": k["event_type"],
                                   "date_text": None, "expected": _expected(k),
@@ -290,7 +328,7 @@ def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = No
     models = sorted({model_family(r.get("proposed_by")) for r in rows if r.get("proposed_by")})
     out["model"] = model_family(model) if model else (", ".join(models) if models else "unknown model")
     out["complete"] = complete
-    out["M"] = len(key_events)
+    out["M"] = len(kes)
     out["counts"] = {b: len(out[b]) for b in EVENT_BUCKETS}
     return out
 
