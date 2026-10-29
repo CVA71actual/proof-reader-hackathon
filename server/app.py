@@ -32,6 +32,7 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from jsonschema import Draft202012Validator
 
+from accuracy import export as accuracy_export
 from capture.reader import LiveReader
 from capture.sam import SamReader
 from capture.second_reader import SecondReader
@@ -301,6 +302,19 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
             # the re-check reads: a file changed since the run was loaded refuses the decision before any write.
             verify_page_files(store.run_dir(run_id), run)
             return _decide(store, run_id, run, line)
+
+    @app.get("/runs/{run_id}/accuracy.json")
+    @app.get("/api/runs/{run_id}/accuracy")
+    def accuracy_file(run_id: str) -> Response:
+        """The run's saved scoring (accuracy/export.py). Served only if the run's page files match their hashes and the
+        file's own hashes hold: it is not altered since it was written, and it was scored from this run.json."""
+        store.run(run_id)
+        data, problem = accuracy_export.read_if_intact(store.run_dir(run_id))
+        if problem:
+            raise HTTPException(409, problem)
+        if data is None:
+            raise HTTPException(404, "No accuracy scoring is saved for this run.")
+        return Response(data, media_type="application/json")
 
     @app.get("/runs/{run_id}/pages/{name}")
     def page_file(run_id: str, name: str) -> Response:

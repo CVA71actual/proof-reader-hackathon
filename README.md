@@ -81,6 +81,17 @@ mistake by type, model and who caught it.
   box. `mistakes[]` in run.json carries an optional `type`; the state rule lists every counted mistake with its
   type and model (`current_state(...)["mistake_list"]`), and `accuracy/mistake_log.py` counts them by type x
   model x caught_by for a run and its decisions.
+- **Export** (`accuracy/export.py`): `python -m accuracy.run --key <key> --run <id> [--planted <file>] --export <id>` writes
+  `runs/<id>/accuracy.json` from a scorer run, in the shape the audit header and the Accuracy panel read: the key (`sealed`,
+  `complete`: a key in this repo is an author's key and says `sealed: false`; the screens label the numbers by it), per model
+  values N/N, events M/M and planted K/K, the readers, the two readers' agreement on the run's rows (compared, agreed, rate, and
+  how many rows or values both agreed on that the key says are wrong), the mistake counts by type (from this scoring and from the
+  run's own log), the date, the product commit it was made on and whether that tree was dirty, `sample` when the run is the made-up
+  sample, and two hashes: `run_sha256` (the exact `run.json` it was scored from) and `content_sha256` (its own content). The server
+  serves it at `/runs/<id>/accuracy.json` (and `/api/runs/<id>/accuracy`) only if the run's page files match their hashes and both
+  of the file's hashes hold: 409 with the reason for a file changed after it was written or scored from another version of the
+  run, 404 when there is no scoring. A hash inside a file shows damage and a swap of the run; it does not stop someone who rewrites
+  both. `runs/sample/accuracy.json` is the sample run scored against the IONS key and planted errors (sealed false, sample true).
 - **Report** (`accuracy/report.py`, `python -m accuracy.run`): plain text and JSON. Per model: values n/N, events
   m/M, planted wrong values caught k/k, and the mistakes by type; then "Right value, check failed" listed apart (the
   reader had the value or event right and a check stopped it, with the check's own reason text); then every other

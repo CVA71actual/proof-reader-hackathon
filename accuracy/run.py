@@ -2,6 +2,7 @@
 
     python -m accuracy.run --key accuracy/keys/<page>.key.json --run <run_id> [--planted <file>] [--out <dir>]
     python -m accuracy.run --key <key.json> --reading <reading.json> --words <words.json> [--planted <file>]
+    python -m accuracy.run --key <key.json> --run <run_id> [--planted <file>] --export <run_id>
 
 The key is checked first (accuracy.key.check_key); a refused key stops here with every offending entry listed,
 and nothing is scored. --run reads runs/<run_id>/run.json (and its decisions.jsonl) and scores the tables and
@@ -100,7 +101,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--words")
     ap.add_argument("--planted")
     ap.add_argument("--out")
+    ap.add_argument("--export", help="write accuracy.json into this scored run's folder (a run id under runs/, or a "
+                                     "folder), for the screens to read; implies --run")
     a = ap.parse_args(argv)
+    if a.export and not a.run and not a.reading:
+        a.run = a.export
+    if a.export and a.run and a.export != a.run:
+        ap.error("--export names the run that was scored: give the same run to --run, or only --export")
+    if a.export and a.reading:
+        ap.error("--export needs a run to write beside: use --run, not --reading")
     if bool(a.run) == bool(a.reading):
         ap.error("give --run, or --reading with --words")
     if a.reading and not a.words:
@@ -108,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
     key = load_key(a.key)
     plants, planted_reading = _load_planted(a.planted)
     try:
+        run_dir = None
         if a.run:
             run_dir = Path(a.run) if Path(a.run).is_dir() and "/" in a.run else RUNS / a.run
             rep = score_run(key, run_dir, a.key, plants, planted_reading)
@@ -124,6 +134,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     text = render_text(rep)
     print(text, end="")
+    if a.export:
+        from accuracy import export
+        written = export.write(run_dir, rep)
+        print(f"Wrote {written}")
     if a.out:
         out = Path(a.out)
         out.mkdir(parents=True, exist_ok=True)
