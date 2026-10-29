@@ -87,7 +87,8 @@ def test_twelve_2_rows_that_failed_for_a_missing_year_are_checked_now():
     # Job 14: two "1Q27" rows now pass; five "today" rows could not run (no release date is passed here)
     # Job 18: "today at 8:00 a.m. ET" is a today-word now, so four more rows (e86, e186, e206, e255) go from fail to
     # could not run for the same reason
-    assert after.count("pass") == 24 and after.count("fail") == 8 and after.count("could_not_run") == 28
+    # Job 21: date_match takes a person's chosen date and clause continuation, so 13 rows go from could not run to pass
+    assert after.count("pass") == 37 and after.count("fail") == 8 and after.count("could_not_run") == 15
 
 
 # ---------------------------------------------------------------- send-back for the second reader
