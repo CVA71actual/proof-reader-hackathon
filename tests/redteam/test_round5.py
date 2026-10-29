@@ -235,5 +235,7 @@ renderOne('filled', docs.filled).then(function (text) {{
     out = _node(script)
     filled_text, blank_text = out.split("BLANK", 1)
     assert "Muse Spark — values 1/100" in filled_text
-    assert "Unsealed (author key)" in filled_text and "sealed-set" not in filled_text
-    assert "Unsealed (author key)" in blank_text and "sealed-set" not in blank_text
+    # G1-8 (orders/GLASS_LEDGER.md) renamed the heading to the plain words
+    # 'Our own key, not sealed' — same intent: an author key is not called a sealed set
+    assert "Our own key, not sealed" in filled_text and "sealed-set" not in filled_text
+    assert "Our own key, not sealed" in blank_text and "sealed-set" not in blank_text

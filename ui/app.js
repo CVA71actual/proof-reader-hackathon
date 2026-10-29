@@ -19,7 +19,8 @@
     third_party_calendar_only: 'House rule: a third-party calendar is never a source on its own.',
     person_removed: 'Removed by you.',
     past_event: 'The event had already happened when the page was read.',
-    source_rule: 'House rule: the source is not one the run accepts.'
+    source_rule: 'House rule: the source is not one the run accepts.',
+    outside_time_window: 'Outside the time window'
   };
   var NO_ERROR = 'The value already passed its checks before the edit.';
   // plain screen words — no raw ids on screen (UI-LANGUAGE rule)
@@ -172,7 +173,7 @@
   var runs = [];            // /api/runs list
   var detail = null;        // {id, run, state}
   var route = null;         // parsed hash
-  var audit = { filter: 'ALL', selected: null, prev: null };   // selection memory
+  var audit = { filter: 'ALL', selected: null, prev: null, cleared: false };   // selection memory
   var judgmentSel = null;
   var trailSel = null;
   var calSel = null;
@@ -299,6 +300,14 @@
     if (location.hash !== h) location.hash = h;
     else render();
   }
+  // G1-6: close things without a new history entry — browser Back must never
+  // re-open what Esc closed
+  function replaceRoute(o) {
+    var h = hashFor(o);
+    history.replaceState(null, '', location.pathname + location.search + h);
+    route = parseHash();
+    render();
+  }
   function currentRunId() { return detail ? detail.id : null; }
 
   // ---------------------------------------------------------------- render
@@ -329,6 +338,9 @@
     document.getElementById('src-back').hidden = !(narrow && route.screen === 'source' && !route.back);
     document.getElementById('src-back-audit').hidden = !(route.screen === 'source' && route.back === 'audit');
     document.getElementById('trail-back').hidden = !(narrow && route.screen === 'trail' && route.rowId);
+    // G1-5: a row opened from Audit log (Decide) offers a way back
+    document.getElementById('judgment-back-audit').hidden =
+      !(route.screen === 'judgment' && route.rowId);
   }
 
   // ---------------------------------------------------------------- shell
@@ -390,7 +402,7 @@
   function switchRun(runId, nav) {
     A.run(runId).then(function (body) {
       detail = { id: runId, run: body, state: body.state };
-      audit = { filter: 'ALL', selected: null, prev: null };
+      audit = { filter: 'ALL', selected: null, prev: null, cleared: false };
       judgmentSel = null;
       trailSel = null;
       calSel = null;
@@ -407,9 +419,9 @@
   // the sealed-set accuracy line (U10): reads runs/<id>/accuracy.json, the latest
   // sealed scoring of this run, when the server serves it; hidden when absent
   // the label is earned: only a report whose key is sealed reads 'Sealed set';
-  // an author-keyed report is labeled unsealed (Codex P2 on PR #30)
+  // an author-keyed report is labeled in plain words (G1-8)
   function accSealLabel(acc) {
-    return acc && acc.key && acc.key.sealed === true ? 'Sealed set: ' : 'Unsealed (author key): ';
+    return acc && acc.key && acc.key.sealed === true ? 'Sealed set: ' : 'Our own key, not sealed: ';
   }
   // Red Team round 5 (finding 6): a shown rate is one model's counts, never a
   // mix stitched from several models. The header line names the model and shows
@@ -477,7 +489,7 @@
   // ---------------------------------------------------------------- audit
   function renderAudit() {
     if (route.filter) audit.filter = route.filter;
-    if (route.rowId && rowOf(route.rowId)) audit.selected = route.rowId;
+    if (route.rowId && rowOf(route.rowId)) { audit.selected = route.rowId; audit.cleared = false; }
     var st = detail.state;
     var meta = detail.run.run || {};
 
@@ -491,7 +503,7 @@
     document.getElementById('audit-counters').textContent =
       'Mistakes caught by code: ' + st.mistakes.code +
       ' · by the second reader: ' + st.mistakes.second_reader +
-      ' · by a person: ' + st.mistakes.person +
+      ' · by you: ' + st.mistakes.person +
       ' · Excluded: ' + (st.excluded.code + st.excluded.person);
     ensureAccuracyLine();
 
@@ -533,10 +545,12 @@
   }
 
   function syncAuditSelection(vis) {
-    if (!vis.length) { audit.selected = null; return; }
-    if (!audit.selected || !vis.some(function (r) { return r.id === audit.selected; })) {
-      audit.selected = vis[0].id;
-    }
+    // G1-5: Esc closed the pane on purpose — do not re-select on re-render
+    if (audit.cleared) { audit.selected = null; return; }
+    // G1-9: a filter never changes the person's selected row; only fill an
+    // empty selection (fresh run) or one whose row no longer exists
+    if (audit.selected && rowOf(audit.selected)) return;
+    audit.selected = vis.length ? vis[0].id : null;
   }
 
   function renderAuditRows() {
@@ -581,8 +595,18 @@
     l1.append(el('span', 'tt', row.title || '(no title)'));
     l1.append(el('span', 'dt', t.values && t.values.date_text || row.date_text || ''));
     var l2 = el('div', 'l2');
-    l2.append(t.decided_by_person ? decidedBadge(t.group) : statusBadge(t.status));
+    var x = t.decided_by_person ? null : exclusionFor(row.id);
+    if (x && x.by === 'code') {
+      // G1-8 / G1-S1: a row removed by code says so — never a matched/proposed badge
+      l2.append(el('span', 'st st-removed', 'Removed by code'));
+    } else {
+      l2.append(t.decided_by_person ? decidedBadge(t.group) : statusBadge(t.status));
+    }
     l2.append(el('span', 'mdl', 'by ' + (row.proposed_by || 'Model')));
+    if (x && x.by === 'code') {
+      var ruleWords = RULE_WORDS[x.rule] || String(x.rule || '').replace(/_/g, ' ');
+      l2.append(el('span', 'fixline', '· ' + ruleWords));
+    }
     if (t.decided_by_person && t.group !== 'removed') {
       l2.append(el('span', null, '· decided by you'));
     }
@@ -597,6 +621,7 @@
     b.append(l1, l2);
     b.addEventListener('click', function () {
       audit.selected = row.id;
+      audit.cleared = false;
       navigate({ runId: currentRunId(), screen: 'audit', rowId: row.id, filter: audit.filter });
     });
     return b;
@@ -654,11 +679,16 @@
 
   function pageImage(pp, highlightId) {
     var wrap = el('div', 'page-wrap');
+    // G1-14: boxes live in an inner container that exactly frames the image —
+    // percentages of this container are the page points scaled to the rendered
+    // image, with no padding offset
+    var inner = el('div', 'page-img');
     var img = el('img');
     img.alt = pp.source.title + ' · page ' + pp.page.page_number;
     img.src = '/runs/' + encodeURIComponent(currentRunId()) + '/' +
       pp.page.image.split('/').map(encodeURIComponent).join('/');
-    wrap.append(img);
+    inner.append(img);
+    wrap.append(inner);
     var W = pp.page.width_pt, H = pp.page.height_pt;
     valuesOnPage(pp).forEach(function (v) {
       if (!Array.isArray(v.box) || v.box.length !== 4 ||
@@ -673,7 +703,7 @@
         navigate({ runId: currentRunId(), screen: 'source', srcId: pp.source.id,
                    page: 'p' + pp.page.page_number, valueId: v.id, back: route.screen === 'audit' ? 'audit' : null });
       });
-      wrap.append(b);
+      inner.append(b);
     });
     return wrap;
   }
@@ -769,11 +799,16 @@
       br.append(btn('btn', 'Open agent trail', function () {
         navigate({ runId: currentRunId(), screen: 'trail', rowId: row.id });
       }));
-      var dec = btn('btn pri', t.decided_by_person ? 'Change it' : 'Decide', function () {
+      // G1-S1: a row removed by code is the code's call — no Decide button
+      var xc = exclusionFor(row.id);
+      var codeRemoved = xc && xc.by === 'code';
+      if (!codeRemoved) {
+        var dec = btn('btn pri', t.decided_by_person ? 'Change it' : 'Decide', function () {
         judgmentSel = row.id;
         navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id });
       });
-      br.append(dec);
+        br.append(dec);
+      }
       sa.append(br);
       host.append(sa);
     }
@@ -826,12 +861,22 @@
     sec.append(el('h4', null, 'Why it was removed'));
     var x = exclusionFor(row.id);
     var box = el('div', 'ba red');
+    if (x && x.by === 'code') {
+      // G1-8 / G1-S1: say who removed it and why, in plain words
+      box.append(el('b', null, 'Removed by code'));
+      var reason = el('div');
+      reason.style.cssText = 'margin-top:6px;color:var(--sub);font-size:12.5px';
+      reason.textContent = x.reason || (RULE_WORDS[x.rule] || String(x.rule || '').replace(/_/g, ' '));
+      box.append(reason);
+      sec.append(box);
+      return sec;
+    }
     var rule = x ? (RULE_WORDS[x.rule] || x.rule.replace(/_/g, ' ')) : 'Removed.';
     box.append(el('b', null, rule.charAt(0).toUpperCase() === rule.charAt(0) && x && x.by === 'code' ? rule : rule));
-    var reason = el('div');
-    reason.style.cssText = 'margin-top:6px;color:var(--sub);font-size:12.5px';
-    reason.textContent = (x && x.reason) || t.reason || '';
-    if (reason.textContent) box.append(reason);
+    var reason2 = el('div');
+    reason2.style.cssText = 'margin-top:6px;color:var(--sub);font-size:12.5px';
+    reason2.textContent = (x && x.reason) || t.reason || '';
+    if (reason2.textContent) box.append(reason2);
     sec.append(box);
     return sec;
   }
@@ -897,7 +942,6 @@
 
   function seeTheCheck(c) {
     var d = el('details', 'fold');
-    if (c.code_ref && c.code_ref.function) d.dataset.fn = c.code_ref.function;
     d.append(el('summary', null, 'See the check'));
     var cmp = c.compared || {};
     var box = el('div', 'cmp');
@@ -912,14 +956,32 @@
     res.append('Result: ', el('b', null, checkResultWord(c.result)));
     if (c.reason) res.append(' — ' + c.reason);
     d.append(res);
-    if (c.code_ref && c.code_ref.file) {
-      var ref = el('a', 'coderef');
-      ref.textContent = c.code_ref.file + (c.code_ref.function ? ' · ' + c.code_ref.function + '()' : '');
-      ref.href = '#';
-      ref.title = 'The check, in the product repo: ' + c.code_ref.file;
-      ref.addEventListener('click', function (ev) { ev.preventDefault(); });
-      d.append(ref);
-    }
+    // G1-1: the code that ran, folded — no file paths or function names on screen.
+    // Job 21 serves it at /api/checks/source; until then (or when the run names no
+    // code reference) the fold says the code is not served on this build, never a
+    // dead link.
+    var src = el('div', 'codesrc-host');
+    d.append(src);
+    d.addEventListener('toggle', function () {
+      if (!d.open || src.dataset.probed) return;
+      src.dataset.probed = '1';
+      var notServed = function () {
+        src.textContent = 'The check’s code is not served on this build.';
+      };
+      if (!(c.code_ref && c.code_ref.file)) { notServed(); return; }
+      fetch('/api/checks/source?ref=' + encodeURIComponent(c.code_ref.file + ':' + (c.code_ref.function || '')))
+        .then(function (r) {
+          if (!r.ok) { notServed(); return; }
+          return r.text().then(function (text) {
+            if (!text || !text.trim()) { notServed(); return; }
+            src.textContent = '';
+            src.append(el('div', 'codelbl', 'The code that ran'));
+            var pre = el('pre', 'codesrc');
+            pre.textContent = text;
+            src.append(pre);
+          });
+        }).catch(notServed);
+    });
     return d;
   }
 
@@ -1119,21 +1181,20 @@
     accPanelHost.append(sealedHost);
     var plantedHost = el('div');
     accPanelHost.append(plantedHost);
-    // Red Team round 5 (finding 7): an author-keyed file is not called a sealed
-    // set — the footer names the accuracy file unless the key is truly sealed
-    var foot = el('div', 'hint', 'Every number here comes from the saved run and its accuracy file — no model is called for this panel.');
+    // G1-8: an author key is not called a sealed set; "the accuracy numbers" is the plain word
+    var foot = el('div', 'hint', 'Every number here comes from the saved run and the accuracy numbers — no model is called for this panel.');
     foot.style.marginTop = '12px';
     accuracyProbe(detail.id).then(function (acc) {
       var sealed = acc && acc.key && acc.key.sealed === true;
-      sealedHead.textContent = sealed ? 'The sealed set' : 'Unsealed (author key)';
-      foot.textContent = 'Every number here comes from the saved run and its ' +
-        (sealed ? 'sealed-set file' : 'accuracy file') + ' — no model is called for this panel.';
+      sealedHead.textContent = sealed ? 'The sealed set' : 'Our own key, not sealed';
+      foot.textContent = 'Every number here comes from the saved run and ' +
+        (sealed ? 'its sealed-set file' : 'the accuracy numbers') + ' — no model is called for this panel.';
       clear(sealedHost);
       var lines = accModelLines(acc);
       if (!lines.length) {
         sealedHost.append(el('div', 'hint',
-          sealed ? 'No sealed-set scoring is saved for this run yet.'
-                 : 'No accuracy scoring is saved for this run yet.'));
+          sealed ? 'No sealed-set numbers are saved for this run yet.'
+                 : 'No accuracy numbers are saved for this run yet.'));
       } else {
         lines.forEach(function (l) {
           var d = el('div', 'accline');
@@ -1602,7 +1663,8 @@
     note.id = 'qnote';
     sec.append(el('div', null, ''), note);
     note.placeholder = 'Why you decided this… (optional for Keep, required for Remove)';
-    var br = el('div', 'btnrow');
+    // G1-11: the decision buttons stay on one line — Remove… is never orphaned
+    var br = el('div', 'btnrow nowrap');
     br.style.marginTop = '10px';
     var v = t.values || {};
     var isPeriod = !!v.date_end || !!(v.date_text && !v.date);
@@ -1646,8 +1708,10 @@
     clear(host);
     var sec = el('div', 'sec');
     var box = el('div', 'ba green');
-    box.append(el('b', null, (DECIDED_BADGE[t.group] || 'Decided by you')));
-    if (t.reason) {
+    var badge = DECIDED_BADGE[t.group] || 'Decided by you';
+    box.append(el('b', null, badge));
+    // G1-10: one line — a reason that repeats the badge adds nothing
+    if (t.reason && t.reason.replace(/\.$/, '') !== badge) {
       var r = el('div');
       r.style.cssText = 'margin-top:6px;color:var(--sub);font-size:12.5px';
       r.textContent = t.reason;
@@ -1671,6 +1735,8 @@
   function postDecision(rowId, body, successMsg) {
     if (pending) return;
     pending = true;
+    // G1-10: an Undo must not wait ~1 s in silence — say it at once
+    if (body.action === 'undo') toast(successMsg || 'Undone.');
     A.decide(currentRunId(), body).then(function (res) {
       pending = false;
       if (!res.ok) {
@@ -1682,7 +1748,7 @@
       // drop the dialog from the hash BEFORE re-rendering, or it would re-open on the old state
       navigate({ runId: currentRunId(), screen: 'judgment', rowId: rowId });
       return refresh().then(function () {
-        toast(successMsg || 'Decided.');
+        if (body.action !== 'undo') toast(successMsg || 'Decided.');
       });
     }).catch(function () {
       pending = false;
@@ -1776,6 +1842,10 @@
     }
     var br = el('div', 'btnrow');
     br.style.marginTop = '14px';
+    // G1-2 (ruling): when the re-check cannot confirm the fix, the dialog shows
+    // the code's reason as a red line and stays open; "Keep anyway" accepts the
+    // standing fix and the row takes the "Fixed by you · still open" path
+    var keepAnyway = null;
     br.append(btn('btn pri', 'Save fix', function () {
       var problem = validateFix();
       if (problem) { showDialogError(problem); return; }
@@ -1798,6 +1868,26 @@
         }
         var st = res.body.state;
         var fx = (st.fixes || []).slice(-1)[0];
+        var rcRes = st.recheck && st.recheck.result;
+        if (rcRes && rcRes !== 'pass') {
+          // the re-check did not confirm the fix: red line inside the dialog,
+          // dialog stays open — the person fixes again, cancels, or keeps anyway
+          var why = 'Re-checked after the fix: ' + checkResultWord(rcRes) +
+                    (st.recheck.reason ? ' — ' + st.recheck.reason : '');
+          showDialogError(why);
+          if (!keepAnyway) {
+            keepAnyway = btn('btn', 'Keep anyway', function () {
+              navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id });
+              return refresh().then(function () {
+                toast(st.group === 'corrected'
+                  ? 'The fix stands — Fixed by you · still open.'
+                  : 'The fix stands — the row is still open.');
+              });
+            });
+            br.append(keepAnyway);
+          }
+          return;
+        }
         var what = 'Re-checked after the fix: ' + checkResultWord(st.recheck && st.recheck.result);
         if (fx && fx.edit_without_error) what += ' — ' + NO_ERROR;
         else if (fx && fx.mistake) what += ' — counted as a mistake caught by you.';
@@ -2349,6 +2439,11 @@
           if (!first && s.pages && s.pages.length) first = { src: s.id, page: 'p' + s.pages[0].page_number };
         });
         if (first) navigate({ runId: currentRunId(), screen: 'source', srcId: first.src, page: first.page });
+      } else if (b.dataset.scr === 'audit') {
+        // G1-12: returning to the Audit log keeps the selected row in the URL,
+        // the list and the pane — never a stale pane with nothing selected
+        navigate({ runId: currentRunId(), screen: 'audit', rowId: audit.selected,
+                   filter: audit.filter !== 'ALL' ? audit.filter : null });
       } else {
         navigate({ runId: currentRunId(), screen: b.dataset.scr });
       }
@@ -2368,6 +2463,9 @@
   document.getElementById('src-back-audit').addEventListener('click', function () {
     navigate({ runId: currentRunId(), screen: 'audit', rowId: audit.selected });
   });
+  document.getElementById('judgment-back-audit').addEventListener('click', function () {
+    navigate({ runId: currentRunId(), screen: 'audit', rowId: route.rowId });
+  });
   document.getElementById('trail-back').addEventListener('click', function () {
     navigate({ runId: currentRunId(), screen: 'trail' });
   });
@@ -2378,12 +2476,26 @@
     if (newrunWrap && !newrunWrap.hidden) { newrunWrap.hidden = true; return; }
     if (runSheetWrap && !runSheetWrap.hidden) { runSheetWrap.hidden = true; return; }
     if (dialogWrap && !dialogWrap.hidden && route && route.dialog) {
-      navigate({ runId: currentRunId(), screen: 'judgment', rowId: route.rowId });
+      // G1-6: replace, not push — Back must not re-open the dialog
+      replaceRoute({ runId: currentRunId(), screen: 'judgment', rowId: route.rowId });
+      return;
+    }
+    // G1-5: Esc closes the details pane (no history entry)
+    if (route && route.screen === 'audit' && audit.selected) {
+      audit.selected = null;
+      audit.cleared = true;
+      replaceRoute({ runId: currentRunId(), screen: 'audit',
+                     filter: audit.filter !== 'ALL' ? audit.filter : null });
+      return;
+    }
+    if (route && route.screen === 'judgment' && route.rowId) {
+      judgmentSel = null;
+      replaceRoute({ runId: currentRunId(), screen: 'judgment' });
       return;
     }
     if (route && route.screen === 'source' && route.valueId) {
-      navigate({ runId: currentRunId(), screen: 'source', srcId: route.srcId, page: route.page,
-                 back: route.back });
+      replaceRoute({ runId: currentRunId(), screen: 'source', srcId: route.srcId, page: route.page,
+                     back: route.back });
     }
   });
 

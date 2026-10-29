@@ -35,9 +35,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-a
 .nav{padding:4px 8px;display:flex;flex-direction:column;gap:1px}
 .nav .ni{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;color:var(--sub);font-weight:500;width:100%}
 .nav .ni:hover{background:var(--line2)}
-.nav .ni.on{background:var(--accent-soft);color:var(--ink)}
+/* G1-13: the selected rail item is a calm blue; red counts stay reserved for
+   Judgment needed */
+.nav .ni.on{background:var(--blue-soft);color:var(--ink)}
 .nav .ni .ct{margin-left:auto;font-size:11.5px;color:var(--faint)}
-.nav .ni.on .ct{color:var(--accent)}
+.nav .ni.on .ct{color:var(--blue)}
 .nav .ni.alert .ct{color:var(--red);font-weight:600}
 .nav .ni .ct.later{border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em}
 .runcard{display:block;margin:14px 14px 8px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);width:calc(100% - 28px);cursor:pointer}
@@ -130,6 +132,9 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-a
 .srcmeta .rend{color:var(--blue)}
 .page-wrap{position:relative;max-width:760px;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
 .page-wrap img{width:100%;display:block;border:1px solid var(--line2)}
+/* G1-14: the citation boxes live in a container that exactly frames the image */
+.page-img{position:relative}
+.page-img img{width:100%;display:block;border:1px solid var(--line2)}
 .box{position:absolute;border:1.5px solid;cursor:pointer;border-radius:1px}
 .box.matched{border-color:var(--green)}
 .box.failed{border-color:var(--red);background:rgba(188,69,39,.07)}
@@ -166,6 +171,12 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-a
 .btn.pri:hover{opacity:.92}
 .btn.danger{color:var(--red);border-color:var(--red)}
 .btnrow{display:flex;gap:7px;flex-wrap:wrap}
+/* G1-11: the decision buttons stay on one line */
+.btnrow.nowrap{flex-wrap:nowrap}
+.btnrow.nowrap .btn{padding:7px 10px;font-size:12.5px;white-space:nowrap}
+.codesrc-host{margin-top:6px;font-size:12px;color:var(--sub)}
+.codelbl{font-weight:600;color:var(--sub);margin-bottom:4px}
+pre.codesrc{font-family:var(--mono);font-size:11.5px;line-height:1.45;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;overflow:auto;max-height:340px;white-space:pre}
 .link{color:var(--accent);font-weight:500;font-size:13px}
 .link:hover{text-decoration:underline}
 .note{width:100%;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:8px 10px;font:inherit;font-size:13px;color:var(--ink);resize:vertical;min-height:56px}

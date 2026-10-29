@@ -257,11 +257,11 @@ def test_u10_polish_is_wired():
         assert needle in js or needle in html, needle
     for word in ("Sealed set: ", "'values '", "'events '", "'planted '"):
         assert word in js, word
-    # Codex P2 on PR #30: the sealed label is earned — key.sealed must be true,
-    # an author-keyed report reads 'Unsealed (author key)'
+    # Codex P2 on PR #30: the sealed label is earned — key.sealed must be true;
+    # G1-8: an author-keyed report reads 'Our own key, not sealed'
     assert "accSealLabel" in js
     assert "key.sealed === true" in js
-    assert "Unsealed (author key)" in js
+    assert "Our own key, not sealed" in js
     # rendered_from: the note shows in the details pane too, not only the source meta bar
     assert js.count("Page rendered by code from the filed HTML") >= 2
     assert "rendnote" in js and ".rendnote" in css
@@ -290,7 +290,7 @@ def test_u11_accuracy_panel_is_wired():
     # sealed-run numbers per model + the planted-errors line + cost per kept row
     assert "accModelLines" in js and "accPlantedLine" in js
     assert "accuracy.json" in js
-    assert "Unsealed (author key)" in js
+    assert "Our own key, not sealed" in js
     assert "Planted errors caught: " in js
     assert "cost_per_kept_row_usd" in js
     # no model calls: the panel reads state and the accuracy file only
@@ -322,8 +322,8 @@ def test_u12_audit_line_is_one_models_counts():
     js = (UI / "app.js").read_text()
     for word in ("M_total", "in the run’s window ", "outside the window ", "unplaced "):
         assert word in js, word
-    # footer: 'sealed-set file' only when key.sealed is true, else 'accuracy file'
-    assert "sealed-set file" in js and "accuracy file" in js
+    # footer: 'sealed-set file' only when key.sealed is true, else 'the accuracy numbers' (G1-8)
+    assert "sealed-set file" in js and "the accuracy numbers" in js
     # behavior: two models, each with one part — the line must not carry both
     import json
     import subprocess
@@ -392,12 +392,12 @@ def test_u12_panel_footer_and_window_numbers():
     unsealed = {"key": {"sealed": False},
                 "models": {"Muse Spark": {"values": {"found": 1, "N": 100}}}}
     text = _panel_text(unsealed)
-    assert "Unsealed (author key)" in text
+    assert "Our own key, not sealed" in text
     assert "sealed-set" not in text
-    assert "its accuracy file" in text
+    assert "the accuracy numbers" in text
     blank = _panel_text({"key": {"sealed": False}, "models": {}})
-    assert "Unsealed (author key)" in blank and "sealed-set" not in blank
-    assert "No accuracy scoring is saved for this run yet." in blank
+    assert "Our own key, not sealed" in blank and "sealed-set" not in blank
+    assert "No accuracy numbers are saved for this run yet." in blank
 
 
 def _judgment_screen(row_id):
@@ -556,3 +556,53 @@ def test_u14_limit_boxes_refuse_non_finite():
             assert guard_fires(cond, var, float(typed)), (anchor, cond, typed)
         for typed in ("0", "5", "0.5"):
             assert not guard_fires(cond, var, float(typed)), (anchor, cond, typed)
+
+
+def test_u15_glass1_fixes_are_wired():
+    # GLASS 1 rows (orders/GLASS_LEDGER.md): plain words, the Fix-dialog ruling,
+    # the code fold, the rail colours, the citation-box frame, no Decide for
+    # code-removed rows.
+    js = (UI / "app.js").read_text()
+    html = (UI / "index.html").read_text()
+    css = (UI / "styles.css").read_text()
+
+    # G1-7: the mistakes line says 'by you'
+    assert "· by you: " in js and "by a person: " not in js
+    # G1-8: plain words for the accuracy panel and code removals
+    for word in ("Our own key, not sealed", "the accuracy numbers",
+                 "No accuracy numbers are saved for this run yet."):
+        assert word in js, word
+    assert "Removed by code" in js
+    assert "outside_time_window: 'Outside the time window'" in js
+    # G1-1: the code that ran — served by Job 21, degraded line until then,
+    # and no file paths or function names on screen (the dead coderef link is gone)
+    assert "/api/checks/source" in js
+    assert "The check’s code is not served on this build." in js
+    assert "The code that ran" in js
+    assert "coderef" not in js and "quote_match()" not in js
+    # G1-2: the Fix dialog keeps the code's re-check reason in a red line and
+    # stays open; 'Keep anyway' is the way to the still-open path
+    assert "Keep anyway" in js
+    dialog = re.search(r"function fixDialog.*?\n  \}\n", js, re.S).group(0)
+    assert "showDialogError(why)" in dialog
+    assert "rcRes !== 'pass'" in dialog
+    # G1-5 / G1-6: Esc closes the pane via replaceRoute (no history entry);
+    # the judgment screen has a visible Back to Audit log
+    assert "function replaceRoute" in js and "history.replaceState" in js
+    assert "judgment-back-audit" in html and "judgment-back-audit" in js
+    # G1-11: the decision buttons stay on one line
+    assert "btnrow nowrap" in js and ".btnrow.nowrap" in css
+    # G1-13: the rail selected state is blue; red stays with Judgment needed
+    assert re.search(r"\.nav \.ni\.on\{background:var\(--blue-soft\)", css)
+    assert ".nav .ni.on .ct{color:var(--blue)}" in css
+    # G1-14: boxes are drawn inside an image-exact frame
+    assert "page-img" in js and ".page-img{position:relative}" in css
+    # G1-12: the rail returns to the audit row
+    assert "screen: 'audit', rowId: audit.selected" in js
+    # G1-9 / G1-10: selection survives a filter; Undo toasts at once; the
+    # decided pane does not repeat its own badge
+    assert "audit.cleared" in js
+    assert "if (body.action === 'undo') toast" in js
+    assert "t.reason.replace(/\\.$/, '') !== badge" in js
+    # G1-S1: no Decide button for a code-removed row
+    assert "codeRemoved" in js
