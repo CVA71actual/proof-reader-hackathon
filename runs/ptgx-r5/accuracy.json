@@ -1,0 +1,73 @@
+{
+ "export_version": 1,
+ "run": "ptgx-r5",
+ "sample": false,
+ "date": "2026-10-29",
+ "made_at": "2026-10-29T04:13:38+00:00",
+ "product_tip": "0b1016e",
+ "product_dirty": false,
+ "key": {
+  "path": "accuracy/keys/ptgx_8k_2026-08-05_ex991_p3.key.json",
+  "sealed": false,
+  "source_sha256": "4ba68e37da0c15348d3eb9c3164a8f477ca81fa42d570fd648961e69cb5a1c50",
+  "page_number": 3,
+  "cells": 0,
+  "events": 2,
+  "complete": true,
+  "key_check": "passed"
+ },
+ "readers": {
+  "first": [
+   "Muse Spark"
+  ],
+  "second_reader": {
+   "model": "Muse Spark Open",
+   "status": "read",
+   "reason": null,
+   "input": "image"
+  },
+  "escalation": null
+ },
+ "models": {
+  "Muse Spark": {
+   "values": null,
+   "events": {
+    "found": 2,
+    "M": 2,
+    "wrong_date": 0,
+    "wrong_type": 0,
+    "unsupported": 0,
+    "missed": 0,
+    "invented": 0,
+    "unscored": 0
+   },
+   "planted": null,
+   "mistakes_by_type": {}
+  }
+ },
+ "planted": null,
+ "agreement": {
+  "rows_compared": 2,
+  "rows_agreed": 2,
+  "rows_disagreed": 0,
+  "rate": 1.0,
+  "second_reader_only_rows": 0,
+  "values_disagreed": 0,
+  "both_wrong": {
+   "rows": 0,
+   "values": null
+  },
+  "note": "Agreement is not evidence: the checks decide. both_wrong counts what both readers agreed on and the key says is wrong."
+ },
+ "mistake_log": {
+  "from_scoring": {},
+  "from_run": {},
+  "from_run_by_caught_by": {
+   "code": 0,
+   "second_reader": 0,
+   "person": 0
+  }
+ },
+ "run_sha256": "9dbe08bb3ec6e145cd52bce2f0ce810fdda2629562bed91d51d1342d92887b60",
+ "content_sha256": "b257714ed86a943cda93557baca77d61ec53a0e7b33509014a0ef6c4a00edce3"
+}

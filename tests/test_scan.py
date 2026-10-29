@@ -415,7 +415,7 @@ def test_the_saved_live_sam_answers_on_the_scanned_ptgx_page():
     assert c["table"]["boxes"] == [] and c["block of text"]["boxes"] == [], "matched nothing: an object segmenter"
     [page] = c["page"]["boxes"]
     assert (page["w"], page["h"]) == (IMG_W, IMG_H) and page["x2"] > 1200 and page["y2"] > 1500
-    assert rec["images_processed"] == 3 and rec["cost_usd_at_placeholder_price"] == pytest.approx(0.0075)
+    assert rec["images_processed"] == 3 and rec["cost_usd"] == pytest.approx(0.0075)
 
 
 def test_the_committed_scan_run_is_what_the_builder_makes(tmp_path):

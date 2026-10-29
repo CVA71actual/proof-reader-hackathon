@@ -249,7 +249,7 @@ def test_a_reply_naming_a_priced_model_is_priced_by_that_model_not_the_advertise
     calls = []
     _, rid = start(runs_dir, Names("not-a-priced-model", "muse-spark-1.3", calls), spending_limit_usd=None)
     m = meta(runs_dir, rid)
-    assert m["status"] == "done" and m["spend_usd"] == pytest.approx(0.000050)   # 10 in at $1/M + 10 out at $4/M
+    assert m["status"] == "done" and m["spend_usd"] == pytest.approx(0.000055)   # 10 in at $1.25/M + 10 out at $4.25/M
 
 
 def test_an_unpriced_reply_without_a_limit_is_not_a_problem(runs_dir):

@@ -428,7 +428,7 @@ def test_the_saved_live_wonder_escalation_of_the_ptgx_page():
     assert "Date read as written" in rec["prompt_text"] and "\nw0|" not in rec["prompt_text"]
     u = rec["usage"]
     assert isinstance(u["prompt_tokens"], int) and isinstance(u["completion_tokens"], int)
-    assert rec["cost_usd_at_placeholder_price"] == prices.cost_usd("Muse Wonder", u["prompt_tokens"],
+    assert rec["cost_usd"] == prices.cost_usd("Muse Wonder", u["prompt_tokens"],
                                                                    u["completion_tokens"])
     own = next(e for e in rec["events"] if e["program"] == "PN-8047")
     assert (own["date"], own["date_end"]) == ("2027-01-01", "2027-03-31"), "Wonder read the printed period"

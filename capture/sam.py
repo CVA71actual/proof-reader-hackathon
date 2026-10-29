@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
     rec = {"model": MODEL, "base_url": read_table.BASE_URL, "input": "page image rendered with no text layer",
            "image_sha256": scan.sha256(png), "concepts": found,
            "images_processed": sum(c["images"] for c in found.values()),
-           "cost_usd_at_placeholder_price": prices.image_cost_usd(NAME, sum(c["images"] for c in found.values()))}
+           "cost_usd": prices.image_cost_usd(NAME, sum(c["images"] for c in found.values()))}
     SAM_PATH.write_text(json.dumps(rec, indent=1) + "\n")
     print(f"saved -> {SAM_PATH}")
     return 0

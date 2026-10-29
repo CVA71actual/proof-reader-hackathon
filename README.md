@@ -44,6 +44,14 @@ proposed values show up in the viewer. It is always marked FAKE and is never sho
 See [`runs/README.md`](runs/README.md): one `run.json` per run (never edited after the run ends), one append-only
 `decisions.jsonl`, the schemas, a saved demo run, a sample run, and the state rule in `runs/state.py`.
 
+## Run the demo
+
+1. It needs `~/proof-reader-docs/.venv` (`requirements.txt`); looking at the saved runs needs no key and calls no model.
+2. `~/proof-reader-docs/.venv/bin/python -m runs.demo` lists the saved runs, then prints `ptgx-r5`'s audit counts, its accuracy numbers (labelled "Sealed set" only if the key is sealed, else "Unsealed (author key)") and its cost per kept row, then serves the app.
+3. Open http://127.0.0.1:8777/ (this machine only; Ctrl-C stops it). `--run ptgx-r4a` shows another run, `--port 8800` another port, `--no-serve` prints and stops.
+4. Saved runs are never rebuilt: what the screens show is what `runs/<id>/run.json`, `decisions.jsonl` and `accuracy.json` hold.
+5. A new run needs the keys in `~/.config/proof-reader/env` and spends money: `python -m runs.twelve` (or the New run panel), with a spending limit.
+
 ## Accuracy and the mistake log
 
 `accuracy/` measures how often a reader gets a page right, against an answer key, and keeps a log of every caught

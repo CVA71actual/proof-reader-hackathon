@@ -195,7 +195,7 @@ string exactly `meta-models/muse-spark-open-1026`, base URL https://inference.ba
 (`meta/muse-spark-open`) is used only if `OPENROUTER_API_KEY` is present and the run's OpenRouter spend (kept in
 its `job.json`) is under $20. It is given the same kind of prompt, built by the same builder from the page's words
 and the run's choices; it is never given the first reader's answer (nothing in its interface takes one). Its tokens
-and cost are its own (`runs/prices.py`, "Muse Spark Open", placeholder prices).
+and cost are its own (`runs/prices.py`, "Muse Spark Open", a placeholder price until it is read from Baseten).
 
 `runs/compare.py` compares the two readings by code, event by event. Two are the same event when one quote is a
 **contiguous run of words** of the other (case, spacing and the punctuation at a word's edge ignored) and any program or
@@ -281,7 +281,7 @@ grid over the crop turned into PDF points; every proposal is a row with the same
 run** (no text layer) and Citation located is the **region check** (`region_match`): the box must lie inside a region SAM 3.1
 found. So a row on a scan is at best `proposed`, never `matched`: nothing printed was compared with it. The trail says so:
 Code "Scanned page", Model "SAM 3.1" (each request is one counted turn, priced per image processed from `runs/prices.py`,
-placeholder $2.50 per 1,000 images), then the reader's own steps. The source page carries `scanned: true` and its `regions`.
+$2.50 per 1,000 images, confirmed), then the reader's own steps. The source page carries `scanned: true` and its `regions`.
 In a run, the company `PTGX-SCAN` is the PTGX page rendered to an image alone; each call's answer is kept in `job.json`, so a resume
 never pays for a call twice. A scanned page gets no second read yet and no escalation.
 
@@ -291,8 +291,8 @@ text"; it answered only for "page" and "document" (one box, the whole page). It 
 model. So when neither concept matches, the run asks for "page" and the one region is the whole page; a whole-page region says
 nothing about where a quote is, so **Citation located could not run** ("SAM 3.1 found no table or text block on this page; its
 only region is the whole page...") and the row stays `proposed`. `runs/ptgx-scan/` is that run: the reader read the scan from
-its image alone (3,149 prompt and 1,851 completion tokens) and found the same two events; three SAM requests, $0.0075 at the
-placeholder price. The path is built for a segmenter that does find regions; this one, on documents, does not.
+its image alone (3,149 prompt and 1,851 completion tokens) and found the same two events; three SAM requests, $0.0075.
+The path is built for a segmenter that does find regions; this one, on documents, does not.
 
 **Not built: a Muse Glimmer first pass.** There is no host for Glimmer this week (it is not on the Meta Model API), so the
 cheap-first-pass item was dropped (the Operator's ruling, 2026-10-29). The cost per kept row is therefore unchanged by it.
@@ -358,8 +358,11 @@ acted while the run was still going; everything after the run ends goes to decis
 ### Cost on the record
 
 Every Model step in a row's trail carries the tokens of its call (`tokens` {prompt, completion}) and `cost_usd`,
-priced from the fixed table in `runs/prices.py` (dollars per 1M input and output tokens; the values there are
-placeholders, to confirm against dev.meta.ai before submission). The builders take the tokens from the saved
+priced from the fixed table in `runs/prices.py` (dollars per 1M input and output tokens). The confirmed prices
+(dev.meta.ai, 2026-10-29) are Muse Spark $1.25 in / $4.25 out (cached input $0.15), Muse Wonder $4.00 / $20.00 (cached $0.20) and
+SAM 3.1 $2.50 per 1,000 images; Muse Spark Open's ($0.20 / $0.80) is still a placeholder until it is read from Baseten
+(`PRICE_STATUS` says which is which). Cached tokens are not recorded in the saved readings, so every input token is priced at the
+input price. The builders take the tokens from the saved
 reading's `usage`; when one call proposed several rows, its tokens are split evenly across their Model steps
 (remainder to the first, `tokens.call_rows` says how many rows shared it), so the call is counted once. The first
 step, "Instructions sent", carries the prompt's whole token count. `run.spend_usd` is the sum of the Model step

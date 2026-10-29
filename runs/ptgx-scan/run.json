@@ -23,7 +23,7 @@
    "spending_limit_usd": null,
    "note_for_agent": null
   },
-  "spend_usd": 0.018053
+  "spend_usd": 0.019303
  },
  "sources": [
   {
@@ -215,7 +215,7 @@
       "completion": 926,
       "call_rows": 2
      },
-     "cost_usd": 0.005279
+     "cost_usd": 0.005904
     },
     {
      "step": "Checked",
@@ -401,7 +401,7 @@
       "completion": 925,
       "call_rows": 2
      },
-     "cost_usd": 0.005274
+     "cost_usd": 0.005899
     },
     {
      "step": "Checked",

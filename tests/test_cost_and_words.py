@@ -36,9 +36,20 @@ def test_price_table_is_used(monkeypatch):
     assert prices.model_cost_fields("Muse Spark", 2000, 300)["cost_usd"] == pytest.approx(0.05)
 
 
-def test_price_table_is_marked_placeholder():
+def test_the_confirmed_prices_are_the_ones_dev_meta_ai_lists_and_only_spark_open_is_a_placeholder():
+    t = prices.PRICES_PER_1M_USD
+    assert (t["Muse Spark"]["input"], t["Muse Spark"]["output"], t["Muse Spark"]["cached_input"]) == (1.25, 4.25, 0.15)
+    assert (t["Muse Wonder"]["input"], t["Muse Wonder"]["output"], t["Muse Wonder"]["cached_input"]) == (4.00, 20.00, 0.20)
+    assert prices.PRICES_PER_IMAGE_USD["SAM 3.1"] == 0.0025 and prices.image_cost_usd("SAM 3.1", 1000) == 2.5
+    assert prices.cost_usd("Muse Spark", 1_000_000, 1_000_000) == 5.5
+    assert prices.cost_usd("Muse Wonder", 1_000_000, 1_000_000) == 24.0
+    status = prices.PRICE_STATUS
+    assert set(status) == set(t) | set(prices.PRICES_PER_IMAGE_USD)
+    assert [m for m, s in status.items() if s.startswith("placeholder")] == ["Muse Spark Open"]
+    assert all(s.startswith("confirmed 2026-10-29") for m, s in status.items() if m != "Muse Spark Open")
     src = (REPO / "runs" / "prices.py").read_text()
-    assert "price list to confirm against dev.meta.ai before submission" in src
+    assert "PRICE LIST" not in src and "price list to confirm against dev.meta.ai before submission" not in src
+    assert "PLACEHOLDER (Baseten)" in src and src.count("PLACEHOLDER") >= 2
 
 
 def test_unknown_model_or_missing_tokens_cost_nothing_recorded():

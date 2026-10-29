@@ -65,7 +65,6 @@
   "prompt_tokens": 976,
   "completion_tokens": 2631
  },
- "cost_usd_at_placeholder_price": 0.0115,
  "outcome": "kept",
  "row_after": {
   "status": "failed",
@@ -108,5 +107,6 @@
   589.36,
   142.48
  ],
- "note": "Muse Wonder read the right event and the right date (2027-01-01 to 2027-03-31). The row stayed as it was because the code check Citation located failed on Wonder's box (it reaches below the quote's last line): a re-read is never trusted on its own, and one check was enough to refuse it."
+ "note": "Muse Wonder read the right event and the right date (2027-01-01 to 2027-03-31). The row stayed as it was because the code check Citation located failed on Wonder's box (it reaches below the quote's last line): a re-read is never trusted on its own, and one check was enough to refuse it.",
+ "cost_usd": 0.056524
 }

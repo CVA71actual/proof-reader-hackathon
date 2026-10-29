@@ -29,7 +29,7 @@
    "spending_limit_usd": 5.0,
    "note_for_agent": "Sample note: skip events that only appear on a calendar."
   },
-  "spend_usd": 0.023556
+  "spend_usd": 0.027569
  },
  "sources": [
   {
@@ -5828,7 +5828,7 @@
       "prompt": 1200,
       "completion": 150
      },
-     "cost_usd": 0.0018
+     "cost_usd": 0.002138
     },
     {
      "step": "Checked",
@@ -6031,7 +6031,7 @@
       "prompt": 1200,
       "completion": 150
      },
-     "cost_usd": 0.0018
+     "cost_usd": 0.002138
     },
     {
      "step": "Checked",
@@ -6238,7 +6238,7 @@
       "prompt": 1200,
       "completion": 150
      },
-     "cost_usd": 0.0018
+     "cost_usd": 0.002138
     },
     {
      "step": "Checked",
@@ -6264,7 +6264,7 @@
       "prompt": 1260,
       "completion": 30
      },
-     "cost_usd": 0.00138
+     "cost_usd": 0.001703
     },
     {
      "step": "Fixed",
@@ -6480,7 +6480,7 @@
       "prompt": 1200,
       "completion": 150
      },
-     "cost_usd": 0.0018
+     "cost_usd": 0.002138
     },
     {
      "step": "Checked",
@@ -6692,7 +6692,7 @@
       "prompt": 1200,
       "completion": 150
      },
-     "cost_usd": 0.0018
+     "cost_usd": 0.002138
     },
     {
      "step": "Checked",
@@ -6933,7 +6933,7 @@
       "prompt": 1200,
       "completion": 150
      },
-     "cost_usd": 0.0018
+     "cost_usd": 0.002138
     },
     {
      "step": "Checked",
@@ -7131,7 +7131,7 @@
       "prompt": 1200,
       "completion": 150
      },
-     "cost_usd": 0.0018
+     "cost_usd": 0.002138
     },
     {
      "step": "Checked",
@@ -7329,7 +7329,7 @@
       "prompt": 1200,
       "completion": 150
      },
-     "cost_usd": 0.0018
+     "cost_usd": 0.002138
     },
     {
      "step": "Checked",
@@ -7498,7 +7498,7 @@
       "prompt": 1200,
       "completion": 40
      },
-     "cost_usd": 0.00136
+     "cost_usd": 0.00167
     },
     {
      "step": "Checked",
@@ -7662,7 +7662,7 @@
       "prompt": 1200,
       "completion": 150
      },
-     "cost_usd": 0.0018
+     "cost_usd": 0.002138
     },
     {
      "step": "Checked",
@@ -7855,7 +7855,7 @@
       "prompt": 1200,
       "completion": 150
      },
-     "cost_usd": 0.0018
+     "cost_usd": 0.002138
     },
     {
      "step": "Checked",

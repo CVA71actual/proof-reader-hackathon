@@ -138,7 +138,7 @@ each call the job checks, in order: the reader is ready (a key), the turn budget
   only when every call stayed inside the limit (landing exactly on it is inside). A call priced by the model its **reply**
   names, not the one asked for: a reply naming a model not in `runs/prices.py` is unpriced, and under a limit the run stops
   before the next call, or at the end if there is none, saying which model ("no price for ..."). Spend is the sum
-  of each call's cost, from its token counts and `runs/prices.py` (placeholder prices, marked for confirmation). A
+  of each call's cost, from its token counts and `runs/prices.py` (confirmed prices; only Muse Spark Open's is a placeholder). A
   model missing from that table has no cost, so no spend: with a limit set, the run stops before the first call
   with a plain reason, because a limit that cannot be counted is not kept.
 - A model call that did not succeed: `failed`, with the plain sentence; resumable.
@@ -177,7 +177,7 @@ runs the same thing from the command line (see `runs/README.md`).
 after an unreadable answer; `run.second_reader.input` says which). After the second pass, each row of an events page
 that failed a check or that the readers disagree on is sent to Muse Wonder (`wonder_reader`, default
 `capture/wonder.py` when no `reader` was given), at most 3 a page, each a counted turn priced from `runs/prices.py`
-("Muse Wonder", a placeholder price until confirmed) and covered by the turn and spending limits; a row is never sent
+("Muse Wonder", $4.00 in / $20.00 out per million tokens, confirmed) and covered by the turn and spending limits; a row is never sent
 twice, across resumes either (`job.json` `escalated_rows`). See `runs/README.md`, "Escalation to Muse Wonder".
 
 **A scanned page.** The company `PTGX-SCAN` is the PTGX page rendered to an image with no text layer. Its run asks SAM 3.1

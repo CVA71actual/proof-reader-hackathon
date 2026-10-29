@@ -1,0 +1,187 @@
+"""Job 11: the confirmed prices and `python -m runs.demo`.
+
+The demo reads saved files only: it lists the runs, prints one run's audit counts, its saved accuracy numbers (labelled by
+what the key says it is) and its cost per kept row, then serves the app on this machine.
+"""
+
+import json
+import re
+import shutil
+from pathlib import Path
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from accuracy import export
+from capture import read_events, read_table
+from runs import build_run, demo, prices
+from tests.conftest import FIXTURES, REPO
+
+RUNS = REPO / "runs"
+PIN = read_events.PIN
+
+
+def run_json(name):
+    return json.loads((RUNS / name / "run.json").read_text())
+
+
+@pytest.fixture
+def runs_dir(tmp_path):
+    d = tmp_path / "runs"
+    shutil.copytree(RUNS, d, ignore=shutil.ignore_patterns("report", "twelve-*"))
+    return d
+
+
+# ---------------------------------------------------------------- the confirmed prices flow into the committed runs
+
+
+def test_the_saved_ptgx_runs_cost_what_their_saved_tokens_cost_at_the_confirmed_prices():
+    first = json.loads(read_events.READING_PATH.read_text())["usage"]
+    second = json.loads((FIXTURES / f"{PIN}.events.second.json").read_text())["usage"]
+    spark = prices.cost_usd("Muse Spark", first["prompt_tokens"], first["completion_tokens"])
+    assert spark == pytest.approx(0.028184) and run_json("ptgx-r4a")["run"]["spend_usd"] == pytest.approx(spark, abs=1e-6)
+    both = spark + prices.cost_usd("Muse Spark Open", second["prompt_tokens"], second["completion_tokens"])
+    assert run_json("ptgx-r5")["run"]["spend_usd"] == pytest.approx(both, abs=5e-6)   # each step's cost is rounded to a millionth
+
+
+def test_the_scan_run_prices_its_sam_requests_per_image_and_its_read_per_token():
+    run = run_json("ptgx-scan")
+    sam = sum(t["cost_usd"] for r in run["rows"] for t in r["trail"] if t["who"] == "SAM 3.1")
+    read = json.loads((FIXTURES / f"{PIN}.scan_reading.json").read_text())["reads"][0]["usage"]
+    spark = prices.cost_usd("Muse Spark", read["prompt_tokens"], read["completion_tokens"])
+    assert sam == pytest.approx(3 * 0.0025, abs=1e-6)
+    assert run["run"]["spend_usd"] == pytest.approx(sam + spark, abs=1e-6)
+
+
+def test_every_model_step_in_every_committed_run_is_priced_by_the_table_now():
+    for name in ("sample", "ptgx-r4a", "ptgx-r5", "ptgx-scan"):
+        run = run_json(name)
+        costs = [t["cost_usd"] for r in run["rows"] for t in r["trail"] if t["tag"] == "Model"]
+        assert costs and all(c is not None for c in costs)
+        assert run["run"]["spend_usd"] == pytest.approx(prices.run_spend_usd(run["rows"]), abs=1e-6)
+
+
+def test_the_live_wonder_fixture_is_priced_at_the_confirmed_wonder_price():
+    rec = json.loads((FIXTURES / f"{PIN}.wonder.json").read_text())
+    u = rec["usage"]
+    assert rec["cost_usd"] == pytest.approx((u["prompt_tokens"] * 4.00 + u["completion_tokens"] * 20.00) / 1_000_000, abs=1e-6)
+    assert "cost_usd_at_placeholder_price" not in rec
+    sam = json.loads((FIXTURES / f"{PIN}.sam.json").read_text())
+    assert sam["cost_usd"] == pytest.approx(0.0075) and "cost_usd_at_placeholder_price" not in sam
+
+
+def test_no_confirmed_price_is_still_called_a_placeholder_in_the_code_or_the_docs():
+    """Every line of runs/prices.py that says PLACEHOLDER is about Muse Spark Open, the one price not yet read."""
+    lines = [l for l in (REPO / "runs" / "prices.py").read_text().splitlines() if "PLACEHOLDER" in l]
+    assert lines and all("Spark Open" in l or "Baseten" in l for l in lines)
+    for doc in ("README.md", "runs/README.md", "server/README.md"):
+        for l in (REPO / doc).read_text().splitlines():
+            if "placeholder" in l.lower() and ("price" in l.lower() or "cost" in l.lower()):
+                assert "Spark Open" in l or "Baseten" in l or "placeholder until it is read" in l, (doc, l)
+
+
+# ---------------------------------------------------------------- the demo
+
+
+def say(capsys, *args, runs_dir=None, **kw):
+    argv = list(args) + (["--runs-dir", str(runs_dir)] if runs_dir else [])
+    code = demo.main(argv, **kw)
+    out = capsys.readouterr()
+    return code, out.out, out.err
+
+
+def test_the_demo_lists_the_runs_then_prints_ptgx_r5s_counts_accuracy_and_cost_per_kept_row(capsys):
+    code, out, _ = say(capsys, "--no-serve")
+    assert code == 0
+    head, _, rest = out.partition("\nptgx-r5\n")
+    assert head.startswith("Saved runs:")
+    for rid in ("demo", "ptgx-r4a", "ptgx-r5", "ptgx-scan", "sample"):
+        assert re.search(rf"^  {rid} +#\d+", head, re.M)
+    assert "ptgx-r5 · PTGX · two readers: saved" in rest and "pages read: 1" in rest
+    assert re.search(r"rows: kept 2, corrected 0, removed 0, unverified 0, open 0", rest) and "needs attention: 0" in rest
+    assert "calendar: 2 kept or corrected rows" in rest
+    spend = run_json("ptgx-r5")["run"]["spend_usd"]
+    assert f"cost: ${spend:.4f}; kept rows: 2; cost per kept row: ${spend / 2:.4f}" in rest
+    assert "Unsealed (author key): Muse Spark — events 2/2" in rest, "labelled by the key, which is not sealed"
+    assert "The two readers agreed on 2 of 2 rows; both agreed on 0 the key says are wrong." in rest
+    assert "Key: an author key, not sealed, complete; scored" in rest and "turns:" not in rest
+
+
+def test_the_demo_can_show_the_sample_run_and_says_it_is_sample_data(capsys):
+    code, out, _ = say(capsys, "--no-serve", "--run", "sample")
+    assert code == 0 and "Unsealed (author key): Muse Spark — values 69/69 · planted 12/12" in out
+    assert "This run is sample data." in out and "[sample]" in out
+
+
+def test_a_run_with_no_saved_scoring_says_so(capsys):
+    _, out, _ = say(capsys, "--no-serve", "--run", "ptgx-r4a")
+    assert "Accuracy: no scoring is saved for this run." in out and "Unsealed" not in out and "Sealed set" not in out
+
+
+def test_a_scoring_that_does_not_hold_its_hashes_is_not_shown_and_the_reason_is(capsys, runs_dir):
+    f = runs_dir / "ptgx-r5" / export.FILE_NAME
+    doc = json.loads(f.read_text())
+    doc["models"]["Muse Spark"]["events"]["found"] = 0
+    f.write_text(json.dumps(doc))
+    _, out, _ = say(capsys, "--no-serve", runs_dir=runs_dir)
+    assert "Accuracy: not shown. This run's accuracy.json does not match the hash recorded in it" in out
+    assert "events 0/2" not in out and "Muse Spark — events" not in out
+
+
+def test_the_label_is_sealed_only_when_the_key_says_sealed(capsys, runs_dir):
+    f = runs_dir / "ptgx-r5" / export.FILE_NAME
+    doc = json.loads(f.read_text())
+    doc["key"]["sealed"] = True
+    doc["content_sha256"] = export.content_hash(doc)
+    f.write_text(json.dumps(doc))
+    _, out, _ = say(capsys, "--no-serve", runs_dir=runs_dir)
+    assert "Sealed set: Muse Spark — events 2/2" in out and "Key: sealed, complete;" in out
+
+
+def test_an_unknown_run_is_refused_naming_the_saved_ones(capsys):
+    code, out, err = say(capsys, "--no-serve", "--run", "nope")
+    assert code == 2 and not out and "There is no run 'nope'. Saved runs: demo, ptgx-r4a, ptgx-r5" in err
+
+
+def test_it_serves_the_app_on_this_machine_only_on_the_documented_port_and_the_app_lists_the_runs(capsys):
+    seen = []
+    code, out, _ = say(capsys, serve=lambda app, host, port: seen.append((app, host, port)))
+    assert code == 0 and len(seen) == 1
+    app, host, port = seen[0]
+    assert isinstance(app, FastAPI) and (host, port) == ("127.0.0.1", 8777)
+    assert "Serving the app at http://127.0.0.1:8777/  (this machine only; Ctrl-C stops it)" in out
+    ids = [r["id"] for r in TestClient(app).get("/api/runs").json()]
+    assert "ptgx-r5" in ids and "sample" in ids
+    assert TestClient(app).get("/runs/ptgx-r5/accuracy.json").json()["key"]["sealed"] is False
+
+
+def test_another_port_is_taken_and_there_is_no_way_to_bind_elsewhere(capsys):
+    seen = []
+    say(capsys, "--port", "8800", serve=lambda app, host, port: seen.append((host, port)))
+    assert seen == [("127.0.0.1", 8800)]
+    with pytest.raises(SystemExit):
+        demo.main(["--host", "0.0.0.0", "--no-serve"])
+
+
+def test_nothing_is_served_with_no_serve_and_no_key_or_model_is_touched(capsys, monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("the demo read the key file")
+
+    monkeypatch.setattr(read_table, "load_env_file", boom)
+    seen = []
+    code, out, _ = say(capsys, "--no-serve", serve=lambda *a: seen.append(a))
+    assert code == 0 and not seen and "Serving" not in out
+
+
+def test_the_readme_has_five_lines_for_running_the_demo():
+    text = (REPO / "README.md").read_text()
+    section = text.split("## Run the demo\n", 1)[1].split("\n## ", 1)[0].strip().splitlines()
+    assert len(section) == 5 and [l.split(".")[0] for l in section] == ["1", "2", "3", "4", "5"]
+    assert "python -m runs.demo" in section[1] and "127.0.0.1:8777" in section[2]
+
+
+def test_the_committed_accuracy_files_hold_their_hashes_after_the_rebuild():
+    for name in ("sample", "ptgx-r5"):
+        data, problem = export.read_if_intact(RUNS / name)
+        assert problem is None and data is not None, (name, problem)

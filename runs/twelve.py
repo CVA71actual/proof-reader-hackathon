@@ -44,8 +44,10 @@ def summary(run: dict, state: dict, calendar: list[dict]) -> list[str]:
     who = state["mistakes"]
     cost = m.get("spend_usd")
     per = state["cost_per_kept_row_usd"]
-    lines = [f"{m['id']} · {m['label']}: {m['status']}" + (f" ({m['status_reason']})" if m.get("status_reason") else ""),
-             f"  pages read: {len(run['sources'])}; turns: {m.get('turns_total', 0)}; resumes: {m.get('resumes', 0)}",
+    lines = [f"{m['id']} · {m['label']}: {m.get('status') or 'saved'}"
+             + (f" ({m['status_reason']})" if m.get("status_reason") else ""),
+             f"  pages read: {len(run['sources'])}"
+             + (f"; turns: {m['turns_total']}; resumes: {m.get('resumes', 0)}" if "turns_total" in m else ""),
              "  rows: " + ", ".join(f"{g} {n}" for g, n in rows.items()),
              "  values: " + ", ".join(f"{g} {n}" for g, n in cells.items()),
              f"  needs attention: {state['unresolved']}",

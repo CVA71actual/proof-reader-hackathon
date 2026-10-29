@@ -23,7 +23,7 @@
    "spending_limit_usd": null,
    "note_for_agent": null
   },
-  "spend_usd": 0.028324,
+  "spend_usd": 0.03185,
   "second_reader": {
    "model": "Muse Spark Open",
    "status": "read",
@@ -236,7 +236,7 @@
       "completion": 1759,
       "call_rows": 2
      },
-     "cost_usd": 0.012329
+     "cost_usd": 0.014092
     },
     {
      "step": "Tidied",
@@ -493,7 +493,7 @@
       "completion": 1759,
       "call_rows": 2
      },
-     "cost_usd": 0.012329
+     "cost_usd": 0.014092
     },
     {
      "step": "Tidied",

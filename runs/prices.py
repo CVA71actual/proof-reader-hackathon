@@ -4,22 +4,32 @@ Every Model step in a run's trail carries `tokens` {prompt, completion} and `cos
 saved reading's usage. Nothing is looked up at run time and nothing is estimated: a step whose tokens were not
 recorded has `tokens` null and `cost_usd` null, and a run with no recorded cost has `spend_usd` null.
 
-PLACEHOLDER PRICES: price list to confirm against dev.meta.ai before submission.
+Prices: Muse Spark, Muse Wonder and SAM 3.1 are the prices dev.meta.ai lists, confirmed 2026-10-29. Muse Spark Open
+(Baseten) is still a PLACEHOLDER: its price is to be read from Baseten (PRICE_STATUS says which is which, and a test pins it).
+A cached input price is kept for reference; the saved readings do not record cached tokens, so every input token is priced at the
+input price (the higher figure: a cost is never understated for it).
 """
 
 from __future__ import annotations
 
-# US dollars per 1,000,000 tokens. PLACEHOLDER VALUES: price list to confirm against dev.meta.ai before submission.
+# US dollars per 1,000,000 tokens.
 PRICES_PER_1M_USD = {
-    "Muse Spark": {"input": 1.00, "output": 4.00},        # Muse Spark 1.3 (muse-spark-1.3); placeholder
-    "Muse Spark Open": {"input": 0.20, "output": 0.80},   # the second reader in the sample run; placeholder
-    "Muse Wonder": {"input": 1.00, "output": 4.00},       # muse-wonder-1.0, the escalation model; price not confirmed
+    "Muse Spark": {"input": 1.25, "output": 4.25, "cached_input": 0.15},     # muse-spark-1.3 (confirmed)
+    "Muse Spark Open": {"input": 0.20, "output": 0.80},                      # the second reader: PLACEHOLDER (Baseten)
+    "Muse Wonder": {"input": 4.00, "output": 20.00, "cached_input": 0.20},   # muse-wonder-1.0 (confirmed)
 }
 
-# US dollars per image, for a model that is priced per image. PLACEHOLDER VALUE: $2.50 per 1,000 images (dev.meta.ai,
-# noted 2026-10-21 in research/WHY_PROOF_READER); confirm before submission.
+# US dollars per image, for a model that is priced per image: SAM 3.1, $2.50 per 1,000 images (confirmed).
 PRICES_PER_IMAGE_USD = {
     "SAM 3.1": 0.0025,
+}
+
+# Where each price comes from. "confirmed ..." was read from the vendor's price list; "placeholder ..." was not.
+PRICE_STATUS = {
+    "Muse Spark": "confirmed 2026-10-29, dev.meta.ai",
+    "Muse Wonder": "confirmed 2026-10-29, dev.meta.ai",
+    "SAM 3.1": "confirmed 2026-10-29, dev.meta.ai",
+    "Muse Spark Open": "placeholder: to be read from Baseten",
 }
 
 ROUND_TO = 6  # cost figures are kept to a millionth of a dollar
