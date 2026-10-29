@@ -72,6 +72,12 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-a
 .attnbtn{margin:10px 0 2px;width:100%;padding:8px 12px;border-radius:8px;background:var(--blue-soft);color:var(--blue);font-weight:600;font-size:12.5px;border:1px solid transparent;text-align:left;cursor:pointer;font-family:inherit}
 .attnbtn.on{background:var(--accent);color:#fff}
 .attnbtn:hover{border-color:var(--blue)}
+.accbtn{margin:6px 0 2px;width:100%;padding:8px 12px;border-radius:8px;background:var(--green-soft);color:var(--green);font-weight:600;font-size:12.5px;border:1px solid transparent;text-align:left;cursor:pointer;font-family:inherit}
+.accbtn:hover{border-color:var(--green)}
+.accline{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--line2);font-size:12.5px;align-items:baseline}
+.accline .who{flex:0 0 auto;font-weight:600}
+.accline .what{flex:1;color:var(--sub);min-width:0}
+.accgrp{padding:10px 0 3px;font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--faint)}
 
 /* facet chips */
 .facets{display:flex;gap:4px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--line)}

@@ -257,6 +257,11 @@ def test_u10_polish_is_wired():
         assert needle in js or needle in html, needle
     for word in ("Sealed set: ", "'values '", "'events '", "'planted '"):
         assert word in js, word
+    # Codex P2 on PR #30: the sealed label is earned — key.sealed must be true,
+    # an author-keyed report reads 'Unsealed (author key)'
+    assert "accSealLabel" in js
+    assert "key.sealed === true" in js
+    assert "Unsealed (author key)" in js
     # rendered_from: the note shows in the details pane too, not only the source meta bar
     assert js.count("Page rendered by code from the filed HTML") >= 2
     assert "rendnote" in js and ".rendnote" in css
@@ -264,3 +269,33 @@ def test_u10_polish_is_wired():
     assert "runcard-cost" in html
     assert "cost_per_kept_row_usd" in js
     assert "cost per kept row" in js
+
+
+def test_u11_accuracy_panel_is_wired():
+    js = (UI / "app.js").read_text()
+    html = (UI / "index.html").read_text()
+    # reached from the audit header
+    assert "accbtn" in html and "accpanel" in html
+    assert "renderAccuracyPanel" in js
+    # the mistake log by type x model x who caught it, from state.mistake_list
+    assert "mistake_list" in js
+    for word in ("caught_by", "what_changed", "the second reader"):
+        assert word in js, word
+    # plain-word type labels mirroring accuracy/types.py LABELS
+    for word in ("Value not as printed", "Value placed in the wrong row",
+                 "Quote not printed on the page", "Wrong kind of event", "Wrong company",
+                 "Source not allowed on its own", "Same item proposed twice",
+                 "Reader’s answer could not be read", "No type recorded"):
+        assert word in js, f"the mistake type label '{word}' is mapped"
+    # sealed-run numbers per model + the planted-errors line + cost per kept row
+    assert "accModelLines" in js and "accPlantedLine" in js
+    assert "accuracy.json" in js
+    assert "Unsealed (author key)" in js
+    assert "Planted errors caught: " in js
+    assert "cost_per_kept_row_usd" in js
+    # no model calls: the panel reads state and the accuracy file only
+    panel = re.search(r"function renderAccuracyPanel.*?\n  \}\n", js, re.S)
+    body = panel.group(0)
+    assert "fetch(" not in body.replace("accuracyProbe", "")
+    for url in ("/api/runs/new", "/decisions"):
+        assert url not in body, f"the panel must not call {url}"

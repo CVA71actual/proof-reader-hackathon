@@ -400,6 +400,11 @@
 
   // the sealed-set accuracy line (U10): reads runs/<id>/accuracy.json, the latest
   // sealed scoring of this run, when the server serves it; hidden when absent
+  // the label is earned: only a report whose key is sealed reads 'Sealed set';
+  // an author-keyed report is labeled unsealed (Codex P2 on PR #30)
+  function accSealLabel(acc) {
+    return acc && acc.key && acc.key.sealed === true ? 'Sealed set: ' : 'Unsealed (author key): ';
+  }
   function accuracyLineFrom(acc) {
     if (!acc || typeof acc !== 'object') return null;
     function part(x) {
@@ -414,11 +419,21 @@
     var ev = part(acc.events) ||
       (acc.events && acc.events.counts ? part({ found: acc.events.counts.found, M: acc.events.M }) : null);
     var pl = part(acc.planted);
+    if (!v || !ev || !pl) {
+      // report shape: counts live per model — take the first model that has each part
+      var names = acc.models && typeof acc.models === 'object' ? Object.keys(acc.models) : [];
+      for (var i = 0; i < names.length; i++) {
+        var m = acc.models[names[i]] || {};
+        if (!v && m.values) { var pv = part(m.values); if (pv) v = pv; }
+        if (!ev && m.events) { var pe = part(m.events); if (pe) ev = pe; }
+        if (!pl && m.planted) { var pp = part(m.planted); if (pp) pl = pp; }
+      }
+    }
     var bits = [];
     if (v) bits.push('values ' + v);
     if (ev) bits.push('events ' + ev);
     if (pl) bits.push('planted ' + pl);
-    return bits.length ? 'Sealed set: ' + bits.join(' · ') : null;
+    return bits.length ? accSealLabel(acc) + bits.join(' · ') : null;
   }
   function ensureAccuracyLine() {
     var slot = document.getElementById('audit-accuracy');
@@ -973,6 +988,175 @@
         det.append(checksSection({ checks: cell.checks }, {}));
       }
     }
+  }
+
+  // ---------------------------------------------------------------- accuracy panel (U11)
+  // Reached from the audit header: the mistake log by type x model x who
+  // caught it, the sealed-set numbers per model, cost per kept row, and the
+  // planted-errors line. Everything from state + runs/<id>/accuracy.json;
+  // no model calls.
+  var MISTAKE_TYPE_WORDS = {
+    WRONG_VALUE: 'Value not as printed',
+    WRONG_ROW: 'Value placed in the wrong row',
+    WRONG_COLUMN: 'Value placed in the wrong column',
+    BOX_DRIFT: 'Box does not sit on the value',
+    QUOTE_NOT_ON_PAGE: 'Quote not printed on the page',
+    DATE_NOT_IN_QUOTE: 'Date not part of the quote',
+    PERIOD_MISREAD: 'Date or period read differently from the page',
+    DATE_IN_PAST: 'Event date already past',
+    WRONG_EVENT_TYPE: 'Wrong kind of event',
+    WRONG_COMPANY: 'Wrong company',
+    SOURCE_NOT_ALLOWED: 'Source not allowed on its own',
+    DUPLICATE: 'Same item proposed twice',
+    UNREADABLE_OUTPUT: 'Reader’s answer could not be read',
+    MISSED_DATED_SENTENCE: 'A dated sentence the reader did not turn into a row'
+  };
+  var CAUGHT_BY_WORDS = { code: 'code', second_reader: 'the second reader', person: 'a person' };
+  function mistakeTypeWord(t) { return MISTAKE_TYPE_WORDS[t] || 'No type recorded'; }
+
+  // plain words for ids inside server sentences (what_changed lines); only
+  // snake_case ids — a bare 'date' or 'title' in prose must not be replaced
+  var ID_WORDS = {};
+  Object.keys(EVENT_WORDS).forEach(function (k) { ID_WORDS[k] = EVENT_WORDS[k]; });
+  Object.keys(FIELD_WORDS).forEach(function (k) { if (k.indexOf('_') >= 0) ID_WORDS[k] = FIELD_WORDS[k]; });
+  function plainWords(text) {
+    var out = String(text || '');
+    Object.keys(ID_WORDS).sort(function (a, b) { return b.length - a.length; }).forEach(function (k) {
+      out = out.replace(new RegExp('\\b' + k + '\\b', 'g'), ID_WORDS[k]);
+    });
+    return out;
+  }
+
+  var accCache = { id: null, acc: null, tried: false };
+  function accuracyProbe(id) {
+    if (accCache.id === id && accCache.tried) return Promise.resolve(accCache.acc);
+    accCache = { id: id, acc: null, tried: true };
+    var urls = ['/runs/' + encodeURIComponent(id) + '/accuracy.json',
+                '/api/runs/' + encodeURIComponent(id) + '/accuracy'];
+    return new Promise(function (resolve) {
+      (function probe(i) {
+        if (i >= urls.length) return resolve(null);
+        fetch(urls[i]).then(function (r) {
+          if (!r.ok) return probe(i + 1);
+          r.json().then(function (acc) {
+            accCache = { id: id, acc: acc, tried: true };
+            resolve(acc);
+          }).catch(function () { probe(i + 1); });
+        }).catch(function () { probe(i + 1); });
+      })(0);
+    });
+  }
+  function accPart(x) {
+    if (!x || typeof x !== 'object') return null;
+    var f = null, n = null;
+    ['found', 'scored', 'caught'].forEach(function (k) { if (x[k] !== null && x[k] !== undefined) f = x[k]; });
+    ['N', 'M', 'total'].forEach(function (k) { if (x[k] !== null && x[k] !== undefined) n = x[k]; });
+    return n !== null ? (f !== null ? f : '?') + '/' + n : null;
+  }
+  // one line per model: 'Muse Spark — values 69/69 · events 2/2 · planted 12/12'
+  function accModelLines(acc) {
+    if (!acc) return [];
+    var lines = [];
+    var models = acc.models;
+    if (models && typeof models === 'object') {
+      Object.keys(models).forEach(function (name) {
+        var m = models[name] || {};
+        var bits = [];
+        var v = accPart(m.values), ev = accPart(m.events), pl = accPart(m.planted);
+        if (v) bits.push('values ' + v);
+        if (ev) bits.push('events ' + ev);
+        if (pl) bits.push('planted ' + pl);
+        if (bits.length) lines.push(name + ' — ' + bits.join(' · '));
+      });
+    }
+    if (!lines.length) {
+      var b2 = [];
+      var v2 = accPart(acc.values) ||
+        (acc.table && acc.table.counts ? accPart({ found: acc.table.counts.found, N: acc.table.N }) : null);
+      var e2 = accPart(acc.events) ||
+        (acc.events && acc.events.counts ? accPart({ found: acc.events.counts.found, M: acc.events.M }) : null);
+      var p2 = accPart(acc.planted);
+      if (v2) b2.push('values ' + v2);
+      if (e2) b2.push('events ' + e2);
+      if (p2) b2.push('planted ' + p2);
+      if (b2.length) lines.push(b2.join(' · '));
+    }
+    return lines;
+  }
+  function accPlantedLine(acc) {
+    var pl = accPart(acc && acc.planted);
+    return pl ? 'Planted errors caught: ' + pl : null;
+  }
+
+  var accPanelWrap = document.getElementById('accpanel-wrap');
+  var accPanelHost = document.getElementById('accpanel');
+  document.getElementById('accbtn').addEventListener('click', function () {
+    renderAccuracyPanel();
+    accPanelWrap.hidden = false;
+  });
+  accPanelWrap.addEventListener('click', function (e) { if (e.target === accPanelWrap) accPanelWrap.hidden = true; });
+
+  function renderAccuracyPanel() {
+    clear(accPanelHost);
+    var meta = detail.run.run || {};
+    var st = detail.state;
+    accPanelHost.append(el('div', 'sh-t', 'Accuracy'));
+    accPanelHost.append(el('div', 'sh-s', (meta.label || 'This run') + (meta.sample ? ' · sample data — not real events' : '')));
+
+    var sealedHead = el('h4', null, 'The sealed set');
+    accPanelHost.append(sealedHead);
+    var sealedHost = el('div', null, 'Reading the sealed-set numbers…');
+    accPanelHost.append(sealedHost);
+    var plantedHost = el('div');
+    accPanelHost.append(plantedHost);
+    accuracyProbe(detail.id).then(function (acc) {
+      sealedHead.textContent = acc && acc.key && acc.key.sealed === true ? 'The sealed set' : 'Unsealed (author key)';
+      clear(sealedHost);
+      var lines = accModelLines(acc);
+      if (!lines.length) {
+        sealedHost.append(el('div', 'hint', 'No sealed-set scoring is saved for this run yet.'));
+      } else {
+        lines.forEach(function (l) {
+          var d = el('div', 'accline');
+          d.append(el('span', 'what', l));
+          sealedHost.append(d);
+        });
+      }
+      var planted = accPlantedLine(acc);
+      clear(plantedHost);
+      if (planted) plantedHost.append(el('div', 'hint', planted));
+    });
+
+    var cpkr = st.cost_per_kept_row_usd;
+    var costLine = el('div', 'hint');
+    costLine.textContent = cpkr !== null && cpkr !== undefined
+      ? 'Cost per kept row ' + money(cpkr) + ' — spend divided by the rows now kept or corrected.'
+      : 'Cost per kept row: not recorded for this run.';
+    accPanelHost.append(el('h4', null, 'Cost'));
+    accPanelHost.append(costLine);
+
+    accPanelHost.append(el('h4', null, 'The mistake log — by type · model · who caught it'));
+    var log = st.mistake_list || [];
+    if (!log.length) {
+      accPanelHost.append(el('div', 'hint', 'No counted mistakes in this run.'));
+    } else {
+      var byType = {};
+      log.forEach(function (m) { (byType[m.type || 'none'] = byType[m.type || 'none'] || []).push(m); });
+      Object.keys(byType).forEach(function (t) {
+        accPanelHost.append(el('div', 'accgrp', mistakeTypeWord(t)));
+        byType[t].forEach(function (m) {
+          var d = el('div', 'accline');
+          d.append(el('span', 'who', (m.model || 'a model')));
+          var what = el('span', 'what',
+            plainWords(m.what_changed || '') + ' — caught by ' + (CAUGHT_BY_WORDS[m.caught_by] || m.caught_by || 'someone'));
+          d.append(what);
+          accPanelHost.append(d);
+        });
+      });
+    }
+    var foot = el('div', 'hint', 'Every number here comes from the saved run and its sealed-set file — no model is called for this panel.');
+    foot.style.marginTop = '12px';
+    accPanelHost.append(foot);
   }
 
   // ---------------------------------------------------------------- trail (U5)
@@ -2106,6 +2290,7 @@
   window.addEventListener('hashchange', function () { render(); });
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
+    if (accPanelWrap && !accPanelWrap.hidden) { accPanelWrap.hidden = true; return; }
     if (newrunWrap && !newrunWrap.hidden) { newrunWrap.hidden = true; return; }
     if (runSheetWrap && !runSheetWrap.hidden) { runSheetWrap.hidden = true; return; }
     if (dialogWrap && !dialogWrap.hidden && route && route.dialog) {
