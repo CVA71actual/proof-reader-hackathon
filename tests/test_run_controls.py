@@ -245,7 +245,7 @@ def test_the_run_stops_at_the_spending_limit_with_a_plain_reason(runs_dir):
     m = run_json(runs_dir, meta["id"])["run"]
     assert m["status"] == "needs_input" and m["spend_usd"] == pytest.approx(0.60)
     assert m["status_reason"] == ("Stopped at the spending limit ($0.60 of $0.50 used): spending limit reached. "
-                                  "Resume with a higher spending_limit_usd to read more.")
+                                  "Resume with a higher spending limit to read more.")
     assert len(reader.prompts) == 1
     again = client.post(f"/api/runs/{meta['id']}/resume")
     assert again.status_code == 409 and "spending limit" in again.json()["detail"]

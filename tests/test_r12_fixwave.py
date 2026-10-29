@@ -189,3 +189,12 @@ def test_a_page_with_no_date_failure_is_not_sent_back(tmp_path):
     calls = []
     _start(tmp_path, FakeReader(answer=lambda p, n: (calls.append(1), FakeReader.default(p))[1]))
     assert len(calls) == 1
+
+
+def test_a_stop_reason_shown_on_the_job_bar_does_not_name_the_field(tmp_path):
+    """The job bar shows status_reason as written: plain words, no field name."""
+    from server import jobs
+    job = jobs.Job.__new__(jobs.Job)
+    job.meta = {"spend_usd": 0.6}
+    reason = job.limit_reason(0.5)
+    assert "spending limit" in reason and "spending_limit_usd" not in reason and "_" not in reason

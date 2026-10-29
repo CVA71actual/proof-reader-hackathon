@@ -248,7 +248,7 @@ def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None) -> dict:
             raise JobError(409, "A spending limit cannot be kept on this run: the cost of a call could not be "
                                 "counted. Start a new run.")
         if limit is not None and spending_limit_usd is None and (meta["spend_usd"] or 0) >= limit:
-            raise JobError(409, "The spending limit stops this run. Resume with a higher spending_limit_usd to "
+            raise JobError(409, "The spending limit stops this run. Resume with a higher spending limit to "
                                 "read more.")
         if spending_limit_usd is not None:
             text = f"Spending limit raised by you from {money(limit)} to {money(spending_limit_usd)}."
@@ -378,7 +378,7 @@ class Job:
 
     def limit_reason(self, limit: float) -> str:
         return (f"Stopped at the spending limit ({money(self.meta['spend_usd'] or 0)} of {money(limit)} used): "
-                f"spending limit reached. Resume with a higher spending_limit_usd to read more.")
+                f"spending limit reached. Resume with a higher spending limit to read more.")
 
     def unpriced_reason(self, limit: float, reader=None) -> str:
         models = ", ".join(self.job.get("unpriced_models") or [getattr(reader, "model", "the model")])
