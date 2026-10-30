@@ -418,7 +418,8 @@ def _judgment_screen(row_id):
     names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "checkDot", "checkResultWord",
              "needsAttention", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
              "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
-             "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith")
+             "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith",
+             "revealRow")
     rows = [
         {"id": "r-cnr", "title": "ROW-COULD-NOT-RUN", "ticker": "ACME", "proposed_by": "Muse Spark",
          "checks": [], "date_text": "Q3 2027"},
@@ -661,7 +662,7 @@ def test_u17_calendar_glass3_fixes():
     # G3-7: sub-line wording; the page list scrolls to the open page
     assert "Every page the rows were read from" in js
     assert "rest on" not in js
-    assert "onPg.scrollIntoView" in js
+    assert "revealRow(onPg)" in js  # the page-list scroll survived the G1-R3 revealRow refactor
 
 
 def out_hash_has(screen, needle):
@@ -964,6 +965,441 @@ setTimeout(function () {{
 }}, 0);
 """
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u24_g1r5_run_card_reads_as_a_picker():
+    # Re-glass 1 finding 10: the run card was a bare button — it never said it
+    # opens a list. It now has a "Run" label with a chevron above it, a chevron
+    # on the title row, and a "<N> saved runs · choose" sub-line with the live
+    # count. index.html is out of scope, so the label/sub-line are built in
+    # app.js; the label hides with the card at narrow widths.
+    js = (UI / "app.js").read_text()
+    css = (UI / "styles.css").read_text()
+    assert "'runcard-lbl'" in js and "el('span', null, 'Run')" in js
+    assert "el('span', 'chev', '▾')" in js
+    assert "runs.length + ' saved run'" in js and "' · choose'" in js
+    assert "insertBefore(lbl, card)" in js          # label rides above the card
+    assert "insertBefore(pick," in js              # sub-line inside the card
+    assert "title.append(el('span', 'chev', '▾'))" in js
+    assert ".runcard-lbl{" in css and ".runcard-lbl + .runcard{" in css
+    assert ".runcard-lbl,.side-ft .ft{display:none}" in css  # hides at narrow widths
+
+
+def test_u24_g1r7_citation_box_bottom_edge_sits_lower():
+    # Re-glass 1 finding 9 (nit): the citation box was drawn exactly on the
+    # word rectangle, so its bottom edge clipped date descenders by 1-2 px.
+    # The box now extends 2 pt lower; top, left and width are untouched.
+    js = (UI / "app.js").read_text()
+    assert "v.box[3] + 2 - v.box[1]" in js
+    assert "b.style.top = (v.box[1] / H * 100)" in js or "v.box[1] / H * 100" in js
+
+
+def test_u24_g1r4_removed_pane_reason_dates_in_words_no_null_line():
+    # Re-glass 1 finding 6: the code-removed pane printed a literal "null" line
+    # under "Why it was removed", and the reason used machine dates
+    # ("the date 2026-09-22 is before today (2026-10-29)"). ISO days in the
+    # sentence now read in words, and a missing reason prints no line at all.
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("el", "esc", "removedSection", "dayInWords"))
+    script = f"""
+var RULE_WORDS = {{ outside_time_window: 'Outside the time window',
+  third_party_calendar_only: 'House rule: a third-party calendar is never a source on its own.',
+  person_removed: 'Removed by you.' }};
+var SAY_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December'];
+function make() {{
+  return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, dataset: {{}},
+    append: function () {{ for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); }},
+    addEventListener: function () {{}} }};
+}}
+global.document = {{ createElement: function (tag) {{ var n = make(); n.tag = tag; return n; }} }};
+var EXCLUSIONS = [];
+function exclusionFor(id) {{ return EXCLUSIONS.filter(function (x) {{ return x.target === id; }})[0] || null; }}
+{fns}
+function textOf(node, out) {{
+  out = out || [];
+  if (node.textContent) out.push(node.textContent);
+  (node.children || []).forEach(function (c) {{ textOf(c, out); }});
+  return out.join('\\n');
+}}
+// machine dates in the sentence read in words
+var s1 = dayInWords('Outside the time window: the date 2026-09-04 is before today (2026-10-29).');
+if (s1 !== 'Outside the time window: the date September 4, 2026 is before today (October 29, 2026).')
+  process.exit(2);
+if (dayInWords('House rule, no dates.') !== 'House rule, no dates.') process.exit(3);
+// a code removal with a reason: dates in words
+EXCLUSIONS = [{{ target: 'r1', rule: 'outside_time_window', by: 'code',
+  reason: 'Outside the time window: the date 2026-09-22 is before today (2026-10-29).' }}];
+var t1 = {{ group: 'removed', reason: null, values: {{}} }};
+var p1 = textOf(removedSection({{ id: 'r1' }}, t1));
+if (p1.indexOf('Removed by code') === -1) process.exit(4);
+if (p1.indexOf('September 22, 2026') === -1) process.exit(5);
+if (p1.indexOf('2026-09-22') !== -1) process.exit(6);
+// a code removal with NO reason and an unlisted rule: no line at all, no "null"
+EXCLUSIONS = [{{ target: 'r2', rule: null, reason: null, by: 'code' }}];
+var p2 = textOf(removedSection({{ id: 'r2' }}, {{ group: 'removed', reason: null, values: {{}} }}));
+if (p2.indexOf('null') !== -1) process.exit(7);
+var lines2 = p2.split('\\n').filter(function (l) {{ return l.trim(); }});
+if (lines2.join('|') !== 'Why it was removed|Removed by code') process.exit(8);
+// a person removal keeps its own reason, dates in words
+EXCLUSIONS = [{{ target: 'r3', rule: 'person_removed', by: 'person', reason: null }}];
+var p3 = textOf(removedSection({{ id: 'r3' }}, {{ group: 'removed',
+  reason: 'A past annual result, not an upcoming event.', values: {{}} }}));
+if (p3.indexOf('A past annual result, not an upcoming event.') === -1) process.exit(9);
+if (p3.indexOf('Removed') === -1) process.exit(10);
+console.log('ok');
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u24_g1r2_cancel_after_a_failed_recheck_discards_the_fix():
+    # Re-glass 1 finding 2: Save fix with a failed re-check recorded the fix
+    # immediately, so Cancel still left "Fixed by you · still open" behind.
+    # Cancel after that save now posts an undo — nothing is recorded until
+    # Save fix passes or Keep anyway — and the red line says "failed" once.
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = _grab_fn(js, "fixDialog")
+    script = f"""
+var FIELD_WORDS = {{ date_text: 'Date as written', date: 'Date', event_type: 'Event type',
+  title: 'Title', company: 'Company', ticker: 'Ticker', program: 'Program',
+  indication: 'Condition' }};
+var FIX_FIELDS = ['date_text', 'date', 'event_type', 'title', 'company', 'ticker',
+                  'program', 'indication'];
+var NO_ERROR = 'The value already passed its checks before the edit.';
+var CHECK_WORDS = {{ pass: 'passed', fail: 'failed', could_not_run: 'could not run',
+                   not_needed: 'not needed' }};
+function checkResultWord(r) {{ return CHECK_WORDS[r] || r; }}
+var pending = false;
+var route = {{ screen: 'judgment', rowId: 'r1', dialog: 'fix' }};
+var navigations = [], toasts = [], errors = [], decides = [];
+function make() {{
+  return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}},
+    hidden: false, value: '', placeholder: '', _l: {{}},
+    append: function () {{ for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); }},
+    addEventListener: function (t, fn) {{ this._l[t] = fn; }},
+    querySelector: function () {{ return null; }},
+    insertBefore: function (n) {{ this.children.unshift(n); }},
+    remove: function () {{}}, focus: function () {{}} }};
+}}
+function el(tag, cls, text) {{
+  var n = make(); n.tag = tag; if (cls) n.className = cls; if (text) n.textContent = text; return n;
+}}
+function btn(cls, text, onClick) {{ var b = el('button', cls, text); b._click = onClick; return b; }}
+function clear(node) {{ node.textContent = ''; node.children = []; return node; }}
+var dialogHost = make(), dialogWrap = make();
+var TARGET = {{ values: {{}}, fixes: [], group: 'open' }};
+function rowTarget(r) {{ return TARGET; }}
+function currentRunId() {{ return 'run1'; }}
+function navigate(h) {{ navigations.push(h); }}
+function refresh() {{ return Promise.resolve(); }}
+function toast(m) {{ toasts.push(m); }}
+function showDialogError(m) {{ errors.push(m); }}
+var DECIDE_REPLY = {{ ok: true, status: 200, body: {{ state: {{
+  fixes: [{{ field: 'date_text', from: 'today', to: 'March 3, 2029' }}],
+  recheck: {{ result: 'fail', reason: 'The re-check failed: The date text is not part of the quote.' }},
+  group: 'corrected' }} }} }};
+var UNDO_REPLY = {{ ok: true, status: 200, body: {{ state: {{}} }} }};
+var A = {{ decide: function (runId, body) {{
+  decides.push(body);
+  return Promise.resolve(body.action === 'undo' ? UNDO_REPLY : DECIDE_REPLY);
+}} }};
+global.document = {{ getElementById: function () {{ return {{ value: '' }}; }} }};
+{fns}
+function findBtn(node, text) {{
+  if (node.textContent === text && node._click) return node;
+  for (var i = 0; i < (node.children || []).length; i++) {{
+    var hit = findBtn(node.children[i], text);
+    if (hit) return hit;
+  }}
+  return null;
+}}
+function undoCount() {{
+  return decides.filter(function (b) {{ return b.action === 'undo'; }}).length;
+}}
+// scenario 1: one save with a failed re-check, then Cancel — the fix is discarded
+fixDialog({{ id: 'r1', ticker: 'ACME', title: 'ROW' }});
+var save = findBtn(dialogHost, 'Save fix');
+if (!save) process.exit(2);
+save._click();
+setTimeout(function () {{
+  if (errors.length !== 1) process.exit(3);
+  var n = 0, at = -1;
+  while ((at = errors[0].indexOf('failed', at + 1)) !== -1) n++;
+  if (n !== 1) {{ console.error('red line: ' + errors[0]); process.exit(4); }}  // "failed" once
+  if (errors[0].indexOf('The date text is not part of the quote.') === -1) process.exit(5);
+  var cancel = findBtn(dialogHost, 'Cancel');
+  if (!cancel) process.exit(6);
+  cancel._click();
+  if (toasts[0] !== 'The fix was discarded.') process.exit(7);
+  setTimeout(function () {{
+    if (undoCount() !== 1) process.exit(8);          // discard, not a keep
+    if (decides.filter(function (b) {{ return b.action === 'fix'; }}).length !== 1) process.exit(9);
+    // scenario 1b (Codex P2): TWO failed saves, then Cancel — BOTH fixes are undone
+    decides = []; toasts = []; errors = []; navigations = [];
+    fixDialog({{ id: 'r1', ticker: 'ACME', title: 'ROW' }});
+    save = findBtn(dialogHost, 'Save fix');
+    save._click();
+    setTimeout(function () {{
+      save._click();                                  // second save, re-check fails again
+      setTimeout(function () {{
+        if (decides.filter(function (b) {{ return b.action === 'fix'; }}).length !== 2) process.exit(10);
+        cancel = findBtn(dialogHost, 'Cancel');
+        cancel._click();
+        if (toasts[0] !== 'The fixes were discarded.') process.exit(11);
+        setTimeout(function () {{
+          if (undoCount() !== 2) process.exit(12);    // every fix THIS dialog saved
+          // both undos are done before the dialog closes
+          if (navigations.length !== 1) process.exit(13);
+          // scenario 2: Cancel with no save yet only closes the dialog
+          decides = []; toasts = []; errors = []; navigations = [];
+          fixDialog({{ id: 'r1', ticker: 'ACME', title: 'ROW' }});
+          cancel = findBtn(dialogHost, 'Cancel');
+          cancel._click();
+          if (undoCount() !== 0) process.exit(14);    // never undoes a pre-dialog decision
+          if (navigations.length !== 1) process.exit(15);
+          console.log('ok');
+        }}, 0);
+      }}, 0);
+    }}, 0);
+  }}, 0);
+}}, 0);
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u24_cancel_during_an_inflight_save_is_safe():
+    # Codex P2 on #91: Cancel pressed while the Save POST was still in flight
+    # closed the dialog with saves=0, and the late-landing fix stayed. Cancel
+    # is now disabled while a save is pending, and a fix whose re-check answer
+    # arrives after the dialog closed (Esc) is undone, never orphaned.
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = _grab_fn(js, "fixDialog")
+    script = f"""
+var FIELD_WORDS = {{ date_text: 'Date as written', date: 'Date' }};
+var FIX_FIELDS = ['date_text', 'date'];
+var NO_ERROR = 'The value already passed its checks before the edit.';
+var CHECK_WORDS = {{ pass: 'passed', fail: 'failed' }};
+function checkResultWord(r) {{ return CHECK_WORDS[r] || r; }}
+var pending = false;
+var route = {{ screen: 'judgment', rowId: 'r1', dialog: 'fix' }};
+var navigations = [], toasts = [], errors = [], decides = [];
+var saveResolver = null;
+var undoOk = true;
+function make() {{
+  return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}},
+    hidden: false, value: '', placeholder: '', disabled: false, _l: {{}},
+    append: function () {{ for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); }},
+    addEventListener: function (t, fn) {{ this._l[t] = fn; }},
+    querySelector: function () {{ return null; }},
+    insertBefore: function (n) {{ this.children.unshift(n); }},
+    remove: function () {{}}, focus: function () {{}} }};
+}}
+function el(tag, cls, text) {{
+  var n = make(); n.tag = tag; if (cls) n.className = cls; if (text) n.textContent = text; return n;
+}}
+function btn(cls, text, onClick) {{ var b = el('button', cls, text); b._click = onClick; return b; }}
+function clear(node) {{ node.textContent = ''; node.children = []; return node; }}
+var dialogHost = make(), dialogWrap = make();
+function rowTarget(r) {{ return {{ values: {{}}, fixes: [], group: 'open' }}; }}
+function currentRunId() {{ return 'run1'; }}
+function navigate(h) {{ navigations.push(h); }}
+function refresh() {{ return Promise.resolve(); }}
+function toast(m) {{ toasts.push(m); }}
+function showDialogError(m) {{ errors.push(m); }}
+var DECIDE_REPLY = {{ ok: true, status: 200, body: {{ state: {{
+  fixes: [{{ field: 'date_text', from: 'today', to: 'March 3, 2029' }}],
+  recheck: {{ result: 'fail', reason: 'The re-check failed: The date text is not part of the quote.' }},
+  group: 'corrected' }} }} }};
+var A = {{ decide: function (runId, body) {{
+  decides.push(body);
+  if (body.action === 'undo') return Promise.resolve(undoOk
+    ? {{ ok: true, status: 200, body: {{ state: {{}} }} }}
+    : {{ ok: false, status: 500, body: {{ detail: 'nope' }} }});
+  // the Save POST answers only when the test lets it
+  return new Promise(function (res) {{ saveResolver = res; }});
+}} }};
+global.document = {{ getElementById: function () {{ return {{ value: '' }}; }} }};
+{fns}
+function findBtn(node, text) {{
+  if (node.textContent === text && node._click) return node;
+  for (var i = 0; i < (node.children || []).length; i++) {{
+    var hit = findBtn(node.children[i], text);
+    if (hit) return hit;
+  }}
+  return null;
+}}
+function undoCount() {{
+  return decides.filter(function (b) {{ return b.action === 'undo'; }}).length;
+}}
+// Cancel while the Save POST is in flight: the button is disabled and the
+// click is a no-op — the dialog waits for the answer
+fixDialog({{ id: 'r1', ticker: 'ACME', title: 'ROW' }});
+var save = findBtn(dialogHost, 'Save fix');
+var cancel = findBtn(dialogHost, 'Cancel');
+save._click();
+if (cancel.disabled !== true) process.exit(2);
+cancel._click();
+if (navigations.length !== 0 || undoCount() !== 0) process.exit(3);
+// the answer lands: failed re-check, dialog still open — Cancel now discards
+saveResolver(DECIDE_REPLY);
+setTimeout(function () {{
+  if (cancel.disabled !== false) process.exit(4);
+  if (errors.length !== 1) process.exit(5);
+  cancel._click();
+  if (toasts[0] !== 'The fix was discarded.') process.exit(6);
+  setTimeout(function () {{
+    if (undoCount() !== 1) process.exit(7);
+    // Esc during an in-flight save: the late fix is undone, not orphaned
+    decides = []; toasts = []; errors = []; navigations = [];
+    fixDialog({{ id: 'r1', ticker: 'ACME', title: 'ROW' }});
+    save = findBtn(dialogHost, 'Save fix');
+    save._click();
+    dialogWrap.hidden = true;                       // Esc closed the dialog mid-flight
+    saveResolver(DECIDE_REPLY);
+    setTimeout(function () {{
+      if (undoCount() !== 1) process.exit(8);       // the late fix was undone
+      if (toasts.indexOf('The fix was discarded.') === -1) process.exit(9);
+      if (errors.length !== 0) process.exit(10);    // no red line into a closed dialog
+      // the late undo can fail: the person gets the recovery sentence
+      decides = []; toasts = []; errors = []; navigations = [];
+      undoOk = false;
+      fixDialog({{ id: 'r1', ticker: 'ACME', title: 'ROW' }});
+      save = findBtn(dialogHost, 'Save fix');
+      save._click();
+      dialogWrap.hidden = true;
+      saveResolver(DECIDE_REPLY);
+      setTimeout(function () {{
+        if (undoCount() !== 1) process.exit(11);
+        if (toasts.indexOf('The fix could not be discarded. Open the row and press Undo.') === -1)
+          process.exit(12);
+        console.log('ok');
+      }}, 0);
+    }}, 0);
+  }}, 0);
+}}, 0);
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u24_g1r1_the_code_that_ran_is_the_real_source_not_json():
+    # Re-glass 1 finding 1: the fold showed the route's raw JSON record
+    # ({"ref":"checks/event_checks.py:quote_match","source":"def ...\n..."})
+    # as one escaped line. The fold now parses the reply and shows the source
+    # only — a folded monospace block, newlines honoured, no JSON, no ref path.
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in ("seeTheCheck",))
+    script = f"""
+var CHECK_WORDS = {{ pass: 'passed', fail: 'failed', could_not_run: 'could not run',
+                   not_needed: 'not needed' }};
+function checkResultWord(r) {{ return CHECK_WORDS[r] || r; }}
+function el(tag, cls, text) {{
+  return {{ tag: tag, className: cls || '', textContent: text || '', children: [],
+    style: {{}}, dataset: {{}}, open: false, _l: {{}},
+    append: function () {{ for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); }},
+    addEventListener: function (t, fn) {{ this._l[t] = fn; }} }};
+}}
+function esc(s) {{ return s === null || s === undefined ? '' : String(s); }}
+{fns}
+var ROUTE_REPLY = {{ ref: 'checks/event_checks.py:quote_match',
+  source: 'def quote_match(quote: str | None, words: list[dict], box=None) -> CheckResult:\\n    # Pass if the quote is on the page.\\n    return CheckResult("pass")' }};
+global.fetch = function (url) {{
+  if (url.indexOf('/api/checks/source?ref=') !== 0) return Promise.resolve({{ ok: false }});
+  return Promise.resolve({{ ok: true, json: function () {{ return Promise.resolve(ROUTE_REPLY); }} }});
+}};
+var c = {{ result: 'pass', compared: {{ looked_for: 'the quote', found: 'the quote' }},
+           code_ref: {{ file: 'event_checks', function: 'quote_match' }} }};
+var d = seeTheCheck(c);
+var toggle = d._l.toggle;
+if (!toggle) process.exit(2);
+d.open = true;
+toggle();
+setTimeout(function () {{
+  var lbl = null, pre = null;
+  (function walk(n) {{
+    (n.children || []).forEach(function (x) {{
+      if (x.className === 'codelbl') lbl = x;
+      if (x.tag === 'pre') pre = x;
+      walk(x);
+    }});
+  }})(d);
+  if (!lbl || lbl.textContent !== 'The code that ran') process.exit(3);
+  if (!pre) process.exit(4);
+  if (pre.textContent !== ROUTE_REPLY.source) process.exit(5);       // source verbatim
+  if (pre.textContent.indexOf('\\n') < 0) process.exit(6);           // newlines honoured
+  var shown = [];
+  (function all(n) {{
+    if (n.textContent) shown.push(n.textContent);
+    (n.children || []).forEach(all);
+  }})(d);
+  var flat = shown.join('\\n');
+  if (flat.indexOf('event_checks.py') !== -1) process.exit(7);       // no ref path on screen
+  if (flat.indexOf('"ref"') !== -1) process.exit(8);                 // no raw JSON
+  if (flat.indexOf('quote_match(quote') === -1) process.exit(9);     // the real code is there
+  var before = (function count(n) {{ var k = 0;
+    (n.children || []).forEach(function (x) {{ k += 1 + count(x); }}); return k; }})(d);
+  toggle();                                                          // a second toggle re-fetches nothing
+  var after = (function count(n) {{ var k = 0;
+    (n.children || []).forEach(function (x) {{ k += 1 + count(x); }}); return k; }})(d);
+  if (after !== before) process.exit(10);
+  console.log('ok');
+}}, 0);
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u24_g1r3_row_landing_scrolls_the_list_column_only():
+    # Re-glass 1 finding 7: opening a row from a hash, filter or the rail scrolled
+    # the WHOLE .main ~6,000 px (scrollIntoView moves overflow:hidden boxes too),
+    # taking the heading, page and pane off screen. Every landing scroll now goes
+    # through revealRow, which forces .main back to 0 — on the Audit log AND the
+    # Catalyst Calendar (title + pills stay put on long runs).
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    # no render path scrolls .main directly any more — the only call site left
+    # is inside revealRow itself
+    assert js.count(".scrollIntoView(") == 1 and "revealRow(onIt)" in js
+    for fn in ("renderAudit", "renderCalendar", "renderSource", "renderTrail", "render"):
+        assert fn in js
+    fns = _grab_fn(js, "revealRow")
+    script = f"""
+{fns}
+var scrolled = [];
+var main = {{ scrollTop: 0 }};
+global.document = {{ querySelector: function (sel) {{ return sel === '.main' ? main : null; }} }};
+var node = {{ scrollIntoView: function (opts) {{ scrolled.push(opts || 'nearest'); }} }};
+// a landing scroll moves the list pane but .main stays at 0
+main.scrollTop = 6144;   // what scrollIntoView did to .main before the fix
+revealRow(node);
+if (scrolled.length !== 1) process.exit(2);
+if (main.scrollTop !== 0) process.exit(3);   // G1-R3: .main never scrolls
+revealRow(node, {{ block: 'center', behavior: 'smooth' }});
+if (scrolled.length !== 2 || scrolled[1].block !== 'center') process.exit(4);
+if (main.scrollTop !== 0) process.exit(5);
+revealRow(null);                              // no selection: no crash, main untouched
+if (main.scrollTop !== 0) process.exit(6);
+console.log('ok');
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
     assert got.returncode == 0, got.stdout + got.stderr
 
 

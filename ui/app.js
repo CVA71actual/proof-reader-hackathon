@@ -102,6 +102,17 @@
   }
   function esc(s) { return s === null || s === undefined ? '' : String(s); }
   function clear(node) { node.textContent = ''; return node; }
+  // G1-R3: a row landing scrolls the list column only. .main is overflow:hidden
+  // but scrollIntoView still moves its scrollTop, so it is forced back to 0 —
+  // the heading, page and pane stay on screen on every navigation
+  function revealRow(node, opts) {
+    if (!node) return;
+    if (node.scrollIntoView) node.scrollIntoView(opts || { block: 'nearest' });
+    if (document.querySelector) {
+      var main = document.querySelector('.main');
+      if (main && main.scrollTop) main.scrollTop = 0;
+    }
+  }
   function btn(cls, text, onClick) {
     var b = el('button', cls, text);
     if (onClick) b.addEventListener('click', onClick);
@@ -355,7 +366,7 @@
     // become visible here, so scrolls fired inside renderX() were no-ops
     if (scr) {
       var onIt = scr.querySelector('.row.on, .crow.on, .pg.on, .chcard.on');
-      if (onIt) onIt.scrollIntoView({ block: 'nearest' });
+      if (onIt) revealRow(onIt);
     }
     document.getElementById('src-back').hidden = !(narrow && route.screen === 'source' && !route.back);
     var backBtn = document.getElementById('src-back-audit');
@@ -372,8 +383,28 @@
   function renderShell() {
     var meta = detail.run.run || {};
     var st = detail.state;
-    document.getElementById('runcard').hidden = false;
-    document.getElementById('runcard-title').textContent = meta.label || ('Run ' + meta.number);
+    var card = document.getElementById('runcard');
+    card.hidden = false;
+    // G1-R5: the card reads as a picker — a "Run" label with a chevron above it
+    var lbl = document.getElementById('runcard-lbl');
+    if (!lbl) {
+      lbl = el('div', 'runcard-lbl');
+      lbl.id = 'runcard-lbl';
+      lbl.append(el('span', null, 'Run'));
+      lbl.append(el('span', 'chev', '▾'));
+      card.parentNode.insertBefore(lbl, card);
+    }
+    var title = document.getElementById('runcard-title');
+    title.textContent = meta.label || ('Run ' + meta.number);
+    title.append(el('span', 'chev', '▾'));
+    // G1-R5: sub-line with the live saved-run count — the card says it opens a list
+    var pick = document.getElementById('runcard-pick');
+    if (!pick) {
+      pick = el('div', 't2 runcard-pick');
+      pick.id = 'runcard-pick';
+      card.insertBefore(pick, document.getElementById('runcard-flag'));
+    }
+    pick.textContent = runs.length + ' saved run' + (runs.length === 1 ? '' : 's') + ' · choose';
     // G6-3: the card in words — run, date, status, needs attention, cents
     document.getElementById('runcard-sub').textContent =
       'Run ' + meta.number + ' · ' + dateTimeWords(meta.started_at) +
@@ -658,7 +689,7 @@
       host.append(auditRow(row, t));
     });
     var on = host.querySelector('.row.on');
-    if (on) on.scrollIntoView({ block: 'nearest' });
+    if (on) revealRow(on);
   }
 
   function auditRow(row, t) {
@@ -772,7 +803,8 @@
       b.style.left = (v.box[0] / W * 100) + '%';
       b.style.top = (v.box[1] / H * 100) + '%';
       b.style.width = (Math.max(0, v.box[2] - v.box[0]) / W * 100) + '%';
-      b.style.height = (Math.max(0, v.box[3] - v.box[1]) / H * 100) + '%';
+      // G1-R7: the bottom edge sits 2 pt lower so descenders are never clipped
+      b.style.height = (Math.max(0, v.box[3] + 2 - v.box[1]) / H * 100) + '%';
       b.addEventListener('click', function () {
         navigate({ runId: currentRunId(), screen: 'source', srcId: pp.source.id,
                    page: 'p' + pp.page.page_number, valueId: v.id, back: route.screen === 'audit' ? 'audit' : null });
@@ -946,24 +978,37 @@
     sec.append(el('h4', null, 'Why it was removed'));
     var x = exclusionFor(row.id);
     var box = el('div', 'ba red');
+    var reasonLine = el('div');
+    reasonLine.style.cssText = 'margin-top:6px;color:var(--sub);font-size:12.5px';
     if (x && x.by === 'code') {
       // G1-8 / G1-S1: say who removed it and why, in plain words
       box.append(el('b', null, 'Removed by code'));
-      var reason = el('div');
-      reason.style.cssText = 'margin-top:6px;color:var(--sub);font-size:12.5px';
-      reason.textContent = x.reason || (RULE_WORDS[x.rule] || String(x.rule || '').replace(/_/g, ' '));
-      box.append(reason);
+      // G1-R4: dates in the sentence read in words, and a missing reason never
+      // prints a line (no literal "null" under the box)
+      var why = x.reason || RULE_WORDS[x.rule] || '';
+      if (why) {
+        reasonLine.textContent = dayInWords(why);
+        box.append(reasonLine);
+      }
       sec.append(box);
       return sec;
     }
-    var rule = x ? (RULE_WORDS[x.rule] || x.rule.replace(/_/g, ' ')) : 'Removed.';
-    box.append(el('b', null, rule.charAt(0).toUpperCase() === rule.charAt(0) && x && x.by === 'code' ? rule : rule));
-    var reason2 = el('div');
-    reason2.style.cssText = 'margin-top:6px;color:var(--sub);font-size:12.5px';
-    reason2.textContent = (x && x.reason) || t.reason || '';
-    if (reason2.textContent) box.append(reason2);
+    var rule = x ? (RULE_WORDS[x.rule] || String(x.rule || '').replace(/_/g, ' ')) : 'Removed.';
+    box.append(el('b', null, rule));
+    var reason2 = (x && x.reason) || t.reason || '';
+    if (reason2) {
+      reasonLine.textContent = dayInWords(reason2);
+      box.append(reasonLine);
+    }
     sec.append(box);
     return sec;
+  }
+
+  // G1-R4: an ISO day inside a reason sentence reads in words
+  function dayInWords(s) {
+    return String(s).replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, function (_, y, mo, d) {
+      return SAY_MONTHS[parseInt(mo, 10) - 1] + ' ' + parseInt(d, 10) + ', ' + y;
+    });
   }
 
   function whySection(row, t) {
@@ -1066,12 +1111,15 @@
       fetch('/api/checks/source?ref=' + encodeURIComponent(c.code_ref.file + ':' + (c.code_ref.function || '')))
         .then(function (r) {
           if (!r.ok) { notServed(); return; }
-          return r.text().then(function (text) {
-            if (!text || !text.trim()) { notServed(); return; }
+          // G1-R1: the route answers JSON {ref, source} — the fold shows the
+          // source only, as real code, never the raw record or the ref path
+          return r.json().then(function (rec) {
+            var text = rec && rec.source;
+            if (!text || !String(text).trim()) { notServed(); return; }
             src.textContent = '';
             src.append(el('div', 'codelbl', 'The code that ran'));
             var pre = el('pre', 'codesrc');
-            pre.textContent = text;
+            pre.textContent = String(text);
             src.append(pre);
           });
         }).catch(notServed);
@@ -1129,13 +1177,13 @@
 
     // G3-7: the page list follows the open page — highlighted and in view
     var onPg = host.querySelector('.pg.on');
-    if (onPg) onPg.scrollIntoView({ block: 'nearest' });
+    if (onPg) revealRow(onPg);
 
     mid.append(srcmetaBar(selected.source));
     var wrap = pageImage(selected, route.valueId);
     mid.append(wrap);
     var selBox = wrap.querySelector('.box.sel');
-    if (selBox) selBox.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    if (selBox) revealRow(selBox, { behavior: 'smooth', block: 'center', inline: 'center' });
 
     var v = valuesOnPage(selected).filter(function (x) { return x.id === route.valueId; })[0];
     if (!v) {
@@ -1433,7 +1481,7 @@
     var host = clear(document.getElementById('trail-rows'));
     detail.run.rows.forEach(function (r) { host.append(trailRowBtn(r)); });
     var on = host.querySelector('.row.on');
-    if (on) on.scrollIntoView({ block: 'nearest' });
+    if (on) revealRow(on);
 
     var mid = clear(document.getElementById('trail-mid'));
     var det = clear(document.getElementById('trail-det'));
@@ -1645,7 +1693,7 @@
           var folds = document.querySelectorAll('#trail-det details.fold');
           if (idx >= 0 && folds[idx]) {
             folds[idx].open = true;
-            folds[idx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+            revealRow(folds[idx], { block: 'center', behavior: 'smooth' });
           }
         });
         body.querySelector('.hd').append(link);
@@ -1779,7 +1827,7 @@
     host.append(wrap);
 
     var on = host.querySelector('.crow.on');
-    if (on) on.scrollIntoView({ block: 'nearest' });
+    if (on) revealRow(on);
 
     var sel = rows.filter(function (r) { return r.row.id === calSel; })[0] || null;
     if (!sel) {
@@ -1862,7 +1910,7 @@
       }
     }
     var on = host.querySelector('.row.on');
-    if (on) on.scrollIntoView({ block: 'nearest' });
+    if (on) revealRow(on);
 
     var mid = clear(document.getElementById('judgment-mid'));
     mid.append(el('div', 'empty', 'Pick a row on the left.'));
@@ -2417,6 +2465,41 @@
     // the code's reason as a red line and stays open; "Keep anyway" accepts the
     // standing fix and the row takes the "Fixed by you · still open" path
     var keepAnyway = null;
+    // G1-R2 / Codex P2: each failed-re-check save records a fix server-side —
+    // Cancel must discard every fix THIS dialog saved (never one that predated
+    // it), so the saves are counted and undone one by one
+    var saves = 0;
+    // Codex P2: while a save POST is in flight the fix is not recorded yet —
+    // Cancel must wait for the answer (disabled), and a fix that lands after
+    // the dialog was closed (Esc) is undone, never orphaned
+    var savePending = false;
+    var cancelBtn = btn('btn', 'Cancel', function () {
+      if (savePending) return;
+      // G1-R2 / Codex P2: Cancel discards every fix this dialog saved, undoing
+      // them newest-first; nothing is recorded until Save fix passes or Keep
+      // anyway. With no save yet, Cancel only closes the dialog.
+      if (saves > 0) {
+        var n = saves;
+        toast(n === 1 ? 'The fix was discarded.' : 'The fixes were discarded.');
+        var undoOne = function (left) {
+          if (left <= 0) {
+            navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id });
+            return refresh();
+          }
+          return A.decide(currentRunId(), { target: row.id, action: 'undo', note: null })
+            .then(function (res) {
+              if (!res.ok) {
+                toast((res.body && res.body.detail) || ('HTTP ' + res.status));
+                return null;
+              }
+              return undoOne(left - 1);
+            });
+        };
+        undoOne(n);
+      } else {
+        navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id });
+      }
+    });
     br.append(btn('btn pri', 'Save fix', function () {
       var problem = validateFix();
       if (problem) { showDialogError(problem); return; }
@@ -2430,21 +2513,41 @@
       dialogHost.insertBefore(pendEl, br2);
       if (pending) return;
       pending = true;
+      savePending = true;
+      cancelBtn.disabled = true;
       A.decide(currentRunId(), body).then(function (res) {
         pending = false;
+        savePending = false;
+        cancelBtn.disabled = false;
         pendEl.remove();
         if (!res.ok) {
           showDialogError((res.body && res.body.detail) || ('HTTP ' + res.status));
           return;
         }
         var st = res.body.state;
+        saves += 1;
         var fx = (st.fixes || []).slice(-1)[0];
         var rcRes = st.recheck && st.recheck.result;
         if (rcRes && rcRes !== 'pass') {
+          if (dialogWrap.hidden) {
+            // the dialog was closed (Esc) while the save was in flight — the
+            // fix landed with nobody to show the red line to: undo it
+            A.decide(currentRunId(), { target: row.id, action: 'undo', note: null })
+              .then(function (u) {
+                if (u.ok) toast('The fix was discarded.');
+                else toast('The fix could not be discarded. Open the row and press Undo.');
+              }).catch(function () {
+                toast('The fix could not be discarded. Open the row and press Undo.');
+              });
+            return;
+          }
           // the re-check did not confirm the fix: red line inside the dialog,
-          // dialog stays open — the person fixes again, cancels, or keeps anyway
+          // dialog stays open — the person fixes again, cancels, or keeps anyway.
+          // The reason may repeat the outcome ("The re-check failed: …") — the
+          // word "failed" appears once (G1-R2)
+          var reason = st.recheck.reason ? st.recheck.reason.replace(/^The re-check failed: /, '') : '';
           var why = 'Re-checked after the fix: ' + checkResultWord(rcRes) +
-                    (st.recheck.reason ? ' — ' + st.recheck.reason : '');
+                    (reason ? ' — ' + reason : '');
           showDialogError(why);
           if (!keepAnyway) {
             keepAnyway = btn('btn', 'Keep anyway', function () {
@@ -2468,12 +2571,13 @@
         return refresh().then(function () { toast(what); });
       }).catch(function () {
         pending = false;
+        savePending = false;
+        cancelBtn.disabled = false;
         pendEl.remove();
         showDialogError('The server is not reachable.');
       });
-    }), btn('btn', 'Cancel', function () {
-      navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id });
     }));
+    br.append(cancelBtn);
     dialogHost.append(br);
     dialogWrap.hidden = false;
     to.focus();
