@@ -1180,7 +1180,7 @@ class Job:
                 "id": f"m{max(ids, default=0) + 1}", "target": row["id"], "caught_by": "code",
                 "what_changed": f"The date text was not in the quote; the reader, sent back once, gave the sentence "
                                 f"that states “{date_text}”.",
-                **({"type": T.check_type(old)} if T.check_type(old) else {})})
+                "type": T.mistake_type({**old, "result": "fail"}, T.DATE_NOT_IN_QUOTE)})
 
     def mark_fake(self, reading: dict) -> None:
         if reading.get("fake"):

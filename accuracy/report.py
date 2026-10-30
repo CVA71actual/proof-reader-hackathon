@@ -66,15 +66,19 @@ def build_report(key: dict, key_path: str | None = None, *, table: dict | None =
                  planted_model: str | None = None) -> dict:
     models: dict[str, dict] = {}
 
-    def slot(name: str) -> dict:
-        return models.setdefault(name, {"values": None, "events": None, "planted": None, "mistakes_by_type": {}})
+    def slot(name: str, names: list[str] | None = None) -> dict:
+        m = models.setdefault(name, {"values": None, "events": None, "planted": None, "mistakes_by_type": {},
+                                     "models": [name]})
+        if names:
+            m["models"] = list(names)
+        return m
 
     if table:
-        slot(table["model"])["values"] = {"found": table["counts"]["found"], "N": table["N"], **table["counts"]}
+        slot(table["model"], table.get("models"))["values"] = {"found": table["counts"]["found"], "N": table["N"], **table["counts"]}
     if events:
         # found / M is the in-window number: M is the in-window key events, M_total all of them; the buckets
         # outside_window and unplaced carry the rest (found + wrong + missed + outside + unplaced = M_total)
-        slot(events["model"])["events"] = {"found": events["counts"]["found"], "M": events["M_in_window"],
+        slot(events["model"], events.get("models"))["events"] = {"found": events["counts"]["found"], "M": events["M_in_window"],
                                            "M_total": events["M"], **events["counts"],
                                            "outside_window": _window_group(events["outside_window"]),
                                            "unplaced": _window_group(events["unplaced"]),

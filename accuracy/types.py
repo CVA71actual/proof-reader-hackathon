@@ -52,7 +52,7 @@ FAIL = "fail"
 # the page is a wrong value whatever its box says; a box in the wrong row or column says more than a box that
 # reads differently.
 _PRIORITY = (
-    "text_layer_match", "quote_match", "row_column_match", "date_match", "selector_match", "source_rule",
+    "text_layer_match", "quote_match", "row_column_match", "date_match", "type_match", "selector_match", "source_rule",
     "event_in_past",
 )
 
@@ -127,6 +127,8 @@ def type_for_check(name: str | None, compared: dict | None = None, reason: str |
         if "not part of the quote" in reason:
             return DATE_NOT_IN_QUOTE
         return PERIOD_MISREAD
+    if name == "type_match":
+        return WRONG_EVENT_TYPE
     if name == "source_rule":
         return SOURCE_NOT_ALLOWED
     if name == "event_in_past":
@@ -136,6 +138,12 @@ def type_for_check(name: str | None, compared: dict | None = None, reason: str |
 
 def check_type(check: dict) -> str | None:
     return type_for_check(_name(check), check.get("compared"), check.get("reason"), check.get("result"))
+
+
+def mistake_type(check: dict | None, fallback: str) -> str:
+    """The type to record for a mistake the code caught: the failed check's own type, else `fallback`.
+    A recorded mistake always has a type."""
+    return (check_type(check) if check else None) or fallback
 
 
 def failed_types(checks: list[dict]) -> list[str]:

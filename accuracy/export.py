@@ -110,7 +110,7 @@ def window_block(events: dict | None) -> dict | None:
 
 def readers(run: dict, report: dict) -> dict:
     meta = run.get("run") or {}
-    first = sorted(report.get("models", {}))
+    first = sorted({n for name, m in report.get("models", {}).items() for n in (m.get("models") or [name])})
     return {"first": first, "second_reader": meta.get("second_reader"), "escalation": meta.get("escalation")}
 
 

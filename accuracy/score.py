@@ -67,6 +67,9 @@ KEY_EVENT_BUCKETS = ("found", "wrong_date", "wrong_type", "unsupported", "missed
 WINDOW_RULE = "outside_time_window"
 
 
+BOTH_READERS = "Both readers"      # the bucket for rows both readers touched; its "models" lists the two names
+
+
 def model_family(name: str | None) -> str:
     """'Muse Spark (muse-spark-1.3)' or 'muse-spark-1.3' -> 'Muse Spark'. Unknown names are kept as given."""
     if not name:
@@ -410,7 +413,13 @@ def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = No
                                "id": item.get("id"), "status": item.get("status")})
 
     models = sorted({model_family(r.get("proposed_by")) for r in rows if r.get("proposed_by")})
-    out["model"] = model_family(model) if model else (", ".join(models) if models else "unknown model")
+    if model:
+        out["model"], out["models"] = model_family(model), [model_family(model)]
+    elif len(models) > 1:
+        out["model"], out["models"] = BOTH_READERS, models
+    else:
+        out["model"] = models[0] if models else "unknown model"
+        out["models"] = models
     out["complete"] = complete
     out["M"] = len(kes)
     out["M_in_window"] = flags.count(True)

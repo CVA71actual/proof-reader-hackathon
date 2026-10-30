@@ -225,5 +225,5 @@ def apply(row: dict, event: dict | None, reading: dict, source: dict, words_doc:
     run["mistakes"].append({"id": f"m{max(ids, default=0) + 1}", "target": row["id"], "caught_by": "code",
                             "what_changed": (f"{WONDER} re-read the row after {trig['label']} failed: "
                                              + ("; ".join(changed) if changed else "the box") + "."),
-                            **({"type": T.check_type(old_check)} if T.check_type(old_check) else {})})
+                            "type": T.mistake_type(old_check, T.WRONG_VALUE)})
     return "replaced"
