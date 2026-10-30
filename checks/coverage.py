@@ -74,10 +74,13 @@ def sentences(words: list[dict]) -> list[dict]:
 
     for i, w in enumerate(words):
         t = w["text"]
+        if w.get("break"):
+            flush()                       # a region break ends the sentence; a box never spans two regions
+            continue
         if t in _BULLETS and not cur:
             continue                      # a bullet opens a sentence; it is not part of it
         cur.append(w)
-        nxt = words[i + 1]["text"] if i + 1 < len(words) else None
+        nxt = words[i + 1]["text"] if i + 1 < len(words) and not words[i + 1].get("break") else None
         if _END.search(t) and t.lower() not in _ABBREVIATIONS and not _INITIAL.match(t) \
                 and (nxt is None or _NEXT_STARTS.match(nxt) or nxt in _BULLETS):
             flush()

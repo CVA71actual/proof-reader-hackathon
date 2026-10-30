@@ -168,7 +168,8 @@ def trail_steps(regions: list[dict], transcriptions: list[dict], sam_calls: list
     of the page (this is row number `row_index` of them), so the run's spend counts each call once."""
     n = max(n_rows, 1)
     images = sum(c["images"] or 0 for c in sam_calls)
-    sam_cost = sum(c["cost_usd"] or 0 for c in sam_calls)
+    sam_known = all(c.get("cost_usd") is not None for c in sam_calls)
+    sam_cost = sum(c["cost_usd"] for c in sam_calls) if sam_known else None
     found = [r for r in regions if r["concept"] != WHOLE_PAGE]
     listed = ("Regions: " + "; ".join(f"{r['id']} a {r['concept']} at {r['box']}" for r in found) if found else
               "No region matched \"text block\", \"title\", \"table\", \"bullet list\" or \"page\", so code made "
@@ -179,7 +180,7 @@ def trail_steps(regions: list[dict], transcriptions: list[dict], sam_calls: list
                        + f" (PDF points). The page's text layer is a hidden strip, so it was not used. SAM 3.1 finds "
                          f"where things are; it reads nothing. {images} image{'s' if images != 1 else ''} processed "
                          f"({len(sam_calls)} concept requests)."),
-              "tokens": None, "cost_usd": round(sam_cost / n, prices.ROUND_TO)}]
+              "tokens": None, "cost_usd": round(sam_cost / n, prices.ROUND_TO) if sam_known else None}]
     for i, (region, read) in enumerate(zip(regions, reads), start=1):
         usage = read.get("usage") or {}
         text = (transcriptions[i - 1]["text"] or "") if i <= len(transcriptions) else ""

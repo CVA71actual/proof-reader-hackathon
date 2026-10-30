@@ -20,10 +20,12 @@ run is served, and no decision is written to it.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import importlib
 import inspect
 import json
+import math
 import re
 import threading
 from datetime import datetime, timezone
@@ -40,6 +42,7 @@ from capture import voice
 from capture.sam import SamReader
 from capture.second_reader import SecondReader
 from capture.wonder import WonderReader
+from runs import prices
 from runs.calendar import calendar_entries
 from runs.recheck import recheck_cell, recheck_row
 from report.data import report_filenames
@@ -215,6 +218,7 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     none when one was; None: no escalation). `sam_reader`: SAM 3.1 for scanned pages (same default rule). `index`: the sources index
     (runs/sources.py; default: runs/sources_index.json, else the built-in one), which says what pages each company has."""
     transcriber = transcriber or voice.transcribe
+    voice_locks: dict[str, asyncio.Lock] = {}   # one lock per run_id: voice calls on a run go one at a time
     store = RunStore(runs_dir)
     if second_reader == "default":
         second_reader = SecondReader() if reader is None else None
@@ -340,17 +344,34 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     async def voice_decide(run_id: str, request: Request, target: str = "") -> dict:
         """A spoken decision for one row: the WAV is transcribed and the words become a proposal by rules. Nothing is
         written to decisions.jsonl; the call is priced into the run's spend as one turn."""
-        run = store.run(run_id)
-        if _find_target(run, target) is None:
-            raise HTTPException(404, "No row or value in this run has that id.")
+        store.run(run_id)
         body = await request.body()
         if request.headers.get("content-type", "").lower().startswith("multipart/form-data"):
             body = _multipart_audio(request.headers["content-type"], body)
-        try:
-            heard = transcriber(body)
-        except voice.VoiceError as e:
-            raise HTTPException(422, str(e)) from None
-        jobs.count_voice_turn(store.runs_dir, run_id, heard)
+        async with voice_locks.setdefault(run_id, asyncio.Lock()):
+            # One call at a time per run, from reading spend to counting the turn: concurrent calls see each other's spend.
+            run = store.run(run_id)
+            if _find_target(run, target) is None:
+                raise HTTPException(404, "No row or value in this run has that id.")
+            limit, spent = run["run"]["choices"].get("spending_limit_usd"), run["run"].get("spend_usd") or 0
+            if limit is not None and spent >= limit:
+                raise HTTPException(409, "The run is at its spending limit; raise it to keep using voice.")
+            job_path = store.run_dir(run_id) / "job.json"
+            if job_path.exists() and jobs.limit_unpriced(limit, json.loads(job_path.read_text())):
+                raise HTTPException(409, "The run has a model call that could not be priced, so its spend is not "
+                                         "known; voice is paused until the run is resumed.")
+            try:
+                allowed = voice.allowed_ms(voice.check_wav(body))
+                if limit is not None:
+                    # Reserve the most this recording can be billed (the same bound the reply is held to).
+                    worst = prices.audio_cost_usd(voice.NAME, allowed) or 0
+                    if round(spent + worst, prices.ROUND_TO) > limit:
+                        raise HTTPException(409, "The run is at its spending limit; raise it to keep using voice.")
+                heard = transcriber(body)
+                voice.check_audio_ms(heard.get("audio_ms"), allowed)
+            except voice.VoiceError as e:
+                raise HTTPException(422, str(e)) from None
+            jobs.count_voice_turn(store.runs_dir, run_id, heard)
         return {"transcript": heard["transcript"], "proposal": voice.propose(heard["transcript"]),
                 "cost_usd": heard["cost_usd"], "audio_ms": heard["audio_ms"]}
 

@@ -72,7 +72,7 @@ def snapshot() -> dict:
     """The price table in force now, copied into run.json as run.prices when a run is made, so its cost can be
     recomputed later at the prices it was tallied at."""
     return {"per_1m_tokens_usd": {m: dict(p) for m, p in PRICES_PER_1M_USD.items()},
-            "per_image_usd": dict(PRICES_PER_IMAGE_USD)}
+            "per_image_usd": dict(PRICES_PER_IMAGE_USD), "per_hour_usd": dict(PRICES_PER_HOUR_USD)}
 
 
 def has_price(model: str) -> bool:

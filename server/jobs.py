@@ -242,6 +242,12 @@ def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None, run
         return run
 
 
+def limit_unpriced(limit, job: dict) -> bool:
+    """True when a run has a spending limit but a call that could not be priced: its spend total is not reliable."""
+    unpriced = job.get("unpriced_calls")
+    return limit is not None and isinstance(unpriced, (int, float)) and not isinstance(unpriced, bool) and unpriced > 0
+
+
 def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None) -> dict:
     """Give a stopped run a fresh budget of turns and queue it again. Raises JobError if it cannot go on.
     `spending_limit_usd`: a new limit, higher than the old one; the only way past a spending-limit stop."""
@@ -266,7 +272,7 @@ def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None) -> dict:
                 raise JobError(409, "This run has no spending limit to raise.")
             if spending_limit_usd <= limit:
                 raise JobError(409, f"The new spending limit must be higher than the old one ({money(limit)}).")
-        if limit is not None and job.get("unpriced_calls"):
+        if limit_unpriced(limit, job):
             raise JobError(409, "A spending limit cannot be kept on this run: the cost of a call could not be "
                                 "counted. Start a new run.")
         if limit is not None and spending_limit_usd is None and (meta["spend_usd"] or 0) >= limit:
@@ -1211,6 +1217,7 @@ def count_voice_turn(runs_dir: Path, run_id: str, heard: dict) -> None:
     run_dir = Path(runs_dir) / run_id
     with RUN_LOCK:
         run = json.loads((run_dir / "run.json").read_text())
+        # Rule: the route refuses a turn once spend >= limit (409), so a turn that gets here is always priced in full.
         job_file = run_dir / "job.json"
         job = json.loads(job_file.read_text()) if job_file.is_file() else {"log": []}
         meta, cost = run["run"], heard.get("cost_usd")

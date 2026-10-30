@@ -64,7 +64,8 @@
             "per_1m_tokens_usd": {"type": "object", "additionalProperties": {
               "type": "object", "required": ["input", "output"],
               "properties": {"input": {"type": "number"}, "output": {"type": "number"}, "cached_input": {"type": "number"}}}},
-            "per_image_usd": {"type": "object", "additionalProperties": {"type": "number"}}
+            "per_image_usd": {"type": "object", "additionalProperties": {"type": "number"}},
+            "per_hour_usd": {"type": "object", "additionalProperties": {"type": "number"}}
           }
         },
         "status": {"enum": ["queued", "running", "paused_turn_limit", "needs_input", "done", "failed"],

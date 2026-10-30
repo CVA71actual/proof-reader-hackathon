@@ -133,7 +133,7 @@ def test_the_route_takes_a_multipart_audio_part_and_returns_null_for_other_words
     client, d, said, row = made
     said["text"] = "hello there"
     r = client.post(f"/api/runs/sample/voice/decide?target={row}",
-                    files={"audio": ("a.wav", wav(), "audio/wav")})
+                    files={"audio": ("a.wav", wav(3), "audio/wav")})
     assert r.status_code == 200 and r.json()["proposal"] is None and said["calls"] == 1
 
 

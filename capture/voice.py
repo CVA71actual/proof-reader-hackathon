@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import os
+import struct
 import wave
 
 import httpx
@@ -23,12 +25,26 @@ MODEL = "muse-voice-transcribe-1.0"
 URL = "https://api.meta.ai/v1/asr/transcribe"
 MAX_BYTES = 2 * 1024 * 1024
 MAX_SECONDS = 30
+MAX_AUDIO_MS = 31_000   # the WAV cap is 30 s; a little slack for the service's rounding
 RATES = (16000, 24000)
 NO_KEY = "No model key was found, so nothing was transcribed. Add MODEL_API_KEY to ~/.config/proof-reader/env."
 
 
 class VoiceError(Exception):
     """A plain sentence a person can read."""
+
+
+def _format_code(data: bytes):
+    """The WAV format code (1 is PCM) from the `fmt ` chunk: a little-endian uint16 at offset 8 of the chunk. None if absent."""
+    pos = 12
+    while pos + 8 <= len(data):
+        size = struct.unpack_from("<L", data, pos + 4)[0]
+        if data[pos:pos + 4] == b"fmt ":
+            if size < 2 or pos + 10 > len(data):
+                return None
+            return struct.unpack_from("<H", data, pos + 8)[0]
+        pos += 8 + size + (size & 1)
+    return None
 
 
 def check_wav(data: bytes) -> float:
@@ -39,6 +55,11 @@ def check_wav(data: bytes) -> float:
         raise VoiceError("The audio is larger than 2 MB; record a shorter decision.")
     if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
         raise VoiceError("The audio is not a WAV file.")
+    fmt_code = _format_code(bytes(data))
+    if fmt_code is None:
+        raise VoiceError("The audio is not a WAV file of plain PCM samples.")
+    if fmt_code != 1:
+        raise VoiceError("The audio must be plain PCM samples.")
     try:
         with wave.open(io.BytesIO(bytes(data))) as w:
             channels, width, rate, frames = w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()
@@ -54,6 +75,18 @@ def check_wav(data: bytes) -> float:
     if seconds > MAX_SECONDS:
         raise VoiceError("The audio is longer than 30 seconds; record a shorter decision.")
     return seconds
+
+
+def allowed_ms(seconds: float) -> int:
+    """The most audio one recording may be billed for: its own length plus a second of slack, never above the cap."""
+    return min(math.ceil(seconds * 1000) + 1000, MAX_AUDIO_MS)
+
+
+def check_audio_ms(ms, allowed_ms: int = MAX_AUDIO_MS) -> int:
+    """The audio length a service reported, if it is a positive int within allowed_ms; else VoiceError (never a negative spend)."""
+    if isinstance(ms, bool) or not isinstance(ms, int) or ms <= 0 or ms > min(allowed_ms, MAX_AUDIO_MS):
+        raise VoiceError("The transcription service reported an impossible audio length.")
+    return ms
 
 
 def _key() -> str:
@@ -78,9 +111,10 @@ def transcribe(wav_bytes: bytes) -> dict:
         raise VoiceError(f"The transcription service refused the audio (HTTP {r.status_code}).")
     try:
         doc = r.json()
-        transcript, ms = str(doc["transcript"]).strip(), int(doc["audioDurationMs"])
+        transcript, ms = str(doc["transcript"]).strip(), doc["audioDurationMs"]
     except (ValueError, KeyError, TypeError):
         raise VoiceError("The transcription service answered in a shape that was not understood.") from None
+    check_audio_ms(ms)
     return {"transcript": transcript, "audio_ms": ms, "cost_usd": prices.audio_cost_usd(NAME, ms)}
 
 
@@ -191,7 +225,10 @@ _FIX = re.compile(r"^(?:fix|change) the (date|program|indication) to (.+)$", re.
 def propose(transcript: str) -> dict | None:
     """A decision proposal from the words, by rules and no model; None when the words are not one of the shapes.
     It is only ever a proposal: nothing here writes a decision."""
-    s = re.sub(r"\s+", " ", re.sub(r"[.!?,;]+(?=\s|$)", "", (transcript or "").strip())).strip()
+    text = (transcript or "").strip()
+    if len([p for p in re.split(r"[.!?]+(?:\s+|$)", text) if p.strip()]) > 1:
+        return None                         # one sentence only: two sentences are not one command
+    s = re.sub(r"\s+", " ", re.sub(r"[.!?,;]+(?=\s|$)", "", text)).strip()
     if not s:
         return None
     if _KEEP.match(s):
