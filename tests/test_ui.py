@@ -795,3 +795,113 @@ def test_u21_voice_button_is_wired():
     assert ".voicetext" in css
     # no external call: same-origin fetch only
     assert "http://" not in js.split("voice/week")[0][-200:] or True
+
+
+def _compare_cards(rows_a, rows_b):
+    """compareRuns from app.js under node, against two fake runs.
+
+    Returns (cards, wording): cards is a list of {kind, word, fields} and
+    wording the folded wording-only count."""
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("normWords", "pairKey", "periodOf", "periodsOverlap",
+                     "compareRuns", "rowVals", "fmtField"))
+    script = f"""
+var FIELD_WORDS = {{date: 'Date', date_end: 'Date end', date_text: 'Date as written',
+  title: 'Title', event_type: 'Type', company: 'Company', ticker: 'Ticker',
+  program: 'Program', indication: 'Condition'}};
+function eventWord(v) {{ return String(v); }}
+var ACTION_WORDS = {{}};
+function lastPersonDecisionIn() {{ return null; }}
+function dateShort(s) {{ return String(s); }}
+{fns}
+function mkX(rows) {{
+  return {{ run: {{ rows: rows, run: {{ label: 'the run' }} }},
+           state: {{ targets: {{}} }}, decisions: [] }};
+}}
+var cards = compareRuns(mkX({json.dumps(rows_a)}), mkX({json.dumps(rows_b)}));
+console.log(JSON.stringify({{ cards: cards.map(function (c) {{
+  return {{ kind: c.kind, word: c.word || null,
+           fields: c.fields.map(function (d) {{ return d.field; }}) }}; }}),
+  wording: cards.wording || 0 }}));
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stderr
+    out = json.loads(got.stdout.strip().splitlines()[-1])
+    return out["cards"], out["wording"]
+
+
+def _row(**over):
+    base = {"id": "x", "ticker": "IONS", "company": "Ionis", "program": "sefaxersen",
+            "indication": "IgAN", "title": "Readout", "event_type": "trial_results",
+            "date": None, "date_end": None, "date_text": "in 2027"}
+    base.update(over)
+    return base
+
+
+def test_u22_what_changed_compares_substance():
+    # G4-2a / U22: pairing is ticker + program (normalised) + event type +
+    # overlapping period; wording-only differences fold into one count line;
+    # "date moved" needs date or date_end; "corrected" needs program,
+    # indication or type ("type changed" when it is the type).
+    js = (UI / "app.js").read_text()
+    for needle in ("normWords", "pairKey", "periodsOverlap", "cards.wording",
+                   "reworded", "type changed"):
+        assert needle in js, needle
+
+    # wording: capitalisation/punctuation of the title and "2027" vs "in 2027"
+    # fold into the count, never a card
+    cards, wording = _compare_cards(
+        [_row(id="a1", title="Phase 3 topline data!", date="2027-01-01",
+              date_end="2027-03-31", date_text="2027")],
+        [_row(id="b1", title="phase 3 topline data", date="2027-01-01",
+              date_end="2027-03-31", date_text="in 2027")])
+    assert cards == [] and wording == 1
+
+    # date moved: only when date or date_end changed
+    cards, wording = _compare_cards(
+        [_row(id="a1", date="2027-06-01", date_end="2027-12-31", date_text="2H 2027")],
+        [_row(id="b1", date="2027-06-01", date_end="2027-09-30", date_text="Q3 2027")])
+    assert [c["kind"] for c in cards] == ["moved"] and wording == 0
+
+    # never two different events as one: same key but disjoint periods
+    cards, _ = _compare_cards(
+        [_row(id="a1", date="2027-07-01", date_end="2027-12-31")],
+        [_row(id="b1", date="2028-01-01", date_end="2028-06-30")])
+    assert sorted(c["kind"] for c in cards) == ["added", "removed"]
+
+    # unpaired rows are Added / Removed
+    cards, _ = _compare_cards([_row(id="a1")], [_row(id="b1", program="bepirovirsen",
+                                                   event_type="regulatory_decision")])
+    assert sorted(c["kind"] for c in cards) == ["added", "removed"]
+
+    # program change compares as one corrected card, not add + remove
+    cards, _ = _compare_cards(
+        [_row(id="a1", program="sefaxersen", date="2027-01-01")],
+        [_row(id="b1", program="pelacarsen", date="2027-01-01")])
+    assert [c["kind"] for c in cards] == ["corrected"] and cards[0]["fields"] == ["program"]
+
+    # program normalisation (case, punctuation, whitespace) still pairs
+    cards, _ = _compare_cards(
+        [_row(id="a1", program="PN-881", date="2027-01-01")],
+        [_row(id="b1", program="Pn 881", date="2027-01-01")])
+    assert len(cards) == 1 and cards[0]["kind"] == "corrected"
+
+    # indication change is a corrected card
+    cards, _ = _compare_cards(
+        [_row(id="a1", indication="IgA nephropathy", date="2027-01-01")],
+        [_row(id="b1", indication="PV", date="2027-01-01")])
+    assert [c["kind"] for c in cards] == ["corrected"] and cards[0]["fields"] == ["indication"]
+
+    # a type change says "type changed"
+    cards, _ = _compare_cards(
+        [_row(id="a1", event_type="trial_results", date="2027-01-01")],
+        [_row(id="b1", event_type="regulatory_decision", date="2027-01-01")])
+    assert len(cards) == 1 and cards[0]["word"] == "type changed"
+
+    # identical rows are neither cards nor wording
+    cards, wording = _compare_cards([_row(id="a1")], [_row(id="b1")])
+    assert cards == [] and wording == 0

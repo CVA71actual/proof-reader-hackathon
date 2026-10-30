@@ -2355,8 +2355,16 @@
     }
     var aM = runs.filter(function (r) { return r.id === aId; })[0];
     var bM = runs.filter(function (r) { return r.id === bId; })[0];
-    sub.textContent = 'Compare: ' + runPick(aM) + ' → ' + runPick(bM) +
-      (changedCache && changedCache.key === aId + '>' + bId && changedCache.note ? changedCache.note : '');
+    // G4-2a: the count beside the cards is substance only, with the wording
+    // fold on its own line
+    var suffix = '';
+    if (changedCache && changedCache.key === aId + '>' + bId) {
+      suffix = changedCache.note + ' · ' + changedCache.cards.length + ' change' +
+               (changedCache.cards.length === 1 ? '' : 's') +
+               (changedCache.wording ? ' · ' + changedCache.wording + ' row' +
+                (changedCache.wording === 1 ? '' : 's') + ' reworded' : '');
+    }
+    sub.textContent = 'Compare: ' + runPick(aM) + ' → ' + runPick(bM) + suffix;
 
     if (familyMode) {
       members.forEach(function (m) {
@@ -2411,10 +2419,11 @@
                  ' both runs read';
         }
       }
+      var cards = compareRuns({ run: ra, state: ra.state, decisions: all[2] },
+                              { run: rb, state: rb.state, decisions: all[3] });
       changedCache = { key: key, a: { run: ra, state: ra.state, decisions: all[2] },
                        b: { run: rb, state: rb.state, decisions: all[3] }, note: note,
-                       cards: compareRuns({ run: ra, state: ra.state, decisions: all[2] },
-                                            { run: rb, state: rb.state, decisions: all[3] }) };
+                       wording: cards.wording || 0, cards: cards };
       changedCountCache = changedCache.cards.length;
       document.getElementById('ct-changed').textContent = String(changedCountCache);
       if (route && route.screen === 'changed') renderChanged();
@@ -2427,65 +2436,66 @@
     var t = x.state.targets[row.id] || {};
     return t.values || row;
   }
-  function rowKey(row) {
-    return (row.ticker || '') + '|' + (row.event_type || '') + '|' + (row.program || '').toLowerCase();
-  }
   function fmtField(field, value) {
     if (value === null || value === undefined || value === '') return '(none)';
     return field === 'event_type' ? eventWord(value) : String(value);
   }
 
+  // G4-2a: rows pair across runs on ticker + program (normalised: case,
+  // punctuation, whitespace) + event type + an overlapping period. Rows whose
+  // known periods do not overlap are different events and stay Added/Removed.
+  function normWords(s) {
+    return String(s == null ? '' : s).toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function pairKey(r) {
+    return (r.ticker || '') + '|' + normWords(r.program) + '|' + (r.event_type || '');
+  }
+  function periodOf(r) {
+    return { start: r.date || null, end: r.date_end || r.date || null };
+  }
+  function periodsOverlap(pa, pb) {
+    // a period without a parsed date cannot rule a pair out
+    if (!pa.start || !pb.start) return true;
+    return pa.start <= (pb.end || pb.start) && pb.start <= (pa.end || pa.start);
+  }
+
   function compareRuns(a, b) {
-    // match rows across the two files in three passes: exact (title, program,
-    // indication), then title (so a program or indication change compares as a
-    // corrected field instead of add + remove), then ticker · type · program
-    // (so a corrected title still compares). Whatever stays unmatched is
-    // added (B) or removed (A).
-    function kTitle(r) { return (r.ticker || '') + '|' + (r.event_type || '') + '|' + (r.title || '').toLowerCase(); }
-    function kExact(r) { return kTitle(r) + '|' + (r.program || '') + '|' + (r.indication || ''); }
-    function bucketize(rows, keyFn) {
-      var m = {};
-      rows.forEach(function (r) { (m[keyFn(r)] = m[keyFn(r)] || []).push(r); });
-      return m;
-    }
-    var aExact = bucketize(a.run.rows, kExact);
-    var pairs = [], onlyB = [];
+    // G4-2a: pair on ticker + normalised program + event type, and only across
+    // an overlapping period — never two different events as one. A row whose
+    // program or type changed still compares: same ticker, overlapping period,
+    // and the closest candidate by program/type/indication — with program,
+    // type and indication all different it is a different event and stays
+    // Added/Removed.
+    var aByKey = {}, aByTicker = {};
+    a.run.rows.forEach(function (r) {
+      var k = pairKey(r); (aByKey[k] = aByKey[k] || []).push(r);
+      var t = r.ticker || ''; (aByTicker[t] = aByTicker[t] || []).push(r);
+    });
+    var used = {}, pairs = [], onlyB = [];
     b.run.rows.forEach(function (rb) {
-      var q = aExact[kExact(rb)];
-      if (q && q.length) pairs.push([q.shift(), rb]);
+      var pb = periodOf(rb);
+      var q = (aByKey[pairKey(rb)] || []).filter(function (ra) {
+        return !used[ra.id] && periodsOverlap(periodOf(ra), pb);
+      });
+      if (q.length) { used[q[0].id] = true; pairs.push([q[0], rb]); return; }
+      var best = null, bestScore = 3;
+      (aByTicker[rb.ticker || ''] || []).forEach(function (ra) {
+        if (used[ra.id] || !periodsOverlap(periodOf(ra), pb)) return;
+        var s = (normWords(ra.program) === normWords(rb.program) ? 8 : 0) +
+                ((ra.event_type || '') === (rb.event_type || '') ? 4 : 0) +
+                (String(ra.indication || '') === String(rb.indication || '') ? 2 : 0) +
+                (String(ra.date || '') === String(rb.date || '') ? 1 : 0);
+        if (s > bestScore) { bestScore = s; best = ra; }
+      });
+      if (best) { used[best.id] = true; pairs.push([best, rb]); }
       else onlyB.push(rb);
     });
-    var aLeft = [];
-    Object.keys(aExact).forEach(function (k) { aLeft = aLeft.concat(aExact[k]); });
-    var aTitle = bucketize(aLeft, kTitle);
-    var stillB = [];
-    onlyB.forEach(function (rb) {
-      var q = aTitle[kTitle(rb)];
-      if (q && q.length) {
-        // same title twice (two programs): keep the pairing with the same program
-        var idx = 0, best = -1;
-        q.forEach(function (ra, i) {
-          var s = 0;
-          if (String(ra.program || '') === String(rb.program || '')) s += 2;
-          if (String(ra.indication || '') === String(rb.indication || '')) s += 1;
-          if (s > best) { best = s; idx = i; }
-        });
-        pairs.push([q.splice(idx, 1)[0], rb]);
-      } else stillB.push(rb);
-    });
-    var aLeft2 = [];
-    Object.keys(aTitle).forEach(function (k) { aLeft2 = aLeft2.concat(aTitle[k]); });
-    var aLoose = bucketize(aLeft2, rowKey);
-    var lastB = [];
-    stillB.forEach(function (rb) {
-      var q = aLoose[rowKey(rb)];
-      if (q && q.length) pairs.push([q.shift(), rb]);
-      else lastB.push(rb);
-    });
     var stillA = [];
-    Object.keys(aLoose).forEach(function (k) { stillA = stillA.concat(aLoose[k]); });
+    a.run.rows.forEach(function (r) { if (!used[r.id]) stillA.push(r); });
 
     var cards = [];
+    var wording = 0;
     function since(x, row) {
       var t = x.state.targets[row.id] || {};
       if (!t.decided_by_person) return null;
@@ -2496,7 +2506,7 @@
     }
     var FIELDS = ['date', 'date_end', 'date_text', 'title', 'event_type', 'company', 'ticker',
                   'program', 'indication'];
-    lastB.forEach(function (rb) {
+    onlyB.forEach(function (rb) {
       cards.push({ kind: 'added', row: rb, x: b, fields: [],
                    line: 'New in ' + (b.run.run.label || 'the newer run') + '.', since: since(b, rb) });
     });
@@ -2515,15 +2525,28 @@
         }
       });
       if (!diffs.length) return;
-      var datey = diffs.some(function (d) { return d.field === 'date' || d.field === 'date_end' || d.field === 'date_text'; });
+      // G4-2a: substance only. "Date moved" when date or date_end changed;
+      // "corrected" when program, indication or type changed ("type changed"
+      // when it is the type); a difference only in the wording of the title or
+      // the date text folds into one count line, never a card.
+      var moved = diffs.some(function (d) { return d.field === 'date' || d.field === 'date_end'; });
+      var corrected = diffs.some(function (d) {
+        return d.field === 'program' || d.field === 'indication' || d.field === 'event_type';
+      });
+      if (!moved && !corrected) { wording++; return; }
       var lines = diffs.map(function (d) {
         return (FIELD_WORDS[d.field] || d.field) + ': ' + fmtField(d.field, d.from) + ' → ' + fmtField(d.field, d.to);
       });
-      cards.push({ kind: datey ? 'moved' : 'corrected', row: rb, x: b, fields: diffs,
+      var typeOnly = !moved && corrected &&
+        diffs.some(function (d) { return d.field === 'event_type'; }) &&
+        !diffs.some(function (d) { return d.field === 'program' || d.field === 'indication'; });
+      cards.push({ kind: moved ? 'moved' : 'corrected', row: rb, x: b, fields: diffs,
+                   word: typeOnly ? 'type changed' : null,
                    line: lines.join(' · '), since: since(b, rb) });
     });
     var order = { added: 0, removed: 1, corrected: 2, moved: 3 };
     cards.sort(function (x, y) { return order[x.kind] - order[y.kind]; });
+    cards.wording = wording;
     return cards;
   }
 
@@ -2533,7 +2556,12 @@
   function renderChangedCards(host, mid, det) {
     var cards = changedCache.cards;
     if (!cards.length) {
-      host.append(el('div', 'empty', 'The two runs propose the same rows — nothing changed between them.'));
+      var same = 'The two runs propose the same rows — nothing changed between them.';
+      if (changedCache.wording) {
+        same = 'No real changes — ' + changedCache.wording + ' row' +
+               (changedCache.wording === 1 ? '' : 's') + ' reworded between the runs (wording only).';
+      }
+      host.append(el('div', 'empty', same));
       mid.append(el('div', 'empty', 'Nothing changed.'));
       det.append(el('div', 'empty', 'Pick a change to see it.'));
       return;
@@ -2542,7 +2570,7 @@
     cards.forEach(function (c, i) {
       var b = btn('chcard' + (i === chgSel ? ' on' : ''));
       var top = el('div', 'top');
-      top.append(el('span', 'chtag ' + CHG_CLASS[c.kind], CHG_WORDS[c.kind]));
+      top.append(el('span', 'chtag ' + CHG_CLASS[c.kind], c.word || CHG_WORDS[c.kind]));
       top.append(el('span', 'tk mono', c.row.ticker || '—'));
       // G4-2b: company and program ride with the title on the card
       if (c.row.company) top.append(el('span', 'co', c.row.company));
@@ -2563,7 +2591,7 @@
     mid.append(el('div', 'empty', 'Pick a change on the left.'));
     clear(det);
     var sec = el('div', 'sec');
-    sec.append(el('span', 'chtag ' + CHG_CLASS[c.kind], CHG_WORDS[c.kind]));
+    sec.append(el('span', 'chtag ' + CHG_CLASS[c.kind], c.word || CHG_WORDS[c.kind]));
     var ttl = el('div', 'ttl', c.row.title || '(no title)');
     ttl.style.marginTop = '8px';
     sec.append(ttl);
