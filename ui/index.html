@@ -20,12 +20,16 @@
       <button class="ni" data-scr="export">Export<span class="ct" id="ct-export"></span></button>
     </nav>
     <button class="btn newrun" id="newrun">▸ New run</button>
-    <button class="runcard" id="runcard" hidden>
-      <div class="t1" id="runcard-title"></div>
-      <div class="t2" id="runcard-sub"></div>
-      <div class="t2" id="runcard-cost" hidden></div>
+    <div class="runcard" id="runcard" hidden>
+      <div class="pick" id="runcard-pick" title="Choose a run" role="button" tabindex="0"
+           aria-label="Choose a run">
+        <div class="t1"><span id="runcard-title"></span><span class="chev">▾</span></div>
+        <div class="t2" id="runcard-sub"></div>
+        <div class="t2 chooser" id="runcard-choose"></div>
+      </div>
+      <div class="jb" id="runcard-job" hidden></div>
       <div class="t3" id="runcard-flag" hidden></div>
-    </button>
+    </div>
     <div class="side-ft">
       <button class="tg" id="theme" aria-pressed="false">Light / dark</button>
       <div class="ft" id="side-foot"></div>
@@ -33,9 +37,8 @@
   </aside>
 
   <div class="main">
-    <!-- G4-10: the job bar sits in the page flow above the screens — it never
-         covers a heading or clips a pane title -->
-    <div class="jobbar" id="jobbar" hidden></div>
+    <!-- G4-R3: the job bar is gone from the research screens — everything it
+         carried lives in the rail run card -->
     <div class="screens" id="screens">
       <section class="screen on" id="scr-audit">
       <div class="pane list">

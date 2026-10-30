@@ -360,7 +360,7 @@
     else if (route.screen === 'changed') renderChanged();
     else if (route.screen === 'export') renderExport();
     else renderAudit();
-    updateJobBar();
+    updateRunCardJob();
 
     document.querySelectorAll('#nav .ni[data-scr]').forEach(function (b) {
       b.classList.toggle('on', b.dataset.scr === (route.screen === 'none' ? 'audit' : route.screen));
@@ -394,45 +394,32 @@
     var st = detail.state;
     var card = document.getElementById('runcard');
     card.hidden = false;
-    // G1-R5: the card reads as a picker — a "Run" label with a chevron above it
+    // G1-R5/U29: a plain 'Run' label above the card — the ONE chevron is on
+    // the name row inside the header
     var lbl = document.getElementById('runcard-lbl');
     if (!lbl) {
       lbl = el('div', 'runcard-lbl');
       lbl.id = 'runcard-lbl';
       lbl.append(el('span', null, 'Run'));
-      lbl.append(el('span', 'chev', '▾'));
       card.parentNode.insertBefore(lbl, card);
     }
-    var title = document.getElementById('runcard-title');
-    title.textContent = meta.label || ('Run ' + meta.number);
-    title.append(el('span', 'chev', '▾'));
-    // G1-R5: sub-line with the live saved-run count — the card says it opens a list
-    var pick = document.getElementById('runcard-pick');
-    if (!pick) {
-      pick = el('div', 't2 runcard-pick');
-      pick.id = 'runcard-pick';
-      card.insertBefore(pick, document.getElementById('runcard-flag'));
-    }
-    pick.textContent = runs.length + ' saved run' + (runs.length === 1 ? '' : 's') + ' · choose';
-    // G6-3: the card in words — run, date, status, needs attention, cents
+    document.getElementById('runcard-title').textContent = meta.label || ('Run ' + meta.number);
+    // the card header: run, date in words, needs attention
     document.getElementById('runcard-sub').textContent =
       'Run ' + meta.number + ' · ' + dateTimeWords(meta.started_at) +
-      (meta.status ? ' · ' + (JOB_STATUS_WORDS[meta.status] || meta.status) : '');
+      ' · needs attention ' + st.unresolved;
+    // the chooser line — rail blue, never the warm box
+    document.getElementById('runcard-choose').textContent =
+      runs.length + ' saved run' + (runs.length === 1 ? '' : 's') + ' · choose';
+    // the sample warning stays warm; 'click to switch runs' is gone
     var flag = document.getElementById('runcard-flag');
     flag.hidden = !meta.sample;
-    if (meta.sample) flag.textContent = 'Sample data — not real events · click to switch runs';
-    else flag.textContent = 'Click to switch runs';
-    var cost = document.getElementById('runcard-cost');
-    var cpkr = st.cost_per_kept_row_usd;
-    var bits = ['needs attention ' + st.unresolved];
-    if (cpkr !== null && cpkr !== undefined) bits.push('cost per kept row ' + usdCents(cpkr));
-    cost.textContent = bits.join(' · ');
-    cost.hidden = false;
+    if (meta.sample) flag.textContent = 'Sample data — not real events';
     document.getElementById('side-foot').textContent =
       (meta.sample ? 'Sample data — not real events · ' : '') + 'Muse Spark reads · Code checks';
     document.title = 'Proof Reader — ' + (meta.label || '');
+    updateRunCardJob();
 
-    var st = detail.state;
     var nRows = detail.run.rows.length;
     var nPages = detail.run.sources.reduce(function (n, s) { return n + (s.pages || []).length; }, 0);
     document.getElementById('ct-audit').textContent = nRows;
@@ -3327,42 +3314,60 @@
   // G4-5: the job bar reads money in cents, one way ($5.06, never $5.055042)
   function cents(v) { return '$' + Number(v).toFixed(2); }
 
-  function updateJobBar() {
-    var bar = document.getElementById('jobbar');
-    if (!detail) { hideJobBar(); return; }
+  // G4-R3: the job block lives in the rail run card. Live = a pulsing dot +
+  // 'running'; paused = 'needs input' + the stop sentence in the warm box +
+  // limit box and Resume; done = 'done'; no recorded status = 'saved run' + cost.
+  function updateRunCardJob() {
+    var host = document.getElementById('runcard-job');
+    if (!host) return;
+    clear(host);
+    if (!detail) { host.hidden = true; return; }
     var meta = detail.run.run || {};
     var st = meta.status;
-    // G4-5: the bar shows on every run that has a recorded status — done
-    // included — not only on active or paused ones
-    if (!st) { hideJobBar(); return; }
-    clear(bar);
+    if (!st) {
+      // G4-R2: the block shows on every run — with no status it is a quiet
+      // 'saved run' plus the cost when known, no dot
+      var bits = ['saved run'];
+      var cw = costPerKeptRowWords();
+      if (cw) bits.push(cw);
+      host.append(el('div', 'jb-sub', bits.join(' · ')));
+      host.hidden = false;
+      return;
+    }
     var live = JOB_ACTIVE.indexOf(st) >= 0;
-    bar.append(el('span', live ? 'jb-live' : 'jb-status',
-      (meta.label || 'Run ' + meta.number) + ' · ' + (JOB_STATUS_WORDS[st] || st)));
+    var row1 = el('div', 'jb-row1' + (live ? ' live' : ''));
+    if (live) row1.append(el('span', 'dot'));
+    row1.append(el('span', null, JOB_STATUS_WORDS[st] || st));
+    host.append(row1);
     var bits = [];
     if (meta.turn_count !== null && meta.turn_count !== undefined) {
       bits.push('turn ' + meta.turn_count + ' of ' + (meta.turn_limit || '?'));
     }
     if (meta.spend_usd !== null && meta.spend_usd !== undefined) {
       bits.push(meta.choices && meta.choices.spending_limit_usd !== null && meta.choices.spending_limit_usd !== undefined
-        ? cents(meta.spend_usd) + ' of ' + cents(meta.choices.spending_limit_usd) + ' used'
+        ? cents(meta.spend_usd) + ' of ' + cents(meta.choices.spending_limit_usd)
         : cents(meta.spend_usd) + ' used');
     }
-    if (bits.length) bar.append(el('span', 'jb-sub', bits.join(' · ')));
-    if (meta.status_reason) bar.append(el('span', 'jb-sub', meta.status_reason));
+    if (bits.length) host.append(el('div', 'jb-sub', bits.join(' · ')));
+    // the stop sentence wears the warm box only when it needs you; a done
+    // run's 'Read N pages' summary is plain text
+    if (meta.status_reason) {
+      host.append(el('div', JOB_PAUSABLE.indexOf(st) >= 0 ? 'jb-stop' : 'jb-sub', meta.status_reason));
+    }
     if (JOB_PAUSABLE.indexOf(st) >= 0) {
       var limitInput = null;
       if (st === 'needs_input') {
         limitInput = el('input', 'fld');
         limitInput.placeholder = 'new limit $';
         limitInput.inputMode = 'decimal';
-        bar.append(limitInput);
       }
       var err = el('span', 'errline', '');
       err.hidden = true;
       // G4-6: the error line clears as soon as the box is edited
       if (limitInput) limitInput.addEventListener('input', function () { err.hidden = true; });
-      bar.append(btn('btn', 'Resume', function () {
+      var ctl = el('div', 'jb-ctl');
+      if (limitInput) ctl.append(limitInput);
+      ctl.append(btn('btn', 'Resume', function () {
         var body = {};
         if (limitInput && limitInput.value.trim() !== '') {
           var v = Number(limitInput.value.trim());
@@ -3378,16 +3383,23 @@
           return refresh();
         }).catch(function () { err.textContent = 'The server is not reachable.'; err.hidden = false; });
       }), err);
+      host.append(ctl);
     }
-    bar.hidden = false;
+    host.hidden = false;
   }
-  function hideJobBar() {
-    document.getElementById('jobbar').hidden = true;
+  // the money rule: under a cent reads in words, a cent or more in cents
+  function costPerKeptRowWords() {
+    var cpkr = detail.state.cost_per_kept_row_usd;
+    if (cpkr === null || cpkr === undefined) return null;
+    return cpkr < 0.01 ? 'less than a cent per kept row' : usdCents(cpkr) + ' per kept row';
   }
 
   // ---------------------------------------------------------------- run sheet
   var runSheetWrap = document.getElementById('runsheet-wrap');
-  document.getElementById('runcard').addEventListener('click', function () {
+  // G4-R3: the card's header rows are the click target that opens the run
+  // list — the card itself also holds the job block's controls. It is a div
+  // with role=button: Enter and Space open it too.
+  function openRunSheet() {
     var host = clear(document.getElementById('runsheet-list'));
     runs.forEach(function (r) {
       var b = btn('runopt' + (detail && r.id === detail.id ? ' on' : ''));
@@ -3402,6 +3414,13 @@
       host.append(b);
     });
     runSheetWrap.hidden = false;
+  }
+  var runcardPick = document.getElementById('runcard-pick');
+  runcardPick.addEventListener('click', openRunSheet);
+  runcardPick.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    openRunSheet();
   });
   document.getElementById('runsheet-close').addEventListener('click', function () { runSheetWrap.hidden = true; });
   runSheetWrap.addEventListener('click', function (e) { if (e.target === runSheetWrap) runSheetWrap.hidden = true; });

@@ -204,7 +204,9 @@ def test_u8_new_run_panel_is_wired():
         assert field in js, field
     for word in ("paused at the turn limit", "needs input", "Resume"):
         assert word in js, word
-    assert "jobbar" in html
+    # G4-R3: the bar is gone from the research screens; its block is in the card
+    assert "jobbar" not in html
+    assert "runcard-job" in html and "updateRunCardJob" in js
 
 
 def test_u9_export_is_wired():
@@ -273,9 +275,9 @@ def test_u10_polish_is_wired():
     assert js.count("Page rendered by code from the filed HTML") >= 2
     assert "rendnote" in js and ".rendnote" in css
     # cost per kept row in the run card, hidden when the run recorded no spend
-    assert "runcard-cost" in html
     assert "cost_per_kept_row_usd" in js
-    assert "cost per kept row" in js
+    assert "less than a cent per kept row" in js
+    assert "costPerKeptRowWords" in js
 
 
 def test_u11_accuracy_panel_is_wired():
@@ -613,8 +615,8 @@ def test_u18_changed_bar_glass4_rows():
         assert word in js, word
     # G4-5: bar on every run, cents
     assert "function cents(v)" in js
-    assert "if (!st) { hideJobBar(); return; }" in js
-    assert "JOB_PAUSABLE.indexOf(st) < 0" not in js.split("function updateJobBar")[1].split("function hideJobBar")[0].split("if (!st)")[1][:200] or True
+    assert "if (!st) {" in js and "updateRunCardJob" in js  # G4-R3: the block lives in the card
+    assert "JOB_PAUSABLE.indexOf(st) >= 0" in js
     assert "cents(meta.spend_usd)" in js
     assert "money(meta.spend_usd)" not in js
     # G4-6: one wording (U14) that now clears on edit in both boxes
@@ -622,8 +624,8 @@ def test_u18_changed_bar_glass4_rows():
     assert "limitInput.addEventListener('input', function () { err.hidden = true; })" in js
     assert "getElementById('nr-limit').addEventListener('input', function () { nrError(''); })" in js
     # G4-10: the bar is the first child of #screens, in flow, not fixed
-    assert html.index('id="jobbar"') < html.index('id="scr-audit"')
-    assert ".jobbar{position:fixed" not in css
+    assert 'id="jobbar"' not in html
+    assert ".jobbar" not in css
     assert "paddingTop" not in js
     # G1-16: blue for selected rows in every list, the links, the selected box
     for word in (".row.on{background:var(--blue-soft)", ".crow.on{background:var(--blue-soft)",
@@ -972,22 +974,25 @@ setTimeout(function () {{
 
 
 def test_u24_g1r5_run_card_reads_as_a_picker():
-    # Re-glass 1 finding 10: the run card was a bare button — it never said it
-    # opens a list. It now has a "Run" label with a chevron above it, a chevron
-    # on the title row, and a "<N> saved runs · choose" sub-line with the live
-    # count. index.html is out of scope, so the label/sub-line are built in
-    # app.js; the label hides with the card at narrow widths.
+    # Re-glass 1 finding 10 + U29 (GLASS 7): the card reads as a picker — a
+    # plain "Run" label above it (no chevron; the ONE chevron is on the name
+    # row in index.html), the header rows are the click target, and a
+    # "<N> saved runs · choose" chooser line rides inside the header in rail
+    # blue.
     js = (UI / "app.js").read_text()
     css = (UI / "styles.css").read_text()
+    html = (UI / "index.html").read_text()
     assert "'runcard-lbl'" in js and "el('span', null, 'Run')" in js
-    assert "el('span', 'chev', '▾')" in js
-    assert "runs.length + ' saved run'" in js and "' · choose'" in js
+    assert "runs.length + ' saved run'" in js and "' · choose'" in js  # ONE chevron lives on the name row
     assert "insertBefore(lbl, card)" in js          # label rides above the card
-    assert "insertBefore(pick," in js              # sub-line inside the card
-    assert "title.append(el('span', 'chev', '▾'))" in js
+    assert 'id="runcard-pick"' in html              # the header is the click target
+    assert '<span class="chev">▾</span>' in html   # one chevron, on the name row
+    assert "addEventListener('click', openRunSheet)" in js
+    assert 'role="button"' in html and 'tabindex="0"' in html  # keyboard reachable
+    assert "e.key !== 'Enter' && e.key !== ' '" in js  # Enter and Space open it
     assert ".runcard-lbl{" in css and ".runcard-lbl + .runcard{" in css
+    assert ".runcard .t2.chooser{color:var(--blue)" in css
     assert ".runcard-lbl,.side-ft .ft{display:none}" in css  # hides at narrow widths
-
 
 def test_u24_g1r7_citation_box_bottom_edge_sits_lower():
     # Re-glass 1 finding 9 (nit): the citation box was drawn exactly on the
@@ -1612,6 +1617,39 @@ recordAndStop({{ ok: false, status: 422,
           }});
       }});
   }});
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u29_run_card_job_block_and_money_rule():
+    # GLASS 7 / U29: the job block lives in the rail run card; the money rule
+    # reads 'less than a cent per kept row' under a cent and '$0.08 per kept
+    # row' at a cent or more; the stop sentence is figure-less; the chooser
+    # line carries the live saved-run count.
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    html = (UI / "index.html").read_text()
+    for word in ("runcard-job", "updateRunCardJob", "costPerKeptRowWords",
+                 "less than a cent per kept row", "saved run", "jb-row1"):
+        assert word in (html + js), word
+    assert "jobbar" not in html
+    fns = "\n".join(_grab_fn(js, n) for n in ("cents", "usdCents", "money", "costPerKeptRowWords"))
+    script = f"""
+var detail = {{ state: {{ cost_per_kept_row_usd: null }} }};
+{fns}
+function setCpkr(v) {{ detail.state.cost_per_kept_row_usd = v; }}
+setCpkr(0.005189);
+if (costPerKeptRowWords() !== 'less than a cent per kept row') process.exit(2);
+setCpkr(0.08);
+if (costPerKeptRowWords() !== '$0.08 per kept row') process.exit(3);
+setCpkr(0.10);
+if (costPerKeptRowWords() !== '$0.10 per kept row') process.exit(4);
+setCpkr(null);
+if (costPerKeptRowWords() !== null) process.exit(5);
+console.log('ok');
 """
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
     assert got.returncode == 0, got.stdout + got.stderr

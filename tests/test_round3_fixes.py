@@ -170,8 +170,7 @@ def test_the_last_call_that_crosses_the_limit_stops_the_run_with_the_plain_reaso
     _, rid = start(runs_dir, FakeReader(cost=0.60))
     m = meta(runs_dir, rid)
     assert (m["status"], m["finished_at"]) == ("needs_input", None)
-    assert m["status_reason"] == ("Stopped at the spending limit ($0.60 of $0.50 used): spending limit reached. "
-                                  "Resume with a higher spending limit to read more.")
+    assert m["status_reason"] == "Stopped at the spending limit. Raise the limit and press Resume to read more."
     assert m["spend_usd"] == pytest.approx(0.60)
 
 

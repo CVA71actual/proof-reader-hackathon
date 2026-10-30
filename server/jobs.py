@@ -409,8 +409,9 @@ class Job:
         return False
 
     def limit_reason(self, limit: float) -> str:
-        return (f"Stopped at the spending limit ({money(self.meta['spend_usd'] or 0)} of {money(limit)} used): "
-                f"spending limit reached. Resume with a higher spending limit to read more.")
+        # G4-R1/GLASS 7: the figures ride the turn/spend line; the sentence is
+        # plain words, shown once
+        return "Stopped at the spending limit. Raise the limit and press Resume to read more."
 
     def unpriced_reason(self, limit: float, reader=None) -> str:
         models = ", ".join(self.job.get("unpriced_models") or [getattr(reader, "model", "the model")])
