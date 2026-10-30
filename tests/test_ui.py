@@ -607,8 +607,9 @@ def test_u18_changed_bar_glass4_rows():
     for word in ("runPick", "Compare: ' + runPick", "comparing the ", "chpicks"):
         assert word in js, word
     assert "is the only run of its kind" not in js
-    # G4-2b: company and program on the card's first line
-    assert 'el(\'span\', \'co\', c.row.company)' in js
+    # G4-2b: company and program on the card's first line — the state values
+    # first, the raw row only as fallback (A-F9 second half)
+    assert "el('span', 'co', cvCo)" in js
     assert ".chcard .co" in css
     # G4-4: checks + source/trail links in the pane; Open in run scrolls
     for word in ("openInRun", "checksSection({ checks: c.row.checks", "'.row.on, .crow.on, .pg.on, .chcard.on'"):
@@ -2633,5 +2634,37 @@ runs[3].label = 'Run 4 · Z'; pageSigs = {{ r4: 'z' }};
 if (nearestComparable('r4', others) !== 'r3') process.exit(4);
 console.log('ok');
 """
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u34_af9_second_half_changes_show_state_values():
+    # Red Team A-F9, second half: pairing reads state values (U34 +1, merged)
+    # and SHOWING a change does too — a fixed title/program/company/type is
+    # what the card and the pane display, never the raw saved row
+    js = (UI / "app.js").read_text()
+    for word in ("var cv = rowVals(c.x, c.row);",
+                 "var cvCo = shownVal(cv, c.row, 'company')",
+                 "var cvPr = shownVal(cv, c.row, 'program')",
+                 "var cvTt = shownVal(cv, c.row, 'title')",
+                 "var dTy = shownVal(cvDet, c.row, 'event_type')"):
+        assert word in js, word
+    # Codex P2: presence wins over truthiness — a field a person CLEARED
+    # ('' or null in the state values) shows as cleared, never the raw value;
+    # the raw row is only the answer when the state has no key at all
+    import subprocess
+    fns = _grab_fn(js, "shownVal")
+    script = "\n".join([
+        fns,
+        "var raw = { program: 'PN-OLD', indication: 'IgAN', title: 'Old title' };",
+        # cleared to '' -> '' (no raw fallback)
+        "if (shownVal({ program: '' }, raw, 'program') !== '') process.exit(2);",
+        # cleared to null -> null
+        "if (shownVal({ indication: null }, raw, 'indication') !== null) process.exit(3);",
+        # key absent -> raw wins
+        "if (shownVal({ title: undefined } , raw, 'title') !== undefined) process.exit(4);",
+        "if (shownVal({} , raw, 'program') !== 'PN-OLD') process.exit(5);",
+        "console.log('ok');",
+    ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
     assert got.returncode == 0, got.stdout + got.stderr

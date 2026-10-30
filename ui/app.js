@@ -2998,6 +2998,13 @@
     var t = x.state.targets[row.id] || {};
     return t.values || row;
   }
+  // Codex P2 (#112): the state value wins on KEY PRESENCE — a value a person
+  // cleared ('' or null) must show as cleared, never fall back to the raw row;
+  // the raw row is only the answer when the state has no value for the field
+  function shownVal(cv, raw, k) {
+    if (cv && Object.prototype.hasOwnProperty.call(cv, k)) return cv[k];
+    return raw[k];
+  }
   function fmtField(field, value) {
     if (value === null || value === undefined || value === '') return '(none)';
     return field === 'event_type' ? eventWord(value) : String(value);
@@ -3270,11 +3277,18 @@
       var b = btn('chcard' + (i === chgSel ? ' on' : ''));
       var top = el('div', 'top');
       top.append(el('span', 'chtag ' + CHG_CLASS[c.kind], c.word || CHG_WORDS[c.kind]));
-      top.append(el('span', 'tk mono', c.row.ticker || '—'));
+      // the card shows the STATE values — a fix already made is the value
+      // that compares, never the raw saved row (Red Team A-F9)
+      var cv = rowVals(c.x, c.row);
+      var cvTicker = shownVal(cv, c.row, 'ticker');
+      top.append(el('span', 'tk mono', (cvTicker === '' || cvTicker === null || cvTicker === undefined) ? '—' : cvTicker));
       // G4-2b: company and program ride with the title on the card
-      if (c.row.company) top.append(el('span', 'co', c.row.company));
-      if (c.row.program) top.append(el('span', 'pg2', c.row.program));
-      top.append(el('span', null, c.row.title || '(no title)'));
+      var cvCo = shownVal(cv, c.row, 'company');
+      if (cvCo) top.append(el('span', 'co', cvCo));
+      var cvPr = shownVal(cv, c.row, 'program');
+      if (cvPr) top.append(el('span', 'pg2', cvPr));
+      var cvTt = shownVal(cv, c.row, 'title');
+      top.append(el('span', null, cvTt || '(no title)'));
       b.append(top);
       b.append(el('div', 'why', c.line));
       if (c.since) b.append(el('div', 'since', c.since.text));
@@ -3293,14 +3307,20 @@
     clear(det);
     var sec = el('div', 'sec');
     sec.append(el('span', 'chtag ' + CHG_CLASS[c.kind], c.word || CHG_WORDS[c.kind]));
-    var ttl = el('div', 'ttl', c.row.title || '(no title)');
+    var cvHead = rowVals(c.x, c.row);
+    var ttl = el('div', 'ttl', shownVal(cvHead, c.row, 'title') || '(no title)');
     ttl.style.marginTop = '8px';
     sec.append(ttl);
     det.append(sec);
     var sec2 = el('div', 'sec');
     function kv(k, v) { var r = el('div', 'kv'); r.append(el('span', 'k', k), el('span', 'v', v)); sec2.append(r); }
-    kv('Company', (c.row.ticker || '') + ' · ' + (c.row.company || ''));
-    kv('Type', eventWord(c.row.event_type));
+    var cvDet = rowVals(c.x, c.row);
+    var dTicker = shownVal(cvDet, c.row, 'ticker');
+    var dCo = shownVal(cvDet, c.row, 'company');
+    kv('Company', ((dTicker === null || dTicker === undefined) ? '' : dTicker) + ' · ' +
+       ((dCo === null || dCo === undefined) ? '' : dCo));
+    var dTy = shownVal(cvDet, c.row, 'event_type');
+    kv('Type', dTy ? eventWord(dTy) : '(none)');
     c.fields.forEach(function (d) {
       kv(FIELD_WORDS[d.field] || d.field, fmtField(d.field, d.from) + ' → ' + fmtField(d.field, d.to));
     });
