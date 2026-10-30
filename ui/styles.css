@@ -283,6 +283,13 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
 .crow .ct2 .tt{min-width:0}
 .crow .ty{font-size:10.5px;color:var(--sub);border:1px solid var(--line);border-radius:5px;padding:1px 6px;white-space:nowrap;text-transform:none;letter-spacing:0;font-weight:500}
 .crow .badge{flex:0 0 auto}
+/* G8-7: a folded calendar row — the count pill, and the pane's source list */
+.srcpill{font-size:10.5px;font-weight:600;color:var(--blue);border:1px solid var(--blue);border-radius:9px;padding:0 7px;white-space:nowrap;align-self:center}
+.srcitem{display:block;width:100%;text-align:left;padding:7px 9px;border:1px solid var(--line);border-radius:8px;margin-top:6px;font:inherit;font-size:12px;cursor:pointer;background:var(--panel);color:var(--ink)}
+.srcitem:hover{border-color:var(--faint)}
+.srcitem.on{border-color:var(--blue);background:var(--blue-soft)}
+.srcitem .src1{color:var(--sub);font-size:11.5px;margin-top:3px}
+.srcitem .srcq{font-style:italic;margin-top:3px;line-height:1.4}
 .periodhead{padding:10px 4px 2px;font-size:12px;color:var(--sub);font-weight:600;display:flex;align-items:baseline;gap:8px}
 /* G3-3: a hollow dot marks a period — the same blue, one glyph difference */
 .periodhead .pdot{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--blue);background:transparent;flex:0 0 7px;align-self:center}

@@ -2173,3 +2173,109 @@ def test_u31_glass8_rulings_2_and_3_and_the_caveat():
     assert ("Rows are matched by position for now; a wording change can look "
             "like a date move.") in js
     assert ".chcaveat{" in css
+
+
+def test_u32_calendar_one_row_per_event():
+    # G8-7 (Ruling 1): rows that are the same event — same ticker + program +
+    # event kind + same period start — fold to ONE calendar row; the first
+    # source's wording is the date text; a count pill reads 'N sources'; the
+    # pane lists every source (quote, page, own status) and the actions act
+    # on the source picked; the header and rail count events, not sources
+    js = (UI / "app.js").read_text()
+    css = (UI / "styles.css").read_text()
+    for word in ("g[0].fold = g",
+                 "(e.row.ticker || '') + '|' + (e.row.program || '') + '|'",
+                 "el('span', 'srcpill', r.fold.length + ' sources')",
+                 "'Read from ' + sel.fold.length + ' sources'",
+                 "calSrcSel"):
+        assert word in js, word
+    # the source list shows each one's own status (matched / kept by you / …)
+    list_src = js.split("'Read from ' + sel.fold.length + ' sources'")[1].split("det.append(list)")[0]
+    assert "decidedBadge(e.t.group) : statusBadge(e.t.status)" in list_src
+    # folded rows act through the picked source
+    assert "actions: sel.fold.length > 1" in js
+    for word in (".srcpill{", ".srcitem{", ".srcitem.on{"):
+        assert word in css, word
+    # behavior: four same-event rows fold to one entry, first source first
+    import json
+    import subprocess
+    rows = [
+        {"id": "a1", "ticker": "PTGX", "program": "PN-8047", "event_type": "milestone",
+         "date": "2027-01-01", "date_text": "Q1 2027"},
+        {"id": "a2", "ticker": "PTGX", "program": "PN-8047", "event_type": "milestone",
+         "date": "2027-01-01", "date_text": "Q1 ’27"},
+        {"id": "a3", "ticker": "PTGX", "program": "PN-8047", "event_type": "milestone",
+         "date": "2027-01-01", "date_text": "(Q1 ’27)"},
+        {"id": "a4", "ticker": "PTGX", "program": "PN-8047", "event_type": "milestone",
+         "date": "2027-01-01", "date_text": "Ph1 for PN-8047"},
+        # a different ticker, a different kind and a different start stay apart
+        {"id": "b1", "ticker": "IONS", "program": "PN-8047", "event_type": "milestone",
+         "date": "2027-01-01", "date_text": "Q1 2027"},
+        {"id": "b2", "ticker": "PTGX", "program": "PN-8047", "event_type": "regulatory",
+         "date": "2027-01-01", "date_text": "Q1 2027"},
+        {"id": "b3", "ticker": "PTGX", "program": "PN-8047", "event_type": "milestone",
+         "date": "2027-07-01", "date_text": "2H 2027"},
+        # an open row never reaches the calendar
+        {"id": "b4", "ticker": "PTGX", "program": "PN-8047", "event_type": "milestone",
+         "date": "2027-01-01", "date_text": "Q1 2027"},
+    ]
+    targets = {r["id"]: {"group": "open" if r["id"] == "b4" else "kept",
+                         "values": {"date": r["date"], "date_text": r["date_text"]}}
+               for r in rows}
+    script = "\n".join([
+        "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
+        json.dumps(targets) + " } };",
+        "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
+        _grab_fn(js, "calendarRows"),
+        "var got = calendarRows();",
+        "if (got.length !== 4) { console.error('n=' + got.length); process.exit(2); }",
+        "if (got[0].fold.length !== 4) { console.error('fold=' + got[0].fold.length); process.exit(3); }",
+        "if (got[0].row.id !== 'a1') { console.error('first=' + got[0].row.id); process.exit(4); }",
+        "if (got[0].t.values.date_text !== 'Q1 2027') { console.error('wording=' + got[0].t.values.date_text); process.exit(5); }",
+        "if (got[1].fold.length !== 1 || got[2].fold.length !== 1 || got[3].fold.length !== 1) process.exit(6);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u32_back_from_a_secondary_source_reselects_the_fold():
+    # Codex P2 on #103: Back to calendar from a secondary source's page carries
+    # that source's row id; the calendar must land back on the folded event
+    # with the same source picked, not lose the selection
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    assert "function calFoldHit(rows, rowId)" in js
+    assert "calSel = hit.rep; calSrcSel = hit.src;" in js
+    rows = [
+        {"id": "a1", "ticker": "PTGX", "program": "PN-8047", "event_type": "milestone",
+         "date": "2027-01-01", "date_text": "Q1 2027"},
+        {"id": "a4", "ticker": "PTGX", "program": "PN-8047", "event_type": "milestone",
+         "date": "2027-01-01", "date_text": "Ph1 for PN-8047"},
+        {"id": "b1", "ticker": "IONS", "program": "PN-8047", "event_type": "milestone",
+         "date": "2027-01-01", "date_text": "Q1 2027"},
+    ]
+    targets = {r["id"]: {"group": "kept", "values": {"date": r["date"], "date_text": r["date_text"]}}
+               for r in rows}
+    script = "\n".join([
+        "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
+        json.dumps(targets) + " } };",
+        "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
+        _grab_fn(js, "calendarRows"),
+        _grab_fn(js, "calFoldHit"),
+        "var all = calendarRows();",
+        # a secondary source lands on the fold with that source picked
+        "var h = calFoldHit(all, 'a4');",
+        "if (!h || h.rep !== 'a1' || h.src !== 'a4') { console.error(JSON.stringify(h)); process.exit(2); }",
+        # the representative itself maps to itself
+        "h = calFoldHit(all, 'a1');",
+        "if (!h || h.rep !== 'a1' || h.src !== 'a1') { console.error(JSON.stringify(h)); process.exit(3); }",
+        # a singleton row maps to itself; an unknown id maps to nothing
+        "h = calFoldHit(all, 'b1');",
+        "if (!h || h.rep !== 'b1' || h.src !== 'b1') { console.error(JSON.stringify(h)); process.exit(4); }",
+        "if (calFoldHit(all, 'zz9') !== null) process.exit(5);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr

@@ -198,6 +198,10 @@
   var judgmentSel = null;
   var trailSel = null;
   var calSel = null;
+  var calSrcSel = null;     // G8-7: which source of a folded row is picked
+  var calRouted = null;     // the rowId the calendar last routed on (a change
+                            // re-applies the fold mapping; pane re-renders
+                            // must not stomp the picked source)
   var chgSel = null;        // selected card index on What changed
   var changedCountCache = null;
   var changedCache = null;  // {key, a, b, cards}
@@ -433,6 +437,9 @@
   }
 
   // kept and corrected rows with a date — the ones that go on the calendar
+  // G8-7: rows that are the same event — same ticker + program + event kind +
+  // same period start — fold to ONE calendar row. The folded entry keeps the
+  // first source's row and carries `fold`, every source row in it.
   function calendarRows() {
     var out = [];
     detail.run.rows.forEach(function (r) {
@@ -442,7 +449,14 @@
       if (d) out.push({ row: r, t: t, date: d, period: !!(t.values && t.values.date_end),
                         end: (t.values && t.values.date_end) || r.date_end || null });
     });
-    return out;
+    var groups = {}, order = [];
+    out.forEach(function (e) {
+      var key = (e.row.ticker || '') + '|' + (e.row.program || '') + '|' +
+                (e.row.event_type || '') + '|' + e.date;
+      if (!groups[key]) { groups[key] = []; order.push(groups[key]); }
+      groups[key].push(e);
+    });
+    return order.map(function (g) { g[0].fold = g; return g[0]; });
   }
   // G3-2/G3-3: how long a period row runs — day ranges (a congress weekend)
   // count as exact dates, not periods
@@ -520,6 +534,8 @@
       judgmentSel = null;
       trailSel = null;
       calSel = null;
+      calSrcSel = null;
+      calRouted = null;
       chgSel = null;
       changedCache = null;
       accuracyCache = { id: null, line: null, tried: false };
@@ -1851,10 +1867,27 @@
     return { win: win, anchor: anchor, end: addMonths(anchor, win) };
   }
 
+  // G8-7: a source row id — e.g. Back to calendar from that source's page —
+  // maps to its folded event's representative row id and the source within it
+  function calFoldHit(rows, rowId) {
+    var hit = null;
+    rows.forEach(function (r) {
+      r.fold.forEach(function (e) { if (e.row.id === rowId) hit = { rep: r.row.id, src: e.row.id }; });
+    });
+    return hit;
+  }
+
   function renderCalendar() {
     var meta = detail.run.run || {};
-    if (route.rowId && rowOf(route.rowId)) calSel = route.rowId;
     var all = calendarRows();
+    if (route.rowId && rowOf(route.rowId) && route.rowId !== calRouted) {
+      calRouted = route.rowId;
+      // landing on a secondary source of a fold reselects the folded event
+      // with that source picked
+      var hit = calFoldHit(all, route.rowId);
+      if (hit) { calSel = hit.rep; calSrcSel = hit.src; }
+      else calSel = route.rowId;
+    }
     var w = calWindow();
     var rows = all.filter(function (r) { return r.date <= w.end; });
     var after = all.length - rows.length;
@@ -1964,16 +1997,45 @@
       det.append(el('div', 'empty', 'Pick an event to see its details.'));
       return;
     }
+    // G8-7: a folded row's pane lists every source — quote, page, own status —
+    // and the person picks which source the actions act on. The list rides
+    // ABOVE the picked source's details (detailsPane clears the pane first).
+    var pick = sel;
+    var list = null;
+    if (sel.fold.length > 1) {
+      if (!sel.fold.some(function (e) { return e.row.id === calSrcSel; })) calSrcSel = sel.row.id;
+      pick = sel.fold.filter(function (e) { return e.row.id === calSrcSel; })[0];
+      list = el('div', 'sec');
+      list.append(el('h4', null, 'Read from ' + sel.fold.length + ' sources'));
+      sel.fold.forEach(function (e) {
+        var src = sourceOf(e.row);
+        var it = btn('srcitem' + (e.row.id === calSrcSel ? ' on' : ''));
+        if (src) it.append(el('div', 'src1', src.publisher + ' · page ' + e.row.page_number));
+        var q = (e.t.values && e.t.values.quote) || e.row.quote;
+        if (q) it.append(el('div', 'srcq', '“' + q + '”'));
+        var st = el('div', 'src1');
+        st.append(e.t.decided_by_person ? decidedBadge(e.t.group) : statusBadge(e.t.status));
+        it.append(st);
+        it.addEventListener('click', function () { calSrcSel = e.row.id; renderCalendar(); });
+        list.append(it);
+      });
+    } else calSrcSel = null;
     // G3-6: opened from the calendar, the pane links back to the calendar
-    detailsPane(det, sel.row, { back: 'calendar', w: calWindow().win });
+    detailsPane(det, pick.row, { back: 'calendar', w: calWindow().win,
+                                 actions: sel.fold.length > 1 });
+    if (list) det.insertBefore(list, det.firstChild);
     var sa = el('div', 'sec');
     var br = el('div', 'btnrow');
     br.append(btn('btn', 'Open in Audit log', function () {
-      navigate({ runId: currentRunId(), screen: 'audit', rowId: sel.row.id });
+      navigate({ runId: currentRunId(), screen: 'audit', rowId: pick.row.id });
     }));
-    br.append(btn('btn', 'Open agent trail', function () {
-      navigate({ runId: currentRunId(), screen: 'trail', rowId: sel.row.id });
-    }));
+    // the folded pane's detailsPane already carries Open source page, Open
+    // agent trail and Decide — the plain single-source pane keeps its own
+    if (sel.fold.length === 1) {
+      br.append(btn('btn', 'Open agent trail', function () {
+        navigate({ runId: currentRunId(), screen: 'trail', rowId: pick.row.id });
+      }));
+    }
     sa.append(br);
     det.append(sa);
   }
@@ -2004,6 +2066,8 @@
     c2.append(el('span', 'tk', row.ticker || '—'));
     if (row.program) c2.append(el('span', 'pg2', row.program));
     c2.append(el('span', 'tt', row.title || '(no title)'));
+    // G8-7: a folded row says how many sources it was read from
+    if (r.fold.length > 1) c2.append(el('span', 'srcpill', r.fold.length + ' sources'));
     if (isPeriod) {
       // G3-4: the row keeps its own source wording as the date text
       var wording = (t.values && t.values.date_text) || row.date_text || '';
