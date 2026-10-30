@@ -1005,7 +1005,10 @@ def test_u31_g8_11_picker_is_a_button_not_the_card():
     # the RUN label stays above the card
     assert "'runcard-lbl'" in js and "el('span', null, 'Run')" in js
     assert "insertBefore(lbl, card)" in js
-    assert ".runcard,.runcard-lbl,.side-ft .ft{display:none}" in css  # hides at narrow widths
+    # G9-4 superseded the outright hide: at narrow widths the card is a
+    # compact strip; only the label and the footer text hide
+    assert ".runcard,.runcard-lbl" not in css.split("@media (max-width:900px){")[1]
+    assert ".runcard-lbl,.side-ft .ft{display:none}" in css
 
 
 def test_u24_g1r5_picker_button_supersedes_the_card_picker():
@@ -1908,7 +1911,7 @@ def _compare_cards(rows_a, rows_b):
 
     js = (UI / "app.js").read_text()
     fns = "\n".join(_grab_fn(js, n) for n in
-                    ("normWords", "pairKey", "periodOf", "periodsOverlap",
+                    ("normWords", "pairKey", "titleSim", "pageSet", "rowPageKey",
                      "compareRuns", "rowVals", "fmtField"))
     script = f"""
 var FIELD_WORDS = {{date: 'Date', date_end: 'Date end', date_text: 'Date as written',
@@ -1946,8 +1949,8 @@ def test_u27_since_then_group_and_reworded_fold():
     js = (UI / "app.js").read_text()
     assert "Since then · " in js and "reworded row" in js
     fns = "\n".join(_grab_fn(js, n) for n in
-                    ("normWords", "pairKey", "periodOf", "periodsOverlap", "lastPersonDecisionIn",
-                     "compareRuns", "rowVals", "fmtField"))
+                    ("normWords", "pairKey", "titleSim", "lastPersonDecisionIn",
+                     "pageSet", "rowPageKey", "compareRuns", "rowVals", "fmtField"))
     script = f"""
 var FIELD_WORDS = {{date: 'Date', date_end: 'Date end', date_text: 'Date as written',
   title: 'Title', event_type: 'Type', company: 'Company', ticker: 'Ticker',
@@ -2028,13 +2031,15 @@ def _row(**over):
 
 
 def test_u22_what_changed_compares_substance():
-    # G4-2a / U22: pairing is ticker + program (normalised) + event type +
-    # overlapping period; wording-only differences fold into one count line;
-    # "date moved" needs date or date_end; "corrected" needs program,
-    # indication or type ("type changed" when it is the type).
+    # G9-3 / U34 (supersedes the U22 pairing): identity = ticker + program
+    # (normalised) + event kind + SAME period start; the one fallback is same
+    # ticker + kind with title word overlap >= 0.6. Rows with no confident
+    # partner join "No confident match", never a guessed pair. "date moved"
+    # needs date or date_end on an IDENTITY pair; "corrected" needs program,
+    # indication or type; wording-only differences fold into one count line.
     js = (UI / "app.js").read_text()
-    for needle in ("normWords", "pairKey", "periodsOverlap", "cards.wording",
-                   "reworded", "type changed"):
+    for needle in ("normWords", "pairKey", "titleSim", "cards.wording",
+                   "reworded", "Only in "):
         assert needle in js, needle
 
     # wording: capitalisation/punctuation of the title and "2027" vs "in 2027"
@@ -2052,22 +2057,24 @@ def test_u22_what_changed_compares_substance():
         [_row(id="b1", date="2027-06-01", date_end="2027-09-30", date_text="Q3 2027")])
     assert [c["kind"] for c in cards] == ["moved"] and wording == 0
 
-    # never two different events as one: same key but disjoint periods
+    # same ticker + kind + title but disjoint periods: a title match with a
+    # date disagreement is not confident — both rows join "No confident match"
     cards, _ = _compare_cards(
         [_row(id="a1", date="2027-07-01", date_end="2027-12-31")],
         [_row(id="b1", date="2028-01-01", date_end="2028-06-30")])
-    assert sorted(c["kind"] for c in cards) == ["added", "removed"]
+    assert sorted(c["kind"] for c in cards) == ["unmatched", "unmatched"]
 
-    # unpaired rows are Added / Removed
+    # rows with no confident partner (different program AND kind) join the group
     cards, _ = _compare_cards([_row(id="a1")], [_row(id="b1", program="bepirovirsen",
                                                    event_type="regulatory_decision")])
-    assert sorted(c["kind"] for c in cards) == ["added", "removed"]
+    assert sorted(c["kind"] for c in cards) == ["unmatched", "unmatched"]
 
-    # program change compares as one corrected card, not add + remove
+    # U34b: two set programs that differ are different events — no longer one
+    # corrected card; each row is 'Only in' its own run
     cards, _ = _compare_cards(
         [_row(id="a1", program="sefaxersen", date="2027-01-01")],
         [_row(id="b1", program="pelacarsen", date="2027-01-01")])
-    assert [c["kind"] for c in cards] == ["corrected"] and cards[0]["fields"] == ["program"]
+    assert [c["kind"] for c in cards] == ["unmatched", "unmatched"]
 
     # program normalisation (case, punctuation, whitespace) still pairs
     cards, _ = _compare_cards(
@@ -2081,11 +2088,13 @@ def test_u22_what_changed_compares_substance():
         [_row(id="b1", indication="PV", date="2027-01-01")])
     assert [c["kind"] for c in cards] == ["corrected"] and cards[0]["fields"] == ["indication"]
 
-    # a type change says "type changed"
+    # a type change breaks both pairing rules (identity and fallback both key
+    # on the kind) — the rows are not confidently the same event and join the
+    # group instead of guessing a "type changed" card
     cards, _ = _compare_cards(
         [_row(id="a1", event_type="trial_results", date="2027-01-01")],
         [_row(id="b1", event_type="regulatory_decision", date="2027-01-01")])
-    assert len(cards) == 1 and cards[0]["word"] == "type changed"
+    assert sorted(c["kind"] for c in cards) == ["unmatched", "unmatched"]
 
     # identical rows are neither cards nor wording
     cards, wording = _compare_cards([_row(id="a1")], [_row(id="b1")])
@@ -2194,11 +2203,11 @@ def test_u31_glass8_rulings_2_and_3_and_the_caveat():
     assert "zoom" not in js.lower()
     assert "zoom" not in css.lower()
     assert ".screen.picked .pane.det[hidden]{display:none}" in css
-    # G8-10: the position-matching caveat under the What changed sub-line
-    assert "changed-caveat" in js
-    assert ("Rows are matched by position for now; a wording change can look "
-            "like a date move.") in js
-    assert ".chcaveat{" in css
+    # G8-10's caveat line is gone: G9-3 pairs by event identity, so the
+    # "matched by position" warning no longer applies
+    assert "changed-caveat" not in js
+    assert "Rows are matched by position" not in js
+    assert ".chcaveat{" not in css
 
 
 def test_u32_calendar_one_row_per_event():
@@ -2303,5 +2312,326 @@ def test_u32_back_from_a_secondary_source_reselects_the_fold():
         "if (calFoldHit(all, 'zz9') !== null) process.exit(5);",
         "console.log('ok');",
     ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u34_g9_1_calendar_uses_the_servers_corrected_rule():
+    # Triage finding 1: ui/calendarRows admitted every corrected row;
+    # runs/calendar.py on_calendar admits one only when the fix's re-check
+    # passed, no re-check is pending and the readers are decided
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    assert "(t.recheck || {}).result === 'pass' && !t.needs_recheck && t.status !== 'undecided'" in js
+    assert "(t.fixes || []).length" in js
+    rows = [{"id": rid, "ticker": "PTGX", "program": "PN-" + rid, "event_type": "milestone",
+             "date": "2027-01-01"} for rid in
+            ("keep", "pass", "fail", "cnr", "pending", "undecided", "nofix")]
+    targets = {
+        "keep": {"group": "kept", "values": {"date": "2027-01-01"}},
+        "pass": {"group": "corrected", "fixes": [{}], "recheck": {"result": "pass"},
+                 "needs_recheck": False, "status": "matched",
+                 "values": {"date": "2027-01-01"}},
+        "fail": {"group": "corrected", "fixes": [{}], "recheck": {"result": "fail"},
+                 "needs_recheck": False, "status": "matched",
+                 "values": {"date": "2027-01-01"}},
+        "cnr": {"group": "corrected", "fixes": [{}], "recheck": {"result": "could_not_run"},
+                "needs_recheck": False, "status": "matched",
+                "values": {"date": "2027-01-01"}},
+        "pending": {"group": "corrected", "fixes": [{}], "recheck": None,
+                    "needs_recheck": True, "status": "matched",
+                    "values": {"date": "2027-01-01"}},
+        "undecided": {"group": "corrected", "fixes": [{}], "recheck": {"result": "pass"},
+                      "needs_recheck": False, "status": "undecided",
+                      "values": {"date": "2027-01-01"}},
+        "nofix": {"group": "corrected", "fixes": [], "values": {"date": "2027-01-01"}},
+    }
+    script = "\n".join([
+        "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
+        json.dumps(targets) + " } };",
+        "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
+        _grab_fn(js, "calendarRows"),
+        "var got = calendarRows().map(function (e) { return e.row.id; });",
+        "console.log(JSON.stringify(got));",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+    assert json.loads(got.stdout.strip().splitlines()[-1]) == ["keep", "pass", "nofix"]
+
+
+def test_u34_g9_2_mistakes_read_the_state_list():
+    # Triage finding 2: mistakeFor read the static run.mistakes, so a person's
+    # fix counted in the 'by you' chip but the chip found no row. The chips
+    # and badges read state.mistake_list (the superset), falling back to
+    # run.mistakes only when the state list is absent.
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    assert "(detail.state && detail.state.mistake_list) || detail.run.mistakes || []" in js
+    script = "\n".join([
+        "var detail = { run: { mistakes: [{ target: 'r1', caught_by: 'code' }] },",
+        "                state: { mistake_list: [{ target: 'r2', caught_by: 'person',",
+        "                  what_changed: 'Date changed from June 3, 2027 to June 30, 2027.' }] } };",
+        _grab_fn(js, "mistakeFor"),
+        # the person's fix is found — the by-you chip returns exactly that row
+        "var m = mistakeFor('r2');",
+        "if (!m || m.caught_by !== 'person') { console.error(JSON.stringify(m)); process.exit(2); }",
+        # an empty state list is still the state list — no falling back
+        "detail.state.mistake_list = [];",
+        "if (mistakeFor('r1')) process.exit(3);",
+        # an absent state list -> the run list is the fallback
+        "detail.state.mistake_list = null;",
+        "if (!mistakeFor('r1') || mistakeFor('r1').caught_by !== 'code') process.exit(4);",
+        "if (mistakeFor('r2')) process.exit(5);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u34_g9_3_compare_pairs_by_event_identity():
+    # Triage finding 3: What changed paired unrelated events (Ph2b PsO vs
+    # opt-out; Ph1 SAD vs buyback) as one change. Pairing is now identity
+    # (ticker + program + kind + period start), then same ticker + kind with
+    # title word overlap >= 0.6; everything else joins "No confident match";
+    # DATE MOVED only names identity pairs.
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    for word in ("(r.date || '')", "function titleSim(ra, rb)", "bestSim = 0.6",
+                 "'Only in ' + onlyLabel('b') + ' · '", "kind: 'unmatched'",
+                 "fallbackPairs", "cards.unmatched"):
+        assert word in js, word
+    assert "periodsOverlap" not in js and "aByTicker" not in js
+
+    def pso_a(**over):
+        base = {"id": "a1", "ticker": "PTGX", "company": "Protagonist",
+                "program": "PN-881", "event_type": "trial_results",
+                "title": "Phase 2b study in plaque psoriasis (PsO)",
+                "date": "2027-01-01", "date_end": "2027-06-30", "date_text": "1H 2027"}
+        base.update(over)
+        return base
+
+    def sad_a(**over):
+        base = {"id": "a1", "ticker": "PTGX", "company": "Protagonist",
+                "program": "PN-235", "event_type": "trial_results",
+                "title": "Phase 1 SAD study", "date": "2027-01-01",
+                "date_end": "2027-03-31", "date_text": "Q1 2027"}
+        base.update(over)
+        return base
+
+    # Codex's mis-pairs: same ticker, overlapping window, but a different
+    # event — title overlap far below 0.6, program different -> no pair
+    cards, _ = _compare_cards(
+        [pso_a()],
+        [{"id": "b1", "ticker": "PTGX", "company": "Protagonist", "program": "PN-881",
+          "event_type": "corporate", "title": "Opt-out of future sales program",
+          "date": "2027-02-01", "date_end": "2027-02-01", "date_text": "February 2027"}])
+    assert sorted(c["kind"] for c in cards) == ["unmatched", "unmatched"]
+
+    cards, _ = _compare_cards(
+        [sad_a()],
+        [{"id": "b1", "ticker": "PTGX", "company": "Protagonist", "program": "PN-235",
+          "event_type": "corporate", "title": "Share buyback", "date": "2027-01-15",
+          "date_end": "2027-01-15", "date_text": "January 2027"}])
+    assert sorted(c["kind"] for c in cards) == ["unmatched", "unmatched"]
+
+    # DATE MOVED names only identity pairs: a fallback (title) pair whose
+    # program was renamed keeps the same dates -> corrected, never moved;
+    # one whose ONLY difference is a date dissolves into the group
+    cards, _ = _compare_cards(
+        [pso_a(program="")],
+        [pso_a(id="b1", program="PN-882")])
+    # (program set on only one side — two set programs that differ never pair, U34b)
+    assert [c["kind"] for c in cards] == ["corrected"]
+
+    cards, _ = _compare_cards(
+        [pso_a(title="Phase 2b plaque psoriasis study")],
+        [pso_a(id="b1", title="Phase 2b plaque psoriasis study",
+               date="2028-01-01", date_end="2028-06-30", date_text="1H 2028")])
+    assert sorted(c["kind"] for c in cards) == ["unmatched", "unmatched"]
+
+    # a moved PERIOD START is a different identity (identity keys on the
+    # start) — it joins the group, never a "date moved" card
+    cards, _ = _compare_cards(
+        [sad_a()],
+        [sad_a(id="b1", date="2027-04-01", date_end="2027-06-30", date_text="Q2 2027")])
+    assert sorted(c["kind"] for c in cards) == ["unmatched", "unmatched"]
+
+    # an identity pair whose period start holds and only the end moved still
+    # says date moved
+    cards, _ = _compare_cards(
+        [sad_a()],
+        [sad_a(id="b1", date_end="2027-04-30", date_text="Q1 2027 (to April)")])
+    assert [c["kind"] for c in cards] == ["moved"]
+
+
+def test_u34_g9_4_narrow_rail_becomes_a_compact_strip():
+    # Triage finding 6: below 900 px the rail used to vanish (run card, picker,
+    # Resume). It is now a compact strip at the top: run name, status word and
+    # spend, the Saved runs button, Resume + limit box when paused; the tabs
+    # scroll horizontally with a visible edge; nothing is unreachable.
+    css = (UI / "styles.css").read_text()
+    q = css.split("@media (max-width:900px){")[1]
+    for word in (".runcard{display:flex;margin:6px 10px 4px",
+                 ".runcard .jb{margin-top:0;border-top:0;padding-top:0;display:flex",
+                 ".runcard .jb-stop{flex-basis:100%",
+                 ".savedruns{margin:4px 10px 6px",
+                 "mask-image:linear-gradient(90deg,#000 82%,transparent)"):
+        assert word in q, word
+    # the card is no longer hidden outright; the footer text is, the theme
+    # toggle (.tg) is not
+    assert ".runcard,.runcard-lbl" not in q
+    assert ".runcard-lbl,.side-ft .ft{display:none}" in q
+
+
+def test_u34_compare_pairs_on_state_values():
+    # U34 +1 (Red Team F9): a fix shows on the audit's state values, so the
+    # compare's identity must read those values — a raw-row program that a fix
+    # corrected must not split the pair, and a state value that moved must not
+    # be masked by the raw row
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    assert "var k = pairKey(rowVals(a, r))" in js
+    assert "var q = (aByKey[pairKey(vb)] || [])" in js
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("normWords", "pairKey", "titleSim", "rowVals", "pageSet", "rowPageKey", "compareRuns", "fmtField"))
+    script = f"""
+var FIELD_WORDS = {{date: 'Date', date_end: 'Date end', date_text: 'Date as written',
+  title: 'Title', event_type: 'Type', company: 'Company', ticker: 'Ticker',
+  program: 'Program', indication: 'Condition'}};
+function eventWord(v) {{ return String(v); }}
+function lastPersonDecisionIn() {{ return null; }}
+function dateShort(s) {{ return String(s); }}
+{fns}
+function mkX(rows, targets) {{
+  return {{ run: {{ rows: rows, run: {{ label: 'the run' }} }},
+           state: {{ targets: targets || {{}} }}, decisions: [] }};
+}}
+var rowsA = [{{ id: 'a1', ticker: 'PTGX', program: 'PN-OLD', event_type: 'milestone',
+  title: 'Phase 1 initiation', date: '2027-01-01', date_text: 'Q1 2027' }}];
+var rowsB = [{{ id: 'b1', ticker: 'PTGX', program: 'PN-8047', event_type: 'milestone',
+  title: 'Phase 1 initiation', date: '2027-01-01', date_text: 'Q1 2027' }}];
+// the raw programs differ, but run A's STATE value was fixed to PN-8047 ->
+// identity pair, no card
+var targets = {{ a1: {{ values: {{ ticker: 'PTGX', program: 'PN-8047', event_type: 'milestone',
+  title: 'Phase 1 initiation', date: '2027-01-01', date_text: 'Q1 2027' }} }} }};
+var cards = compareRuns(mkX(rowsA, targets), mkX(rowsB, {{}}));
+if (cards.length !== 0) {{ console.error(JSON.stringify(cards)); process.exit(2); }}
+// and a state value that moved the start breaks the identity even when the
+// raw rows agree -> the rows are not confidently one event
+var targetsB = {{ b1: {{ values: {{ ticker: 'PTGX', program: 'PN-8047', event_type: 'milestone',
+  title: 'Phase 1 initiation', date: '2027-04-01', date_text: 'Q2 2027' }} }} }};
+var cards2 = compareRuns(mkX(rowsA, targets), mkX(rowsB, targetsB));
+if (cards2.length !== 2 || cards2.some(function (c) {{ return c.kind !== 'unmatched'; }})) {{
+  console.error(JSON.stringify(cards2)); process.exit(3); }}
+console.log('ok');
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u34b_only_in_groups_and_no_cross_program_fallback():
+    # Codex's PN-881 UC vs PN-235 Crohn: generic title wording must not pair
+    # two rows whose programs (or indications) are both set and differ
+    ucs = {"id": "a1", "ticker": "PTGX", "company": "Protagonist", "program": "PN-881",
+           "indication": "ulcerative colitis", "event_type": "trial_results",
+           "title": "Phase 2 clinical trial results in ulcerative colitis",
+           "date": "2027-01-01", "date_end": "2027-03-31", "date_text": "Q1 2027"}
+    crohn = dict(ucs, id="b1", program="PN-235", indication="Crohn disease",
+                 title="Phase 2 clinical trial results in Crohn disease")
+    cards, _ = _compare_cards([ucs], [crohn])
+    assert [c["kind"] for c in cards] == ["unmatched", "unmatched"]
+    # indication alone, programs equal-or-unset
+    cards, _ = _compare_cards([dict(ucs, program="")],
+                              [dict(crohn, program="", date="2027-02-01")])
+    assert [c["kind"] for c in cards] == ["unmatched", "unmatched"]
+    js = (UI / "app.js").read_text()
+    for word in ("'Only in ' + onlyLabel('a')", "side: side", "Only in ' + (x.run.run.label"):
+        assert word in js, word
+    assert "No confident" not in js
+
+
+def test_u34b_unread_pages_are_not_only_in_and_header_says_so():
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("normWords", "pairKey", "titleSim", "rowVals", "pageSet", "rowPageKey",
+                     "pageSet", "rowPageKey", "compareRuns", "fmtField"))
+    script = f"""
+var FIELD_WORDS = {{}};
+function eventWord(v) {{ return String(v); }}
+function lastPersonDecisionIn() {{ return null; }}
+function dateShort(s) {{ return String(s); }}
+{fns}
+function pg(n) {{ var p = []; for (var i = 1; i <= n; i++) p.push({{ page_number: i }}); return p; }}
+function mk(num, nPages, rows) {{
+  return {{ run: {{ rows: rows, sources: [{{ id: 's1', pages: pg(nPages) }}],
+                   run: {{ label: 'L' + num, number: num }} }},
+           state: {{ targets: {{}} }}, decisions: [] }};
+}}
+function row(id, page, title, prog) {{
+  return {{ id: id, ticker: 'T', program: prog, event_type: 'milestone', title: title,
+           date: '2027-0' + page + '-01', source_id: 's1', page_number: page }};
+}}
+// run 1 read 1 page, run 2 read 3: run 2's rows on pages 2-3 are unread by run 1
+var A = mk(1, 1, [row('a1', 1, 'Alpha start', 'P1')]);
+var B = mk(2, 3, [row('b1', 1, 'Alpha start', 'P1'), row('b2', 2, 'Beta thing', 'P2'),
+                  row('b3', 1, 'Gamma only here', 'P3')]);
+var cards = compareRuns(A, B);
+if (cards.pageNote !== 'Run 2 read 2 pages the other run did not; unread pages are not changes') {{
+  console.error(cards.pageNote); process.exit(2); }}
+// b2 (page 2, unread by run 1) is hidden; b3 (page 1, read by both) is Only in L2
+if (cards.length !== 1 || cards[0].side !== 'b' || cards[0].row.id !== 'b3') {{
+  console.error(JSON.stringify(cards.map(function (c) {{ return [c.kind, c.side, c.row.id]; }}))); process.exit(3); }}
+if (cards.onlyB !== 1 || cards.onlyA !== 0) process.exit(4);
+// same page counts: no note, nothing hidden
+var C = mk(3, 3, [row('c1', 2, 'Beta thing', 'P2'), row('c2', 3, 'Delta', 'P4')]);
+var c2 = compareRuns(mk(2, 3, [row('b2', 2, 'Beta thing', 'P2'), row('b4', 3, 'Eps', 'P5')]), C);
+if (c2.pageNote) process.exit(5);
+if (c2.onlyA !== 1 || c2.onlyB !== 1) process.exit(6);
+// equal counts, different page numbers: sets differ -> both rows suppressed, note present
+function mkp(num, pages, rows) {{
+  var r = mk(num, 0, rows);
+  r.run.sources = [{{ id: 's1', pages: pages.map(function (n) {{ return {{ page_number: n }}; }}) }}];
+  return r;
+}}
+var D = compareRuns(mkp(1, [1], [row('d1', 1, 'Only page one', 'P1')]),
+                    mkp(2, [2], [row('d2', 2, 'Only page two', 'P2')]));
+if (D.length !== 0 || D.onlyA !== 0 || D.onlyB !== 0) {{
+  console.error(JSON.stringify(D.map(function (c) {{ return [c.side, c.row.id]; }}))); process.exit(7); }}
+if (D.pageNote !== 'Run 1 read 1 pages the other run did not; Run 2 read 1 pages the other run did not; unread pages are not changes') {{
+  console.error(D.pageNote); process.exit(8); }}
+console.log('ok');
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u34b_default_run_is_the_nearest_comparable():
+    import subprocess
+    js = (UI / "app.js").read_text()
+    assert "nearestComparable(bId, others)" in js
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("labelFamily", "pageSet", "pageSig", "nearestComparable"))
+    script = f"""
+var pageSigs = {{}};
+var runs = [{{ id: 'r1', number: 1, label: 'Run 1 · X' }}, {{ id: 'r2', number: 2, label: 'Run 2 · Y' }},
+            {{ id: 'r3', number: 3, label: 'Run 3 · X' }}, {{ id: 'r4', number: 4, label: 'Run 4 · X' }}];
+{fns}
+var others = runs.filter(function (r) {{ return r.id !== 'r4'; }}).sort(function (x, y) {{ return y.number - x.number; }});
+// no page sets known: previous run of the same label (r3)
+if (nearestComparable('r4', others) !== 'r3') process.exit(2);
+// r2 has the same page set as r4 -> it wins over the same-label rule
+pageSigs = {{ r4: 'a', r2: 'a', r3: 'b', r1: 'b' }};
+if (nearestComparable('r4', others) !== 'r2') process.exit(3);
+// nothing comparable: the newest other run
+runs[3].label = 'Run 4 · Z'; pageSigs = {{ r4: 'z' }};
+if (nearestComparable('r4', others) !== 'r3') process.exit(4);
+console.log('ok');
+"""
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
     assert got.returncode == 0, got.stdout + got.stderr

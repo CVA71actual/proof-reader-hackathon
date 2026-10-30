@@ -80,9 +80,6 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-a
 .ctchip.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .ctchip.zero{cursor:default;color:var(--faint);border-color:transparent;background:transparent;padding-left:0}
 .acc-line{margin-top:6px;font-size:12px;color:var(--blue);font-weight:600;letter-spacing:.01em}
-/* G8-10: the position-matching caveat under the What changed sub-line —
-   removed by Job 32 when the matcher keys on event identity */
-.chcaveat{margin-top:4px;color:var(--amber);font-weight:500}
 .rendnote{font-size:11.5px;color:var(--blue);padding-top:5px;line-height:1.5;word-break:break-word}
 .attnbtn{margin:10px 0 2px;width:100%;padding:8px 12px;border-radius:8px;background:var(--blue-soft);color:var(--blue);font-weight:600;font-size:12.5px;border:1px solid transparent;text-align:left;cursor:pointer;font-family:inherit}
 .attnbtn.on{background:var(--accent);color:#fff}
@@ -352,9 +349,27 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
   .app{flex-direction:column;height:auto;min-height:100vh}
   .side{width:auto;flex:none;border-right:0;border-bottom:1px solid var(--line)}
   .brand{padding:12px 14px 8px}
-  .nav{flex-direction:row;overflow-x:auto;padding:2px 8px 8px}
+  .nav{flex-direction:row;overflow-x:auto;padding:2px 8px 8px;
+       -webkit-mask-image:linear-gradient(90deg,#000 82%,transparent);
+       mask-image:linear-gradient(90deg,#000 82%,transparent)}
   .nav .ni{white-space:nowrap;padding:6px 10px}
-  .runcard,.runcard-lbl,.side-ft .ft{display:none}
+  .runcard-lbl,.side-ft .ft{display:none}
+  /* G9-4: the rail collapses to a compact strip at the top — run name, the
+     status word and spend, Resume + limit box when paused; the Saved runs
+     button rides directly above it. Nothing in the rail is unreachable. */
+  .runcard{display:flex;margin:6px 10px 4px;padding:6px 10px;width:calc(100% - 20px);
+           align-items:center;gap:8px;flex-wrap:wrap;border-radius:8px}
+  .runcard .pick{display:flex;align-items:baseline;gap:6px;min-width:0;flex:1 1 auto}
+  .runcard .t1{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .runcard .t2{margin-top:0;font-size:11px;white-space:nowrap;color:var(--faint)}
+  .runcard .jb{margin-top:0;border-top:0;padding-top:0;display:flex;align-items:center;
+                gap:8px;font-size:11.5px;flex:1 1 auto;flex-wrap:wrap}
+  .runcard .jb-sub{margin-top:0;white-space:nowrap}
+  .runcard .jb-row1{font-weight:600;white-space:nowrap}
+  .runcard .jb-stop{flex-basis:100%;margin-top:4px}
+  .runcard .jb-ctl{margin:0}
+  .runcard .t3{margin-top:0;padding:2px 6px;font-size:10.5px}
+  .savedruns{margin:4px 10px 6px;width:calc(100% - 20px)}
   .screens{flex-direction:column}
   .screen{flex-direction:column}
   .pane.list{width:auto;flex:1;border-right:0}
@@ -375,6 +390,7 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
 .chwordfold{margin-top:2px}
 .chword{padding:5px 0;border-top:1px solid var(--line);font-size:12.5px;line-height:1.5;word-break:break-word}
 .chword .tk{margin-right:6px}
+.chpagenote{padding:8px 10px;margin-bottom:6px;font-size:12.5px;line-height:1.5;color:var(--muted,#555);border-left:3px solid var(--line)}
 .chword .wt{color:var(--sub)}
 /* G4-1: the two-run picker on What changed */
 .chpicks{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0}

@@ -256,8 +256,13 @@
     var id = row.source_id;
     return detail.run.sources.filter(function (s) { return s.id === id; })[0] || null;
   }
+  // G9-2: the state list is the superset — it carries run.json's mistakes
+  // plus every fix in effect that is a demonstrated mistake. The chips and
+  // badges read it so a person's fix counts in 'by you' AND its chip finds
+  // the row; the run's static list is only a fallback when state has none.
   function mistakeFor(rowId) {
-    return (detail.run.mistakes || []).filter(function (m) { return m.target === rowId; })[0] || null;
+    var list = (detail.state && detail.state.mistake_list) || detail.run.mistakes || [];
+    return list.filter(function (m) { return m.target === rowId; })[0] || null;
   }
   function exclusionFor(rowId) {
     return (detail.state.exclusions || []).filter(function (x) { return x.target === rowId; })[0] || null;
@@ -440,11 +445,17 @@
   // G8-7: rows that are the same event — same ticker + program + event kind +
   // same period start — fold to ONE calendar row. The folded entry keeps the
   // first source's row and carries `fold`, every source row in it.
+  // G9-1: a corrected row reaches the calendar only when the re-check of the
+  // fix passed, no re-check is pending and the readers are decided — the same
+  // rule as runs/calendar.py on_calendar(). A fix that failed, could not run
+  // or waits on a re-check stays off until the person keeps it.
   function calendarRows() {
     var out = [];
     detail.run.rows.forEach(function (r) {
       var t = rowTarget(r);
       if (t.group !== 'kept' && t.group !== 'corrected') return;
+      if (t.group === 'corrected' && (t.fixes || []).length &&
+          !((t.recheck || {}).result === 'pass' && !t.needs_recheck && t.status !== 'undecided')) return;
       var d = (t.values && t.values.date) || r.date;
       if (d) out.push({ row: r, t: t, date: d, period: !!(t.values && t.values.date_end),
                         end: (t.values && t.values.date_end) || r.date_end || null });
@@ -2848,18 +2859,45 @@
            ' · ' + (r.label || r.id);
   }
 
+  // U34b: the run What changed opens against — the nearest comparable run:
+  // the closest earlier run that read the same page set, else the previous run
+  // of the same label, else the newest other run. Page sets load in the
+  // background (pageSigs); until then the label rule answers.
+  var pageSigs = {}, pageSigsLoading = false;
+  function pageSig(x) {
+    var keys = Object.keys(pageSet(x).set).sort();
+    return keys.length ? keys.join(',') : null;
+  }
+  function nearestComparable(bId, others) {
+    var bM = runs.filter(function (r) { return r.id === bId; })[0] || {};
+    var bn = bM.number || 0;
+    function nearest(list) {
+      var older = list.filter(function (r) { return (r.number || 0) < bn; });
+      return (older[0] || list[0] || {}).id;
+    }
+    var sameSet = pageSigs[bId] ? others.filter(function (r) { return pageSigs[r.id] === pageSigs[bId]; }) : [];
+    if (sameSet.length) return nearest(sameSet);
+    var fam = labelFamily(bM.label);
+    var sameLabel = others.filter(function (r) { return labelFamily(r.label) === fam; });
+    if (sameLabel.length) return nearest(sameLabel);
+    return (others[0] || {}).id;
+  }
+  function loadPageSigs(ids) {
+    var need = ids.filter(function (id) { return !(id in pageSigs); });
+    if (!need.length || pageSigsLoading) return;
+    pageSigsLoading = true;
+    Promise.all(need.map(function (id) {
+      return A.run(id).then(function (d) { pageSigs[id] = pageSig({ run: d }); },
+                            function () { pageSigs[id] = null; });
+    })).then(function () {
+      pageSigsLoading = false;
+      if (route && route.screen === 'changed' && !route.a) renderChanged();
+    });
+  }
+
   function renderChanged() {
     var meta = detail.run.run || {};
     var sub = document.getElementById('changed-sub');
-    // G8-10: the matcher pairs rows by position until Job 32 keys it on event
-    // identity — the header says so under the sub-line; Job 32 removes this
-    var caveat = document.getElementById('changed-caveat');
-    if (!caveat) {
-      caveat = el('div', 'sub chcaveat');
-      caveat.id = 'changed-caveat';
-      sub.parentNode.insertBefore(caveat, sub.nextSibling);
-    }
-    caveat.textContent = 'Rows are matched by position for now; a wording change can look like a date move.';
     var pairHost = clear(document.getElementById('changed-pairs'));
     var host = clear(document.getElementById('changed-rows'));
     var mid = clear(document.getElementById('changed-mid'));
@@ -2884,7 +2922,8 @@
     var others = runs.filter(function (r) { return r.id !== curId; })
       .sort(function (x, y) { return (y.number || 0) - (x.number || 0); });
     bId = valid(route.b) ? route.b : curId;
-    aId = valid(route.a) ? route.a : (others[0] || {}).id;
+    if (!valid(route.a)) loadPageSigs(others.map(function (r) { return r.id; }).concat([bId]));
+    aId = valid(route.a) ? route.a : nearestComparable(bId, others);
     var aM = runs.filter(function (r) { return r.id === aId; })[0];
     var bM = runs.filter(function (r) { return r.id === bId; })[0];
     // G4-2a: the count beside the cards is substance only, with the wording
@@ -2896,6 +2935,9 @@
                (changedCache.wording ? ' · ' + changedCache.wording + ' row' +
                 (changedCache.wording === 1 ? '' : 's') + ' reworded' : '') +
                (changedCache.since ? ' · ' + changedCache.since + ' decided by you since' : '');
+    }
+    if (changedCache && changedCache.key === aId + '>' + bId && changedCache.cards.pageNote) {
+      suffix += ' · ' + changedCache.cards.pageNote;
     }
     sub.textContent = 'Compare: ' + runPick(aM) + ' → ' + runPick(bM) + suffix;
 
@@ -2943,7 +2985,7 @@
       changedCache = { key: key, a: { run: ra, state: ra.state, decisions: all[2] },
                        b: { run: rb, state: rb.state, decisions: all[3] }, note: note,
                        wording: cards.wording || 0, wordingRows: cards.wordingRows || [],
-                       since: cards.since || 0, cards: cards };
+                       since: cards.since || 0, unmatched: cards.unmatched || 0, cards: cards };
       changedCountCache = changedCache.cards.length;
       document.getElementById('ct-changed').textContent = String(changedCountCache);
       if (route && route.screen === 'changed') renderChanged();
@@ -2961,56 +3003,87 @@
     return field === 'event_type' ? eventWord(value) : String(value);
   }
 
-  // G4-2a: rows pair across runs on ticker + program (normalised: case,
-  // punctuation, whitespace) + event type + an overlapping period. Rows whose
-  // known periods do not overlap are different events and stay Added/Removed.
+  // G9-3: rows pair by event identity — same ticker + program (normalised:
+  // case, punctuation, whitespace) + event kind + SAME PERIOD START; then the
+  // one fallback: same ticker + same kind with title word overlap >= 0.6.
+  // Never by position, never by loose field scores. A row with no confident
+  // partner is listed 'Only in' its own run, never a guessed Added/Removed pair.
   function normWords(s) {
     return String(s == null ? '' : s).toLowerCase()
       .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
   }
   function pairKey(r) {
-    return (r.ticker || '') + '|' + normWords(r.program) + '|' + (r.event_type || '');
+    return (r.ticker || '') + '|' + normWords(r.program) + '|' +
+           (r.event_type || '') + '|' + (r.date || '');
   }
-  function periodOf(r) {
-    return { start: r.date || null, end: r.date_end || r.date || null };
-  }
-  function periodsOverlap(pa, pb) {
-    // a period without a parsed date cannot rule a pair out
-    if (!pa.start || !pb.start) return true;
-    return pa.start <= (pb.end || pb.start) && pb.start <= (pa.end || pa.start);
+  // word overlap of two titles: shared words over the longer title, 0..1
+  function titleSim(ra, rb) {
+    var wa = normWords(ra.title).split(' ').filter(function (w) { return w; });
+    var wb = normWords(rb.title).split(' ').filter(function (w) { return w; });
+    if (!wa.length || !wb.length) return 0;
+    var inB = {};
+    wb.forEach(function (w) { inB[w] = true; });
+    var hit = 0;
+    wa.forEach(function (w) { if (inB[w]) hit++; });
+    return hit / Math.max(wa.length, wb.length);
   }
 
+  // U34b: the pages a run read, as 'source:page' keys
+  function pageSet(x) {
+    var set = {}, n = 0;
+    ((x.run.sources) || []).forEach(function (src) {
+      (src.pages || []).forEach(function (p) { set[src.id + ':' + p.page_number] = true; n++; });
+    });
+    return { set: set, n: n };
+  }
+  function rowPageKey(r) { return r.source_id + ':' + r.page_number; }
+
   function compareRuns(a, b) {
-    // G4-2a: pair on ticker + normalised program + event type, and only across
-    // an overlapping period — never two different events as one. A row whose
-    // program or type changed still compares: same ticker, overlapping period,
-    // and the closest candidate by program/type/indication — with program,
-    // type and indication all different it is a different event and stays
-    // Added/Removed.
-    var aByKey = {}, aByTicker = {};
+    // U34b: when the runs read different page counts, a row from a page the
+    // other run did not read is not 'Only in' — an unread page is not a change
+    var pgA = pageSet(a), pgB = pageSet(b);
+    function extraKeys(x, y) { return Object.keys(x.set).filter(function (k) { return !y.set[k]; }).length; }
+    var extraA = extraKeys(pgA, pgB), extraB = extraKeys(pgB, pgA);
+    // page SETS, not counts: equal counts of different pages still differ
+    var pagesDiffer = pgA.n > 0 && pgB.n > 0 && (extraA > 0 || extraB > 0);
+    function unreadBy(pg, r) { return pagesDiffer && r.source_id != null && !pg.set[rowPageKey(r)]; }
+    // U34 +1 (Red Team F9): pairing reads the STATE values — a fix already
+    // shows on the audit values and must drive the identity here too, never
+    // the raw saved row
+    var aByKey = {};
     a.run.rows.forEach(function (r) {
-      var k = pairKey(r); (aByKey[k] = aByKey[k] || []).push(r);
-      var t = r.ticker || ''; (aByTicker[t] = aByTicker[t] || []).push(r);
+      var k = pairKey(rowVals(a, r)); (aByKey[k] = aByKey[k] || []).push(r);
     });
-    var used = {}, pairs = [], onlyB = [];
+    // identity pass
+    var used = {}, pairs = [], fallbackPairs = [], onlyB = [];
     b.run.rows.forEach(function (rb) {
-      var pb = periodOf(rb);
-      var q = (aByKey[pairKey(rb)] || []).filter(function (ra) {
-        return !used[ra.id] && periodsOverlap(periodOf(ra), pb);
-      });
+      var vb = rowVals(b, rb);
+      var q = (aByKey[pairKey(vb)] || []).filter(function (ra) { return !used[ra.id]; });
       if (q.length) { used[q[0].id] = true; pairs.push([q[0], rb]); return; }
-      var best = null, bestScore = 3;
-      (aByTicker[rb.ticker || ''] || []).forEach(function (ra) {
-        if (used[ra.id] || !periodsOverlap(periodOf(ra), pb)) return;
-        var s = (normWords(ra.program) === normWords(rb.program) ? 8 : 0) +
-                ((ra.event_type || '') === (rb.event_type || '') ? 4 : 0) +
-                (String(ra.indication || '') === String(rb.indication || '') ? 2 : 0) +
-                (String(ra.date || '') === String(rb.date || '') ? 1 : 0);
-        if (s > bestScore) { bestScore = s; best = ra; }
-      });
-      if (best) { used[best.id] = true; pairs.push([best, rb]); }
-      else onlyB.push(rb);
+      onlyB.push(rb);
     });
+    // fallback pass: same ticker + same kind + title overlap >= 0.6
+    var restB = onlyB.filter(function (rb) {
+      var vb = rowVals(b, rb);
+      var best = null, bestSim = 0.6;
+      a.run.rows.forEach(function (ra) {
+        if (used[ra.id]) return;
+        var va = rowVals(a, ra);
+        if ((va.ticker || '') !== (vb.ticker || '')) return;
+        if ((va.event_type || '') !== (vb.event_type || '')) return;
+        // U34b: two rows whose program (or indication) are both set and differ
+        // are different events — shared title boilerplate never pairs them
+        if (va.program && vb.program && normWords(va.program) !== normWords(vb.program)) return;
+        if (va.indication && vb.indication && normWords(va.indication) !== normWords(vb.indication)) return;
+        var s = titleSim(va, vb);
+        if (s >= bestSim) { bestSim = s; best = ra; }
+      });
+      if (!best) return true;
+      used[best.id] = true;
+      fallbackPairs.push([best, rb]);
+      return false;
+    });
+    var unmatched = [];
     var stillA = [];
     a.run.rows.forEach(function (r) { if (!used[r.id]) stillA.push(r); });
 
@@ -3028,15 +3101,16 @@
     }
     var FIELDS = ['date', 'date_end', 'date_text', 'title', 'event_type', 'company', 'ticker',
                   'program', 'indication'];
-    onlyB.forEach(function (rb) {
-      cards.push({ kind: 'added', row: rb, x: b, fields: [],
-                   line: 'New in ' + (b.run.run.label || 'the newer run') + '.', since: since(b, rb) });
-    });
-    stillA.forEach(function (ra) {
-      cards.push({ kind: 'removed', row: ra, x: a, fields: [],
-                   line: 'In ' + (a.run.run.label || 'the older run') + ', not in ' + (b.run.run.label || 'the newer run') + '.',
-                   since: since(a, ra) });
-    });
+    // G9-3: rows with no confident partner sit in their own group, both runs'
+    // rows listed — never guessed into a pair
+    // U34b: unmatched rows list per run ('Only in <run>'); no claim of a change
+    function unmatchedCard(row, x, side) {
+      return { kind: 'unmatched', side: side, row: row, x: x, fields: [],
+               line: 'Only in ' + (x.run.run.label || (side === 'a' ? 'the older run' : 'the newer run')) + '.',
+               since: since(x, row) };
+    }
+    restB.forEach(function (rb) { if (!unreadBy(pgA, rb)) unmatched.push(unmatchedCard(rb, b, 'b')); });
+    stillA.forEach(function (ra) { if (!unreadBy(pgB, ra)) unmatched.push(unmatchedCard(ra, a, 'a')); });
     pairs.forEach(function (pr) {
       var ra = pr[0], rb = pr[1];
       var diffs = [];
@@ -3067,6 +3141,33 @@
                    word: typeOnly ? 'type changed' : null,
                    line: lines.join(' · '), since: since(b, rb) });
     });
+    // G9-3: fallback pairs matched on title alone — a date difference there is
+    // never a "date moved" (only identity pairs move dates); when dates are
+    // all that differs the pair is not confident and both rows join the group
+    fallbackPairs.forEach(function (pr) {
+      var ra = pr[0], rb = pr[1];
+      var diffs = [];
+      FIELDS.forEach(function (f) {
+        var va = rowVals(a, ra)[f], vb = rowVals(b, rb)[f];
+        if (String(va === null || va === undefined ? '' : va) !== String(vb === null || vb === undefined ? '' : vb)) {
+          diffs.push({ field: f, from: va, to: vb });
+        }
+      });
+      if (!diffs.length) { quietB[rb.id] = true; return; }
+      var substantive = diffs.some(function (d) {
+        return d.field === 'program' || d.field === 'indication' || d.field === 'event_type';
+      });
+      if (!substantive) {
+        unmatched.push(unmatchedCard(ra, a, 'a'));
+        unmatched.push(unmatchedCard(rb, b, 'b'));
+        return;
+      }
+      var lines = diffs.map(function (d) {
+        return (FIELD_WORDS[d.field] || d.field) + ': ' + fmtField(d.field, d.from) + ' → ' + fmtField(d.field, d.to);
+      });
+      cards.push({ kind: 'corrected', row: rb, x: b, fields: diffs,
+                   line: lines.join(' · '), since: since(b, rb) });
+    });
     // G4-R5: a row the person decided after run B used to vanish from this
     // screen when nothing changed between the runs — it now gets its own
     // 'Since then' card in its own group
@@ -3083,19 +3184,31 @@
         line: 'No change between the runs.',
         since: { text: 'Since then: ' + word + ' by you · ' + dateShort(d.at), run: b } });
     });
-    cards = cards.concat(sinceOnly);
+    cards = cards.concat(unmatched).concat(sinceOnly);
+    cards.unmatched = unmatched.length;
     cards.since = sinceOnly.length;
-    var order = { added: 0, removed: 1, corrected: 2, moved: 3, since: 4 };
-    cards.sort(function (x, y) { return order[x.kind] - order[y.kind]; });
+    var order = { corrected: 0, moved: 1, unmatched: 2, since: 3 };
+    cards.sort(function (x, y) {
+      if (x.kind === 'unmatched' && y.kind === 'unmatched') return (x.side === 'b' ? 0 : 1) - (y.side === 'b' ? 0 : 1);
+      return order[x.kind] - order[y.kind];
+    });
+    cards.onlyB = unmatched.filter(function (c) { return c.side === 'b'; }).length;
+    cards.onlyA = unmatched.filter(function (c) { return c.side === 'a'; }).length;
+    if (pagesDiffer) {
+      var parts = [];
+      if (extraA > 0) parts.push('Run ' + (a.run.run.number || '?') + ' read ' + extraA + ' pages the other run did not');
+      if (extraB > 0) parts.push('Run ' + (b.run.run.number || '?') + ' read ' + extraB + ' pages the other run did not');
+      cards.pageNote = parts.join('; ') + '; unread pages are not changes';
+    }
     cards.wording = wording;
     cards.wordingRows = wordingRows;
     return cards;
   }
 
-  var CHG_WORDS = { added: 'added', removed: 'removed', corrected: 'corrected',
-                    moved: 'date moved', since: 'since then' };
-  var CHG_CLASS = { added: 'st-kept', removed: 'st-removed', corrected: 'st-corrected',
-                    moved: 'st-undecided', since: 'st-kept' };
+  var CHG_WORDS = { corrected: 'corrected', moved: 'date moved',
+                    unmatched: 'only in one run', since: 'since then' };
+  var CHG_CLASS = { corrected: 'st-corrected', moved: 'st-undecided',
+                    unmatched: 'st-undecided', since: 'st-kept' };
 
   function chRewordedFold() {
     // G4-R7: the wording-only rows are openable, not just counted
@@ -3124,6 +3237,7 @@
         same = 'No real changes — ' + changedCache.wording + ' row' +
                (changedCache.wording === 1 ? '' : 's') + ' reworded between the runs (wording only).';
       }
+      if (changedCache.cards.pageNote) host.append(el('div', 'chpagenote', changedCache.cards.pageNote));
       host.append(el('div', 'empty', same));
       var wf = chRewordedFold();
       if (wf) host.append(wf);
@@ -3132,8 +3246,22 @@
       return;
     }
     if (chgSel === null || !cards[chgSel]) chgSel = 0;
-    var sinceGrp = false;
+    var sinceGrp = false, unGrp = false, unGrpA = false;
+    function onlyLabel(side) {
+      var x = side === 'a' ? changedCache.a : changedCache.b;
+      return x.run.run.label || (side === 'a' ? 'the older run' : 'the newer run');
+    }
+    if (changedCache.cards.pageNote) host.append(el('div', 'chpagenote', changedCache.cards.pageNote));
     cards.forEach(function (c, i) {
+      // G9-3: the rows with no confident partner sit under their own group line
+      if (c.kind === 'unmatched' && c.side === 'b' && !unGrp) {
+        unGrp = true;
+        host.append(el('div', 'grp', 'Only in ' + onlyLabel('b') + ' · ' + changedCache.cards.onlyB));
+      }
+      if (c.kind === 'unmatched' && c.side === 'a' && !unGrpA) {
+        unGrpA = true;
+        host.append(el('div', 'grp', 'Only in ' + onlyLabel('a') + ' · ' + changedCache.cards.onlyA));
+      }
       // G4-R5: the since-then cards open with their own group line + count
       if (c.kind === 'since' && !sinceGrp) {
         sinceGrp = true;
