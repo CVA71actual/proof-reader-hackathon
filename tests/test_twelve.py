@@ -347,7 +347,8 @@ def test_the_command_creates_and_runs_the_run_and_prints_the_audit_counts_cost_a
     run = run_of(runs_dir, "run-1")
     assert code == 0 and run["run"]["status"] == "done" and run["run"]["label"] == "2 companies · 6 months"
     assert run["run"]["choices"] == {"companies": ["AAA", "BBB"], "event_types": list(read_events.EVENT_TYPES),
-                                     "time_window_months": 6, "spending_limit_usd": 5.0, "note_for_agent": None}
+                                     "time_window_months": 6, "spending_limit_usd": 5.0, "note_for_agent": None,
+                                         "reader_tools": False}
     assert "Created run-1: 2 companies · 6 months (2 companies)" in out
     assert "run-1 · 2 companies · 6 months: done" in out and "pages read: 3" in out
     assert re.search(r"rows: kept \d+, corrected \d+, removed \d+, unverified \d+, open \d+", out)

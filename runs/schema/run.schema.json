@@ -50,7 +50,8 @@
             "event_types": {"type": "array", "items": {"type": "string"}},
             "time_window_months": {"type": ["integer", "null"], "minimum": 1},
             "spending_limit_usd": {"type": ["number", "null"], "minimum": 0},
-            "note_for_agent": {"type": ["string", "null"]}
+            "note_for_agent": {"type": ["string", "null"]},
+            "reader_tools": {"type": "boolean", "description": "Whether the first reader could call the checks as tools while it read (capture/reader_tools.py). Absent on a run saved before it existed: false."}
           }
         },
         "spend_usd": {"type": ["number", "null"], "minimum": 0, "description": "The sum of the cost_usd of every Model step in the rows' trails; null when the spend was not recorded."},
@@ -71,6 +72,10 @@
         "status_reason": {"type": "string", "description": "One plain sentence for the status."},
         "turn_count": {"type": "integer", "minimum": 0, "description": "Model calls used in the current budget of turns."},
         "turn_limit": {"type": "integer", "minimum": 1, "description": "The budget of turns; a resume starts a fresh one."},
+        "reader_tools": {"type": "object", "description": "Only on a run with the reader_tools choice on: what the first reader's tool use came to (path native or json_request; model calls, tool calls, how many of them ran, re-reads, answers that were fail).",
+                         "properties": {"path": {"enum": ["native", "json_request"]}, "model_calls": {"type": "integer"},
+                                        "tool_calls": {"type": "integer"}, "tool_calls_run": {"type": "integer"},
+                                        "rereads": {"type": "integer"}, "failed_answers": {"type": "integer"}}},
         "turns_total": {"type": "integer", "minimum": 0, "description": "Every model call in the run."},
         "resumes": {"type": "integer", "minimum": 0},
         "skipped_pages": {"type": "array", "description": "Optional. Pages the job left undone and why: a page whose files no longer match the index, or one that stopped the run twice (server/jobs.py). What was read of them before stays.",

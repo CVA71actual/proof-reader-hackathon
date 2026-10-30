@@ -97,7 +97,7 @@ def test_new_run_makes_the_folder_and_reads_the_captured_pages(runs_dir):
     RUN_SCHEMA.validate(run)
     m = run["run"]
     assert m["status"] == "done" and m["sample"] is False and m["number"] == 3
-    assert m["choices"] == {**BOTH}
+    assert m["choices"] == {**BOTH, "reader_tools": False}
     assert m["finished_at"] and m["turn_count"] == 2 and m["spend_usd"] == pytest.approx(0.02)
     assert {s["id"] for s in run["sources"]} == {"src-ptgx-8k-2026-08-05-ex991", "src-ions-ars-2026"}
     assert run["rows"] and run["tables"], "events from PTGX page 3, a table from IONS page 95"

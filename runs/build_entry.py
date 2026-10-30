@@ -35,7 +35,7 @@ from capture import read_events
 from capture.capture_source import FIXTURES, load_entry
 from capture.read_table import FAKE_MODEL, sha256_text
 from checks import event_checks
-from checks.common import normalize
+from checks.common import CheckResult, normalize
 from checks.selector_match import MIN_WORD_HEIGHT_PT, _quote_run, selector_match
 from runs import coverage, prices, recheck
 from runs.build_run import MUSE_SPARK, RUNS, SCHEMA_VERSION, file_sha256, now_utc, render_page, to_contract_check
@@ -200,7 +200,8 @@ def row_reason(status: str, results: list, row: dict) -> str:
 
 def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict, at: str,
               share: tuple[int | None, int | None, int] = (None, None, 1), model_name: str = MUSE_SPARK,
-              instructions_who: str = READER, second_reader: bool = False) -> dict:
+              instructions_who: str = READER, second_reader: bool = False, tool_steps: list[dict] | None = None,
+              tool_type: str | None = None) -> dict:
     """`share` is this row's part of the one call's tokens: (prompt, completion, rows the call proposed).
     `model_name`: the model that proposed it (the second reader's rows are built by the same function)."""
     words = words_doc["words"]
@@ -250,6 +251,7 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         trail.append({"step": "Took the reading into the row", "tag": "Code", "who": BUILDER, "at": at,
                       "text": "Copied the reader's answer for this row into the row as a proposal, with its box from "
                               "the reader or from the words it named. Nothing is checked yet."})
+    trail += tool_steps or []     # the reader's own calls of the checks while it read (capture/reader_tools.py)
     if row["date_text"] != printed:
         trail.append({"step": "Tidied", "tag": "Code", "who": BUILDER,
                       "text": f"Date text “{printed}” kept as “{row['date_text']}”: the "
@@ -286,6 +288,13 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
                       "text": f"The quote is printed on the page, so the box is the words found there; "
                               f"{was} was only a hint.", "at": at})
     results = recheck.row_checks(row, source, words_doc)
+    if tool_type and tool_type != row["event_type"]:
+        # The reader asked the type tool and handed over another type. The row keeps the hand-over; the tool's
+        # answer is not stored as the type and never replaces the code's own check, but the disagreement is held.
+        results = [CheckResult(r.check, r.label, event_checks.FAIL,
+                                            f"The reader's own check found the type {tool_type} for these words and "
+                                            f"it handed over {row['event_type']}: " + r.reason, {**r.compared, "found": tool_type})
+                   if r.check == event_checks.TYPE_ID and r.result != event_checks.FAIL else r for r in results]
     for r in results:
         trail.append({"step": "Checked", "tag": "Code", "who": r.check,
                       "text": f"{r.label}: {r.result.replace('_', ' ')}. {r.reason}", "at": at})

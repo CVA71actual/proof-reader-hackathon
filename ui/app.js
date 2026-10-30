@@ -2774,7 +2774,8 @@
     nrError('');
     A.newRun({ companies: companies, event_types: types,
                time_window_months: winBtn ? Number(winBtn.dataset.win) : null,
-               spending_limit_usd: limit, note_for_agent: note }).then(function (res) {
+               spending_limit_usd: limit, note_for_agent: note,
+               reader_tools: document.getElementById('nr-tools').checked }).then(function (res) {
       if (!res.ok) { nrError((res.body && res.body.detail) || ('HTTP ' + res.status)); return; }
       newrunWrap.hidden = true;
       var id = res.body.id;

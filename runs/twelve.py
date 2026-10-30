@@ -17,6 +17,7 @@ never printed.
     --runs-dir DIR / --index FILE  where runs go (default runs/) / the sources index (default: runs/sources_index.twelve.json when present, else runs/sources_index.json)
     --no-second / --no-wonder      leave that model out of the run (cost control)
     --no-report                    do not build the PDF and Word report
+    --reader-tools                 the first reader may call the checks as tools while it reads (capture/reader_tools.py)
     --id twelve-1                  keep the run under this folder name (default run-<n>): for the recorded run
 """
 
@@ -85,6 +86,8 @@ def main(argv: list[str] | None = None, readers: tuple | None = None) -> int:
     ap.add_argument("--no-second", action="store_true")
     ap.add_argument("--no-wonder", action="store_true")
     ap.add_argument("--no-report", action="store_true")
+    ap.add_argument("--reader-tools", action="store_true",
+                    help="let the first reader call the checks as tools while it reads (default off)")
     ap.add_argument("--id", default=None)
     args = ap.parse_args(argv)
 
@@ -98,7 +101,8 @@ def main(argv: list[str] | None = None, readers: tuple | None = None) -> int:
             [c.strip().upper() for c in args.companies.split(",") if c.strip()]
         types = list(read_events.EVENT_TYPES) if not args.types else [t.strip() for t in args.types.split(",")]
         choices = jobs.validate_choices({"companies": companies, "event_types": types, "time_window_months": args.window,
-                                         "spending_limit_usd": args.limit, "note_for_agent": args.note}, index)
+                                         "spending_limit_usd": args.limit, "note_for_agent": args.note,
+                                         "reader_tools": args.reader_tools}, index)
     except (sources.SourcesError, ValueError) as e:
         print(str(e), file=sys.stderr)
         return 2

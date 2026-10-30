@@ -35,6 +35,7 @@ class Reply:
     error: str | None = None
     extra: dict | None = None
     images: int | None = None      # images processed, for a model priced per image (SAM 3.1)
+    tool_calls: list | None = None  # OpenAI-shape tool_calls of a chat() answer that asked for the tools
 
 
 def messages_for(prompt: str, image: bytes | None = None) -> list[dict]:
@@ -91,3 +92,33 @@ class LiveReader:
         return Reply(raw, getattr(resp, "model", None) or self.model,
                      prompt_tokens=getattr(usage, "prompt_tokens", None),
                      completion_tokens=getattr(usage, "completion_tokens", None), extra=extra)
+
+    def chat(self, messages: list[dict], tools: list[dict] | None = None, json_mode: bool = False) -> Reply:
+        """One call of a conversation (the tool loop in server/jobs.py). With `tools` the OpenAI "tools" parameter is
+        sent; if api.meta.ai rejects it (400 or 422) the Reply has an error and extra["tools_rejected"] is True, and the
+        caller goes on with the JSON tool request (capture/reader_tools.py). Never raises."""
+        from openai import OpenAI
+
+        client = OpenAI(base_url=read_table.BASE_URL, api_key=self._key())
+        kwargs = {"model": self.model, "messages": messages, "temperature": 0}
+        if tools:
+            kwargs["tools"] = tools
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        try:
+            resp = client.chat.completions.create(**kwargs)
+        except Exception as e:
+            rejected = bool(tools) and read_table._status(e) in (400, 422)
+            return Reply(None, self.model, error=read_table._plain_error(e),
+                         extra={"tools_rejected": rejected, "status": read_table._status(e)})
+        msg = resp.choices[0].message if resp.choices else None
+        calls = None
+        if msg is not None and getattr(msg, "tool_calls", None):
+            calls = [{"id": c.id, "type": "function",
+                      "function": {"name": c.function.name, "arguments": c.function.arguments}} for c in msg.tool_calls]
+        usage = getattr(resp, "usage", None)
+        extra = {"base_url": read_table.BASE_URL, "requested_model": self.model, "input": "words",
+                 "response_format": "json_object" if json_mode else "none", "tools_sent": bool(tools)}
+        return Reply(getattr(msg, "content", None) if msg is not None else None, getattr(resp, "model", None) or self.model,
+                     prompt_tokens=getattr(usage, "prompt_tokens", None),
+                     completion_tokens=getattr(usage, "completion_tokens", None), extra=extra, tool_calls=calls)

@@ -45,7 +45,8 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from accuracy import types as T
-from capture import read_events, read_table, sam as sam_module
+from capture import read_events, read_table, reader_tools, sam as sam_module
+from capture.reader import Reply
 from capture.second_reader import CAP_REACHED, OPENROUTER_CAP_USD, UNPRICED
 from checks.common import normalize
 from checks.coverage import sentence_covered, sentences as coverage_sentences
@@ -63,7 +64,8 @@ TIME_WINDOW_MAX = 120
 # Which pages exist for which company is the sources index (runs/sources.py): runs/sources_index.json when it exists, else
 # the built-in one (PTGX 8-K exhibit page 3, IONS annual report page 95, and the PTGX page as a scan: no text layer, regions
 # from SAM 3.1). "events" pages go to the event reader (both readers), "table" pages to the table reader.
-CHOICE_FIELDS = ("companies", "event_types", "time_window_months", "spending_limit_usd", "note_for_agent")
+CHOICE_FIELDS = ("companies", "event_types", "time_window_months", "spending_limit_usd", "note_for_agent",
+                 "reader_tools")
 
 # One lock for the run.json / job.json files of every run in this process.
 RUN_LOCK = threading.RLock()
@@ -174,8 +176,14 @@ def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
         raise ValueError("The spending limit must be a finite number of dollars, zero or more, or null.")
     if note is not None and not isinstance(note, str):
         raise ValueError("The note for the agent must be text or null.")
+    tools = body.get("reader_tools", False)
+    if tools is None:
+        tools = False
+    if not isinstance(tools, bool):
+        raise ValueError("reader_tools must be true or false.")
     return {"companies": list(companies), "event_types": list(types), "time_window_months": window,
-            "spending_limit_usd": limit, "note_for_agent": note.strip() or None if isinstance(note, str) else None}
+            "spending_limit_usd": limit, "note_for_agent": note.strip() or None if isinstance(note, str) else None,
+            "reader_tools": tools}
 
 
 def label_for(number: int, choices: dict) -> str:
@@ -498,14 +506,28 @@ class Job:
 
         attempts = self.job["attempts"].setdefault(source["id"], [])
         reply, parsed = None, None
+        tool_box = None
+        if kind == "events" and self.choices.get("reader_tools"):
+            if hasattr(self.reader, "chat"):
+                tool_box = reader_tools.ToolBox(words_doc["words"], source.get("published_date"))
+            else:
+                self.job["log"].append({"at": now_utc(), "note": "reader_tools is on but this reader cannot call tools; "
+                                                                 "the page was read without them."})
         while True:
-            if self.stopped_before_a_call():
-                return False
-            reply = self.reader.call(prompt)
-            self.count_turn(reply)
-            if reply.error:
-                self.stop("failed", f"{reply.error} Resume to try again.")
-                return False
+            if tool_box is not None:
+                if tool_box.model_calls >= reader_tools.MAX_MODEL_CALLS:
+                    break                  # the page's model calls are spent: held, not given a fresh set
+                reply, prompt = self.converse(prompt, tool_box)
+                if reply is None:
+                    return False
+            else:
+                if self.stopped_before_a_call():
+                    return False
+                reply = self.reader.call(prompt)
+                self.count_turn(reply)
+                if reply.error:
+                    self.stop("failed", f"{reply.error} Resume to try again.")
+                    return False
             parsed, problem = parse(reply.raw)
             if parsed is not None:
                 break
@@ -527,7 +549,12 @@ class Job:
             shares = list(zip(prices.split_tokens(usage.get("prompt_tokens"), n),
                               prices.split_tokens(usage.get("completion_tokens"), n), [n] * n))
             first = len(self.run["rows"]) + 1
-            new_rows = [build_entry.build_row(first + i, ev, reading, source, words_doc, at, share=shares[i])
+            new_rows = [build_entry.build_row(first + i, ev, reading, source, words_doc, at, share=shares[i],
+                                              tool_steps=(tool_box.steps_for(ev.get("quote"), at, build_entry.MUSE_SPARK)
+                                                          + tool_box.unrecorded_steps(at, build_entry.MUSE_SPARK)
+                                                          if tool_box is not None else None),
+                                              tool_type=(tool_box.type_found(ev.get("quote"))
+                                                         if tool_box is not None else None))
                         for i, ev in enumerate(parsed)]
             new_rows += coverage.possible_event_rows(words_doc, new_rows, source, first_index=first + len(new_rows),
                                                      at=at, today=self.coverage_date(source), ticker=entry["ticker"],
@@ -546,6 +573,81 @@ class Job:
         self.run["sources"].append(source)
         self.save()
         return True
+
+    def converse(self, prompt: str, box: "reader_tools.ToolBox"):
+        """One read of an events page as a short loop (capture/reader_tools.py): the model may call the checks about its
+        own proposals, then hands over the final events. Returns (a Reply for the final answer with the loop's summed
+        tokens, the text sent first), or (None, prompt) when the run stopped. Every model call is counted as a turn and
+        priced when it is made (count_turn); the Reply returned is only for the rows' trail and is not counted again."""
+        native = self.job.get("reader_tools_path") != "json_request"
+        sent = prompt + reader_tools.note(native)
+        messages = [{"role": "user", "content": sent}]
+        while True:
+            if self.stopped_before_a_call():
+                return None, prompt
+            last = box.model_calls >= reader_tools.MAX_MODEL_CALLS - 1        # the last call may not ask for tools
+            reply = self.reader.chat(messages, reader_tools.TOOLS if native and not last else None,
+                                     json_mode=not native)
+            self.count_turn(reply)
+            box.model_calls += 1
+            if reply.error:
+                if native and (reply.extra or {}).get("tools_rejected"):
+                    # api.meta.ai rejected the tools parameter: the same loop on the JSON tool request, from here on
+                    native = False
+                    self.job["reader_tools_path"] = "json_request"
+                    sent = prompt + reader_tools.note(False)
+                    messages = [{"role": "user", "content": sent}]
+                    continue
+                self.stop("failed", f"{reply.error} Resume to try again.")
+                return None, prompt
+            if isinstance(reply.prompt_tokens, int) and isinstance(reply.completion_tokens, int):
+                box.p_tokens += reply.prompt_tokens
+                box.c_tokens += reply.completion_tokens
+            else:
+                box.unrecorded += 1      # a call with no count is noted on its own step; it does not null the priced ones
+            self.job.setdefault("reader_tools_path", "native" if native else "json_request")
+            if native:
+                calls = reader_tools.native_calls(reply.tool_calls)
+                if calls and not last:
+                    messages.append({"role": "assistant", "content": reply.raw or "", "tool_calls": reply.tool_calls})
+                    box.begin_turn()
+                    for c in calls:
+                        answer, hint = box.call(c["name"], c["arguments"])
+                        messages.append({"role": "tool", "tool_call_id": c["id"],
+                                         "content": json.dumps({**answer, **({"note": hint} if hint else {})})})
+                    continue
+            else:
+                request = reader_tools.parse_tool_request(reply.raw)
+                if request is not None and not last:
+                    answers = []
+                    box.begin_turn()
+                    for c in request:
+                        answer, hint = box.call(c["name"], c["arguments"])
+                        answers.append({"name": c["name"], **answer, **({"note": hint} if hint else {})})
+                    messages.append({"role": "assistant", "content": reply.raw})
+                    messages.append({"role": "user", "content": json.dumps({"tool_answers": answers})})
+                    continue
+            break
+        box.note_final(self.final_quotes(reply.raw))
+        summary = {**box.summary(), "model_calls": box.model_calls}
+        pages = self.job.setdefault("reader_tools_pages", {})
+        pages[self.current_page or ""] = summary
+        total = {k: sum(p[k] for p in pages.values()) for k in summary}
+        self.meta["reader_tools"] = {"path": self.job["reader_tools_path"], **total}      # what the run's tool use came to
+        priced = box.model_calls > box.unrecorded
+        final = Reply(reply.raw, reply.model, prompt_tokens=box.p_tokens if priced else None,
+                      completion_tokens=box.c_tokens if priced else None,
+                      extra={**(reply.extra or {}), "reader_tools": {"path": self.job["reader_tools_path"], **summary}})
+        return final, sent
+
+    @staticmethod
+    def final_quotes(raw) -> list:
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else None
+        except json.JSONDecodeError:
+            return []
+        evs = data.get("events") if isinstance(data, dict) else None
+        return [e.get("quote") for e in evs if isinstance(e, dict)] if isinstance(evs, list) else []
 
     def apply_window(self, rows: list[dict], at: str) -> None:
         """Leave out, under outside_time_window, a row dated before today or later than today plus the window."""
