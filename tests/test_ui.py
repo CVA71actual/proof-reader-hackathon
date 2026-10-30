@@ -234,8 +234,9 @@ def test_u9_export_is_wired():
 def test_u9_second_reader_details_are_wired():
     js = (UI / "app.js").read_text()
     # the disagreement (field + both readers' values) above the checks
-    for needle in ("disagreementSection", "The two readers disagree on the ",
-                   "first_reader", "second_reader", "Second reader · Muse Spark Open"):
+    for needle in ("disagreementSection", "bothReadersWord() + ' disagree on the ",
+                   "first_reader", "second_reader",
+                   "'Second reader · ' + srL + ': '"):
         assert needle in js, needle
     # the Muse Spark Open trail step is a Model step: tokens and cost show (U5 path)
     assert "Muse Spark Open" not in js or True  # the model name comes from the data, not the UI
@@ -419,7 +420,7 @@ def _judgment_screen(row_id):
     import json
     import subprocess
     js = (UI / "app.js").read_text()
-    names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "checkDot", "checkResultWord",
+    names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "rowBadge", "checkDot", "checkResultWord",
              "needsAttention", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
              "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
              "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith",
@@ -584,7 +585,7 @@ def test_u19_export_glass5_rows():
         assert word in js, word
     # G5-5: the disagreement is stated once — the why box defers to the block
     why = re.search(r"function whySection.*?\n  \}\n", js, re.S).group(0)
-    assert "The two readers disagree on the ' + fieldWord + '. A person decides.'" in why
+    assert "bothReadersWord() + ' disagree on the ' + fieldWord + '. A person decides.'" in why
     # G5-6: Keep names the kept value; the resolved block stays, folded
     assert "keepLabel = 'Keep ' + dv" in js
     assert "'Resolved by you · kept ' + dvv" in js
@@ -592,7 +593,7 @@ def test_u19_export_glass5_rows():
     # G5-7: no disagreement block when the second reader proposed nothing
     dis = re.search(r"function disagreementSection.*?\n  \}\n", js, re.S).group(0)
     assert "return null" in dis
-    assert "Second reader did not read this row." in js
+    assert "srName + ' did not read this row.'" in js
 
 
 def test_u18_changed_bar_glass4_rows():
@@ -2219,8 +2220,8 @@ def test_u32_calendar_one_row_per_event():
     # on the source picked; the header and rail count events, not sources
     js = (UI / "app.js").read_text()
     css = (UI / "styles.css").read_text()
-    for word in ("g[0].fold = g",
-                 "(e.row.ticker || '') + '|' + (e.row.program || '') + '|'",
+    for word in ("rep.fold = g",
+                 "(e.row.ticker || '') + '|' + prog + '|'",
                  "el('span', 'srcpill', r.fold.length + ' sources')",
                  "'Read from ' + sel.fold.length + ' sources'",
                  "calSrcSel"):
@@ -2262,6 +2263,8 @@ def test_u32_calendar_one_row_per_event():
         "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
         json.dumps(targets) + " } };",
         "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
+        _grab_fn(js, "shownVal"),
+        _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
         "var got = calendarRows();",
         "if (got.length !== 4) { console.error('n=' + got.length); process.exit(2); }",
@@ -2298,6 +2301,8 @@ def test_u32_back_from_a_secondary_source_reselects_the_fold():
         "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
         json.dumps(targets) + " } };",
         "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
+        _grab_fn(js, "shownVal"),
+        _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
         _grab_fn(js, "calFoldHit"),
         "var all = calendarRows();",
@@ -2352,6 +2357,8 @@ def test_u34_g9_1_calendar_uses_the_servers_corrected_rule():
         "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
         json.dumps(targets) + " } };",
         "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
+        _grab_fn(js, "shownVal"),
+        _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
         "var got = calendarRows().map(function (e) { return e.row.id; });",
         "console.log(JSON.stringify(got));",
@@ -2664,6 +2671,280 @@ def test_u34_af9_second_half_changes_show_state_values():
         # key absent -> raw wins
         "if (shownVal({ title: undefined } , raw, 'title') !== undefined) process.exit(4);",
         "if (shownVal({} , raw, 'program') !== 'PN-OLD') process.exit(5);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u35_af2b_calendar_lists_rows_with_no_parsed_day():
+    # Red Team round 11 A-F2(b): the screen calendar dropped kept rows whose
+    # date text names no parsed day (14 rows on twelve-4). They now list in a
+    # final "No day given" section — date text as written, hollow dot — and
+    # the header count includes them; only rows with neither day nor date
+    # text stay off
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    assert "nodate: !d" in js
+    assert "'No day given · ' + nodates.length" in js
+    assert "var total = rows.length + nodates.length" in js
+    rows = [
+        {"id": "k1", "ticker": "PTGX", "program": "PN-1", "event_type": "milestone",
+         "date": "2027-01-01", "date_text": "Q1 2027"},
+        {"id": "u1", "ticker": "IONS", "program": "bepi", "event_type": "regulatory_decision",
+         "date": None, "date_text": "in the coming months"},
+        {"id": "u2", "ticker": "PTGX", "program": "PN-2", "event_type": "milestone",
+         "date": None, "date_text": "early Q1 2027"},
+        {"id": "x1", "ticker": "VKTX", "program": "VK9", "event_type": "milestone",
+         "date": None, "date_text": None},
+    ]
+    targets = {r["id"]: {"group": "kept", "values": {"date": r["date"], "date_text": r["date_text"]}}
+               for r in rows}
+    script = "\n".join([
+        "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
+        json.dumps(targets) + " } };",
+        "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
+        _grab_fn(js, "shownVal"),
+        _grab_fn(js, "effectiveChecks"),
+        _grab_fn(js, "calendarRows"),
+        "var got = calendarRows();",
+        "if (got.length !== 3) { console.error('n=' + got.length); process.exit(2); }",
+        "var und = got.filter(function (e) { return e.nodate; });",
+        "if (und.length !== 2) { console.error('und=' + und.length); process.exit(3); }",
+        "if (und[0].fold.length !== 1 || und[0].t.values.date_text !== 'in the coming months') process.exit(4);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u35_af3_fold_key_uses_the_title_when_program_is_empty():
+    # Red Team round 11 A-F3: two program-less conferences on the same start
+    # day (UBS, Jefferies) folded into one row. The key now folds a
+    # program-less row on its normalised title, so same-day blanks with
+    # different titles stay apart
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    assert "normWords(title)" in js.split("function calendarRows")[1].split("return order.map")[0]
+    rows = [
+        {"id": "c1", "ticker": "VKTX", "program": "", "event_type": "conference",
+         "date": "2026-11-16", "date_end": "2026-11-17", "date_text": "November 16-17",
+         "title": "UBS Global Biopharma Conference London, UK"},
+        {"id": "c2", "ticker": "VKTX", "program": "", "event_type": "conference",
+         "date": "2026-11-16", "date_end": "2026-11-19", "date_text": "November 16-19",
+         "title": "Jefferies Global Healthcare Conference London, UK"},
+        # the same conference said again, still no program -> one event
+        {"id": "c3", "ticker": "VKTX", "program": "", "event_type": "conference",
+         "date": "2026-11-16", "date_end": "2026-11-16", "date_text": "Nov 16",
+         "title": "UBS Global Biopharma Conference London, UK"},
+    ]
+    targets = {r["id"]: {"group": "kept", "values": {"date": r["date"], "date_end": r["date_end"],
+                                                    "date_text": r["date_text"]}}
+               for r in rows}
+    script = "\n".join([
+        "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
+        json.dumps(targets) + " } };",
+        "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
+        _grab_fn(js, "shownVal"),
+        _grab_fn(js, "effectiveChecks"),
+        _grab_fn(js, "calendarRows"),
+        _grab_fn(js, "normWords"),
+        "var got = calendarRows();",
+        # UBS x2 fold (normalised titles match); Jefferies stands alone
+        "if (got.length !== 2) { console.error('n=' + got.length); process.exit(2); }",
+        "var folds = got.map(function (e) { return e.fold.length; }).sort();",
+        "if (folds[0] !== 1 || folds[1] !== 2) { console.error(folds.join(',')); process.exit(3); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u35_af6_matched_badge_names_the_unchecked_check():
+    # Red Team round 11 A-F6: a matched row whose date or type check was
+    # 'not needed' did not have that confirmed — the badge says "matched ·
+    # date not checked" / "matched · type not checked", the pane explains in
+    # plain words
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    css = (UI / "styles.css").read_text()
+    for word in ("function rowBadge(row, t)", "'matched · ' + unchecked.join(' · ')",
+                 "if (c.name === 'date_match') unchecked.push('date not checked')",
+                 "if (c.name === 'type_match') unchecked.push('type not checked')",
+                 "'Not confirmed by a check: ' + unchecked2.join(' and ')",
+                 ".st-partmatched{"):
+        assert word in (js + css), word
+    # the audit and judgment lists use rowBadge; decided rows never read as code
+    script = "\n".join([
+        _grab_fn(js, "rowBadge"),
+        "var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };",
+        "var STATUS_WORDS = { matched: 'matched', failed: 'failed', proposed: 'proposed',"
+        + " unreadable: 'unreadable', undecided: 'undecided' };",
+        "function el(tag, cls, text) { return { tag: tag, className: cls, textContent: text || '',"
+        + " title: '' }; }",
+        "function statusBadge(s) { return el('span', 'st st-' + s, STATUS_WORDS[s]); }",
+        "function decidedBadge(g) { return el('span', 'st st-' + g, DECIDED_BADGE[g]); }",
+        "var both = { checks: [{ name: 'date_match', result: 'not_needed' },"
+        + "                     { name: 'type_match', result: 'not_needed' },"
+        + "                     { name: 'quote_found', result: 'pass' }],"
+        + "             status: 'matched', decided_by_person: false };",
+        "var b1 = rowBadge(both, both);",
+        "if (b1.textContent !== 'matched · date not checked · type not checked') {"
+        + " console.error(b1.textContent); process.exit(2); }",
+        "var dateOnly = { checks: [{ name: 'date_match', result: 'not_needed' },"
+        + "                          { name: 'type_match', result: 'pass' }],"
+        + "             status: 'matched', decided_by_person: false };",
+        "if (rowBadge(dateOnly, dateOnly).textContent !== 'matched · date not checked') process.exit(3);",
+        "var clean = { checks: [{ name: 'date_match', result: 'pass' }],"
+        + "             status: 'matched', decided_by_person: false };",
+        "if (rowBadge(clean, clean).textContent !== 'matched') process.exit(4);",
+        "var kept = { checks: [{ name: 'date_match', result: 'fail' }],"
+        + "           status: 'failed', decided_by_person: true, group: 'kept' };",
+        "if (rowBadge({}, kept).textContent !== 'Kept by you') process.exit(5);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u35_af7_person_kept_unresolved_row_is_marked():
+    # Red Team round 11 A-F7: a keep does not settle a disagreement or clear a
+    # failed check — the calendar row wears a small warm marker next to the
+    # title, and the pane leads with the failed check / the disagreement
+    js = (UI / "app.js").read_text()
+    css = (UI / "styles.css").read_text()
+    for word in ("'kept with a failed check'", "'kept, readers disagree'",
+                 "'kept with a failed check, readers disagree'",
+                 "el('span', 'keepwarn'", "Kept by you, but the check",
+                 "still disagree on the",
+                 ".keepwarn{"):
+        assert word in (js + css), word
+    # the marker only rides on person-kept rows
+    cal = _grab_fn(js, "calRow")
+    assert "t.decided_by_person && t.group === 'kept'" in cal
+    pane = _grab_fn(js, "detailsPane")
+    assert pane.index("Kept by you, but the check") < pane.index("var sec1")
+
+
+def test_u35_af8_fold_representative_is_the_unsettled_source():
+    # Red Team round 11 A-F8: a folded event opens on the first source whose
+    # state is undecided or whose checks did not all pass — not blindly the
+    # first in file order; a fully settled fold keeps its first member and the
+    # pill still counts every source
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    assert "e.t.status === 'undecided' ||" in js
+    assert "effectiveChecks(e.row, e.t).some(function (c) { return c.result !== 'pass'; })" in js
+    rows = [
+        {"id": "a1", "ticker": "PTGX", "program": "PN-1", "event_type": "milestone",
+         "date": "2027-01-01", "date_text": "Q1 2027"},
+        {"id": "a2", "ticker": "PTGX", "program": "PN-1", "event_type": "milestone",
+         "date": "2027-01-01", "date_text": "Q1 2027"},
+        {"id": "b1", "ticker": "IONS", "program": "z-1", "event_type": "regulatory_decision",
+         "date": "2027-01-01", "date_text": "in 2027"},
+        {"id": "b2", "ticker": "IONS", "program": "z-1", "event_type": "regulatory_decision",
+         "date": "2027-01-01", "date_text": "in 2027"},
+    ]
+    targets = {
+        "a1": {"group": "kept", "status": "matched", "values": {"date": "2027-01-01", "date_text": "Q1 2027"}},
+        "a2": {"group": "kept", "status": "undecided", "values": {"date": "2027-01-01", "date_text": "Q1 2027"}},
+        "b1": {"group": "kept", "status": "matched", "values": {"date": "2027-01-01", "date_text": "in 2027"}},
+        "b2": {"group": "kept", "status": "matched", "values": {"date": "2027-01-01", "date_text": "in 2027"}},
+    }
+    # a1 fully settled; a2 undecided -> a2 represents; b's fold fully settled
+    # -> first in file order
+    rows[0]["checks"] = [{"result": "pass"}]
+    rows[2]["checks"] = [{"result": "pass"}]
+    rows[3]["checks"] = [{"result": "pass"}]
+    script = "\n".join([
+        "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
+        json.dumps(targets) + " } };",
+        "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
+        _grab_fn(js, "shownVal"),
+        _grab_fn(js, "effectiveChecks"),
+        _grab_fn(js, "calendarRows"),
+        "var got = calendarRows();",
+        "if (got.length !== 2) { console.error('n=' + got.length); process.exit(2); }",
+        # fold a: a2 is undecided -> the representative, fold still counts both
+        "if (got[0].row.id !== 'a2' || got[0].fold.length !== 2) {"
+        + " console.error(got[0].row.id + ' fold=' + got[0].fold.length); process.exit(3); }",
+        # fold b: all settled -> first in file order
+        "if (got[1].row.id !== 'b1' || got[1].fold.length !== 2) process.exit(4);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u35_clean_room_ac5_ac6_ac9():
+    # A-C5: a row's shown reason is the state's current reason, never a stored
+    # sentence from before the state rule re-derived the row; 'Kept by you'
+    # only ever renders on a person decision
+    js = (UI / "app.js").read_text()
+    assert "t.reason || 'Waiting for you.'" in _grab_fn(js, "whySection")
+    assert "row.reason" not in _grab_fn(js, "whySection")
+    # A-C6: one sentence on the Accuracy panel under an unsealed key
+    assert "This key was written from the same page text, so it tests the checks, not the reader." in js
+    assert "clear(keyNoteHost)" in js and "if (acc && !sealed)" in js
+    # A-C9: one name per reader in every sentence; the footer names the run's
+    # actual readers (second reader + Wonder from the run's own record)
+    for word in ("function readerNames()", "meta.second_reader.model", "meta.escalation.model",
+                 "rn.join(' · ') + ' read'"):
+        assert word in js, word
+    assert "'The two readers disagree" not in js
+    assert "'Second reader did not read this row.'" not in js
+
+
+def test_u35_codex_p2s_presence_effective_checks_reader_label():
+    # Codex's three P2s on #113:
+    # (1) calendarRows reads dates/program/title by key PRESENCE — a date a
+    #     fix cleared (state value null) must not resurrect via the raw row
+    # (2) A-F7/F8 judge a row by the EFFECTIVE re-check outcome
+    #     (recheck.after.checks), not the possibly-stale saved row.checks
+    # (3) the disagreement block names the second reader from the run's
+    #     metadata, never a hardcoded string
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    for word in ("Object.prototype.hasOwnProperty.call(t.values, 'date')",
+                 "shownVal(e.t.values || {}, e.row, 'program')",
+                 "function effectiveChecks(row, t)",
+                 "effectiveChecks(row, t).filter(function (c) { return c.result === 'fail'; })",
+                 "effectiveChecks(e.row, e.t).some(function (c) { return c.result !== 'pass'; })",
+                 "'Second reader · ' + srL + ': '"):
+        assert word in js, word
+    fns = "\n".join(_grab_fn(js, n) for n in ("shownVal", "effectiveChecks", "calendarRows"))
+    script = "\n".join([
+        "var detail = { run: { rows: [",
+        "  { id: 'c1', ticker: 'PTGX', program: 'PN-1', event_type: 'milestone',",
+        "    date: '2027-01-01', date_text: 'Q1 2027', title: 'One',",
+        "    checks: [{ result: 'fail', label: 'Saved fail' }] },",
+        "  { id: 'c2', ticker: 'IONS', program: 'bepi', event_type: 'regulatory_decision',",
+        "    date: '2027-02-01', date_text: 'Feb 2027', title: 'Two',",
+        "    checks: [{ result: 'pass' }] }",
+        "], run: {} }, state: { targets: {",
+        "  // c1: a fix CLEARED the date (key present, value null) and the re-check",
+        "  // re-ran the checks — the saved fail is stale, the after-checks pass",
+        "  c1: { group: 'kept', status: 'matched',",
+        "        values: { date: null, date_text: 'in 2027', title: 'One' },",
+        "        recheck: { result: 'pass', after: { checks: [{ result: 'pass' }] } } },",
+        "  c2: { group: 'kept', status: 'matched',",
+        "        values: { date: '2027-02-01', date_text: 'Feb 2027', title: 'Two' } }",
+        "} } };",
+        "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
+        fns,
+        # P2-1: the cleared date wins by presence — c1 is undated (No day given),
+        # its raw row.date never resurrects
+        "var got = calendarRows();",
+        "var c1 = got.filter(function (e) { return e.row.id === 'c1'; })[0];",
+        "if (!c1 || !c1.nodate) { console.error('c1 nodate=' + (c1 && c1.nodate)); process.exit(2); }",
+        # P2-2: the effective checks are the re-check's after set, not the saved row
+        "if (effectiveChecks(detail.run.rows[0], detail.state.targets.c1)[0].result !== 'pass') process.exit(3);",
+        "if (effectiveChecks(detail.run.rows[1], detail.state.targets.c2)[0].result !== 'pass') process.exit(4);",
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)

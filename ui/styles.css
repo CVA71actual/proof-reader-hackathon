@@ -116,6 +116,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-a
 .st-unverified{color:var(--amber);background:var(--amber-soft)}
 .st-undecided{color:var(--blue);background:var(--blue-soft)}
 .st-matched{color:var(--green);background:var(--green-soft)}
+/* A-F6: matched, but a check did not apply — quieter than a full match */
+.st-partmatched{color:var(--sub);background:var(--line2)}
 .st-failed{color:var(--red);background:var(--red-soft)}
 .st-proposed{color:var(--grey);background:var(--grey-soft)}
 .st-unreadable{color:var(--amber);background:var(--amber-soft)}
@@ -271,6 +273,9 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
 .crow .ct2 .tt{min-width:0}
 .crow .ty{font-size:10.5px;color:var(--sub);border:1px solid var(--line);border-radius:5px;padding:1px 6px;white-space:nowrap;text-transform:none;letter-spacing:0;font-weight:500}
 .crow .badge{flex:0 0 auto}
+/* A-F7: a person-kept row that is not fully settled wears a small warm marker */
+.keepwarn{font-size:10.5px;font-weight:600;color:var(--amber);border:1px solid var(--amber);
+          border-radius:9px;padding:0 7px;white-space:nowrap;align-self:center}
 /* G8-7: a folded calendar row — the count pill, and the pane's source list */
 .srcpill{font-size:10.5px;font-weight:600;color:var(--blue);border:1px solid var(--blue);border-radius:9px;padding:0 7px;white-space:nowrap;align-self:center}
 .srcitem{display:block;width:100%;text-align:left;padding:7px 9px;border:1px solid var(--line);border-radius:8px;margin-top:6px;font:inherit;font-size:12px;cursor:pointer;background:var(--panel);color:var(--ink)}

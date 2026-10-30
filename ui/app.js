@@ -131,6 +131,22 @@
   function statusBadge(status) {
     return el('span', 'st st-' + status, STATUS_WORDS[status] || status);
   }
+  // A-F6: a matched row whose date check or type check was 'not needed' did
+  // not have that confirmed — "matched" alone would overstate it
+  function rowBadge(row, t) {
+    if (t.decided_by_person) return decidedBadge(t.group);
+    if (t.status !== 'matched') return statusBadge(t.status);
+    var unchecked = [];
+    (row.checks || []).forEach(function (c) {
+      if (c.result !== 'not_needed') return;
+      if (c.name === 'date_match') unchecked.push('date not checked');
+      if (c.name === 'type_match') unchecked.push('type not checked');
+    });
+    if (!unchecked.length) return statusBadge(t.status);
+    var b = el('span', 'st st-partmatched', 'matched · ' + unchecked.join(' · '));
+    b.title = 'This check did not apply to the row — the checks below say why.';
+    return b;
+  }
   function decidedBadge(group) {
     return el('span', 'st st-' + group, DECIDED_BADGE[group] || group);
   }
@@ -252,6 +268,22 @@
       return t.decided_by_person && !needsAttention(t);
     });
   }
+  // A-C9: one name per reader, from the run itself — the first reader from
+  // the rows it proposed, the second and Wonder from the run's own record
+  function readerNames() {
+    var meta = detail.run.run || {};
+    var first = null;
+    detail.run.rows.forEach(function (r) { if (!first && r.proposed_by) first = r.proposed_by; });
+    var names = [first || 'Muse Spark'];
+    if (meta.second_reader && meta.second_reader.model) names.push(meta.second_reader.model);
+    if (meta.escalation && meta.escalation.model) names.push(meta.escalation.model);
+    return names;
+  }
+  // 'Muse Spark and Muse Spark Open'
+  function bothReadersWord() {
+    return readerNames().slice(0, 2).join(' and ');
+  }
+
   function sourceOf(row) {
     var id = row.source_id;
     return detail.run.sources.filter(function (s) { return s.id === id; })[0] || null;
@@ -424,8 +456,10 @@
     var flag = document.getElementById('runcard-flag');
     flag.hidden = !meta.sample;
     if (meta.sample) flag.textContent = 'Sample data — not real events';
+    var rn = readerNames();
     document.getElementById('side-foot').textContent =
-      (meta.sample ? 'Sample data — not real events · ' : '') + 'Muse Spark reads · Code checks';
+      (meta.sample ? 'Sample data — not real events · ' : '') +
+      (rn.length === 1 ? rn[0] + ' reads' : rn.join(' · ') + ' read') + ' · Code checks';
     document.title = 'Proof Reader — ' + (meta.label || '');
     updateRunCardJob();
 
@@ -456,18 +490,46 @@
       if (t.group !== 'kept' && t.group !== 'corrected') return;
       if (t.group === 'corrected' && (t.fixes || []).length &&
           !((t.recheck || {}).result === 'pass' && !t.needs_recheck && t.status !== 'undecided')) return;
-      var d = (t.values && t.values.date) || r.date;
-      if (d) out.push({ row: r, t: t, date: d, period: !!(t.values && t.values.date_end),
-                        end: (t.values && t.values.date_end) || r.date_end || null });
+      // presence, not truthiness: a date the state holds as null was CLEARED
+      // by a fix — the raw row's date must not resurrect it
+      var d = t.values && Object.prototype.hasOwnProperty.call(t.values, 'date')
+        ? t.values.date : r.date;
+      var dt = t.values && Object.prototype.hasOwnProperty.call(t.values, 'date_text')
+        ? t.values.date_text : r.date_text;
+      // A-F2(b): a kept or corrected row whose date text names no parsed day
+      // is not dropped — it lists in the calendar's "No day given" section
+      if (!d && !dt) return;
+      out.push({ row: r, t: t, date: d || null, nodate: !d,
+                 period: !!(t.values && t.values.date_end),
+                 end: (t.values && t.values.date_end) || r.date_end || null });
     });
     var groups = {}, order = [];
     out.forEach(function (e) {
-      var key = (e.row.ticker || '') + '|' + (e.row.program || '') + '|' +
-                (e.row.event_type || '') + '|' + e.date;
+      // undated rows stand alone — nothing to fold them against
+      if (e.nodate) { e.fold = [e]; order.push([e]); return; }
+      // A-F3: a row with no program folds on its normalised title instead —
+      // UBS and Jefferies, both program-less conferences on the same day,
+      // are two events, not one
+      var prog = shownVal(e.t.values || {}, e.row, 'program') || '';
+      var title = shownVal(e.t.values || {}, e.row, 'title') || '';
+      var key = prog
+        ? (e.row.ticker || '') + '|' + prog + '|' + (e.row.event_type || '') + '|' + e.date
+        : (e.row.ticker || '') + '||' + (e.row.event_type || '') + '|' + e.date + '|' + normWords(title);
       if (!groups[key]) { groups[key] = []; order.push(groups[key]); }
       groups[key].push(e);
     });
-    return order.map(function (g) { g[0].fold = g; return g[0]; });
+    // A-F8: the representative is the first source whose state is undecided or
+    // whose checks did not all pass — the event opens where the question is;
+    // only a fully settled fold keeps its first-in-file member. The pill
+    // still counts every source.
+    return order.map(function (g) {
+      var rep = g.filter(function (e) {
+        return e.t.status === 'undecided' ||
+               effectiveChecks(e.row, e.t).some(function (c) { return c.result !== 'pass'; });
+      })[0] || g[0];
+      rep.fold = g;
+      return rep;
+    });
   }
   // G3-2/G3-3: how long a period row runs — day ranges (a congress weekend)
   // count as exact dates, not periods
@@ -533,7 +595,9 @@
       var t = rowTarget(r);
       if (t.group !== 'kept' && t.group !== 'corrected') return;
       var d = (t.values && t.values.date) || r.date;
-      if (!d) n++;
+      var dt = (t.values && t.values.date_text) || r.date_text;
+      // A-F2(b): only rows with neither a parsed day nor date text are unplaceable
+      if (!d && !dt) n++;
     });
     return n;
   }
@@ -778,7 +842,7 @@
           : mm.caught_by === 'code' ? 'Caught by code'
           : 'Caught by the second reader'));
       } else {
-        l2.append(t.decided_by_person ? decidedBadge(t.group) : statusBadge(t.status));
+        l2.append(rowBadge(row, t));
       }
     }
     l2.append(el('span', 'mdl', 'by ' + (row.proposed_by || 'Model')));
@@ -939,6 +1003,28 @@
     var t = rowTarget(row);
     var src = sourceOf(row);
 
+    // A-F7: a row a person kept while a check failed or the readers disagree
+    // leads with that — before anything else in the pane
+    if (t.decided_by_person && t.group === 'kept') {
+      var af7fails = effectiveChecks(row, t).filter(function (c) { return c.result === 'fail'; });
+      var af7dis = t.disagreement && t.disagreement.second_reader !== null &&
+                   t.disagreement.second_reader !== undefined;
+      if (af7fails.length || af7dis) {
+        var warn = el('div', 'ba amber');
+        if (af7fails.length) {
+          warn.append(el('div', null, 'Kept by you, but the check “' + af7fails[0].label +
+            '” failed' + (af7fails.length > 1 ? ' (+' + (af7fails.length - 1) + ' more)' : '') +
+            ' — ' + (af7fails[0].reason || 'see the checks below.')));
+        }
+        if (af7dis) {
+          var fld = FIELD_WORDS[t.disagreement.field] || t.disagreement.field;
+          warn.append(el('div', null, 'Kept by you, and ' + bothReadersWord() + ' still disagree on the ' +
+            String(fld).toLowerCase() + '.'));
+        }
+        host.append(warn);
+      }
+    }
+
     var sec1 = el('div', 'sec');
     if (t.decided_by_person) sec1.append(decidedBadge(t.group));
     var ttl = el('div', 'ttl', row.title || '(no title)');
@@ -993,13 +1079,31 @@
     if (t.group === 'open' || t.group === 'unverified') host.append(whySection(row, t));
     if (t.disagreement) host.append(disagreementSection(row, t));
 
+    // A-F6: when a check did not apply, the pane says in one plain sentence
+    // what the badge carries — the check lines below give the why
+    if (t.status === 'matched' && !t.decided_by_person) {
+      var unchecked2 = [];
+      (row.checks || []).forEach(function (c) {
+        if (c.result !== 'not_needed') return;
+        if (c.name === 'date_match') unchecked2.push('the event date');
+        if (c.name === 'type_match') unchecked2.push('the event type');
+      });
+      if (unchecked2.length) {
+        var nn = el('div', 'hint');
+        nn.textContent = 'Not confirmed by a check: ' + unchecked2.join(' and ') +
+          '. The check lines below say why.';
+        host.append(nn);
+      }
+    }
+
     host.append(checksSection(row, t));
 
     // G5-7: when the second reader proposed nothing, say so once, under the checks
     if (t.disagreement && (t.disagreement.second_reader === null || t.disagreement.second_reader === undefined)) {
       var srhint = el('div', 'hint');
       srhint.style.marginTop = '6px';
-      srhint.textContent = 'Second reader did not read this row.';
+      var srName = ((detail.run.run || {}).second_reader || {}).model || 'Muse Spark Open';
+      srhint.textContent = srName + ' did not read this row.';
       host.append(srhint);
     }
 
@@ -1118,9 +1222,11 @@
     // the checks' pane, not again here
     if (t.disagreement && t.disagreement.second_reader) {
       var fieldWord = (FIELD_WORDS[t.disagreement.field] || t.disagreement.field).toLowerCase();
-      box.textContent = 'The two readers disagree on the ' + fieldWord + '. A person decides.';
+      box.textContent = bothReadersWord() + ' disagree on the ' + fieldWord + '. A person decides.';
     } else {
-      box.textContent = t.reason || row.reason || 'Waiting for you.';
+      // A-C5: the shown reason is the state's current reason — never a reason
+      // stored on the raw row from before the state rule re-derived it
+      box.textContent = t.reason || 'Waiting for you.';
     }
     sec.append(box);
     return sec;
@@ -1134,14 +1240,15 @@
     if (!d || d.second_reader === null || d.second_reader === undefined) return null;
     var sec = el('div', 'sec');
     var fieldWord = FIELD_WORDS[d.field] || d.field;
-    sec.append(el('h4', null, 'The two readers disagree on the ' + fieldWord.toLowerCase()));
+    sec.append(el('h4', null, bothReadersWord() + ' disagree on the ' + fieldWord.toLowerCase()));
     var box = el('div', 'ba blue');
     function val(v) { return d.field === 'event_type' ? eventWord(v) : fmtField(d.field, v); }
     var l1 = el('div');
     l1.append(el('b', null, 'First reader · ' + (row.proposed_by || 'Muse Spark') + ': '), val(d.first_reader));
     var l2 = el('div');
     l2.style.marginTop = '4px';
-    l2.append(el('b', null, 'Second reader · Muse Spark Open: '), val(d.second_reader));
+    var srL = ((detail.run.run || {}).second_reader || {}).model || 'Muse Spark Open';
+    l2.append(el('b', null, 'Second reader · ' + srL + ': '), val(d.second_reader));
     box.append(l1, l2);
     sec.append(box);
     return sec;
@@ -1470,6 +1577,8 @@
 
     var sealedHead = el('h4', null, 'The accuracy numbers');
     accPanelHost.append(sealedHead);
+    var keyNoteHost = el('div');
+    accPanelHost.append(keyNoteHost);
     var sealedHost = el('div', null, 'Reading the saved scoring…');
     accPanelHost.append(sealedHost);
     var plantedHost = el('div');
@@ -1484,6 +1593,12 @@
       sealedHead.textContent = !acc ? 'Scoring' : (sealed ? 'The sealed set' : 'Our own key, not sealed');
       foot.textContent = 'Every number here comes from the saved run and ' +
         (sealed ? 'its sealed-set file' : 'the accuracy numbers') + ' — no model is called for this panel.';
+      // A-C6: under an unsealed key, one sentence says what such a key proves
+      clear(keyNoteHost);
+      if (acc && !sealed) {
+        keyNoteHost.append(el('div', 'hint',
+          'This key was written from the same page text, so it tests the checks, not the reader.'));
+      }
       clear(sealedHost);
       var lines = accModelLines(acc);
       if (!lines.length) {
@@ -1900,8 +2015,9 @@
       else calSel = route.rowId;
     }
     var w = calWindow();
-    var rows = all.filter(function (r) { return r.date <= w.end; });
-    var after = all.length - rows.length;
+    var rows = all.filter(function (r) { return r.date && r.date <= w.end; });
+    var after = all.filter(function (r) { return r.date && r.date > w.end; }).length;
+    var nodates = all.filter(function (r) { return !r.date; });
 
     var host = clear(document.getElementById('cal-mid'));
     var det = clear(document.getElementById('cal-det'));
@@ -1910,8 +2026,10 @@
     head.style.background = 'var(--panel2)';
     head.append(el('h2', null, 'Catalyst Calendar'));
     var subrow = el('div', 'cal-subrow');
-    subrow.append(el('div', 'sub', 'Kept events, by date · ' + rows.length + ' row' +
-      (rows.length === 1 ? '' : 's') + ' · next ' + w.win + ' months'));
+    // A-F2(b): the count includes the rows with no parsed day
+    var total = rows.length + nodates.length;
+    subrow.append(el('div', 'sub', 'Kept events, by date · ' + total + ' row' +
+      (total === 1 ? '' : 's') + ' · next ' + w.win + ' months'));
     var pills = el('div', 'calwin');
     [3, 6, 12].forEach(function (n) {
       var p = btn('calpill' + (n === w.win ? ' on' : ''), 'Next ' + n + ' months', function () {
@@ -1925,7 +2043,7 @@
     head.append(rl);
     host.append(head);
 
-    if (!rows.length) {
+    if (!rows.length && !nodates.length) {
       host.append(el('div', 'empty', 'Nothing kept yet — the calendar fills as rows are kept or corrected.'));
       det.append(el('div', 'empty', 'Pick an event to see its details.'));
       return;
@@ -1989,6 +2107,12 @@
         p.rows.forEach(function (r) { wrap.append(calRow(r, '', true)); });
       });
     });
+    // A-F2(b): kept rows whose date text names no day sit in a final section,
+    // the date text as written with a hollow dot — never dropped
+    if (nodates.length) {
+      wrap.append(el('div', 'mo', 'No day given · ' + nodates.length));
+      nodates.forEach(function (r) { wrap.append(calRow(r, '', true)); });
+    }
     var undated = calendarUndated();
     if (undated) {
       wrap.append(el('div', 'calfnote', undated + ' kept row' + (undated === 1 ? ' has' : 's have') +
@@ -2003,7 +2127,8 @@
     var on = host.querySelector('.crow.on');
     if (on) revealRow(on);
 
-    var sel = rows.filter(function (r) { return r.row.id === calSel; })[0] || null;
+    // A-F2(b): the undated rows are pickable too
+    var sel = all.filter(function (r) { return r.row.id === calSel; })[0] || null;
     if (!sel) {
       det.append(el('div', 'empty', 'Pick an event to see its details.'));
       return;
@@ -2077,6 +2202,18 @@
     c2.append(el('span', 'tk', row.ticker || '—'));
     if (row.program) c2.append(el('span', 'pg2', row.program));
     c2.append(el('span', 'tt', row.title || '(no title)'));
+    // A-F7: a row a person kept while a check failed or the readers disagree
+    // is not settled — a small warm marker says so next to the title
+    if (t.decided_by_person && t.group === 'kept') {
+      var af7fail = effectiveChecks(row, t).some(function (c) { return c.result === 'fail'; });
+      var af7dis = t.disagreement && t.disagreement.second_reader !== null &&
+                   t.disagreement.second_reader !== undefined;
+      if (af7fail || af7dis) {
+        c2.append(el('span', 'keepwarn',
+          af7fail && af7dis ? 'kept with a failed check, readers disagree'
+          : af7fail ? 'kept with a failed check' : 'kept, readers disagree'));
+      }
+    }
     // G8-7: a folded row says how many sources it was read from
     if (r.fold.length > 1) c2.append(el('span', 'srcpill', r.fold.length + ' sources'));
     if (isPeriod) {
@@ -2150,7 +2287,7 @@
     if (t.decided_by_person && needsAttention(t)) {
       l2.append(el('span', 'st st-corrected open', (DECIDED_BADGE[t.group] || 'Fixed by you') + ' · still open'));
     } else {
-      l2.append(t.decided_by_person ? decidedBadge(t.group) : statusBadge(t.status));
+      l2.append(rowBadge(row, t));
     }
     l2.append(el('span', 'mdl', 'by ' + (row.proposed_by || 'Model')));
     if (t.reason && (!t.decided_by_person || needsAttention(t))) {
@@ -2581,7 +2718,8 @@
       dl1.append(el('b', null, 'First reader · ' + (row.proposed_by || 'Muse Spark') + ': '), dval(dg.first_reader));
       var dl2 = el('div');
       dl2.style.marginTop = '4px';
-      dl2.append(el('b', null, 'Second reader · Muse Spark Open: '), dval(dg.second_reader));
+      var srL2 = ((detail.run.run || {}).second_reader || {}).model || 'Muse Spark Open';
+      dl2.append(el('b', null, 'Second reader · ' + srL2 + ': '), dval(dg.second_reader));
       dbox.append(dl1, dl2);
       fold.append(dbox);
       dsec.append(fold);
@@ -3004,6 +3142,14 @@
   function shownVal(cv, raw, k) {
     if (cv && Object.prototype.hasOwnProperty.call(cv, k)) return cv[k];
     return raw[k];
+  }
+  // Codex P2 (#113): a corrected row's effective checks are the re-check's
+  // 'after' set — the saved row.checks can be stale (a saved run is never
+  // rebuilt); only when no re-check ran do the saved checks speak
+  function effectiveChecks(row, t) {
+    var after = (t.recheck || {}).after || {};
+    if (after.checks && after.checks.length) return after.checks;
+    return row.checks || [];
   }
   function fmtField(field, value) {
     if (value === null || value === undefined || value === '') return '(none)';
