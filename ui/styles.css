@@ -46,20 +46,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-a
 .nav .ni.alert .ct{color:var(--red);font-weight:600}
 .nav .ni .ct.later{border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em}
 .runcard{display:block;margin:14px 14px 8px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);width:calc(100% - 28px)}
-.runcard .pick{cursor:pointer}
-.runcard .pick:hover .t1{color:var(--blue)}
-/* G8-2: a plain control takes the rail's blue ring, never the flag colour */
-.runcard .pick:focus-visible{outline:2px solid var(--blue);border-radius:6px}
-.runcard:hover{border-color:var(--faint)}
-/* G1-R5: the card reads as a picker — label above, chevrons, saved-run sub-line */
+/* G8-11: the card is a plain status card — no pointer, no hover, no focus ring */
+.runcard .pick{cursor:default}
 .runcard-lbl{margin:14px 16px 0;font-size:11px;color:var(--faint);font-weight:600;text-transform:uppercase;letter-spacing:.06em}
-.runcard .t1 .chev{margin-left:auto;color:var(--faint);font-weight:400}
-/* the chooser line — rail blue, never the warm box */
-.runcard .t2.chooser{color:var(--blue);font-weight:500;margin-top:3px}
-.runcard .runcard-pick{color:var(--faint);font-size:11.5px}
 .runcard-lbl + .runcard{margin-top:4px}
 .runcard .t1{font-weight:600;font-size:12.5px;display:flex;align-items:center;gap:6px}
-.runcard .t1::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green)}
 .runcard .t2{color:var(--sub);font-size:12px;margin-top:2px}
 .runcard .t3{margin-top:8px;font-size:11.5px;color:var(--amber);background:var(--amber-soft);border-radius:6px;padding:4px 8px;font-weight:500}
 .side-ft .tg{margin:10px 16px 0;padding:5px 11px;border-radius:7px;border:1px solid var(--line);color:var(--sub);font-size:12px}
@@ -333,6 +324,9 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
 
 /* new run panel + job bar (U8) */
 .newrun{margin:12px 14px 0;width:calc(100% - 28px)}
+/* G8-11: the saved-runs picker button — same size and border as New run,
+   stacked directly under it */
+.savedruns{margin:6px 14px 0;width:calc(100% - 28px)}
 .sheet.sheet-wide{width:520px}
 .sheet .opt{text-transform:none;letter-spacing:0;color:var(--faint);font-weight:500}
 .sh-grid{display:flex;flex-wrap:wrap;gap:6px}

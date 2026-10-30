@@ -398,8 +398,8 @@
     var st = detail.state;
     var card = document.getElementById('runcard');
     card.hidden = false;
-    // G1-R5/U29: a plain 'Run' label above the card — the ONE chevron is on
-    // the name row inside the header
+    // G8-11: a plain 'Run' label above a plain status card — the picker is
+    // the 'Saved runs' button under New run
     var lbl = document.getElementById('runcard-lbl');
     if (!lbl) {
       lbl = el('div', 'runcard-lbl');
@@ -412,9 +412,8 @@
     document.getElementById('runcard-sub').textContent =
       'Run ' + meta.number + ' · ' + dateTimeWords(meta.started_at) +
       ' · needs attention ' + st.unresolved;
-    // the chooser line — rail blue, never the warm box
-    document.getElementById('runcard-choose').textContent =
-      runs.length + ' saved run' + (runs.length === 1 ? '' : 's') + ' · choose';
+    // the saved-runs button's count rides the same runs list
+    updateSavedRunsBtn();
     // the sample warning stays warm; 'click to switch runs' is gone
     var flag = document.getElementById('runcard-flag');
     flag.hidden = !meta.sample;
@@ -3410,7 +3409,7 @@
         }
         if (JOB_ACTIVE.indexOf(st) < 0) {
           stopJobPoll();
-          A.runs().then(function (list) { runs = list; });
+          A.runs().then(function (list) { runs = list; updateSavedRunsBtn(); });
         }
       }).catch(function () { stopJobPoll(); });
     }, 2500);
@@ -3536,9 +3535,6 @@
 
   // ---------------------------------------------------------------- run sheet
   var runSheetWrap = document.getElementById('runsheet-wrap');
-  // G4-R3: the card's header rows are the click target that opens the run
-  // list — the card itself also holds the job block's controls. It is a div
-  // with role=button: Enter and Space open it too.
   function openRunSheet() {
     var host = clear(document.getElementById('runsheet-list'));
     runs.forEach(function (r) {
@@ -3561,13 +3557,14 @@
     });
     runSheetWrap.hidden = false;
   }
-  var runcardPick = document.getElementById('runcard-pick');
-  runcardPick.addEventListener('click', openRunSheet);
-  runcardPick.addEventListener('keydown', function (e) {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault();
-    openRunSheet();
-  });
+  // G8-11: the picker is a button, not the card — '▸ Saved runs · N' sits under
+  // '▸ New run' (same size and border); a native button, so Enter and Space
+  // open the sheet without extra code. The card below is a plain status card.
+  var savedrunsBtn = document.getElementById('savedruns');
+  savedrunsBtn.addEventListener('click', openRunSheet);
+  function updateSavedRunsBtn() {
+    savedrunsBtn.textContent = '▸ Saved runs · ' + runs.length;
+  }
   document.getElementById('runsheet-close').addEventListener('click', function () { runSheetWrap.hidden = true; });
   runSheetWrap.addEventListener('click', function (e) { if (e.target === runSheetWrap) runSheetWrap.hidden = true; });
   dialogWrap.addEventListener('click', function (e) {

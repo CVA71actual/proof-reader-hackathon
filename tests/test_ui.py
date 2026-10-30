@@ -973,26 +973,49 @@ setTimeout(function () {{
     assert got.returncode == 0, got.stdout + got.stderr
 
 
-def test_u24_g1r5_run_card_reads_as_a_picker():
-    # Re-glass 1 finding 10 + U29 (GLASS 7): the card reads as a picker — a
-    # plain "Run" label above it (no chevron; the ONE chevron is on the name
-    # row in index.html), the header rows are the click target, and a
-    # "<N> saved runs · choose" chooser line rides inside the header in rail
-    # blue.
+def test_u31_g8_11_picker_is_a_button_not_the_card():
+    # GLASS 8 fix 8 (Corey's ruling): the picker is a BUTTON — '▸ Saved runs · N'
+    # sits directly under '▸ New run', same size and border; click or Enter
+    # opens 'Choose a run'. The card below is a plain status card: no chevron,
+    # no 'choose' line, not clickable, no hover, no tabindex. 'RUN' label stays.
     js = (UI / "app.js").read_text()
     css = (UI / "styles.css").read_text()
     html = (UI / "index.html").read_text()
+    # two stacked buttons, then the card
+    assert 'id="newrun"' in html and 'id="savedruns"' in html
+    assert 'class="btn newrun"' in html and 'class="btn savedruns"' in html
+    ni = html.index('id="newrun"'); si = html.index('id="savedruns"'); ci = html.index('id="runcard"')
+    assert ni < si < ci, "buttons stack above the card"
+    assert ".savedruns{margin:6px 14px 0;width:calc(100% - 28px)}" in css
+    assert ".newrun{margin:12px 14px 0;width:calc(100% - 28px)}" in css
+    assert "savedrunsBtn.addEventListener('click', openRunSheet)" in js
+    assert "updateSavedRunsBtn" in js and "'▸ Saved runs · ' + runs.length" in js
+    # the card is plain: no chevron, no chooser line, no click/keyboard code
+    assert '<span class="chev">' not in html
+    assert 'runcard-choose' not in html and 'runcard-choose' not in js
+    assert 'role="button"' not in html and 'tabindex="0"' not in html
+    assert "runcardPick" not in js
+    assert "addEventListener('click', openRunSheet)" in js  # the button's, not the card's
+    assert "runcardPick.addEventListener" not in js
+    for dead in (".runcard .pick{cursor:pointer}", ".runcard:hover",
+                 ".runcard .pick:focus-visible", ".t2.chooser", ".t1::before",
+                 ".runcard .t1 .chev"):
+        assert dead not in css, dead
+    assert "runs.length + ' saved run'" not in js
+    # the RUN label stays above the card
     assert "'runcard-lbl'" in js and "el('span', null, 'Run')" in js
-    assert "runs.length + ' saved run'" in js and "' · choose'" in js  # ONE chevron lives on the name row
-    assert "insertBefore(lbl, card)" in js          # label rides above the card
-    assert 'id="runcard-pick"' in html              # the header is the click target
-    assert '<span class="chev">▾</span>' in html   # one chevron, on the name row
-    assert "addEventListener('click', openRunSheet)" in js
-    assert 'role="button"' in html and 'tabindex="0"' in html  # keyboard reachable
-    assert "e.key !== 'Enter' && e.key !== ' '" in js  # Enter and Space open it
-    assert ".runcard-lbl{" in css and ".runcard-lbl + .runcard{" in css
-    assert ".runcard .t2.chooser{color:var(--blue)" in css
-    assert ".runcard-lbl,.side-ft .ft{display:none}" in css  # hides at narrow widths
+    assert "insertBefore(lbl, card)" in js
+    assert ".runcard,.runcard-lbl,.side-ft .ft{display:none}" in css  # hides at narrow widths
+
+
+def test_u24_g1r5_picker_button_supersedes_the_card_picker():
+    # G8-11 supersedes the header-as-click-target part of G4-R3 / G1-R5:
+    # covered by test_u31_g8_11 above; this guard only keeps the old pins from
+    # silently returning
+    js = (UI / "app.js").read_text()
+    html = (UI / "index.html").read_text()
+    assert "runcardPick" not in js
+    assert 'id="runcard-choose"' not in html
 
 def test_u24_g1r7_citation_box_bottom_edge_sits_lower():
     # Re-glass 1 finding 9 (nit): the citation box was drawn exactly on the
@@ -2135,9 +2158,12 @@ def test_u30_glass8_leftovers():
     assert ".open = true" not in see
     assert "folds[idx].open = true" in js
     assert "var d = el('details', 'fold');" in js
-    # G8-2/G8-4: the css half
+    # G8-2/G8-4: the css half. G8-2's blue ring pinned the card header, which
+    # G8-11 made unfocusable — the flag colour must not ring a plain control,
+    # and the picker is now a native button
     css = (UI / "styles.css").read_text()
-    assert ".runcard .pick:focus-visible{outline:2px solid var(--blue)" in css
+    assert ".runcard .pick:focus-visible" not in css
+    assert "outline:2px solid var(--accent)" not in css
     assert "white-space:nowrap}" in css.split(".ctchip{")[1].split("}")[0] + "}"
     assert ".ctchip.zero + .ctchip.zero" not in css
 
