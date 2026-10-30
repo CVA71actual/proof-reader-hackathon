@@ -1594,6 +1594,11 @@
     return quote ? said + ': “' + quote + '”' : said;
   }
 
+  // G2-R2 / G2-6: every reader's prompt folds the same way — the first, the
+  // second reader's, and Muse Wonder's re-read prompt
+  var PROMPT_STEPS = { 'Instructions sent': true,
+                       'Instructions sent to the second reader': true,
+                       'Instructions sent to Muse Wonder': true };
   function trailStep(row, s, more) {
     var t = rowTarget(row);
     var step = el('div', 'step');
@@ -1612,7 +1617,9 @@
       var hd = el('div', 'hd');
       hd.append(el('span', 'who', word));
       hd.append(el('span', 'st2', 'Person'));
-      hd.append(el('span', 'wh', dateShort(l.at)));
+      // G2-R3: person steps carry date AND time, in the step header like the
+      // Code and Model steps (a decision can come days after the run)
+      hd.append(el('span', 'wh', dateShort(l.at) + ' ' + hm(l.at)));
       body.append(hd);
       var fx = l.fix;
       if (fx && l.action === 'fix') {
@@ -1635,7 +1642,7 @@
     else if (s.step === 'Checked' && outcome) glyph = outcome[1] === 'pass' ? '✓' : '–';
     else if (s.step === 'Checked') glyph = '✓';
     else if (s.step === 'Sent back') glyph = '→';
-    else if (s.step === 'Instructions sent' || s.step === 'Instructions sent to the second reader') glyph = '»';
+    else if (PROMPT_STEPS[s.step]) glyph = '»';
     rail.append(el('span', 'ic', glyph));
     if (more) rail.append(el('span', 'ln'));
     if (isFail) step.classList.add('failstep');
@@ -1651,8 +1658,9 @@
     hd.append(el('span', 'wh', hm(s.at)));
     body.append(hd);
 
-    if (s.step === 'Instructions sent' || s.step === 'Instructions sent to the second reader') {
-      // G2-6: the second reader's prompt folds exactly like the first
+    if (PROMPT_STEPS[s.step]) {
+      // G2-R2 / G2-6: the prompt folds exactly like the other readers' — same
+      // fold label, same capped box with its own scroll
       body.append(el('div', 'tx', 'The exact text the model received.'));
       var fold = el('details', 'fold instrbox');
       fold.append(el('summary', null, 'Show the instructions'));
@@ -1666,8 +1674,7 @@
       // G2-7: model summaries in plain words — the event type word and the date
       // as written, never snake_case ids or ISO dates. The reader's proposal
       // sentence appears on the proposal step and again on the second reading.
-      var isProposal = s.tag === 'Model' && s.step !== 'Instructions sent' &&
-                       s.step !== 'Instructions sent to the second reader' &&
+      var isProposal = s.tag === 'Model' && !PROMPT_STEPS[s.step] &&
                        /\bon\b/.test(s.text || '');
       var text = isProposal ? plainProposal(row, t, s) : (s.text || '');
       body.append(el('div', 'tx', text));

@@ -1177,7 +1177,84 @@ setTimeout(function () {{
     assert got.returncode == 0, got.stdout + got.stderr
 
 
-def test_u24_cancel_during_an_inflight_save_is_safe():
+def test_u26_glass2_wonder_prompt_folds_and_person_steps_carry_time():
+    # Re-glass 2: the Muse Wonder prompt folded and capped exactly like the
+    # first and second readers' prompts (same fold label, same instrbox), and
+    # person steps carry date AND time like the Code and Model step headers.
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    assert "Instructions sent to Muse Wonder': true" in js
+    assert "dateShort(l.at) + ' ' + hm(l.at)" in js
+    import re
+    prompt_steps = re.search(r"var PROMPT_STEPS = \{.*?\};", js, re.S).group(0)
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("el", "esc", "clear", "revealRow", "checkFnFor", "daySpanWords",
+                     "plainProposal", "trailStep"))
+    script = f"""
+{prompt_steps}
+var FIELD_WORDS = {{ date_text: 'Date as written' }};
+var PERSON_STEP_WORDS = {{ keep: 'Kept by you', fix: 'Fixed by you',
+                           remove: 'Removed by you', undo: 'Undone by you' }};
+var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',
+                    'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function make() {{
+  return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, dataset: {{}},
+    open: false, _l: {{}}, classList: {{ add: function () {{}}, remove: function () {{}}, toggle: function () {{}} }},
+    append: function () {{ for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); }},
+    addEventListener: function (t, fn) {{ this._l[t] = fn; }},
+    querySelector: function () {{ return null; }} }};
+}}
+global.document = {{ createElement: function (tag) {{ var n = make(); n.tag = tag; return n; }} }};
+function rowTarget(r) {{ return {{ values: {{}} }}; }}
+function dateShort(iso) {{ return '29 Oct 2026'; }}
+function hm(iso) {{ return '17:21:05'; }}
+function dayMonth(d) {{ return ''; }}
+function eventWord(v) {{ return String(v); }}
+function num(n) {{ return n === null || n === undefined ? '' : Number(n).toLocaleString('en-US'); }}
+function money(c) {{ return '$' + c; }}
+{fns}
+function walk(n, fn) {{ fn(n); (n.children || []).forEach(function (c) {{ walk(c, fn); }}); }}
+function findOne(n, pred) {{
+  var hit = null;
+  walk(n, function (x) {{ if (!hit && pred(x)) hit = x; }});
+  return hit;
+}}
+var WONDER_TEXT = 'You are re-reading one region of a page. The image is a band... ' +
+  'Output the JSON object only.';
+// the Wonder instruction step folds exactly like the other two readers'
+var step = trailStep({{ id: 'r1', checks: [] }}, {{
+  step: 'Instructions sent to Muse Wonder', tag: 'Code', who: 'capture.wonder',
+  at: '2026-10-29T16:51:11+00:00', text: WONDER_TEXT, tokens: {{ prompt: 1335, completion: null }}
+}}, false);
+var fold = findOne(step, function (x) {{ return (x.className || '').indexOf('fold') !== -1; }});
+if (!fold) {{ console.error('no fold on the Wonder step'); process.exit(2); }}
+if ((fold.className || '').indexOf('instrbox') === -1) {{ console.error('fold class: ' + fold.className); process.exit(3); }}
+var summary = findOne(fold, function (x) {{ return x.tag === 'summary'; }});
+if (!summary || summary.textContent !== 'Show the instructions') {{ console.error('summary: ' + JSON.stringify(summary && summary.textContent)); process.exit(4); }}
+var pre = findOne(fold, function (x) {{ return x.tag === 'pre'; }});
+if (!pre || pre.textContent !== WONDER_TEXT) {{ console.error('pre: ' + (pre && pre.textContent.length)); process.exit(5); }}
+var meta = findOne(step, function (x) {{ return (x.className || '') === 'meta'; }});
+if (!meta || meta.textContent !== 'prompt 1,335 tokens') {{ console.error('meta: ' + JSON.stringify(meta && meta.textContent)); process.exit(6); }}
+// the step's own line is the caption, not the raw prompt
+var flat = [];
+walk(step, function (x) {{ if (x.textContent) flat.push(x.textContent); }});
+if (flat.join('\\n').indexOf('The exact text the model received.') === -1) {{ console.error('caption missing'); process.exit(8); }}
+// a person step carries date AND time in the same wh span form
+var pstep = trailStep({{ id: 'r1', checks: [] }}, {{
+  __decision: true, line: {{ action: 'fix', at: '2026-10-29T17:21:05+00:00',
+    fix: {{ field: 'date_text', from: 'November 12, 2026', to: 'March 3, 2029' }},
+    note: 'the quote says March' }}
+}}, false);
+var wh = findOne(pstep, function (x) {{ return (x.className || '') === 'wh'; }});
+if (!wh || wh.textContent !== '29 Oct 2026 17:21:05') {{
+  console.error('person wh: ' + (wh && wh.textContent)); process.exit(9);
+}}
+console.log('ok');
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
     # Codex P2 on #91: Cancel pressed while the Save POST was still in flight
     # closed the dialog with saves=0, and the late-landing fix stayed. Cancel
     # is now disabled while a save is pending, and a fix whose re-check answer
