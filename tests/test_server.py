@@ -718,3 +718,43 @@ def test_codex9b_unchanged_words_still_take_the_fix(client, runs_dir, monkeypatc
     r = post(client, "e7", "fix", fix=E7_FIX)
     assert r.status_code == 200, r.text
     assert len(lines(runs_dir)) == n + 2
+
+
+# --- Job 24: the saved report files are served ---------------------------------------------------------------
+
+def _report_client(tmp_path, with_files=True):
+    import shutil
+    from report.data import report_filenames
+    runs = tmp_path / "runs"
+    shutil.copytree(REPO / "runs" / "sample", runs / "sample")
+    number = json.loads((runs / "sample" / "run.json").read_text())["run"]["number"]
+    pdf, docx = report_filenames(number)
+    if with_files:
+        (runs / "sample" / "report").mkdir(exist_ok=True)
+        (runs / "sample" / "report" / pdf).write_bytes(b"%PDF-1.4 test")
+        (runs / "sample" / "report" / docx).write_bytes(b"PK test")
+        (runs / "sample" / "report" / "notes.txt").write_text("private")
+    return TestClient(create_app(runs_dir=runs, ui_dir=tmp_path / "none", reader=object())), pdf, docx
+
+
+def test_report_files_are_served_with_get_and_head(tmp_path):
+    c, pdf, docx = _report_client(tmp_path)
+    r = c.get(f"/runs/sample/report/{pdf}")
+    assert (r.status_code, r.headers["content-type"], r.content) == (200, "application/pdf", b"%PDF-1.4 test")
+    assert c.head(f"/runs/sample/report/{pdf}").status_code == 200
+    assert c.get(f"/runs/sample/report/{docx}").status_code == 200
+    assert c.head(f"/runs/sample/report/{docx}").status_code == 200
+
+
+def test_other_names_and_unbuilt_reports_are_a_plain_404(tmp_path):
+    c, pdf, _ = _report_client(tmp_path)
+    for name in ("notes.txt", "..%2Frun.json", "other-run9.pdf", ""):
+        r = c.get(f"/runs/sample/report/{name}")
+        assert r.status_code == 404, name
+        assert c.head(f"/runs/sample/report/{name}").status_code == 404
+    assert c.get("/runs/nope/report/" + pdf).status_code == 404
+    c2, pdf2, _ = _report_client(tmp_path / "b", with_files=False)
+    shutil.rmtree(tmp_path / "b" / "runs" / "sample" / "report", ignore_errors=True)
+    r = c2.get(f"/runs/sample/report/{pdf2}")
+    assert r.status_code == 404 and r.json()["detail"].endswith(".")
+    assert c2.head(f"/runs/sample/report/{pdf2}").status_code == 404

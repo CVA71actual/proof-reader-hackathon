@@ -655,3 +655,34 @@ def test_baseten_stays_available_after_the_openrouter_cap_is_reached(monkeypatch
     r = SecondReader()
     r.openrouter_allowed, r.openrouter_blocked = False, second_reader.CAP_REACHED
     assert r.ready() is None and r.route() == "baseten"
+
+
+# --- Job 24: a disagreement needs two values -----------------------------------------------------------------
+
+def _sample_with_disagreement(second):
+    from runs.state import current_state
+    run = json.loads((REPO / "runs" / "sample" / "run.json").read_text())
+    row = run["rows"][0]
+    row["status"], row["group"] = "undecided", "open"
+    row["disagreement"] = {"field": "date", "first_reader": row.get("date") or "2027-01-01", "second_reader": second}
+    return run, row, current_state(run, [])["targets"][row["id"]]
+
+
+@pytest.mark.parametrize("second", [None, "", "  "])
+def test_a_second_reader_that_read_nothing_is_not_a_disagreement(second):
+    _, _, t = _sample_with_disagreement(second)
+    assert t["disagreement"] is None and t["status"] == "matched"
+
+
+def test_two_values_still_make_an_undecided_disagreement():
+    _, _, t = _sample_with_disagreement("2027-04-01")
+    assert t["disagreement"]["second_reader"] == "2027-04-01" and t["status"] == "undecided"
+
+
+def test_a_two_valued_also_field_survives_a_one_sided_main_field():
+    run, row, _ = _sample_with_disagreement(None)
+    row["disagreement"] = {"field": "date", "first_reader": None, "second_reader": "2027-04-01",
+                           "also": [{"field": "date_end", "first_reader": "2027-03-31", "second_reader": "2027-06-30"}]}
+    t = current_state(run, [])["targets"][row["id"]]
+    assert t["disagreement"] == {"field": "date_end", "first_reader": "2027-03-31", "second_reader": "2027-06-30"}
+    assert t["status"] == "undecided"

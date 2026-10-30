@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import calendar as _calendar
 import json
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from runs.state import current_state
@@ -131,6 +131,26 @@ def _event_label(row: dict, values: dict) -> str:
 
 def _caught_by_label(who: str) -> str:
     return {"code": "code", "second_reader": "second reader", "person": "person"}.get(who, who)
+
+
+def built_on_words(when: str) -> str:
+    """'Built on 29 October 2026 at 17:46 (local time)' from an ISO time (a trailing Z means UTC)."""
+    try:
+        dt = datetime.fromisoformat(when.replace("Z", "+00:00"))
+    except ValueError:
+        return when
+    if dt.tzinfo is not None:
+        dt = dt.astimezone()
+    return f"Built on {dt.day} {dt:%B %Y} at {dt:%H:%M} (local time)"
+
+
+def date_in_words(iso: str) -> str:
+    """'28 October 2026' from 'YYYY-MM-DD' (or a longer ISO time); anything else comes back as given."""
+    try:
+        d = date.fromisoformat((iso or "")[:10])
+    except ValueError:
+        return iso or ""
+    return f"{d.day} {d:%B %Y}"
 
 
 def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
@@ -273,9 +293,9 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         "run_label": meta.get("label") or meta["id"],
         "sample": bool(meta.get("sample")),
         "sample_stamp": SAMPLE_STAMP if meta.get("sample") else None,
-        "run_date": (meta.get("finished_at") or meta.get("started_at") or "")[:10],
+        "run_date": date_in_words(meta.get("finished_at") or meta.get("started_at") or ""),
         "companies": companies,
-        "generated_at": generated_at,
+        "generated_at": built_on_words(generated_at),
         "counts": {g: counts[g] for g in GROUP_LABEL},
         "group_labels": GROUP_LABEL,
         "mistakes": mistakes,

@@ -66,7 +66,7 @@ def build_docx(view: dict) -> bytes:
     _line(doc, "Companies covered: " + " · ".join(view["companies"]))
     if view["sample_stamp"]:
         _line(doc, view["sample_stamp"], italic=True, size=10)
-    _line(doc, f"Generated: {view['generated_at']}", size=8)
+    _line(doc, f"{view['generated_at']}", size=8)
 
     _heading(doc, "Summary")
     for key, label in view["group_labels"].items():

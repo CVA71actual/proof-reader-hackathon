@@ -92,6 +92,32 @@ CELL_CHECKED_FIELDS = ("value",)
 _CELL_GROUP = {"matched": "kept", "failed": "open"}
 
 
+def _empty(v) -> bool:
+    return v is None or (isinstance(v, (str, list, dict)) and not (v.strip() if isinstance(v, str) else v))
+
+
+def _real_disagreement(d) -> dict | None:
+    """A disagreement exists only when both readers gave a value for a field; a reader that read nothing (None or
+    empty) is not a disagreement. Each field (the main one and every "also") is judged on its own: the first one
+    with two values becomes the main disagreement and the rest stay in "also"."""
+    if not d:
+        return None
+    entries = [{k: v for k, v in x.items() if k != "also"} for x in [d, *(d.get("also") or [])]]
+    real = [x for x in entries if not _empty(x.get("first_reader")) and not _empty(x.get("second_reader"))]
+    if not real:
+        return None
+    return {**real[0], **({"also": real[1:]} if real[1:] else {})}
+
+
+def _drop_empty_undecided(t: dict, raw) -> None:
+    """A target held as undecided only for a one-sided "disagreement" (one reader read nothing) has nothing to
+    decide: it is matched. An undecided target that never had a disagreement is left as it is."""
+    if raw and t["status"] == "undecided" and t["disagreement"] is None:
+        t["status"] = "matched"
+        if t["group"] == "open":
+            t["group"] = "kept"
+
+
 def _base_targets(run: dict) -> dict:
     targets = {}
     for row in run.get("rows", []):
@@ -101,8 +127,9 @@ def _base_targets(run: dict) -> dict:
             "status": row["status"],
             "reason": row.get("reason"),
             "values": {f: row.get(f) for f in ROW_FIELDS},
-            "disagreement": row.get("disagreement"),
+            "disagreement": _real_disagreement(row.get("disagreement")),
         }
+        _drop_empty_undecided(targets[row["id"]], row.get("disagreement"))
     for table in run.get("tables", []):
         for trow in table.get("rows", []):
             for cell in trow.get("cells", []):
@@ -112,8 +139,9 @@ def _base_targets(run: dict) -> dict:
                     "status": cell["status"],
                     "reason": None,
                     "values": {"value": cell.get("value")},
-                    "disagreement": cell.get("disagreement"),
+                    "disagreement": _real_disagreement(cell.get("disagreement")),
                 }
+                _drop_empty_undecided(targets[cell["id"]], cell.get("disagreement"))
     return targets
 
 

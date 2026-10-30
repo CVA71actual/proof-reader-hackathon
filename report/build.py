@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from report.data import build_view, load_run_dir, report_filenames
@@ -68,7 +68,7 @@ def build(
             "past runs are never rebuilt. Use --out for tests."
         )
 
-    when = generated_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    when = generated_at or datetime.now().astimezone().isoformat(timespec="seconds")
     view = build_view(run, decisions, generated_at=when)
     pdf_bytes = build_pdf(view)
     docx_bytes = build_docx(view)

@@ -120,13 +120,21 @@ def test_banned_words_absent(sample_out):
 def test_deterministic_with_timestamp_masked(sample_out):
     a = build("sample", out=sample_out / "a", generated_at=FIXED_TIME)
     b = build("sample", out=sample_out / "b", generated_at="2026-10-28T21:00:00Z")
-    pdf_a = _mask_timestamp(a["pdf"].read_bytes(), FIXED_TIME)
-    pdf_b = _mask_timestamp(b["pdf"].read_bytes(), "2026-10-28T21:00:00Z")
-    assert pdf_a == pdf_b
+    line_a, line_b = a["view"]["generated_at"], b["view"]["generated_at"]
+    assert _pdf_text(a["pdf"]).replace(line_a, "T") == _pdf_text(b["pdf"]).replace(line_b, "T")
     # docx package parts carry zip timestamps; compare body + footer text
-    assert _docx_text(a["docx"]).replace(FIXED_TIME, "T") == _docx_text(b["docx"]).replace(
-        "2026-10-28T21:00:00Z", "T"
-    )
+    assert _docx_text(a["docx"]).replace(line_a, "T") == _docx_text(b["docx"]).replace(line_b, "T")
+
+
+ISO_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
+
+
+def test_built_on_line_is_in_words_and_no_iso_timestamp_in_either_file(sample_out):
+    result = build("sample", out=sample_out, generated_at=FIXED_TIME)
+    for text in (_pdf_text(result["pdf"]), _docx_text(result["docx"])):
+        assert re.search(r"Built on \d{1,2} [A-Z][a-z]+ \d{4} at \d\d:\d\d \(local time\)", text)
+        assert "Generated" not in text
+        assert not ISO_TIMESTAMP.search(text)
 
 
 def test_past_run_never_rebuilt(tmp_path):

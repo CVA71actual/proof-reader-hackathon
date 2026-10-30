@@ -105,7 +105,7 @@ def build_pdf(view: dict) -> bytes:
     story.append(_p("Companies covered: " + " · ".join(view["companies"]), styles["body"]))
     if view["sample_stamp"]:
         story.append(_p(view["sample_stamp"], styles["stamp"]))
-    story.append(_p(f"Generated: {view['generated_at']}", styles["small"]))
+    story.append(_p(f"{view['generated_at']}", styles["small"]))
     story.append(Spacer(1, 8))
 
     # Summary

@@ -41,6 +41,7 @@ from capture.second_reader import SecondReader
 from capture.wonder import WonderReader
 from runs.calendar import calendar_entries
 from runs.recheck import recheck_cell, recheck_row
+from report.data import report_filenames
 from runs.state import PERSON_ACTIONS, current_state
 from server import jobs
 
@@ -347,6 +348,22 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
                                      f"recorded in run.json.")
         media = "image/png" if name.endswith(".png") else "application/json" if name.endswith(".json") else None
         return Response(data, media_type=media or "application/octet-stream")
+
+    REPORT_TYPES = {".pdf": "application/pdf",
+                    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+
+    @app.api_route("/runs/{run_id}/report/{name}", methods=["GET", "HEAD"])
+    def report_file(run_id: str, name: str) -> Response:
+        """The run's saved PDF or Word report, from <run folder>/report/. Only the two file names report/ builds for
+        this run are served; any other name, or a report not built yet, is a plain 404. Nothing there is listed."""
+        run = store.run(run_id)
+        number = run.get("run", {}).get("number")
+        if not isinstance(number, int) or name not in report_filenames(number):
+            raise HTTPException(404, "No such report file.")
+        f = store.run_dir(run_id) / "report" / name
+        if not f.is_file():
+            raise HTTPException(404, "This run has no saved report file with that name.")
+        return Response(f.read_bytes(), media_type=REPORT_TYPES[Path(name).suffix])
 
     if Path(ui_dir).is_dir():
         app.mount("/", StaticFiles(directory=ui_dir, html=True), name="ui")
