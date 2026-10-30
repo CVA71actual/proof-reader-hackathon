@@ -2027,8 +2027,12 @@
     if (p.action === 'fix') {
       // the route returns capture.voice.propose() unchanged: its value key is `to`
       var to = p.value !== undefined ? p.value : p.to;
-      return 'Fix the ' + String(FIELD_WORDS[p.field] || p.field || 'row').toLowerCase() +
-             ' to ' + fmtSayValue(p.field, to) + '?';
+      // a spoken period opens the dialog on Date as written — the question
+      // names THAT field, never the ISO-only date box
+      var field = p.field;
+      if (field === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(String(to))) field = 'date_text';
+      return 'Fix the ' + String(FIELD_WORDS[field] || field || 'row').toLowerCase() +
+             ' to ' + fmtSayValue(field, to) + '?';
     }
     if (p.action === 'remove') return 'Remove it?';
     return 'Keep it?';
@@ -2111,7 +2115,9 @@
   function prefillSay(row, p) {
     if (!p) return;
     var q = document.getElementById('qnote');
-    if (p.note && q) q.value = p.note;
+    // the spoken note never replaces a reason the person already typed — the
+    // words already show in the question and the To box (round 10)
+    if (p.note && q && !q.value) q.value = p.note;
     if (p.action === 'fix') {
       // a spoken period is not an ISO day: the date box would red-line a value
       // the person just said — offer Date as written instead
@@ -2152,14 +2158,9 @@
       }
       // a mic that never answers reads as unreachable, not as a silent wait
       var gum = navigator.mediaDevices.getUserMedia({ audio: true });
-      var started = false;
-      gum.then(function (s) {
-        if (!started) s.getTracks().forEach(function (t) { t.stop(); });
-      });
       Promise.race([gum, new Promise(function (_, rej) {
         setTimeout(function () { rej(new Error('mic timeout')); }, 10000);
       })]).then(function (stream) {
-        started = true;
         starting = false;
         if (!b.isConnected) {
           stream.getTracks().forEach(function (t) { t.stop(); });
@@ -2174,25 +2175,50 @@
           note.hidden = false;
           return;
         }
-        var src = ctx.createMediaStreamSource(stream);
-        var node = ctx.createScriptProcessor(4096, 1, 1);
-        var rec = { ctx: ctx, stream: stream, node: node, samples: [], button: b,
-                    note: note, said: said, row: row,
-                    timer: setTimeout(stopSay, SAY_MAX_SECONDS * 1000) };
-        node.onaudioprocess = function (e) {
-          var ch = e.inputBuffer.getChannelData(0);
-          for (var i = 0; i < ch.length; i++) rec.samples.push(ch[i]);
-          if (rec.samples.length / ctx.sampleRate >= SAY_MAX_SECONDS) stopSay();
+        var begin = function () {
+          // the row may have changed while the context was resuming — never
+          // start a take on a button that is gone (Codex P1 on #93)
+          if (!b.isConnected) {
+            stream.getTracks().forEach(function (t) { t.stop(); });
+            try { ctx.close(); } catch (e) { /* already shut */ }
+            return;
+          }
+          var src = ctx.createMediaStreamSource(stream);
+          var node = ctx.createScriptProcessor(4096, 1, 1);
+          var rec = { ctx: ctx, stream: stream, node: node, samples: [], button: b,
+                      note: note, said: said, row: row,
+                      timer: setTimeout(stopSay, SAY_MAX_SECONDS * 1000) };
+          node.onaudioprocess = function (e) {
+            var ch = e.inputBuffer.getChannelData(0);
+            for (var i = 0; i < ch.length; i++) rec.samples.push(ch[i]);
+            if (rec.samples.length / ctx.sampleRate >= SAY_MAX_SECONDS) stopSay();
+          };
+          src.connect(node);
+          node.connect(ctx.destination);
+          sayRec = rec;
+          b.textContent = 'Listening… — press to send';
+          // the person let go while the mic was still setting up: stop now
+          if (releaseStopsLive) { releaseStopsLive = false; stopSay(); }
         };
-        src.connect(node);
-        node.connect(ctx.destination);
-        sayRec = rec;
-        b.textContent = 'Listening… — press to send';
-        // the person let go while the mic was still setting up: stop now
-        if (releaseStopsLive) { releaseStopsLive = false; stopSay(); }
+        // the context is built after the press, outside the gesture — some
+        // browsers start it suspended, which would record a silent take
+        if (ctx.resume) {
+          ctx.resume().then(begin, function () {
+            // the context never started — no take can run on it
+            stream.getTracks().forEach(function (t) { t.stop(); });
+            try { ctx.close(); } catch (e) { /* already shut */ }
+            note.textContent = 'The microphone could not be reached.';
+            note.hidden = false;
+          });
+        } else begin();
       }).catch(function () {
         starting = false;
         releaseStopsLive = false;
+        // only a truly lost race stops the microphone — a late answer after
+        // the 10 s timeout must not keep the mic running
+        gum.then(function (s) {
+          s.getTracks().forEach(function (t) { t.stop(); });
+        }, function () { /* permission denied — nothing to stop */ });
         note.textContent = 'The microphone could not be reached.';
         note.hidden = false;
       });

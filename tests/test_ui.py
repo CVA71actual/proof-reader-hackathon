@@ -1560,6 +1560,140 @@ recordAndStop({{ ok: false, status: 422,
     assert got.returncode == 0, got.stdout + got.stderr
 
 
+def test_u25_resume_rechecks_the_button_before_begin():
+    # Codex P1 on #93: begin() ran after the awaited ctx.resume() without
+    # rechecking the button — a row change during the resume left a live take
+    # on a disconnected button. begin() now stops the tracks and closes the
+    # context instead; no sayRec is ever set.
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in ("sayControls", "stopSay"))
+    script = f"""
+var SAY_MAX_SECONDS = 30;
+var FIELD_WORDS = {{}};
+var sayRec = null;
+function make() {{
+  return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, hidden: false,
+    isConnected: true, value: '', _l: {{}},
+    append: function () {{ for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); }},
+    addEventListener: function (t, fn) {{ this._l[t] = fn; }},
+    querySelector: function () {{ return null; }} }};
+}}
+function el(tag, cls, text) {{
+  var n = make(); n.tag = tag; if (cls) n.className = cls; if (text) n.textContent = text; return n;
+}}
+function btn(cls, text) {{ return el('button', cls, text); }}
+function clear(node) {{ node.children = []; }}
+function encodeWav() {{ return new Uint8Array(0); }}
+function currentRunId() {{ return 'run1'; }}
+var sent = 0;
+global.fetch = function () {{ sent++; return Promise.resolve({{ ok: false }}); }};
+{fns}
+var stops = 0, closes = 0, resumeResolve = null;
+var stream = {{ getTracks: function () {{ return [{{ stop: function () {{ stops++; }} }}]; }} }};
+var gumResolve = null;
+Object.defineProperty(globalThis, 'navigator', {{ configurable: true,
+  value: {{ mediaDevices: {{ getUserMedia: function () {{
+    return new Promise(function (res) {{ gumResolve = res; }}); }} }} }} }});
+function FakeAC() {{ this.sampleRate = 48000; this.destination = {{}}; this.state = 'suspended'; }}
+FakeAC.prototype.createMediaStreamSource = function () {{ return {{ connect: function () {{}} }}; }};
+FakeAC.prototype.createScriptProcessor = function () {{
+  return {{ connect: function () {{}}, onaudioprocess: null }}; }};
+FakeAC.prototype.resume = function () {{
+  // the resume answers only when the test lets it — after the button is gone
+  return new Promise(function (res) {{ resumeResolve = res; }});
+}};
+FakeAC.prototype.close = function () {{ closes++; }};
+global.window = {{ AudioContext: FakeAC }};
+var wrap = sayControls({{ id: 'r1' }});
+var b = wrap.children[0];
+b._l.mousedown();
+gumResolve(stream);
+setTimeout(function () {{
+  if (sayRec) {{ console.error('a take started before the resume answered'); process.exit(2); }}
+  b.isConnected = false;                 // the row changed mid-resume
+  resumeResolve();                       // the deferred resume now lands
+  setTimeout(function () {{
+    if (sayRec !== null) {{ console.error('sayRec was set on a gone button'); process.exit(3); }}
+    if (stops !== 1) {{ console.error('tracks stopped ' + stops + ' time(s)'); process.exit(4); }}
+    if (closes !== 1) {{ console.error('ctx closed ' + closes + ' time(s)'); process.exit(5); }}
+    if (b.textContent.indexOf('Listening') === 0) {{ console.error('button still says Listening'); process.exit(6); }}
+    if (sent !== 0) {{ console.error('a take was posted'); process.exit(7); }}
+    console.log('ok');
+  }}, 0);
+}}, 0);
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u25_a_rejected_resume_does_not_begin():
+    # Codex P2 on #93: ctx.resume().then(begin, begin) ran begin() even when
+    # the resume was rejected — a take on a context that never started. A
+    # rejected resume now stops the tracks, closes the context and shows the
+    # same honest line as an unreachable microphone; no sayRec is set.
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in ("sayControls", "stopSay"))
+    script = f"""
+var SAY_MAX_SECONDS = 30;
+var FIELD_WORDS = {{}};
+var sayRec = null;
+function make() {{
+  return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, hidden: true,
+    isConnected: true, value: '', _l: {{}},
+    append: function () {{ for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); }},
+    addEventListener: function (t, fn) {{ this._l[t] = fn; }},
+    querySelector: function () {{ return null; }} }};
+}}
+function el(tag, cls, text) {{
+  var n = make(); n.tag = tag; if (cls) n.className = cls; if (text) n.textContent = text; return n;
+}}
+function btn(cls, text) {{ return el('button', cls, text); }}
+function clear(node) {{ node.children = []; }}
+function encodeWav() {{ return new Uint8Array(0); }}
+function currentRunId() {{ return 'run1'; }}
+var sent = 0;
+global.fetch = function () {{ sent++; return Promise.resolve({{ ok: false }}); }};
+{fns}
+var stops = 0, closes = 0, connected = 0;
+var stream = {{ getTracks: function () {{ return [{{ stop: function () {{ stops++; }} }}]; }} }};
+var gumResolve = null;
+Object.defineProperty(globalThis, 'navigator', {{ configurable: true,
+  value: {{ mediaDevices: {{ getUserMedia: function () {{
+    return new Promise(function (res) {{ gumResolve = res; }}); }} }} }} }});
+function FakeAC() {{ this.sampleRate = 48000; this.destination = {{}}; this.state = 'suspended'; }}
+FakeAC.prototype.createMediaStreamSource = function () {{ return {{ connect: function () {{ connected++; }} }}; }};
+FakeAC.prototype.createScriptProcessor = function () {{
+  return {{ connect: function () {{ connected++; }}, onaudioprocess: null }}; }};
+FakeAC.prototype.resume = function () {{ return Promise.reject(new Error('denied')); }};
+FakeAC.prototype.close = function () {{ closes++; }};
+global.window = {{ AudioContext: FakeAC }};
+var wrap = sayControls({{ id: 'r1' }});
+var b = wrap.children[0], note = wrap.children[1];
+b._l.mousedown();
+gumResolve(stream);
+setTimeout(function () {{
+  if (sayRec !== null) {{ console.error('sayRec was set after a rejected resume'); process.exit(2); }}
+  if (stops !== 1) {{ console.error('tracks stopped ' + stops + ' time(s)'); process.exit(3); }}
+  if (closes !== 1) {{ console.error('ctx closed ' + closes + ' time(s)'); process.exit(4); }}
+  if (connected !== 0) {{ console.error('the context was wired ' + connected + ' time(s)'); process.exit(5); }}
+  if (note.textContent !== 'The microphone could not be reached.') {{
+    console.error('note: ' + JSON.stringify(note.textContent)); process.exit(6);
+  }}
+  if (note.hidden !== false) {{ console.error('the note stayed hidden'); process.exit(7); }}
+  if (sent !== 0) {{ console.error('a take was posted'); process.exit(8); }}
+  console.log('ok');
+}}, 0);
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
 
 def _compare_cards(rows_a, rows_b):
     """compareRuns from app.js under node, against two fake runs.
