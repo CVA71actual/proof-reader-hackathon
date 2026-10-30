@@ -124,9 +124,13 @@ def _source_line(src: dict | None) -> str:
     return " · ".join(parts)
 
 
+def _value(values: dict, row: dict, field: str):
+    """The current value of a field (a person's fix applied); the raw row's only when the state has none."""
+    return values[field] if field in values else row.get(field)
+
+
 def _event_label(row: dict, values: dict) -> str:
-    title = row.get("title") or values.get("title") or ""
-    return title
+    return _value(values, row, "title") or ""
 
 
 def _caught_by_label(who: str) -> str:
@@ -180,7 +184,7 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
             "date_display": _date_display(values),
             "sort_key": _calendar_date_key(values),
             "ticker": values.get("ticker") or row.get("ticker") or "",
-            "program": row.get("program") or "",
+            "program": _value(values, row, "program") or "",
             "event": _event_label(row, values),
             "source": _source_line(src),
             "status": st["status"],

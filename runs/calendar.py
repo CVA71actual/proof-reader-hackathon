@@ -30,10 +30,10 @@ def calendar_entries(run: dict, state: dict) -> list[dict]:
         s = state["targets"].get(row["id"])
         if s is None or not on_calendar(s):
             continue
-        v = s["values"]
+        v = {**row, **s["values"]}      # the state's current values; the raw row only where the state has none
         out.append({
             "id": row["id"], "ticker": v["ticker"], "company": v["company"], "event_type": v["event_type"],
-            "title": v["title"], "program": row.get("program"), "date_text": v["date_text"], "date": v["date"],
+            "title": v["title"], "program": v["program"], "date_text": v["date_text"], "date": v["date"],
             "date_end": v["date_end"], "quote": v["quote"], "source_id": row["source_id"],
             "page_number": row["page_number"], "group": s["group"], "status": s["status"],
             "decided_by_person": s["decided_by_person"], "last_action": s["last_action"],

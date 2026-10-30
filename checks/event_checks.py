@@ -319,7 +319,7 @@ def release_day(words: list[dict] | None, published: date | str | None) -> tuple
 # source's filing date. Returns (first day, last day) of the window the words stand for, or None.
 _REL_YEAR_END = re.compile(r"^(?:year[- ]end|(?:the )?end of (?:the |this )?year)$")
 _REL_THIS_YEAR = re.compile(r"^(?:this year|(?:later|further) (?:this|in the) year)$")
-_REL_QUARTER = re.compile(r"^(this|next|the (?:current|next)) quarter$")
+_REL_QUARTER = re.compile(r"^(?:(?:later|further) )?(this|next|the (?:current|next)) quarter$")
 
 
 def relative_period(text: str | None, filed: date | str | None) -> tuple[date, date] | None:
@@ -737,6 +737,9 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
             return result(PASS, "The period in the row is the period printed in the quote.", found=found)
         return result(FAIL, "The period in the row differs from the period printed in the quote.", found=found)
     if date_iso is None and date_end is None:
+        if named_dates(q):
+            return result(COULD_NOT_RUN, f"“{dt}” is not a date this check can read, and the quote names another "
+                                         f"date; it cannot tell which belongs to the event.", found=dt)
         return result(NOT_NEEDED, "The quote names no exact day and no period, so there is nothing to compare.",
                       found=dt)
     return result(FAIL, "The row gives a date but the quote names no day and no period.", found=dt)

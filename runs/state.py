@@ -57,6 +57,7 @@ Undo takes back a fix or a remove, so it lowers whichever counter that decision 
 from __future__ import annotations
 
 import copy
+import re
 
 from accuracy.types import primary_type, type_for_field
 from runs.prices import cost_per_kept_row_usd
@@ -109,27 +110,51 @@ def _real_disagreement(d) -> dict | None:
     return {**real[0], **({"also": real[1:]} if real[1:] else {})}
 
 
-def _drop_empty_undecided(t: dict, raw) -> None:
+def _drop_empty_undecided(t: dict, raw, checks=None) -> None:
     """A target held as undecided only for a one-sided "disagreement" (one reader read nothing) has nothing to
-    decide: it is matched. An undecided target that never had a disagreement is left as it is."""
+    decide: it is matched, provided every check passed or was not needed. A check that could not run keeps the
+    target as the run left it (open, not matched). An undecided target that never had a disagreement is left
+    as it is."""
+    if any(c.get("result") == "could_not_run" for c in checks or []):
+        return
     if raw and t["status"] == "undecided" and t["disagreement"] is None:
         t["status"] = "matched"
         if t["group"] == "open":
             t["group"] = "kept"
 
 
+_PERIOD_FOUND = re.compile(r"^(\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})$")
+
+
+def _period_bounds(row: dict) -> tuple[str, str] | None:
+    """The first and last day the passed date check found for the row's period ("2027-01-01 to 2027-01-31"),
+    or None when the row already stores a date or the check named no period."""
+    if row.get("date") or row.get("date_end"):
+        return None
+    for c in row.get("checks") or []:
+        if c.get("name") == "date_match" and c.get("result") == "pass":
+            m = _PERIOD_FOUND.match(str((c.get("compared") or {}).get("found") or ""))
+            if m:
+                return m[1], m[2]
+    return None
+
+
 def _base_targets(run: dict) -> dict:
     targets = {}
     for row in run.get("rows", []):
+        values = {f: row.get(f) for f in ROW_FIELDS}
+        bounds = _period_bounds(row)
+        if bounds:
+            values["date"], values["date_end"] = bounds
         targets[row["id"]] = {
             "kind": "row",
             "group": row["group"],
             "status": row["status"],
             "reason": row.get("reason"),
-            "values": {f: row.get(f) for f in ROW_FIELDS},
+            "values": values,
             "disagreement": _real_disagreement(row.get("disagreement")),
         }
-        _drop_empty_undecided(targets[row["id"]], row.get("disagreement"))
+        _drop_empty_undecided(targets[row["id"]], row.get("disagreement"), row.get("checks"))
     for table in run.get("tables", []):
         for trow in table.get("rows", []):
             for cell in trow.get("cells", []):
@@ -141,7 +166,7 @@ def _base_targets(run: dict) -> dict:
                     "values": {"value": cell.get("value")},
                     "disagreement": _real_disagreement(cell.get("disagreement")),
                 }
-                _drop_empty_undecided(targets[cell["id"]], cell.get("disagreement"))
+                _drop_empty_undecided(targets[cell["id"]], cell.get("disagreement"), cell.get("checks"))
     return targets
 
 
