@@ -1655,71 +1655,8 @@
   }
 
   // ---------------------------------------------------------------- calendar (U6)
-  // U21 "Read this week": the calendar header offers the week's kept events
-  // read aloud. The audio comes from GET /api/runs/<id>/voice/week (a separate
-  // server job); until that route lands the stub's 501 shows one honest line
-  // inline. While the audio plays the button is the stop control and the text
-  // read aloud sits under the button.
-  var voiceAudio = null;
-  function stopVoice() {
-    if (voiceAudio) {
-      voiceAudio.pause();
-      try { voiceAudio.src = ''; } catch (e) { /* nothing to release */ }
-      voiceAudio = null;
-    }
-    var b = document.getElementById('voicebtn');
-    if (b) b.textContent = 'Read this week';
-    var t = document.getElementById('voicetext');
-    if (t) t.hidden = true;
-  }
-  function voiceControls() {
-    var wrap = el('div', 'voicewrap');
-    var note = el('div', 'hint voicenote');
-    note.id = 'voicenote';
-    note.hidden = true;
-    var said = el('div', 'voicetext');
-    said.id = 'voicetext';
-    said.hidden = true;
-    var b = btn('btn voicebtn', 'Read this week', function () {
-      if (voiceAudio) { stopVoice(); return; }
-      note.hidden = true;
-      fetch('/api/runs/' + encodeURIComponent(currentRunId()) + '/voice/week')
-        .then(function (r) {
-          if (!r.ok) {
-            // only the stub's 501 carries the sentence; any other miss reads the same
-            if (r.status === 501) {
-              return r.text().then(function (body) {
-                note.textContent = (body || '').trim() || 'Voice is not on this build yet.';
-                note.hidden = false;
-              });
-            }
-            note.textContent = 'Voice is not on this build yet.';
-            note.hidden = false;
-            return null;
-          }
-          var transcript = r.headers.get('X-Voice-Text') || '';
-          return r.blob().then(function (blob) {
-            voiceAudio = new Audio(URL.createObjectURL(blob));
-            b.textContent = 'Stop';
-            said.textContent = transcript;
-            said.hidden = !transcript;
-            voiceAudio.addEventListener('ended', stopVoice);
-            return voiceAudio.play().catch(function () {
-              note.textContent = 'The audio could not be played.';
-              note.hidden = false;
-              stopVoice();
-            });
-          });
-        })
-        .catch(function () {
-          note.textContent = 'Voice is not on this build yet.';
-          note.hidden = false;
-        });
-    });
-    b.id = 'voicebtn';
-    wrap.append(b, note, said);
-    return wrap;
-  }
+  // U23: Meta's model list has no text-to-speech, so the U21 read-aloud
+  // control is gone; voice is the person speaking, on Judgment needed.
 
   // Kept and corrected rows only, never removed / unverified / open. Exact days
   // sort within their month; a period row sits under its period as written,
@@ -1769,7 +1706,6 @@
     });
     subrow.append(pills);
     head.append(subrow);
-    head.append(voiceControls());
     var rl = el('div', 'runlabel' + (meta.sample ? ' sample' : ''), meta.label || '');
     head.append(rl);
     host.append(head);
@@ -1982,8 +1918,254 @@
     return t;
   }
 
+  // ---------------------------------------------------------------- say your decision (U23)
+  // Meta's model list has no text-to-speech; the voice model transcribes the
+  // person. The mic records in the browser with the Web Audio API, downsampled
+  // to a mono 16-bit 16 kHz WAV (the route takes WAV only, at most 30 s), and
+  // POSTs to /api/runs/<id>/voice/decide?target=<row>. The reply's proposal
+  // pre-fills the same Keep / Fix / Remove buttons — nothing is decided until
+  // the person presses one.
+  var SAY_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+                    'August', 'September', 'October', 'November', 'December'];
+  var SAY_MAX_SECONDS = 30;
+
+  // float samples -> 16-bit PCM mono WAV at 16 kHz, capped at 30 s
+  function encodeWav(samples, rate) {
+    var TARGET = 16000;
+    var ratio = rate / TARGET;
+    var outLen = Math.max(1, Math.min(Math.floor(samples.length / ratio), TARGET * SAY_MAX_SECONDS));
+    var buf = new ArrayBuffer(44 + outLen * 2);
+    var v = new DataView(buf);
+    function wstr(o, t) { for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
+    wstr(0, 'RIFF'); v.setUint32(4, 36 + outLen * 2, true); wstr(8, 'WAVE'); wstr(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, TARGET, true); v.setUint32(28, TARGET * 2, true);
+    v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    wstr(36, 'data'); v.setUint32(40, outLen * 2, true);
+    var o = 44;
+    for (var i = 0; i < outLen; i++) {
+      var base = Math.floor(i * ratio), cnt = 0, s = 0;
+      var end = Math.min(base + Math.max(1, Math.round(ratio)), samples.length);
+      for (var j = base; j < end; j++) { s += samples[j]; cnt++; }
+      s = cnt ? s / cnt : 0;
+      s = Math.max(-1, Math.min(1, s));
+      v.setInt16(o, s < 0 ? Math.round(s * 32768) : Math.round(s * 32767), true);
+      o += 2;
+    }
+    return new Uint8Array(buf);
+  }
+
+  // a proposed value in plain words: dates in words, types as their word
+  function fmtSayValue(field, value) {
+    if (value === null || value === undefined || value === '') return '(none)';
+    if (field === 'event_type') return eventWord(value);
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
+    if (m && (field === 'date' || field === 'date_end')) {
+      return SAY_MONTHS[parseInt(m[2], 10) - 1] + ' ' + parseInt(m[3], 10) + ', ' + m[1];
+    }
+    return String(value);
+  }
+
+  // the proposal as one question: "Fix the date to March 3, 2027?"
+  function sayProposalText(p) {
+    if (!p || !p.action) return null;
+    if (p.action === 'fix') {
+      // the route returns capture.voice.propose() unchanged: its value key is `to`
+      var to = p.value !== undefined ? p.value : p.to;
+      return 'Fix the ' + String(FIELD_WORDS[p.field] || p.field || 'row').toLowerCase() +
+             ' to ' + fmtSayValue(p.field, to) + '?';
+    }
+    if (p.action === 'remove') return 'Remove it?';
+    return 'Keep it?';
+  }
+
+  function sayReplyLine(reply) {
+    var t = sayProposalText(reply && reply.proposal);
+    return "You said: '" + ((reply && reply.transcript) || '') + "'" + (t ? ' → ' + t : '');
+  }
+
+  var sayRec = null;
+  // a re-render for another row drops a live take without posting it
+  function sayBusyWith(row) { return sayRec && sayRec.row !== row; }
+  function cancelSay() {
+    var rec = sayRec;
+    if (!rec) return;
+    sayRec = null;
+    clearTimeout(rec.timer);
+    rec.node.onaudioprocess = null;
+    rec.stream.getTracks().forEach(function (t) { t.stop(); });
+    try { rec.node.disconnect(); rec.ctx.close(); } catch (e) { /* already shut */ }
+    if (rec.button.isConnected) rec.button.textContent = 'Say your decision';
+  }
+  function stopSay() {
+    var rec = sayRec;
+    if (!rec) return;
+    sayRec = null;
+    clearTimeout(rec.timer);
+    rec.node.onaudioprocess = null;
+    rec.stream.getTracks().forEach(function (t) { t.stop(); });
+    try { rec.node.disconnect(); rec.ctx.close(); } catch (e) { /* already shut */ }
+    rec.button.textContent = 'Say your decision';
+    if (rec.samples.length / rec.ctx.sampleRate < 0.4) {
+      rec.note.textContent = 'Too short — hold the button, say your decision, let go.';
+      rec.note.hidden = false;
+      return;
+    }
+    rec.button.textContent = 'Sending…';
+    var wav = encodeWav(rec.samples, rec.ctx.sampleRate);
+    fetch('/api/runs/' + encodeURIComponent(currentRunId()) +
+          '/voice/decide?target=' + encodeURIComponent(rec.row.id), {
+      method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: wav
+    }).then(function (r) {
+      rec.button.textContent = 'Say your decision';
+      if (!r.ok) {
+        // the route answers 422 with a plain sentence in detail; a missing route
+        // (404/501) or an unreadable body keeps the one honest build line
+        if (r.status === 404 || r.status === 501) {
+          rec.note.textContent = 'Voice is not on this build yet.';
+          rec.note.hidden = false;
+          return null;
+        }
+        return r.json().then(function (err) {
+          rec.note.textContent = (err && err.detail) || 'Voice is not on this build yet.';
+          rec.note.hidden = false;
+          return null;
+        }).catch(function () {
+          rec.note.textContent = 'Voice is not on this build yet.';
+          rec.note.hidden = false;
+          return null;
+        });
+      }
+      return r.json().then(function (reply) {
+        var p = reply && reply.proposal;
+        var line = sayReplyLine(reply);
+        clear(rec.said);
+        rec.said.append(el('div', null, line));
+        if (p && p.note) rec.said.append(el('div', 'hint', p.note));
+        rec.said.hidden = false;
+        prefillSay(rec.row, p);
+      });
+    }).catch(function () {
+      rec.button.textContent = 'Say your decision';
+      rec.note.textContent = 'Voice is not on this build yet.';
+      rec.note.hidden = false;
+    });
+  }
+
+  // the proposal fills the SAME controls — nothing is posted from voice
+  function prefillSay(row, p) {
+    if (!p) return;
+    var q = document.getElementById('qnote');
+    if (p.note && q) q.value = p.note;
+    if (p.action === 'fix') {
+      // a spoken period is not an ISO day: the date box would red-line a value
+      // the person just said — offer Date as written instead
+      var to = p.value !== undefined ? p.value : p.to;
+      var field = p.field;
+      if (field === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(String(to))) field = 'date_text';
+      fixDialog(row, { field: field, to: to });
+    } else if (p.action === 'remove') {
+      removeDialog(row, p.note || null);
+    } else {
+      var kb = document.getElementById('keepbtn');
+      if (kb) {
+        kb.classList.add('pulse');
+        setTimeout(function () { kb.classList.remove('pulse'); }, 2400);
+      }
+    }
+  }
+
+  function sayControls(row) {
+    var wrap = el('div', 'saywrap');
+    var note = el('div', 'hint saynote');
+    note.hidden = true;
+    var said = el('div', 'yousaid');
+    said.hidden = true;
+    var b = btn('btn saybtn', 'Say your decision');
+    b.id = 'saybtn';
+    var holdAt = 0, heldStop = false, releaseStopsLive = false, starting = false;
+    // press and hold (capture starts on press), or click to start / click to stop
+    function startCapture() {
+      starting = true;
+      note.hidden = true;
+      said.hidden = true;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        starting = false;
+        note.textContent = 'Voice is not on this build yet.';
+        note.hidden = false;
+        return;
+      }
+      // a mic that never answers reads as unreachable, not as a silent wait
+      var gum = navigator.mediaDevices.getUserMedia({ audio: true });
+      var started = false;
+      gum.then(function (s) {
+        if (!started) s.getTracks().forEach(function (t) { t.stop(); });
+      });
+      Promise.race([gum, new Promise(function (_, rej) {
+        setTimeout(function () { rej(new Error('mic timeout')); }, 10000);
+      })]).then(function (stream) {
+        started = true;
+        starting = false;
+        if (!b.isConnected) {
+          stream.getTracks().forEach(function (t) { t.stop(); });
+          return;
+        }
+        var AC = window.AudioContext || window.webkitAudioContext;
+        var ctx = new AC();
+        if (!ctx.createScriptProcessor) {
+          stream.getTracks().forEach(function (t) { t.stop(); });
+          releaseStopsLive = false;
+          note.textContent = 'Voice is not on this build yet.';
+          note.hidden = false;
+          return;
+        }
+        var src = ctx.createMediaStreamSource(stream);
+        var node = ctx.createScriptProcessor(4096, 1, 1);
+        var rec = { ctx: ctx, stream: stream, node: node, samples: [], button: b,
+                    note: note, said: said, row: row,
+                    timer: setTimeout(stopSay, SAY_MAX_SECONDS * 1000) };
+        node.onaudioprocess = function (e) {
+          var ch = e.inputBuffer.getChannelData(0);
+          for (var i = 0; i < ch.length; i++) rec.samples.push(ch[i]);
+          if (rec.samples.length / ctx.sampleRate >= SAY_MAX_SECONDS) stopSay();
+        };
+        src.connect(node);
+        node.connect(ctx.destination);
+        sayRec = rec;
+        b.textContent = 'Listening… — press to send';
+        // the person let go while the mic was still setting up: stop now
+        if (releaseStopsLive) { releaseStopsLive = false; stopSay(); }
+      }).catch(function () {
+        starting = false;
+        releaseStopsLive = false;
+        note.textContent = 'The microphone could not be reached.';
+        note.hidden = false;
+      });
+    }
+    b.addEventListener('mousedown', function () {
+      holdAt = Date.now();
+      if (!sayRec && !starting) startCapture();
+    });
+    b.addEventListener('mouseup', function () {
+      if (Date.now() - holdAt <= 600) return;
+      if (sayRec) { heldStop = true; stopSay(); }
+      // let go while the mic was still setting up: the take stops once it is live
+      else if (starting) releaseStopsLive = true;
+    });
+    b.addEventListener('click', function () {
+      if (heldStop) { heldStop = false; return; }
+      if (sayRec) { stopSay(); return; }
+      // the press that began this setup already handled it (mouse) — Enter has no mousedown
+      if (starting) return;
+      startCapture();
+    });
+    wrap.append(b, note, said);
+    return wrap;
+  }
+
   function judgmentPendingPane(host, row, t) {
     clear(host);
+    if (sayBusyWith(row)) cancelSay();
     // a row the person corrected earlier but that still needs a person: show the
     // fix and its re-check outcome, then ask for the call again (Red Team round 7)
     var correctedOpen = t.decided_by_person && needsAttention(t);
@@ -2027,10 +2209,12 @@
       if (dv.length > 24) dv = dv.slice(0, 24) + '…';
       keepLabel = 'Keep ' + dv;
     }
-    br.append(btn('btn pri', keepLabel, function () {
+    var keepB = btn('btn pri', keepLabel, function () {
       postDecision(row.id, { target: row.id, action: 'keep', note: note.value || null },
         'Kept by you.');
-    }));
+    });
+    keepB.id = 'keepbtn';
+    br.append(keepB);
     if (isPeriod) {
       br.append(btn('btn', 'Keep as stated', function () {
         var dt = (t.values && t.values.date_text) || row.date_text || 'the period';
@@ -2060,6 +2244,8 @@
       sec.append(el('div', 'hint',
         'Keep accepts the fixed value as it stands; Fix again changes it; Undo takes your fix back.'));
     }
+    // U23: the person can say the decision instead of typing it
+    sec.append(sayControls(row));
     host.append(sec);
   }
 
@@ -2161,12 +2347,13 @@
     else closeDialog();
   }
 
-  function removeDialog(row) {
+  function removeDialog(row, prefillNote) {
     clear(dialogHost);
     dialogHost.append(el('div', 'sh-t', 'Remove this row'));
     dialogHost.append(el('div', 'sh-s', row.ticker + ' · ' + row.title));
     dialogHost.append(el('h4', null, 'Why it is removed (required — it is the recorded reason)'));
     var note = noteField('dnote', 'e.g. Not an upcoming event.');
+    if (prefillNote) note.value = prefillNote;
     dialogHost.append(note);
     var br = el('div', 'btnrow');
     br.style.marginTop = '14px';
@@ -2182,7 +2369,7 @@
     note.focus();
   }
 
-  function fixDialog(row) {
+  function fixDialog(row, prefill) {
     var t = rowTarget(row);
     clear(dialogHost);
     dialogHost.append(el('div', 'sh-t', 'Fix the row'));
@@ -2194,6 +2381,8 @@
       o.value = f;
       sel.append(o);
     });
+    // U23: a voice proposal pre-fills the field it names
+    if (prefill && prefill.field && FIX_FIELDS.indexOf(prefill.field) >= 0) sel.value = prefill.field;
     dialogHost.append(sel);
     dialogHost.append(el('h4', null, 'From (the current value)'));
     var from = el('input', 'fld');
@@ -2214,6 +2403,7 @@
     }
     sel.addEventListener('change', show);
     show();
+    if (prefill && prefill.to !== undefined && prefill.to !== null) to.value = String(prefill.to);
     function validateFix() {
       if (!to.value.trim() && cur() !== null) return 'A new value is required.';
       if ((sel.value === 'date' || sel.value === 'date_end') && !/^\d{4}-\d{2}-\d{2}$/.test(to.value.trim())) {

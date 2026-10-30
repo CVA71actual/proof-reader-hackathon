@@ -55,8 +55,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-a
 
 /* screens */
 .main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
-.screens{flex:1;min-width:0;display:flex}
-.screen{display:none;flex:1;min-width:0}
+.screens{flex:1;min-width:0;min-height:0;display:flex}
+.screen{display:none;flex:1;min-width:0;min-height:0}
 .screen.on{display:flex}
 .pane{min-width:0;overflow-y:auto}
 .pane.list{width:340px;flex:0 0 340px;border-right:1px solid var(--line);background:var(--bg)}
@@ -338,9 +338,9 @@ table.acctab{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:4px
 table.acctab th{text-align:left;color:var(--sub);font-weight:600;font-size:11px;padding:4px 8px 4px 0;border-bottom:1px solid var(--line)}
 table.acctab td{padding:5px 8px 5px 0;border-bottom:1px solid var(--line2);vertical-align:top}
 table.acctab td:first-child{font-weight:500}
-/* U21: "Read this week" voice control in the calendar header */
-.voicewrap{margin-top:8px}
-.btn.voicebtn{font-size:12.5px;padding:6px 12px}
-.voicenote{margin-top:6px;color:var(--sub)}
-.voicebtn + .voicenote{margin-top:6px}
-.voicetext{margin-top:6px;padding:8px 11px;border-left:3px solid var(--blue);background:var(--blue-soft);border-radius:0 8px 8px 0;font-size:13px}
+/* U23: "Say your decision" mic on Judgment needed */
+.saywrap{margin-top:12px}
+.btn.saybtn{font-size:12.5px;padding:6px 12px}
+.saybtn + .saynote{margin-top:6px}
+.yousaid{margin-top:8px;padding:8px 11px;border-left:3px solid var(--blue);background:var(--blue-soft);border-radius:0 8px 8px 0;font-size:13px}
+.btn.pulse{outline:2px solid var(--blue);outline-offset:2px}

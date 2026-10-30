@@ -418,7 +418,7 @@ def _judgment_screen(row_id):
     names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "checkDot", "checkResultWord",
              "needsAttention", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
              "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
-             "judgmentDecidedPane", "renderJudgment")
+             "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith")
     rows = [
         {"id": "r-cnr", "title": "ROW-COULD-NOT-RUN", "ticker": "ACME", "proposed_by": "Muse Spark",
          "checks": [], "date_text": "Q3 2027"},
@@ -475,6 +475,7 @@ function make() {{
     addEventListener: function () {{}}, querySelector: function () {{ return null; }} }};
 }}
 var nodes = {{}};
+var sayRec = null;   // the app holds the live take in this seat
 global.document = {{
   createElement: function () {{ return make(); }},
   getElementById: function (id) {{ if (!nodes[id]) nodes[id] = make(); return nodes[id]; }}
@@ -780,21 +781,271 @@ def test_u15_glass1_fixes_are_wired():
     assert "codeRemoved" in js
 
 
-def test_u21_voice_button_is_wired():
-    # "Read this week": the calendar header fetches the week's audio from
-    # GET /api/runs/<id>/voice/week; until the route lands the stub's 501 shows
-    # one honest line inline; while playing, the button is Stop and the text
-    # read aloud sits under the button.
+def test_u23_say_your_decision_is_wired():
+    # U23: Meta has no text-to-speech, so U21's "Read this week" is gone; the
+    # person's voice goes IN. The mic records with the Web Audio API (never
+    # MediaRecorder) and builds the WAV in the browser — mono, 16-bit, 16 kHz,
+    # at most 30 s, audio/wav — POSTed to /api/runs/<id>/voice/decide?target=<row>.
+    # The reply shows "You said: … → <proposal>" under the button and pre-fills
+    # the same Keep / Fix / Remove controls; nothing is decided from voice.
     js = (UI / "app.js").read_text()
     css = (UI / "styles.css").read_text()
-    for word in ("Read this week", "voice/week", "Voice is not on this build yet.",
-                 "stopVoice", "X-Voice-Text", "voicetext"):
+    for word in ("Say your decision", "voice/decide", "getUserMedia",
+                 "encodeWav", "audio/wav", "You said: '",
+                 "Voice is not on this build yet.", "sayControls(row)"):
         assert word in js, word
-    assert "b.textContent = 'Stop'" in js
-    assert "voiceControls()" in js
-    assert ".voicetext" in css
+    assert "16000" in js and "SAY_MAX_SECONDS = 30" in js
+    # the route takes WAV recorded in the browser, not webm/MediaRecorder
+    assert "MediaRecorder" not in js
+    assert "Read this week" not in js and "voice/week" not in js
+    # the proposal question names the field in plain words and the person
+    # still presses the buttons — voice never posts a decision
+    assert "sayProposalText" in js and "prefillSay" in js
+    assert "postDecision" not in _grab_fn(js, "prefillSay")
+    assert ".yousaid" in css and ".saybtn" in css
     # no external call: same-origin fetch only
-    assert "http://" not in js.split("voice/week")[0][-200:] or True
+    assert "http://" not in js and "https://" not in js
+
+
+def test_u23_say_proposal_and_wav_encoding():
+    # behavior: the WAV the browser builds has the RIFF shape the route takes
+    # (mono, 16-bit, 16 kHz); the proposal reads as one plain-word question.
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("SAY_MONTHS", "encodeWav", "fmtSayValue", "sayProposalText", "sayReplyLine",
+                     "prefillSay")
+                    if not n.isupper())
+    script = f"""
+var SAY_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+                  'August', 'September', 'October', 'November', 'December'];
+var SAY_MAX_SECONDS = 30;
+var FIELD_WORDS = {{date: 'Date', date_end: 'Date end', date_text: 'Date as written',
+  title: 'Title', event_type: 'Type', company: 'Company', ticker: 'Ticker',
+  program: 'Program', indication: 'Condition'}};
+function eventWord(v) {{ return 'type-' + v; }}
+{fns}
+// 1 s of a 48 kHz tone -> resampled to 16 kHz mono 16-bit WAV
+var samples = [];
+for (var i = 0; i < 48000; i++) samples.push(Math.sin(i / 48000 * 2 * Math.PI * 440) * 0.5);
+var wav = encodeWav(samples, 48000);
+var v = new DataView(wav.buffer);
+var ok = String.fromCharCode(wav[0], wav[1], wav[2], wav[3]) === 'RIFF' &&
+         String.fromCharCode(wav[8], wav[9], wav[10], wav[11]) === 'WAVE' &&
+         v.getUint16(22, true) === 1 &&   // mono
+         v.getUint16(34, true) === 16 &&  // 16-bit
+         v.getUint32(24, true) === 16000; // 16 kHz
+if (!ok) process.exit(2);
+if (Math.abs(v.getUint32(40, true) - 32000) > 2 * 16000 / 48000 * 2 + 64) process.exit(3);
+// the proposal as one question, dates in words, type as its word
+var p1 = sayProposalText({{action: 'fix', field: 'date', value: '2027-03-03'}});
+if (p1 !== 'Fix the date to March 3, 2027?') process.exit(4);
+var p2 = sayProposalText({{action: 'remove'}});
+if (p2 !== 'Remove it?') process.exit(5);
+var p3 = sayProposalText({{action: 'keep'}});
+if (p3 !== 'Keep it?') process.exit(6);
+var p4 = sayProposalText({{action: 'fix', field: 'event_type', value: 'trial_results'}});
+if (p4 !== 'Fix the type to type-trial_results?') process.exit(7);
+if (sayProposalText(null) !== null) process.exit(8);
+// the reply line with a fake reply
+var line = sayReplyLine({{transcript: 'move it to March third twenty twenty seven',
+  proposal: {{action: 'fix', field: 'date', value: '2027-03-03'}}}});
+if (line.indexOf("You said: 'move it to March third twenty twenty seven' → Fix the date to March 3, 2027?") !== 0)
+  process.exit(9);
+var bare = sayReplyLine({{transcript: 'not sure'}});
+if (bare !== "You said: 'not sure'") process.exit(10);
+// the Job 29 route returns capture.voice.propose() unchanged — its value key is `to`
+var p5 = sayProposalText({{action: 'fix', field: 'date', to: '2027-03-03'}});
+if (p5 !== 'Fix the date to March 3, 2027?') process.exit(11);
+var line2 = sayReplyLine({{transcript: 'move it to March third',
+  proposal: {{action: 'fix', field: 'date', to: '2027-03-03'}}}});
+if (line2.indexOf("→ Fix the date to March 3, 2027?") === -1) process.exit(12);
+// and the same route reply pre-fills the Fix dialog's To box via prefillSay
+var filled = null;
+function fixDialog(row, opts) {{ filled = opts; }}
+function removeDialog() {{}}
+global.document = {{ getElementById: function () {{ return {{ value: '' }}; }} }};
+prefillSay({{id: 'r1'}}, {{action: 'fix', field: 'date', to: '2027-03-03', note: 'as said'}});
+if (!filled || filled.field !== 'date' || filled.to !== '2027-03-03') process.exit(13);
+// a spoken period is not an ISO day: the dialog opens on Date as written instead
+filled = null;
+prefillSay({{id: 'r1'}}, {{action: 'fix', field: 'date', to: 'third quarter 2027'}});
+if (!filled || filled.field !== 'date_text' || filled.to !== 'third quarter 2027') process.exit(14);
+console.log('ok');
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u23_hold_release_stops_even_when_the_mic_is_slow():
+    # Codex P2 on #88: a press-and-hold released while getUserMedia was still
+    # setting up kept recording until a second click or the 30 s cap. The
+    # release must now carry through the async mic setup and stop the take.
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in ("sayControls", "stopSay"))
+    script = f"""
+var SAY_MAX_SECONDS = 30;
+var FIELD_WORDS = {{}};
+var sayRec = null;   // the app's live-take seat
+var now = 1_000_000;
+Date.now = function () {{ return now; }};
+function el(tag, cls, text) {{
+  var n = make(); n.tag = tag; if (cls) n.className = cls; if (text) n.textContent = text;
+  return n;
+}}
+function btn(cls, text) {{ return el('button', cls, text); }}
+function clear(node) {{ node.children = []; }}
+function encodeWav() {{ return new Uint8Array(0); }}
+function currentRunId() {{ return 'run1'; }}
+var sent = 0;
+global.fetch = function () {{ sent++; return Promise.resolve({{ ok: false }}); }};
+{fns}
+function make() {{
+  return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, hidden: false,
+    isConnected: true, _l: {{}},
+    append: function () {{ for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); }},
+    addEventListener: function (t, fn) {{ this._l[t] = fn; }},
+    querySelector: function () {{ return null; }} }};
+}}
+global.window = {{}};
+function FakeAC() {{}}
+FakeAC.prototype.sampleRate = 48000;
+FakeAC.prototype.destination = {{}};
+FakeAC.prototype.createMediaStreamSource = function () {{ return {{ connect: function () {{}} }}; }};
+FakeAC.prototype.createScriptProcessor = function () {{
+  return {{ connect: function () {{}}, onaudioprocess: null }}; }};
+FakeAC.prototype.close = function () {{}};
+window.AudioContext = FakeAC;
+var stream = {{ getTracks: function () {{ return [{{ stop: function () {{}} }}]; }} }};
+var gumResolve = null;
+Object.defineProperty(globalThis, 'navigator', {{
+  configurable: true,
+  value: {{ mediaDevices: {{ getUserMedia: function () {{
+    return new Promise(function (res) {{ gumResolve = res; }}); }} }} }} }});
+var wrap = sayControls({{ id: 'r1' }});
+var b = wrap.children[0], note = wrap.children[1];
+function assert(cond, code) {{ if (!cond) {{ console.error('fail ' + code); process.exit(code); }} }}
+// hold past 600 ms, let go BEFORE the mic answers: the take must stop once live
+b._l.mousedown();
+assert(typeof gumResolve === 'function', 2);        // capture begins on press
+now += 3000; b._l.mouseup(); b._l.click();
+gumResolve(stream);   // permission answers after the release
+setTimeout(function () {{
+  assert(sayRec === null, 3);                       // release carried through setup
+  assert(sent === 0, 4);                            // an empty take is never posted
+  assert(b.textContent === 'Say your decision', 5);
+  assert(note.textContent.indexOf('Too short') === 0, 6);
+  // a quick click is still a toggle: starts on press, stays live, second click stops
+  now += 1000;
+  b._l.mousedown(); now += 100; b._l.mouseup(); b._l.click();
+  assert(typeof gumResolve === 'function', 12);
+  gumResolve(stream);
+  setTimeout(function () {{
+    assert(sayRec !== null, 7);                     // toggle recording went live
+    assert(b.textContent === 'Listening… — press to send', 8);
+    b._l.click();                                   // second click stops
+    assert(sayRec === null, 9);
+    // and a hold that is released after the mic is live stops on release
+    now += 1000;
+    b._l.mousedown(); b._l.mouseup(); b._l.click();
+    gumResolve(stream);
+    setTimeout(function () {{
+      assert(sayRec !== null, 10);
+      now += 3000; b._l.mouseup();                  // long release while live
+      assert(sayRec === null, 11);
+      console.log('ok');
+    }}, 0);
+  }}, 0);
+}}, 0);
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u23_server_422_sentence_is_shown():
+    # the route answers 422 with a plain sentence in detail — show that sentence;
+    # a missing route (404/501) or a body without detail keeps the build line
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in ("sayControls", "stopSay"))
+    script = f"""
+var SAY_MAX_SECONDS = 30;
+var FIELD_WORDS = {{}};
+var sayRec = null;
+function make() {{
+  return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, hidden: false,
+    isConnected: true, _l: {{}},
+    append: function () {{ for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); }},
+    addEventListener: function (t, fn) {{ this._l[t] = fn; }},
+    querySelector: function () {{ return null; }} }};
+}}
+function el(tag, cls, text) {{
+  var n = make(); n.tag = tag; if (cls) n.className = cls; if (text) n.textContent = text; return n;
+}}
+function btn(cls, text) {{ return el('button', cls, text); }}
+function clear(node) {{ node.children = []; }}
+function encodeWav() {{ return new Uint8Array(0); }}
+function currentRunId() {{ return 'run1'; }}
+var nextResp = null;
+global.fetch = function () {{
+  var r = nextResp; nextResp = null;
+  return Promise.resolve(r);
+}};
+{fns}
+var stream = {{ getTracks: function () {{ return [{{ stop: function () {{}} }}]; }} }};
+var gumResolve = null;
+Object.defineProperty(globalThis, 'navigator', {{ configurable: true,
+  value: {{ mediaDevices: {{ getUserMedia: function () {{
+    return new Promise(function (res) {{ gumResolve = res; }}); }} }} }} }});
+function FakeAC() {{}}
+FakeAC.prototype.sampleRate = 48000;
+FakeAC.prototype.destination = {{}};
+FakeAC.prototype.createMediaStreamSource = function () {{ return {{ connect: function () {{}} }}; }};
+FakeAC.prototype.createScriptProcessor = function () {{
+  return {{ connect: function () {{}}, onaudioprocess: null }}; }};
+FakeAC.prototype.close = function () {{}};
+global.window = {{ AudioContext: FakeAC }};
+var wrap = sayControls({{ id: 'r1' }});
+var b = wrap.children[0], note = wrap.children[1];
+function assert(cond, code) {{ if (!cond) {{ console.error('fail ' + code); process.exit(code); }} }}
+function recordAndStop(resp, done) {{
+  b._l.mousedown();
+  gumResolve(stream);
+  setTimeout(function () {{
+    for (var i = 0; i < 20000; i++) sayRec.samples.push(0);  // ~0.42 s, past the too-short cut
+    nextResp = resp;
+    b._l.click();   // stop -> post
+    setTimeout(done, 0);
+  }}, 0);
+}}
+recordAndStop({{ ok: false, status: 422,
+  json: function () {{ return Promise.resolve({{ detail: 'The audio is longer than 30 seconds.' }}); }} }},
+  function () {{
+    assert(note.textContent === 'The audio is longer than 30 seconds.', 2);
+    // a 404 (route absent) keeps the one honest build line
+    recordAndStop({{ ok: false, status: 404,
+      json: function () {{ return Promise.resolve({{ detail: 'should be ignored' }}); }} }},
+      function () {{
+        assert(note.textContent === 'Voice is not on this build yet.', 3);
+        // a 422 body without detail also falls back to the build line
+        recordAndStop({{ ok: false, status: 422, json: function () {{ return Promise.resolve({{}}); }} }},
+          function () {{
+            assert(note.textContent === 'Voice is not on this build yet.', 4);
+            console.log('ok');
+          }});
+      }});
+  }});
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
 
 
 def _compare_cards(rows_a, rows_b):
