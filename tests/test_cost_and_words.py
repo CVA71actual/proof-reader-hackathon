@@ -64,7 +64,11 @@ def test_the_confirmed_prices_are_the_ones_dev_meta_ai_lists_and_spark_open_is_c
     assert prices.cost_usd("Muse Spark", 1_000_000, 1_000_000) == 5.5
     assert prices.cost_usd("Muse Wonder", 1_000_000, 1_000_000) == 24.0
     status = prices.PRICE_STATUS
-    assert set(status) == set(t) | set(prices.PRICES_PER_IMAGE_USD)
+    assert prices.PRICES_PER_HOUR_USD["Muse Voice Transcribe"] == 0.18
+    assert prices.audio_cost_usd("Muse Voice Transcribe", 3_600_000) == 0.18
+    assert prices.audio_cost_usd("Muse Voice Transcribe", 3000) == 0.00015
+    assert status["Muse Voice Transcribe"] == "confirmed 2026-10-29, dev.meta.ai"
+    assert set(status) == set(t) | set(prices.PRICES_PER_IMAGE_USD) | set(prices.PRICES_PER_HOUR_USD)
     assert (t["Muse Spark Open"]["input"], t["Muse Spark Open"]["output"], t["Muse Spark Open"]["cached_input"]) == (1.25, 4.25, 0.15)
     assert status["Muse Spark Open"] == "confirmed 2026-10-29, baseten.co"
     assert all(s.startswith("confirmed 2026-10-29") for s in status.values())

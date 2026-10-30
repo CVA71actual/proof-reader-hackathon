@@ -29,13 +29,14 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from jsonschema import Draft202012Validator
 
 from accuracy import export as accuracy_export
 from capture.reader import LiveReader
+from capture import voice
 from capture.sam import SamReader
 from capture.second_reader import SecondReader
 from capture.wonder import WonderReader
@@ -178,6 +179,18 @@ def _find_target(run: dict, target: str) -> tuple[str, dict, dict | None, object
     return None
 
 
+def _multipart_audio(content_type: str, body: bytes) -> bytes:
+    """The bytes of the `audio` part of a multipart/form-data body (b"" when there is none)."""
+    from email import policy
+    from email.parser import BytesParser
+
+    msg = BytesParser(policy=policy.HTTP).parsebytes(b"Content-Type: " + content_type.encode() + b"\r\n\r\n" + body)
+    for part in msg.iter_parts() if msg.is_multipart() else []:
+        if part.get_param("name", header="content-disposition") == "audio":
+            return part.get_payload(decode=True) or b""
+    return b""
+
+
 def _cell_context(run: dict, target: str) -> tuple[str | None, list[str] | None]:
     """(row label, table columns) for a table value id: what the row-and-column check compares against."""
     for table in run.get("tables", []):
@@ -193,7 +206,7 @@ def _summary(state: dict) -> dict:
 
 def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, background: bool = True,
                second_reader="default", coverage_as_of=None, wonder_reader="default",
-               sam_reader="default", index=None) -> FastAPI:
+               sam_reader="default", index=None, transcriber=None) -> FastAPI:
     """`reader`: what a run's job calls (default: Muse Spark, needs a key). `second_reader`: the independent second
     read (default: Muse Spark Open when no `reader` was given, none when one was, so a test with a fake reader never
     reaches the network; None: one reader). `background`: False runs a job to its stop inside the request, which is
@@ -201,6 +214,7 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     source's published date). `wonder_reader`: the escalation model (default: Muse Wonder when no `reader` was given,
     none when one was; None: no escalation). `sam_reader`: SAM 3.1 for scanned pages (same default rule). `index`: the sources index
     (runs/sources.py; default: runs/sources_index.json, else the built-in one), which says what pages each company has."""
+    transcriber = transcriber or voice.transcribe
     store = RunStore(runs_dir)
     if second_reader == "default":
         second_reader = SecondReader() if reader is None else None
@@ -321,6 +335,24 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
             # the re-check reads: a file changed since the run was loaded refuses the decision before any write.
             verify_page_files(store.run_dir(run_id), run)
             return _decide(store, run_id, run, line)
+
+    @app.post("/api/runs/{run_id}/voice/decide")
+    async def voice_decide(run_id: str, request: Request, target: str = "") -> dict:
+        """A spoken decision for one row: the WAV is transcribed and the words become a proposal by rules. Nothing is
+        written to decisions.jsonl; the call is priced into the run's spend as one turn."""
+        run = store.run(run_id)
+        if _find_target(run, target) is None:
+            raise HTTPException(404, "No row or value in this run has that id.")
+        body = await request.body()
+        if request.headers.get("content-type", "").lower().startswith("multipart/form-data"):
+            body = _multipart_audio(request.headers["content-type"], body)
+        try:
+            heard = transcriber(body)
+        except voice.VoiceError as e:
+            raise HTTPException(422, str(e)) from None
+        jobs.count_voice_turn(store.runs_dir, run_id, heard)
+        return {"transcript": heard["transcript"], "proposal": voice.propose(heard["transcript"]),
+                "cost_usd": heard["cost_usd"], "audio_ms": heard["audio_ms"]}
 
     @app.get("/runs/{run_id}/accuracy.json")
     @app.get("/api/runs/{run_id}/accuracy")

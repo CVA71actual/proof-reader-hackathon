@@ -25,12 +25,18 @@ PRICES_PER_IMAGE_USD = {
     "SAM 3.1": 0.0025,
 }
 
+# US dollars per hour of audio, for a model priced by audio length: Muse Voice Transcribe, $0.18 per hour (confirmed).
+PRICES_PER_HOUR_USD = {
+    "Muse Voice Transcribe": 0.18,
+}
+
 # Where each price comes from. "confirmed ..." was read from the vendor's price list; nothing is a placeholder now.
 PRICE_STATUS = {
     "Muse Spark": "confirmed 2026-10-29, dev.meta.ai",
     "Muse Wonder": "confirmed 2026-10-29, dev.meta.ai",
     "SAM 3.1": "confirmed 2026-10-29, dev.meta.ai",
     "Muse Spark Open": "confirmed 2026-10-29, baseten.co",
+    "Muse Voice Transcribe": "confirmed 2026-10-29, dev.meta.ai",
 }
 
 ROUND_TO = 6  # cost figures are kept to a millionth of a dollar
@@ -54,6 +60,14 @@ def image_cost_usd(model: str, images: int | None) -> float | None:
     return round(images * price, ROUND_TO)
 
 
+def audio_cost_usd(model: str, audio_ms: int | None) -> float | None:
+    """The cost of a call to a model priced per hour of audio, from the audio length the service reports."""
+    price = PRICES_PER_HOUR_USD.get(model)
+    if price is None or not isinstance(audio_ms, int) or isinstance(audio_ms, bool):
+        return None
+    return round(audio_ms / 3_600_000 * price, ROUND_TO)
+
+
 def snapshot() -> dict:
     """The price table in force now, copied into run.json as run.prices when a run is made, so its cost can be
     recomputed later at the prices it was tallied at."""
@@ -63,7 +77,7 @@ def snapshot() -> dict:
 
 def has_price(model: str) -> bool:
     """True when the model is in either table: a call to it can be priced."""
-    return model in PRICES_PER_1M_USD or model in PRICES_PER_IMAGE_USD
+    return model in PRICES_PER_1M_USD or model in PRICES_PER_IMAGE_USD or model in PRICES_PER_HOUR_USD
 
 
 def model_cost_fields(model: str, prompt_tokens: int | None, completion_tokens: int | None,

@@ -1203,3 +1203,22 @@ class Job:
             "box": None, "proposed_by": build_run.MUSE_SPARK, "status": "unreadable", "group": "open",
             "reason": THREE_REFUSALS, "sample": False, "checks": [], "trail": trail,
         }
+
+
+def count_voice_turn(runs_dir: Path, run_id: str, heard: dict) -> None:
+    """Price one spoken-decision transcription into the run's spend as a turn ("Muse Voice Transcribe", audio seconds).
+    The turn counters are not touched (they are the reading budget); the spend and a trail line in job.json are."""
+    run_dir = Path(runs_dir) / run_id
+    with RUN_LOCK:
+        run = json.loads((run_dir / "run.json").read_text())
+        job_file = run_dir / "job.json"
+        job = json.loads(job_file.read_text()) if job_file.is_file() else {"log": []}
+        meta, cost = run["run"], heard.get("cost_usd")
+        if cost is not None:
+            meta["spend_usd"] = round((meta.get("spend_usd") or 0) + cost, prices.ROUND_TO)
+        job.setdefault("voice_turns", []).append({"at": now_utc(), "model": "Muse Voice Transcribe",
+                                                  "audio_seconds": round(heard["audio_ms"] / 1000, 3), "cost_usd": cost})
+        job.setdefault("log", []).append({"at": now_utc(), "note": "Spoken decision transcribed.",
+                                          "spend_usd": meta.get("spend_usd")})
+        _write(run_dir / "job.json", job)
+        _write(run_dir / "run.json", run)
