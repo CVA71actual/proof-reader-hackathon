@@ -58,6 +58,7 @@ DEFAULT_TURN_LIMIT = 40
 MAX_PAGE_FAILURES = 2      # a page that stops the run this many times is skipped, and the run goes on with the rest
 UNREADABLE_LIMIT = 3
 THREE_REFUSALS = "The reader's answer could not be read three times; sent to a person."
+CALLS_EXHAUSTED = "The reader used its {cap} model calls on this page without a readable answer; sent to a person."
 RESUMABLE = ("paused_turn_limit", "needs_input", "failed")
 TIME_WINDOW_MAX = 120
 
@@ -69,6 +70,55 @@ CHOICE_FIELDS = ("companies", "event_types", "time_window_months", "spending_lim
 
 # One lock for the run.json / job.json files of every run in this process.
 RUN_LOCK = threading.RLock()
+
+# The per-run budget gate, shared by the run worker and the voice route. Before either paid call, under RUN_LOCK, the
+# call's bounded worst case is added here as a reservation; the call is refused if spend + reservations would pass the
+# limit. The reservation is released when the call is counted (or abandoned).
+MODEL_CALL_UNBOUNDED = math.inf      # a reader call has no token cap, so its reservation is unbounded in the table
+_RESERVED: dict[str, dict[int, float]] = {}
+_NEXT_TOKEN = [0]
+
+
+def reserve_budget(run_id: str, spent: float, limit, worst: float, alone_may_cross: bool = False) -> int | None:
+    """Reserve `worst` dollars of the run's limit. Returns a token to release, or None when spend + the reservations
+    already held + `worst` would pass the limit. With no limit, nothing is held back (a token is still returned).
+    `alone_may_cross`: a reader call keeps the run's long-standing rule when nothing else is in flight (it is made while
+    spend is under the limit, and the call that crosses stops the run); once another call holds a reservation, its own
+    worst case counts too, so two calls cannot both pass against the same balance."""
+    with RUN_LOCK:
+        held = _RESERVED.setdefault(run_id, {})
+        others = sum(held.values())
+        own = 0 if alone_may_cross and not others else worst
+        if limit is not None:
+            total = round((spent or 0) + others + own, prices.ROUND_TO)
+            if (total > limit) if own else ((spent or 0) >= limit):
+                return None
+        _NEXT_TOKEN[0] += 1
+        held[_NEXT_TOKEN[0]] = worst
+        return _NEXT_TOKEN[0]
+
+
+def release_budget(run_id: str, token: int | None) -> None:
+    if token is None:
+        return
+    with RUN_LOCK:
+        held = _RESERVED.get(run_id, {})
+        held.pop(token, None)
+        if not held:
+            _RESERVED.pop(run_id, None)
+
+
+VOICE_BUSY_MESSAGE = "A model call is in progress; try the spoken decision again in a moment."
+
+
+def reserve_voice(runs_dir: Path, run_id: str, limit, worst: float) -> int | None:
+    """The voice route's side of the gate: spend is read from run.json in the same lock that takes the reservation.
+    Refused (JobError 409) while a model call is in flight: its cost has no bound, so nothing may be added beside it."""
+    with RUN_LOCK:
+        if any(v == math.inf for v in _RESERVED.get(run_id, {}).values()):
+            raise JobError(409, VOICE_BUSY_MESSAGE)
+        spent = json.loads((Path(runs_dir) / run_id / "run.json").read_text())["run"].get("spend_usd") or 0
+        return reserve_budget(run_id, spent, limit, worst)
 
 
 class JobError(Exception):
@@ -307,6 +357,7 @@ def run_job(runs_dir: Path, run_id: str, reader, second=None, as_of: date | None
     except Exception as e:  # the type only: nothing that could carry request details
         job.stop("failed", f"The job stopped on an unexpected error ({type(e).__name__}). Resume to try again.")
     finally:
+        release_budget(job.dir.name, job._held)
         job.remove_unrecorded_pages()
 
 
@@ -316,6 +367,7 @@ class Job:
         self.dir, self.reader, self.second, self.as_of, self.wonder = run_dir, reader, second, as_of, wonder
         self.sam = sam
         self.index = index or sources.load_index()
+        self._held: int | None = None             # the budget reservation of the call in flight (count_turn releases it)
         self.current_page: str | None = None      # the page being worked on, so a failed stop is charged to it
         self.run = json.loads((run_dir / "run.json").read_text())
         self.job = json.loads((run_dir / "job.json").read_text())
@@ -326,11 +378,28 @@ class Job:
 
     # ------------------------------------------------------------ state
 
-    def save(self, reason: str | None = None) -> None:
+    def save(self, reason: str | None = None, refresh: bool = True) -> None:
         with RUN_LOCK:
+            if refresh:      # a voice call may have raised the persisted spend since this worker last wrote
+                self.refresh_spend()      # (count_turn passes False: it refreshed in this lock and has unsaved spend)
+            self._merge_voice_from_disk()
             self.job["log"].append(snapshot(self.meta, reason))
             _write(self.dir / "job.json", self.job)
             _write(self.dir / "run.json", self.run)
+
+    def _merge_voice_from_disk(self) -> None:
+        """job.json's voice_turns and any log entries this worker did not write (voice calls write them) are kept:
+        the worker never writes voice_turns, so the persisted list is the truth; missing log entries go in by time."""
+        try:
+            disk = json.loads((self.dir / "job.json").read_text())
+        except (OSError, ValueError):
+            return
+        if disk.get("voice_turns"):
+            self.job["voice_turns"] = disk["voice_turns"]
+        log = self.job["log"]
+        missing = [e for e in disk.get("log", []) if e not in log]
+        if missing:
+            self.job["log"] = sorted(log + missing, key=lambda e: e.get("at") or "")      # stable: ties keep order
 
     def stop(self, status: str, reason: str) -> None:
         if status == "failed" and self.current_page:
@@ -363,7 +432,25 @@ class Job:
         self.job["log"].append({"at": now_utc(), "note": f"{ticker} page {sid} skipped: {reason}"})
         self.save()
 
+    def refresh_spend(self) -> None:
+        """The persisted run.json spend is the truth (a voice call may have raised it since this worker last wrote)."""
+        with RUN_LOCK:
+            try:
+                disk = json.loads((self.dir / "run.json").read_text())["run"].get("spend_usd")
+            except (OSError, ValueError, KeyError):
+                return
+            if disk is not None:
+                self.meta["spend_usd"] = disk
+
     def count_turn(self, reply) -> None:
+        with RUN_LOCK:       # the spend is added and the reservation released as one step: the gate never sees both
+            self.refresh_spend()      # read-modify-write: the call's cost goes onto the persisted spend
+            self._count_turn(reply)
+            release_budget(self.dir.name, self._held)
+            self._held = None
+            self.save(refresh=False)
+
+    def _count_turn(self, reply) -> None:
         self.meta["turn_count"] += 1
         self.meta["turns_total"] += 1
         if reply.images is not None:      # a model priced per image (SAM 3.1)
@@ -384,10 +471,31 @@ class Job:
                                                          prices.ROUND_TO)
         elif self.choices["spending_limit_usd"] is not None and not reply.error:
             self.job["unpriced_calls"] += 1
-        self.save()
 
     def stopped_before_a_call(self, reader=None) -> bool:
-        """The checks made before every model call. True (and the run is stopped) when it must not go on."""
+        """The checks made before every model call. True (and the run is stopped) when it must not go on. When it
+        returns False under a spending limit, the call's worst case is reserved on the run's budget gate (shared with
+        the voice route) until count_turn releases it."""
+        release_budget(self.dir.name, self._held)        # a call that was never counted holds nothing
+        self._held = None
+        with RUN_LOCK:
+            self.refresh_spend()
+            return self._stopped_before_a_call(reader)
+
+    def _stopped_before_a_call(self, reader=None) -> bool:
+        if self._checks_before_a_call(reader):
+            return True
+        limit = self.choices["spending_limit_usd"]
+        if limit is not None:
+            with RUN_LOCK:
+                self._held = reserve_budget(self.dir.name, self.meta["spend_usd"], limit, MODEL_CALL_UNBOUNDED,
+                                            alone_may_cross=True)
+            if self._held is None:
+                self.stop("needs_input", self.limit_reason(limit))
+                return True
+        return False
+
+    def _checks_before_a_call(self, reader=None) -> bool:
         reader = reader or self.reader
         meta, limit = self.meta, self.choices["spending_limit_usd"]
         if meta["turn_count"] >= meta["turn_limit"]:
@@ -425,6 +533,7 @@ class Job:
         limit = self.choices["spending_limit_usd"]
         if limit is None:
             return False
+        self.refresh_spend()
         if self.job["unpriced_calls"]:
             self.stop("needs_input", self.unpriced_reason(limit))
             return True
@@ -545,7 +654,8 @@ class Job:
 
         at = now_utc()
         if parsed is None:
-            self.run["rows"].append(self.refused_row(entry, source, prompt, who, attempts, at))
+            cap = reader_tools.MAX_MODEL_CALLS if len(attempts) < UNREADABLE_LIMIT else None   # why the loop ended
+            self.run["rows"].append(self.refused_row(entry, source, prompt, who, attempts, at, calls_cap=cap))
         elif kind == "events":
             extra = {**(reply.extra or {}), **page_facts, "usage": {"prompt_tokens": reply.prompt_tokens,
                                                                     "completion_tokens": reply.completion_tokens}}
@@ -1194,25 +1304,33 @@ class Job:
             self.meta["label"] = (f"Practice run ({', '.join(self.choices['companies'])}): "
                                   f"fake reading, no model called")
 
-    def refused_row(self, entry: dict, source: dict, prompt: str, who: str, attempts: list, at: str) -> dict:
-        """The third unreadable answer for a page: one row, group open, for a person to look at."""
+    def refused_row(self, entry: dict, source: dict, prompt: str, who: str, attempts: list, at: str,
+                    calls_cap: int | None = None) -> dict:
+        """An unreadable page: one row, group open, for a person to look at. `attempts`: the answers that were not
+        understood. `calls_cap`: set when the page's model calls ran out before three answers were refused (the
+        reader_tools cap); the reason and a trail step then say so, and THREE_REFUSALS is kept for three parse failures."""
         page_number = source["pages"][0]["page_number"]
         ticker = entry["ticker"]
         trail = [{"step": "Instructions sent", "tag": "Code", "who": who, "text": prompt, "at": at}]
         trail += [{"step": f"Answer {i} not understood", "tag": "Code", "who": who,
                    "text": a["problem"], "at": a["at"]} for i, a in enumerate(attempts, start=1)]
-        trail.append({"step": "Sent to a person", "tag": "Code", "who": "server.jobs",
-                      "text": THREE_REFUSALS, "at": at})
+        reason = THREE_REFUSALS
+        if calls_cap is not None:
+            reason = CALLS_EXHAUSTED.format(cap=calls_cap)
+            trail.append({"step": f"Model-call cap reached ({calls_cap} calls)", "tag": "Code", "who": "server.jobs",
+                          "text": f"The page's {calls_cap} model calls were used; {len(attempts)} answer"
+                                  f"{'s were' if len(attempts) != 1 else ' was'} not understood.", "at": at})
+        trail.append({"step": "Sent to a person", "tag": "Code", "who": "server.jobs", "text": reason, "at": at})
         return {
             "id": f"e{len(self.run['rows']) + 1}", "ticker": ticker, "company": entry["company"],
             "event_type": "unknown", "title": f"{ticker} page {page_number}: the reader's answer could not be read",
             "date_text": None, "date": None, "quote": None, "source_id": source["id"], "page_number": page_number,
             "box": None, "proposed_by": build_run.MUSE_SPARK, "status": "unreadable", "group": "open",
-            "reason": THREE_REFUSALS, "sample": False, "checks": [], "trail": trail,
+            "reason": reason, "sample": False, "checks": [], "trail": trail,
         }
 
 
-def count_voice_turn(runs_dir: Path, run_id: str, heard: dict) -> None:
+def count_voice_turn(runs_dir: Path, run_id: str, heard: dict, token: int | None = None) -> None:
     """Price one spoken-decision transcription into the run's spend as a turn ("Muse Voice Transcribe", audio seconds).
     The turn counters are not touched (they are the reading budget); the spend and a trail line in job.json are."""
     run_dir = Path(runs_dir) / run_id
@@ -1222,6 +1340,7 @@ def count_voice_turn(runs_dir: Path, run_id: str, heard: dict) -> None:
         job_file = run_dir / "job.json"
         job = json.loads(job_file.read_text()) if job_file.is_file() else {"log": []}
         meta, cost = run["run"], heard.get("cost_usd")
+        release_budget(run_id, token)       # counted now: the reservation gives way to the spend, in one lock
         if cost is not None:
             meta["spend_usd"] = round((meta.get("spend_usd") or 0) + cost, prices.ROUND_TO)
         job.setdefault("voice_turns", []).append({"at": now_utc(), "model": "Muse Voice Transcribe",

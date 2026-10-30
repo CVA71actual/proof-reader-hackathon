@@ -362,16 +362,26 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
                                          "known; voice is paused until the run is resumed.")
             try:
                 allowed = voice.allowed_ms(voice.check_wav(body))
-                if limit is not None:
-                    # Reserve the most this recording can be billed (the same bound the reply is held to).
-                    worst = prices.audio_cost_usd(voice.NAME, allowed) or 0
-                    if round(spent + worst, prices.ROUND_TO) > limit:
-                        raise HTTPException(409, "The run is at its spending limit; raise it to keep using voice.")
+                # Reserve the most this recording can be billed (the same bound the reply is held to) on the run's
+                # budget gate, shared with the run worker: spend + every held reservation must stay inside the limit.
+                worst = (prices.audio_cost_usd(voice.NAME, allowed) or 0) if limit is not None else 0
+                token = jobs.reserve_voice(store.runs_dir, run_id, limit, worst)
+                if token is None:
+                    raise HTTPException(409, "The run is at its spending limit; raise it to keep using voice.")
+            except voice.VoiceError as e:
+                raise HTTPException(422, str(e)) from None
+            except jobs.JobError as e:
+                raise HTTPException(e.status, e.message) from None
+            try:
                 heard = transcriber(body)
                 voice.check_audio_ms(heard.get("audio_ms"), allowed)
             except voice.VoiceError as e:
+                jobs.release_budget(run_id, token)
                 raise HTTPException(422, str(e)) from None
-            jobs.count_voice_turn(store.runs_dir, run_id, heard)
+            except BaseException:
+                jobs.release_budget(run_id, token)
+                raise
+            jobs.count_voice_turn(store.runs_dir, run_id, heard, token)
         return {"transcript": heard["transcript"], "proposal": voice.propose(heard["transcript"]),
                 "cost_usd": heard["cost_usd"], "audio_ms": heard["audio_ms"]}
 
