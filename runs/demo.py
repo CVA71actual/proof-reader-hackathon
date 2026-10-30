@@ -1,7 +1,7 @@
 """The demo in one command: list the runs, print one run's numbers, serve the app.
 
     python -m runs.demo                      the saved runs, then ptgx-r5's numbers, then the app at http://127.0.0.1:8777/
-    python -m runs.demo --run ptgx-r4a       another run's numbers
+    python -m runs.demo --run ptgx-r4a       another run's numbers, and the app opens on that run
     python -m runs.demo --no-serve           print and stop (nothing is served)
     python -m runs.demo --port 8800          another port
 
@@ -88,21 +88,22 @@ def main(argv: list[str] | None = None, serve=None) -> int:
     """`serve`: how to serve the app (default uvicorn.run); a test passes its own."""
     ap = argparse.ArgumentParser(prog="python -m runs.demo", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--run", default=DEMO_RUN)
+    ap.add_argument("--run", default=None, help="the run the app opens on (default: unchanged)")
     ap.add_argument("--runs-dir", type=Path, default=build_run.RUNS)
     ap.add_argument("--port", type=int, default=PORT)
     ap.add_argument("--no-serve", action="store_true")
     args = ap.parse_args(argv)
 
     ids = run_ids(args.runs_dir)
-    if args.run not in ids:
-        print(f"There is no run {args.run!r}. Saved runs: {', '.join(ids) or 'none'}.", file=sys.stderr)
+    shown = args.run or DEMO_RUN
+    if shown not in ids:
+        print(f"There is no run {shown!r}. Saved runs: {', '.join(ids) or 'none'}.", file=sys.stderr)
         return 2
     print("Saved runs:")
     print("\n".join(list_lines(args.runs_dir)))
-    run_dir = args.runs_dir / args.run
+    run_dir = args.runs_dir / shown
     run, state = _load(run_dir)
-    print(f"\n{args.run}")
+    print(f"\n{shown}")
     for line in summary(run, state, calendar_entries(run, state)):
         print(line)
     for line in accuracy_lines(run_dir):
@@ -111,8 +112,10 @@ def main(argv: list[str] | None = None, serve=None) -> int:
         return 0
     from server.app import create_app
 
-    app = create_app(runs_dir=args.runs_dir)
+    app = create_app(runs_dir=args.runs_dir, default_run=args.run)
     print(f"\nServing the app at http://{HOST}:{args.port}/  (this machine only; Ctrl-C stops it)")
+    if args.run:
+        print(f"Open http://{HOST}:{args.port}/#/{args.run}/audit")
     if serve is None:
         import uvicorn
 

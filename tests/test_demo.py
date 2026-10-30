@@ -187,3 +187,37 @@ def test_the_committed_accuracy_files_hold_their_hashes_after_the_rebuild():
     for name in ("sample", "ptgx-r5"):
         data, problem = export.read_if_intact(RUNS / name)
         assert problem is None and data is not None, (name, problem)
+
+
+# ---------------------------------------------------------------- Job 35: reports for every run; the app opens on the printed run
+
+
+def test_every_committed_run_has_a_pdf_and_a_word_report_that_open():
+    import docx
+
+    for run_json_file in sorted(RUNS.glob("*/run.json")):
+        folder = run_json_file.parent / "report"
+        pdfs, docxs = sorted(folder.glob("*.pdf")), sorted(folder.glob("*.docx"))
+        assert len(pdfs) == 1 and len(docxs) == 1, run_json_file.parent.name
+        assert pdfs[0].read_bytes().startswith(b"%PDF")
+        assert docx.Document(str(docxs[0])).paragraphs
+
+
+def test_the_default_run_setting_is_served_and_the_demo_prints_where_to_open(runs_dir, capsys):
+    from server.app import create_app
+
+    assert TestClient(create_app(runs_dir=runs_dir)).get("/api/settings").json() == {"default_run": None}
+    assert TestClient(create_app(runs_dir=runs_dir, default_run="nope")).get("/api/settings").json() == {"default_run": None}
+    assert TestClient(create_app(runs_dir=runs_dir, default_run="ptgx-r4a")).get("/api/settings").json() == {
+        "default_run": "ptgx-r4a"}
+
+    seen = {}
+    demo.main(["--run", "ptgx-r4a", "--runs-dir", str(runs_dir)],
+              serve=lambda app, host, port: seen.update(body=TestClient(app).get("/api/settings").json()))
+    assert seen["body"] == {"default_run": "ptgx-r4a"}
+    assert "Open http://127.0.0.1:8777/#/ptgx-r4a/audit" in capsys.readouterr().out
+
+    demo.main(["--runs-dir", str(runs_dir)],
+              serve=lambda app, host, port: seen.update(body=TestClient(app).get("/api/settings").json()))
+    assert seen["body"] == {"default_run": None}
+    assert "Open http://" not in capsys.readouterr().out

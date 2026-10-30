@@ -163,6 +163,7 @@
   function api() {
     return {
       runs: function () { return getJSON('/api/runs'); },
+      settings: function () { return getJSON('/api/settings').catch(function () { return {}; }); },
       run: function (id) { return getJSON('/api/runs/' + encodeURIComponent(id)); },
       decisions: function (id) { return getJSON('/api/runs/' + encodeURIComponent(id) + '/decisions'); },
       newRun: function (body) {
@@ -3655,13 +3656,16 @@
 
   // ---------------------------------------------------------------- boot
   function boot() {
-    A.runs().then(function (list) {
+    Promise.all([A.runs(), A.settings()]).then(function (both) {
+      var list = both[0], dflt = both[1] && both[1].default_run;
       runs = list;
       if (!runs.length) {
         document.getElementById('audit-rows').append(el('div', 'empty', 'No runs found under runs/.'));
         return;
       }
-      var start = route && route.runId ? route.runId : (runs.filter(function (r) { return r.sample; })[0] || runs[0]).id;
+      var start = route && route.runId;
+      if (!start && dflt && runs.some(function (r) { return r.id === dflt; })) start = dflt;
+      if (!start) start = (runs.filter(function (r) { return r.sample; })[0] || runs[0]).id;
       return A.run(start).then(function (body) {
         detail = { id: start, run: body, state: body.state };
         renderShell();

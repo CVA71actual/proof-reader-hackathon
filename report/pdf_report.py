@@ -13,6 +13,7 @@ from reportlab.platypus import (
     Frame,
     PageTemplate,
     Paragraph,
+    KeepTogether,
     Spacer,
     Table,
     TableStyle,
@@ -191,21 +192,23 @@ def build_pdf(view: dict) -> bytes:
     # Sources
     story.append(_p("Sources", styles["h1"]))
     for s in view["sources"]:
+        block = []
         bits = [
             s["publisher"] or s["id"],
             s["kind"],
             s["date"] or "—",
         ]
-        story.append(_p(" · ".join(bits), styles["body"]))
+        block.append(_p(" · ".join(bits), styles["body"]))
         if s["url"]:
-            story.append(_p(s["url"], styles["mono"]))
-        story.append(_p(f"sha256: {s['sha256']}", styles["mono"]))
+            block.append(_p(s["url"], styles["mono"]))
+        block.append(_p(f"sha256: {s['sha256']}", styles["mono"]))
         if s["rendered_note"]:
-            story.append(_p(
+            block.append(_p(
                 f"{s['rendered_note']} · source HTML sha256: {s['rendered_from_sha256']} · "
                 f"renderer: {s['renderer']}",
                 styles["small"],
             ))
+        story.append(KeepTogether(block))
 
     doc.build(story)
     return buf.getvalue()

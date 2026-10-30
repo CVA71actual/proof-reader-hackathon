@@ -209,7 +209,7 @@ def _summary(state: dict) -> dict:
 
 def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, background: bool = True,
                second_reader="default", coverage_as_of=None, wonder_reader="default",
-               sam_reader="default", index=None, transcriber=None) -> FastAPI:
+               sam_reader="default", index=None, transcriber=None, default_run=None) -> FastAPI:
     """`reader`: what a run's job calls (default: Muse Spark, needs a key). `second_reader`: the independent second
     read (default: Muse Spark Open when no `reader` was given, none when one was, so a test with a fake reader never
     reaches the network; None: one reader). `background`: False runs a job to its stop inside the request, which is
@@ -239,6 +239,11 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
 
     validator = Draft202012Validator(json.loads(DECISION_SCHEMA.read_text()))
     app = FastAPI(title="Proof Reader decisions server", docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.get("/api/settings")
+    def get_settings() -> dict:
+        """The run the app opens on when the address names none (`python -m runs.demo --run X`); null: the UI's own pick."""
+        return {"default_run": default_run if default_run in store.ids() else None}
 
     @app.get("/api/runs")
     def list_runs() -> list[dict]:

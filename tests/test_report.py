@@ -179,3 +179,30 @@ def test_view_uses_same_state_counts():
     assert view["counts"] == {g: state["counts"]["rows"][g] for g in view["group_labels"]}
     assert view["unresolved"] == state["unresolved"]
     assert view["state"] is state or view["counts"]["kept"] == state["counts"]["rows"]["kept"]
+
+
+def _last_page_body(pdf_bytes: bytes) -> tuple[int, list[str]]:
+    pages = PdfReader(BytesIO(pdf_bytes)).pages
+    lines = [ln for ln in (pages[-1].extract_text() or "").splitlines() if ln.strip()]
+    body = [ln for ln in lines if not ln.startswith(("Built with", "page "))]
+    return len(pages), body
+
+
+def test_twelve1_last_page_is_not_blank_or_an_orphan_line():
+    from report.pdf_report import build_pdf
+
+    run, decisions = load_run_dir(RUNS / "twelve-1")
+    view = build_view(run, decisions, generated_at=FIXED_TIME)
+    n, body = _last_page_body(build_pdf(view))
+    assert n == 19
+    assert body, "last page holds only the footer"
+    # the last page starts a whole source entry, not the tail of a split one
+    assert any(ln.startswith("sha256:") for ln in body)
+    assert "Revolution Medicines" in body[0]
+
+
+def test_saved_reports_last_page_has_content():
+    for rid in ("demo", "ptgx-r4a", "ptgx-r5", "ptgx-scan", "twelve-1"):
+        pdf = next((RUNS / rid / "report").glob("*.pdf"))
+        _, body = _last_page_body(pdf.read_bytes())
+        assert body, f"{rid}: last page holds only the footer"
