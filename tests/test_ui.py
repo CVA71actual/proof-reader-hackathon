@@ -180,8 +180,10 @@ def test_u7_what_changed_is_wired():
     # cards say where they came from and what the person did since
     assert "Since then:" in js
     assert "from " in js
-    # only runs of the same label family are compared, two at a time
-    assert "familyMembers" in js
+    # G4-R6: one picker everywhere — the two drop-downs offer ANY two runs;
+    # the three-tab family picker is gone
+    assert "familyMembers" not in js
+    assert "Compare the run before it against" not in js
     assert "out.screen === 'changed'" in js
 
 
@@ -419,7 +421,7 @@ def _judgment_screen(row_id):
              "needsAttention", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
              "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
              "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith",
-             "revealRow")
+             "revealRow", "sourceOf")
     rows = [
         {"id": "r-cnr", "title": "ROW-COULD-NOT-RUN", "ticker": "ACME", "proposed_by": "Muse Spark",
          "checks": [], "date_text": "Q3 2027"},
@@ -1784,6 +1786,90 @@ console.log(JSON.stringify({{ cards: cards.map(function (c) {{
     assert got.returncode == 0, got.stderr
     out = json.loads(got.stdout.strip().splitlines()[-1])
     return out["cards"], out["wording"]
+
+
+def test_u27_since_then_group_and_reworded_fold():
+    # Re-glass 4: a row the person decided after run B gets a 'Since then'
+    # card even when nothing changed between the runs, in its own group with
+    # the count; wording-only pairs are kept (not just counted) so the screen
+    # can fold them open under 'Show the N reworded rows'.
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    assert "Since then · " in js and "reworded row" in js
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("normWords", "pairKey", "periodOf", "periodsOverlap", "lastPersonDecisionIn",
+                     "compareRuns", "rowVals", "fmtField"))
+    script = f"""
+var FIELD_WORDS = {{date: 'Date', date_end: 'Date end', date_text: 'Date as written',
+  title: 'Title', event_type: 'Type', company: 'Company', ticker: 'Ticker',
+  program: 'Program', indication: 'Condition'}};
+function eventWord(v) {{ return String(v); }}
+var ACTION_WORDS = {{ keep: 'kept', fix: 'fixed', remove: 'removed' }};
+function dateShort(s) {{ return String(s).slice(0, 10); }}
+{fns}
+function mkX(rows, targets, decisions) {{
+  return {{ run: {{ rows: rows,
+           run: {{ label: 'Run 8 · the run', number: 8,
+                   started_at: '2026-10-29T20:00:00+00:00',
+                   finished_at: '2026-10-29T21:00:00+00:00' }} }},
+           state: {{ targets: targets || {{}} }}, decisions: decisions || [] }};
+}}
+var rowsA = [
+  {{ id: 'r1', ticker: 'IONS', company: 'Ionis Pharmaceuticals', program: 'zilganersen',
+     event_type: 'regulatory_decision', title: 'ZANVASTRO U.S. availability',
+     date_text: 'in 2027', date: '2027-01-01', date_end: '2027-12-31' }},
+  {{ id: 'r2', ticker: 'PTGX', company: 'Protagonist', program: 'rusfertide',
+     event_type: 'regulatory_decision', title: 'PDUFA',
+     date_text: 'August 2026', date: '2026-08-01' }},
+  {{ id: 'r3', ticker: 'VKTX', company: 'Viking', program: 'VK2735',
+     event_type: 'trial_results', title: 'Part 2 results',
+     date_text: '2027', date: '2027-06-01' }}
+];
+var rowsB = JSON.parse(JSON.stringify(rowsA));
+rowsB[1] = {{ id: 'r2b', ticker: 'PTGX', company: 'Protagonist', program: 'rusfertide',
+  event_type: 'regulatory_decision', title: 'PDUFA',
+  date_text: 'Aug 2026', date: '2026-08-15' }};          // date moved
+rowsB[2] = JSON.parse(JSON.stringify(rowsB[2]));
+rowsB[2].date_text = 'in 2027';                           // wording only
+rowsB.push({{ id: 'r4', ticker: 'RVMD', company: 'Revolution', program: 'elironrasib',
+  event_type: 'trial_results', title: 'Initiate Phase 3 RASolve 307 study of elironrasib',
+  date_text: 'the fourth quarter of 2026', date: '2026-10-01' }});   // added
+var targets = {{ r1: {{ decided_by_person: true, last_action: 'keep',
+  values: {{ ticker: 'IONS', company: 'Ionis Pharmaceuticals', program: 'zilganersen',
+    event_type: 'regulatory_decision', title: 'ZANVASTRO U.S. availability',
+    date_text: 'in 2027', date: '2027-01-01', date_end: '2027-12-31' }} }} }};
+var decisions = [{{ target: 'r1', action: 'keep', by: 'person', at: '2026-10-30T09:00:00+00:00' }},
+                 {{ target: 'r1', action: 'undo', by: 'person', at: '2026-10-30T09:01:00+00:00' }},
+                 {{ target: 'r1', action: 'keep', by: 'person', at: '2026-10-30T09:02:00+00:00' }}];
+var cards = compareRuns(mkX(rowsA, {{}}, []), mkX(rowsB, targets, decisions));
+if (cards.since !== 1) {{ console.error('since=' + cards.since); process.exit(2); }}
+var since = cards.filter(function (c) {{ return c.kind === 'since'; }})[0];
+if (!since) process.exit(3);
+if (since.row.id !== 'r1') process.exit(4);
+if (since.since.text !== 'Since then: kept by you · 2026-10-30') {{
+  console.error(since.since.text); process.exit(5); }}
+// the last decision wins; an undecided row or one decided before run B gets nothing
+var targets2 = {{ r1: {{ decided_by_person: true, last_action: 'keep',
+  values: {{ ticker: 'IONS', company: 'Ionis Pharmaceuticals', program: 'zilganersen',
+    event_type: 'regulatory_decision', title: 'ZANVASTRO U.S. availability',
+    date_text: 'in 2027', date: '2027-01-01', date_end: '2027-12-31' }} }} }};
+var early = [{{ target: 'r1', action: 'keep', by: 'person', at: '2026-10-28T09:00:00+00:00' }}];
+var cards2 = compareRuns(mkX(rowsA, {{}}, []), mkX(rowsB, targets2, early));
+if (cards2.since !== 0) {{ console.error('early since=' + cards2.since); process.exit(6); }}
+// G4-R7: the wording pair is kept for the fold
+if (cards.wording !== 1) {{ console.error('wording=' + cards.wording); process.exit(7); }}
+if (!cards.wordingRows || cards.wordingRows.length !== 1) process.exit(8);
+var wr = cards.wordingRows[0];
+if (wr.rb.id !== 'r3' || wr.diffs.length !== 1 || wr.diffs[0].field !== 'date_text') process.exit(9);
+// kind order: added, removed, corrected, moved, since — since last
+var kinds = cards.map(function (c) {{ return c.kind; }});
+if (kinds[kinds.length - 1] !== 'since') {{ console.error(kinds.join(',')); process.exit(10); }}
+console.log('ok');
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
 
 
 def _row(**over):

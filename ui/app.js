@@ -1456,7 +1456,13 @@
         CATCHERS.forEach(function (c) {
           tr.append(el('td', null, String(entries.filter(function (m) { return m.caught_by === c[0]; }).length || '')));
         });
-        var foldTd = el('td');
+        tr.append(el('td', null, ''));   // placeholder — the fold spans all columns below
+        table.append(tr);
+        // G6-R1: the opened fold flows full width, not squeezed into a count
+        // column — it sits in its own row spanning every column
+        var foldTr = el('tr');
+        var foldFull = el('td');
+        foldFull.colSpan = 1 + models.length + CATCHERS.length + 1;
         var fold = el('details', 'fold');
         fold.append(el('summary', null, 'Show the ' + entries.length + ' row' + (entries.length === 1 ? '' : 's')));
         entries.forEach(function (m) {
@@ -1467,9 +1473,9 @@
           line.append(el('span', 'what', what));
           fold.append(line);
         });
-        foldTd.append(fold);
-        tr.append(foldTd);
-        table.append(tr);
+        foldFull.append(fold);
+        foldTr.append(foldFull);
+        table.append(foldTr);
       });
       accPanelHost.append(table);
     }
@@ -2360,6 +2366,28 @@
 
   function judgmentDecidedPane(host, row, t) {
     clear(host);
+    // G5-R1: the pane keeps the row's header after a decision — title,
+    // company, date and quote above the decision state
+    var hd = el('div', 'sec');
+    hd.append(el('div', 'ttl', row.title || '(no title)'));
+    var kv = el('div', 'sec');
+    function kvr(k, v) { var r = el('div', 'kv'); r.append(el('span', 'k', k), el('span', 'v', v)); kv.append(r); }
+    kvr('Company', (row.ticker || '') + ' · ' + (row.company || ''));
+    if (row.program) kvr('Program', row.program);
+    kvr('Event date', (t.values && t.values.date_text) || row.date_text || '');
+    hd.append(kv);
+    var qt = (t.values && t.values.quote) || row.quote;
+    if (qt) {
+      var sq = el('div', 'sec');
+      sq.append(el('h4', null, 'The quote'));
+      var qb = el('div', 'qbox');
+      var srcq = sourceOf(row);
+      if (srcq) qb.append(el('div', 'qm', 'from ' + srcq.publisher + ' · page ' + row.page_number));
+      qb.append('“' + qt + '”');
+      sq.append(qb);
+      hd.append(sq);
+    }
+    host.append(hd);
     var sec = el('div', 'sec');
     var box = el('div', 'ba green');
     var badge = DECIDED_BADGE[t.group] || 'Decided by you';
@@ -2652,10 +2680,6 @@
     var l = label || '';
     return l.replace(/^\s*Run\s+\d+\s*(?:·\s*)?/, '') || l;
   }
-  function familyMembers(fam) {
-    return runs.filter(function (r) { return labelFamily(r.label) === fam; })
-      .sort(function (x, y) { return (y.number || 0) - (x.number || 0); });
-  }
   function runShort(r) {
     // G6-3: dates in words everywhere a run is named
     return (r.label || r.id) + ' · ' + dateShort(r.started_at) + ' ' + (r.started_at || '').slice(11, 16);
@@ -2673,21 +2697,17 @@
 
   function renderChanged() {
     var meta = detail.run.run || {};
-    var fam = labelFamily(meta.label);
-    var members = familyMembers(fam);
     var sub = document.getElementById('changed-sub');
     var pairHost = clear(document.getElementById('changed-pairs'));
     var host = clear(document.getElementById('changed-rows'));
     var mid = clear(document.getElementById('changed-mid'));
     var det = clear(document.getElementById('changed-det'));
 
-    // G4-1: with two or more runs of one family the tabs pick the pair; with
-    // one, two selects offer ANY two saved runs — 'only run of its kind' is a
-    // dead end only when no other run exists at all
+    // G4-R6: one picker everywhere — the two drop-downs offer ANY two saved
+    // runs on every run; the three-tab row is gone
     var curId = currentRunId();
-    var familyMode = members.length >= 2;
-    var pickFrom = familyMode ? members : runs.slice();
-    if (!familyMode && runs.length < 2) {
+    var pickFrom = runs.slice();
+    if (runs.length < 2) {
       sub.textContent = 'This is the only run saved here.';
       changedCountCache = 0;
       document.getElementById('ct-changed').textContent = '0';
@@ -2699,15 +2719,10 @@
 
     function valid(id) { return id && pickFrom.some(function (m) { return m.id === id; }); }
     var bId, aId;
-    if (familyMode) {
-      bId = valid(route.b) ? route.b : members[0].id;
-      aId = valid(route.a) ? route.a : members[1].id;
-    } else {
-      var others = runs.filter(function (r) { return r.id !== curId; })
-        .sort(function (x, y) { return (y.number || 0) - (x.number || 0); });
-      bId = valid(route.b) ? route.b : curId;
-      aId = valid(route.a) ? route.a : (others[0] || {}).id;
-    }
+    var others = runs.filter(function (r) { return r.id !== curId; })
+      .sort(function (x, y) { return (y.number || 0) - (x.number || 0); });
+    bId = valid(route.b) ? route.b : curId;
+    aId = valid(route.a) ? route.a : (others[0] || {}).id;
     var aM = runs.filter(function (r) { return r.id === aId; })[0];
     var bM = runs.filter(function (r) { return r.id === bId; })[0];
     // G4-2a: the count beside the cards is substance only, with the wording
@@ -2717,39 +2732,26 @@
       suffix = changedCache.note + ' · ' + changedCache.cards.length + ' change' +
                (changedCache.cards.length === 1 ? '' : 's') +
                (changedCache.wording ? ' · ' + changedCache.wording + ' row' +
-                (changedCache.wording === 1 ? '' : 's') + ' reworded' : '');
+                (changedCache.wording === 1 ? '' : 's') + ' reworded' : '') +
+               (changedCache.since ? ' · ' + changedCache.since + ' decided by you since' : '');
     }
     sub.textContent = 'Compare: ' + runPick(aM) + ' → ' + runPick(bM) + suffix;
 
-    if (familyMode) {
-      members.forEach(function (m) {
-        var f = btn('fc' + (m.id === bId ? ' on' : ''), runPick(m));
-        f.title = 'Compare the run before it against ' + (m.label || m.id);
-        f.addEventListener('click', function () {
-          var idx = members.indexOf(m);
-          var older = members[idx + 1] || members.filter(function (x) { return x.id !== m.id; })[0];
-          if (!older) return;
-          navigate({ runId: currentRunId(), screen: 'changed', a: older.id, b: m.id });
-        });
-        pairHost.append(f);
-      });
-    } else {
-      // G4-1: two selects, each naming Run N · date · label
-      var selA = el('select', 'fld runpick');
-      var selB = el('select', 'fld runpick');
-      pickFrom.forEach(function (m) {
-        var oa = el('option', null, runPick(m)); oa.value = m.id;
-        var ob = el('option', null, runPick(m)); ob.value = m.id;
-        selA.append(oa); selB.append(ob);
-      });
-      selA.value = aId; selB.value = bId;
-      function repick() { navigate({ runId: currentRunId(), screen: 'changed', a: selA.value, b: selB.value }); }
-      selA.addEventListener('change', repick);
-      selB.addEventListener('change', repick);
-      var lbl = el('div', 'chpicks');
-      lbl.append(el('span', 'chpicklbl', 'Compare'), selA, el('span', 'chpicklbl', 'against'), selB);
-      pairHost.append(lbl);
-    }
+    // G4-R6: the two drop-downs, on every run
+    var selA = el('select', 'fld runpick');
+    var selB = el('select', 'fld runpick');
+    pickFrom.forEach(function (m) {
+      var oa = el('option', null, runPick(m)); oa.value = m.id;
+      var ob = el('option', null, runPick(m)); ob.value = m.id;
+      selA.append(oa); selB.append(ob);
+    });
+    selA.value = aId; selB.value = bId;
+    function repick() { navigate({ runId: currentRunId(), screen: 'changed', a: selA.value, b: selB.value }); }
+    selA.addEventListener('change', repick);
+    selB.addEventListener('change', repick);
+    var lbl = el('div', 'chpicks');
+    lbl.append(el('span', 'chpicklbl', 'Compare'), selA, el('span', 'chpicklbl', 'against'), selB);
+    pairHost.append(lbl);
 
     var key = aId + '>' + bId;
     if (changedCache && changedCache.key === key) return renderChangedCards(host, mid, det);
@@ -2778,7 +2780,8 @@
                               { run: rb, state: rb.state, decisions: all[3] });
       changedCache = { key: key, a: { run: ra, state: ra.state, decisions: all[2] },
                        b: { run: rb, state: rb.state, decisions: all[3] }, note: note,
-                       wording: cards.wording || 0, cards: cards };
+                       wording: cards.wording || 0, wordingRows: cards.wordingRows || [],
+                       since: cards.since || 0, cards: cards };
       changedCountCache = changedCache.cards.length;
       document.getElementById('ct-changed').textContent = String(changedCountCache);
       if (route && route.screen === 'changed') renderChanged();
@@ -2851,6 +2854,8 @@
 
     var cards = [];
     var wording = 0;
+    var wordingRows = [];          // G4-R7: the pairs that differ in wording only
+    var quietB = {};               // G4-R5: paired rows that produced no card
     function since(x, row) {
       var t = x.state.targets[row.id] || {};
       if (!t.decided_by_person) return null;
@@ -2879,16 +2884,17 @@
           diffs.push({ field: f, from: va, to: vb });
         }
       });
-      if (!diffs.length) return;
+      if (!diffs.length) { quietB[rb.id] = true; return; }
       // G4-2a: substance only. "Date moved" when date or date_end changed;
       // "corrected" when program, indication or type changed ("type changed"
       // when it is the type); a difference only in the wording of the title or
-      // the date text folds into one count line, never a card.
+      // the date text folds into one count line, never a card — and the rows
+      // are listed under "Show the N reworded rows" (G4-R7)
       var moved = diffs.some(function (d) { return d.field === 'date' || d.field === 'date_end'; });
       var corrected = diffs.some(function (d) {
         return d.field === 'program' || d.field === 'indication' || d.field === 'event_type';
       });
-      if (!moved && !corrected) { wording++; return; }
+      if (!moved && !corrected) { wording++; quietB[rb.id] = true; wordingRows.push({ ra: ra, rb: rb, diffs: diffs }); return; }
       var lines = diffs.map(function (d) {
         return (FIELD_WORDS[d.field] || d.field) + ': ' + fmtField(d.field, d.from) + ' → ' + fmtField(d.field, d.to);
       });
@@ -2899,14 +2905,54 @@
                    word: typeOnly ? 'type changed' : null,
                    line: lines.join(' · '), since: since(b, rb) });
     });
-    var order = { added: 0, removed: 1, corrected: 2, moved: 3 };
+    // G4-R5: a row the person decided after run B used to vanish from this
+    // screen when nothing changed between the runs — it now gets its own
+    // 'Since then' card in its own group
+    var bEnd = (b.run.run.finished_at || b.run.run.started_at || '');
+    var sinceOnly = [];
+    if (bEnd) b.run.rows.forEach(function (rb) {
+      if (!quietB[rb.id]) return;
+      var t = b.state.targets[rb.id] || {};
+      if (!t.decided_by_person) return;
+      var d = lastPersonDecisionIn(b.decisions || [], rb.id);
+      if (!d || !d.at || d.at <= bEnd) return;
+      var word = ACTION_WORDS[d.action] || 'decided';
+      sinceOnly.push({ kind: 'since', row: rb, x: b, fields: [],
+        line: 'No change between the runs.',
+        since: { text: 'Since then: ' + word + ' by you · ' + dateShort(d.at), run: b } });
+    });
+    cards = cards.concat(sinceOnly);
+    cards.since = sinceOnly.length;
+    var order = { added: 0, removed: 1, corrected: 2, moved: 3, since: 4 };
     cards.sort(function (x, y) { return order[x.kind] - order[y.kind]; });
     cards.wording = wording;
+    cards.wordingRows = wordingRows;
     return cards;
   }
 
-  var CHG_WORDS = { added: 'added', removed: 'removed', corrected: 'corrected', moved: 'date moved' };
-  var CHG_CLASS = { added: 'st-kept', removed: 'st-removed', corrected: 'st-corrected', moved: 'st-undecided' };
+  var CHG_WORDS = { added: 'added', removed: 'removed', corrected: 'corrected',
+                    moved: 'date moved', since: 'since then' };
+  var CHG_CLASS = { added: 'st-kept', removed: 'st-removed', corrected: 'st-corrected',
+                    moved: 'st-undecided', since: 'st-kept' };
+
+  function chRewordedFold() {
+    // G4-R7: the wording-only rows are openable, not just counted
+    var rows = changedCache.wordingRows || [];
+    if (!rows.length) return null;
+    var fold = el('details', 'fold chwordfold');
+    fold.append(el('summary', null, 'Show the ' + rows.length + ' reworded row' +
+                                  (rows.length === 1 ? '' : 's')));
+    rows.forEach(function (w) {
+      var line = el('div', 'chword');
+      var bits = w.diffs.map(function (d) {
+        return '“' + fmtField(d.field, d.from) + '” → “' + fmtField(d.field, d.to) + '”';
+      });
+      line.append(el('span', 'tk', w.rb.ticker || '—'));
+      line.append(el('span', 'wt', (w.rb.title || '(no title)') + ' — ' + bits.join(' · ')));
+      fold.append(line);
+    });
+    return fold;
+  }
 
   function renderChangedCards(host, mid, det) {
     var cards = changedCache.cards;
@@ -2917,12 +2963,20 @@
                (changedCache.wording === 1 ? '' : 's') + ' reworded between the runs (wording only).';
       }
       host.append(el('div', 'empty', same));
+      var wf = chRewordedFold();
+      if (wf) host.append(wf);
       mid.append(el('div', 'empty', 'Nothing changed.'));
       det.append(el('div', 'empty', 'Pick a change to see it.'));
       return;
     }
     if (chgSel === null || !cards[chgSel]) chgSel = 0;
+    var sinceGrp = false;
     cards.forEach(function (c, i) {
+      // G4-R5: the since-then cards open with their own group line + count
+      if (c.kind === 'since' && !sinceGrp) {
+        sinceGrp = true;
+        host.append(el('div', 'grp', 'Since then · ' + changedCache.since + ' decided by you'));
+      }
       var b = btn('chcard' + (i === chgSel ? ' on' : ''));
       var top = el('div', 'top');
       top.append(el('span', 'chtag ' + CHG_CLASS[c.kind], c.word || CHG_WORDS[c.kind]));
@@ -2941,6 +2995,8 @@
       });
       host.append(b);
     });
+    var wf2 = chRewordedFold();
+    if (wf2) host.append(wf2);
 
     var c = cards[chgSel];
     mid.append(el('div', 'empty', 'Pick a change on the left.'));

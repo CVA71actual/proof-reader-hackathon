@@ -277,7 +277,10 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
 .chcard{display:block;width:100%;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:12px 14px;margin-bottom:9px}
 .chcard:hover{border-color:var(--faint)}
 .chcard.on{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
-.chcard .top{display:flex;gap:8px;align-items:baseline}
+/* G4-R4: the card's first line flows as prose — no fixed columns, nothing
+   clips at the right edge; ticker · company · program · title wrap naturally */
+.chcard .top{display:block;line-height:1.55;word-break:break-word}
+.chcard .top>span{display:inline;margin-right:6px;vertical-align:baseline}
 .chtag{font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:5px;white-space:nowrap}
 .chtag.st-kept{color:var(--green);background:var(--green-soft)}
 .chtag.st-corrected{color:var(--amber);background:var(--amber-soft)}
@@ -335,6 +338,11 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
 
 /* G4-2b: company and program ride on the change card's first line */
 .chcard .co{color:var(--sub);font-size:12px}
+/* G4-R7: the wording-only rows open under their own fold */
+.chwordfold{margin-top:2px}
+.chword{padding:5px 0;border-top:1px solid var(--line);font-size:12.5px;line-height:1.5;word-break:break-word}
+.chword .tk{margin-right:6px}
+.chword .wt{color:var(--sub)}
 /* G4-1: the two-run picker on What changed */
 .chpicks{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:4px 0}
 .chpicklbl{font-size:12px;color:var(--sub);font-weight:500}
