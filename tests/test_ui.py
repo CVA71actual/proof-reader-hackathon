@@ -2067,3 +2067,74 @@ def test_u22_what_changed_compares_substance():
     # identical rows are neither cards nor wording
     cards, wording = _compare_cards([_row(id="a1")], [_row(id="b1")])
     assert cards == [] and wording == 0
+
+
+def test_u30_glass8_leftovers():
+    # G8-1: a run paused at its spending limit shows the plain sentence —
+    # the stored status_reason is not printed for that case, so old runs
+    # with the figures version read plain too
+    js = (UI / "app.js").read_text()
+    assert "JOB_LIMIT_STOP" in js
+    assert ("Stopped at the spending limit. Raise the limit and press Resume "
+            "to read more.") in js
+    assert "function jobReason(st, meta)" in js
+    assert "jobReason(st, meta)" in js
+    assert "host.append(el('div', JOB_PAUSABLE.indexOf(st) >= 0 ? 'jb-stop' : 'jb-sub', meta.status_reason))" not in js
+    # Codex P2 on #101: only a reason that STARTS 'Stopped at the spending
+    # limit' is the limit stop. The unpriced-call pause also names the
+    # spending limit, and a turn-limit pause can coincide with spend at the
+    # limit — neither may be rewritten.
+    assert "sr.indexOf('Stopped at the spending limit') === 0" in js
+    assert "meta.spend_usd >= limit" not in js
+    import json
+    import subprocess
+    limit_stop = "Stopped at the spending limit. Raise the limit and press Resume to read more."
+    cases = [
+        # (status, status_reason, spend, limit) -> expected
+        ("needs_input",
+         "Stopped at the spending limit ($5.06 of $5.00 used): spending limit reached. "
+         "Resume with a higher spending_limit_usd to read more.", 5.06, 5.0, limit_stop),
+        ("needs_input", limit_stop, 5.06, 5.0, limit_stop),  # already plain — idempotent
+        ("needs_input",
+         "The cost of a call could not be counted (runs/prices.py has no price for Muse Spark), "
+         "so the spending limit of $5.00 cannot be kept. Nothing more was read.", 5.06, 5.0, None),
+        ("paused_turn_limit",
+         "Stopped at the turn limit (40 turns). Resume to continue with a fresh budget of turns.",
+         5.06, 5.0, None),  # spend at the limit but the pause is the turn limit
+        ("failed", "The page failed three times.", 5.06, 5.0, None),
+        ("done", "Read 114 pages: 96 rows, 0 values.", 2.57, 6.0,
+         "Read 114 pages · 96 rows"),
+    ]
+    checks = []
+    for i, (st, reason, spend, limit, expected) in enumerate(cases):
+        want = expected if expected is not None else reason
+        meta = {"status": st, "status_reason": reason, "spend_usd": spend,
+                "choices": {"spending_limit_usd": limit}}
+        checks.append(f"got = jobReason({json.dumps(st)}, {json.dumps(meta)});")
+        checks.append(f"if (got !== {json.dumps(want)}) {{ console.error({json.dumps(str(i))} + ' :: ' + got); process.exit(2); }}")
+    script = "\n".join([
+        "var JOB_PAUSABLE = ['paused_turn_limit', 'needs_input', 'failed'];",
+        f"var JOB_LIMIT_STOP = {json.dumps(limit_stop)};",
+        _grab_fn(js, "jobReason"),
+        "var got;",
+        *checks,
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout or got.stderr
+    # G8-5: the done summary drops the values count
+    assert "pages · ' + m[2] + ' rows" in js
+    assert "rows?, [\\d,]+ values\\." in js  # only as the stored-text pattern, rewritten away
+    # G8-3: the run sheet names dates in words like the card
+    assert "dateTimeWords(r.started_at)" in js
+    assert ".replace('T', ' ').slice(0, 16)" not in js
+    # G8-6: the code fold renders closed by default — the only opener is the
+    # trail's 'See the check' link
+    assert js.count(".open = true") == 1
+    assert "folds[idx].open = true" in js
+    assert "var d = el('details', 'fold');" in js
+    # G8-2/G8-4: the css half
+    css = (UI / "styles.css").read_text()
+    assert ".runcard .pick:focus-visible{outline:2px solid var(--blue)" in css
+    assert "white-space:nowrap}" in css.split(".ctchip{")[1].split("}")[0] + "}"
+    assert ".ctchip.zero + .ctchip.zero" not in css

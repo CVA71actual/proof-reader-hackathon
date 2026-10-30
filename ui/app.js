@@ -1152,6 +1152,9 @@
   }
 
   function seeTheCheck(c) {
+    // G8-6: the fold renders closed by default on every screen; the only
+    // opener is the person (or the trail's 'See the check' link) — the code
+    // block is never shown uninvited
     var d = el('details', 'fold');
     d.append(el('summary', null, 'See the check'));
     var cmp = c.compared || {};
@@ -3352,7 +3355,7 @@
     // the stop sentence wears the warm box only when it needs you; a done
     // run's 'Read N pages' summary is plain text
     if (meta.status_reason) {
-      host.append(el('div', JOB_PAUSABLE.indexOf(st) >= 0 ? 'jb-stop' : 'jb-sub', meta.status_reason));
+      host.append(el('div', JOB_PAUSABLE.indexOf(st) >= 0 ? 'jb-stop' : 'jb-sub', jobReason(st, meta)));
     }
     if (JOB_PAUSABLE.indexOf(st) >= 0) {
       var limitInput = null;
@@ -3394,6 +3397,26 @@
     return cpkr < 0.01 ? 'less than a cent per kept row' : usdCents(cpkr) + ' per kept row';
   }
 
+  // G8-1: run.json keeps whatever sentence the run stopped with, so old runs
+  // still carry the figures-and-raw-id version. Only that one stored sentence —
+  // a reason STARTING 'Stopped at the spending limit' — is normalized to the
+  // plain words. The unpriced-call pause also names the spending limit and a
+  // turn-limit pause can coincide with spend at the limit; neither is a limit
+  // stop and both pass through untouched.
+  var JOB_LIMIT_STOP = 'Stopped at the spending limit. Raise the limit and press Resume to read more.';
+  function jobReason(st, meta) {
+    var sr = meta.status_reason;
+    if (JOB_PAUSABLE.indexOf(st) >= 0 &&
+        typeof sr === 'string' && sr.indexOf('Stopped at the spending limit') === 0) {
+      return JOB_LIMIT_STOP;
+    }
+    // G8-5: 'Read 114 pages: 96 rows, 0 values.' — the values count is a code
+    // word to a first-time reader; the plain summary is 'Read N pages · M rows'
+    var m = /^Read ([\d,]+) pages?: ([\d,]+) rows?, [\d,]+ values\.(.*)$/.exec(sr || '');
+    if (m) return 'Read ' + m[1] + ' pages · ' + m[2] + ' rows' + m[3];
+    return sr;
+  }
+
   // ---------------------------------------------------------------- run sheet
   var runSheetWrap = document.getElementById('runsheet-wrap');
   // G4-R3: the card's header rows are the click target that opens the run
@@ -3404,7 +3427,7 @@
     runs.forEach(function (r) {
       var b = btn('runopt' + (detail && r.id === detail.id ? ' on' : ''));
       b.append(el('div', 'n', (r.label || r.id) + (r.sample ? ' · sample' : '')));
-      b.append(el('div', 'm', 'Run ' + r.number + ' · ' + (r.started_at || '').replace('T', ' ').slice(0, 16) +
+      b.append(el('div', 'm', 'Run ' + r.number + ' · ' + dateTimeWords(r.started_at) +
         ' · needs attention ' + r.unresolved +
         (r.status ? ' · ' + (JOB_STATUS_WORDS[r.status] || r.status) : '')));
       b.addEventListener('click', function () {
