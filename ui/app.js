@@ -1217,6 +1217,9 @@
     var host = clear(document.getElementById('srcList'));
     var mid = clear(document.getElementById('srcwrap'));
     var det = clear(document.getElementById('srcDet'));
+    // G8-9a: the right pane is collapsed until a value is picked; only then
+    // does it open (see below where it is unhidden)
+    det.hidden = true;
     // G3-7: the sub-line is one plain sentence
     document.getElementById('src-sub').textContent = 'Every page the rows were read from';
 
@@ -1232,21 +1235,54 @@
     pages.forEach(function (pp) {
       if (pp.source.id === route.srcId && 'p' + pp.page.page_number === route.page) selected = pp;
     });
+
+    // G8-9b: the page list groups pages under their filing — one header per
+    // document ('IONS 8-K exhibit 99.1 · filed 23 Oct 2026 · 3 pages'), pages
+    // as 'page 1 … page N'. A filing is one accession number; the open page's
+    // filing is unfolded and highlighted, the others folded.
+    function filingName(s) {
+      // 'IONS 8-K exhibit 99.1 (exhibit 99.1), filed 2026-10-23' -> 'IONS 8-K exhibit 99.1'
+      var t = (s.title || s.id || '').replace(/, filed \d{4}-\d{2}-\d{2}$/, '');
+      var m = /^(.*) \(([^()]*)\)$/.exec(t);
+      if (m && m[1].slice(-m[2].length) === m[2]) t = m[1];
+      return t;
+    }
+    function accession(s) {
+      var m = /\/data\/\d+\/(\d+)\//.exec(s.url || '') ||
+              /^src-.*?-(\d{10}-\d{2}-\d{6})-/.exec(s.id || '');
+      return m ? m[1] : s.id;
+    }
+    var filings = [];
     pages.forEach(function (pp) {
-      var key = 'p' + pp.page.page_number;
-      var b = btn('pg' + (selected && pp === selected ? ' on' : ''), '');
-      b.append(el('span', 'n', pp.source.title), el('span', 'c', 'page ' + pp.page.page_number));
-      b.addEventListener('click', function () {
-        navigate({ runId: currentRunId(), screen: 'source', srcId: pp.source.id, page: key,
-                   valueId: null, back: route.back });
+      var key = accession(pp.source);
+      var f = filings.filter(function (x) { return x.key === key; })[0];
+      if (!f) {
+        f = { key: key, name: filingName(pp.source), filed: pp.source.published_date, pages: [] };
+        filings.push(f);
+      }
+      f.pages.push(pp);
+    });
+    filings.forEach(function (f) {
+      var isOpen = selected && f.pages.indexOf(selected) >= 0;
+      var fd = el('details', 'filing' + (isOpen ? ' on' : ''));
+      if (isOpen) fd.open = true;
+      fd.append(el('summary', null, f.name + ' · filed ' + (dateShort(f.filed) || 'no date') +
+        ' · ' + f.pages.length + ' page' + (f.pages.length === 1 ? '' : 's')));
+      f.pages.forEach(function (pp) {
+        var key = 'p' + pp.page.page_number;
+        var b = btn('pg' + (selected && pp === selected ? ' on' : ''), '');
+        b.append(el('span', 'c', 'page ' + pp.page.page_number));
+        b.addEventListener('click', function () {
+          navigate({ runId: currentRunId(), screen: 'source', srcId: pp.source.id, page: key,
+                     valueId: null, back: route.back });
+        });
+        fd.append(b);
       });
-      host.append(b);
+      host.append(fd);
     });
 
     if (!selected) {
-      if (route.srcId || route.page) mid.append(el('div', 'empty', 'Choose a page on the left.'));
-      else mid.append(el('div', 'empty', 'Choose a page on the left.'));
-      det.append(el('div', 'empty', 'Click a value to see what was compared.'));
+      mid.append(el('div', 'empty', 'Choose a page on the left.'));
       return;
     }
 
@@ -1261,10 +1297,9 @@
     if (selBox) revealRow(selBox, { behavior: 'smooth', block: 'center', inline: 'center' });
 
     var v = valuesOnPage(selected).filter(function (x) { return x.id === route.valueId; })[0];
-    if (!v) {
-      det.append(el('div', 'empty', 'Click a value to see what was compared.'));
-      return;
-    }
+    if (!v) return;
+    // G8-9a: a value is picked — the pane opens
+    det.hidden = false;
     var row = rowOf(v.id);
     if (row) detailsPane(det, row, { back: route.back === 'audit' || route.back === 'calendar' ? route.back : null,
                                      w: route.w || null });
@@ -2752,6 +2787,15 @@
   function renderChanged() {
     var meta = detail.run.run || {};
     var sub = document.getElementById('changed-sub');
+    // G8-10: the matcher pairs rows by position until Job 32 keys it on event
+    // identity — the header says so under the sub-line; Job 32 removes this
+    var caveat = document.getElementById('changed-caveat');
+    if (!caveat) {
+      caveat = el('div', 'sub chcaveat');
+      caveat.id = 'changed-caveat';
+      sub.parentNode.insertBefore(caveat, sub.nextSibling);
+    }
+    caveat.textContent = 'Rows are matched by position for now; a wording change can look like a date move.';
     var pairHost = clear(document.getElementById('changed-pairs'));
     var host = clear(document.getElementById('changed-rows'));
     var mid = clear(document.getElementById('changed-mid'));
@@ -3340,7 +3384,16 @@
     var live = JOB_ACTIVE.indexOf(st) >= 0;
     var row1 = el('div', 'jb-row1' + (live ? ' live' : ''));
     if (live) row1.append(el('span', 'dot'));
-    row1.append(el('span', null, JOB_STATUS_WORDS[st] || st));
+    // G8-8: a finished run says what is left to review, with a grey dot while
+    // anything waits and a green dot at zero
+    if (st === 'done') {
+      var left = (detail.state && detail.state.unresolved) || 0;
+      row1.append(el('span', 'dot' + (left > 0 ? ' grey' : '')));
+      row1.append(el('span', null, 'Run finished · ' +
+        (left > 0 ? left + ' need review' : 'nothing left to review')));
+    } else {
+      row1.append(el('span', null, JOB_STATUS_WORDS[st] || st));
+    }
     host.append(row1);
     var bits = [];
     if (meta.turn_count !== null && meta.turn_count !== undefined) {
@@ -3427,9 +3480,15 @@
     runs.forEach(function (r) {
       var b = btn('runopt' + (detail && r.id === detail.id ? ' on' : ''));
       b.append(el('div', 'n', (r.label || r.id) + (r.sample ? ' · sample' : '')));
-      b.append(el('div', 'm', 'Run ' + r.number + ' · ' + dateTimeWords(r.started_at) +
-        ' · needs attention ' + r.unresolved +
-        (r.status ? ' · ' + (JOB_STATUS_WORDS[r.status] || r.status) : '')));
+      // G8-8: a finished run carries the same 'Run finished · …' words as the
+      // card; other statuses keep 'needs attention N · status'
+      var tail = 'needs attention ' + r.unresolved +
+        (r.status ? ' · ' + (JOB_STATUS_WORDS[r.status] || r.status) : '');
+      if (r.status === 'done') {
+        tail = 'Run finished · ' + (r.unresolved > 0
+          ? r.unresolved + ' need review' : 'nothing left to review');
+      }
+      b.append(el('div', 'm', 'Run ' + r.number + ' · ' + dateTimeWords(r.started_at) + ' · ' + tail));
       b.addEventListener('click', function () {
         runSheetWrap.hidden = true;
         if (!detail || r.id !== detail.id) switchRun(r.id);

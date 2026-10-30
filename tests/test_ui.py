@@ -2128,9 +2128,11 @@ def test_u30_glass8_leftovers():
     # G8-3: the run sheet names dates in words like the card
     assert "dateTimeWords(r.started_at)" in js
     assert ".replace('T', ' ').slice(0, 16)" not in js
-    # G8-6: the code fold renders closed by default — the only opener is the
-    # trail's 'See the check' link
-    assert js.count(".open = true") == 1
+    # G8-6: the code fold renders closed by default — its builder never sets
+    # .open; the only openers are the trail's 'See the check' link and the
+    # Source-view filing auto-open (G8-9b)
+    see = _grab_fn(js, "seeTheCheck")
+    assert ".open = true" not in see
     assert "folds[idx].open = true" in js
     assert "var d = el('details', 'fold');" in js
     # G8-2/G8-4: the css half
@@ -2138,3 +2140,36 @@ def test_u30_glass8_leftovers():
     assert ".runcard .pick:focus-visible{outline:2px solid var(--blue)" in css
     assert "white-space:nowrap}" in css.split(".ctchip{")[1].split("}")[0] + "}"
     assert ".ctchip.zero + .ctchip.zero" not in css
+
+
+def test_u31_glass8_rulings_2_and_3_and_the_caveat():
+    # G8-8: done state = 'Run finished · N need review' (grey dot) or
+    # 'Run finished · nothing left to review' (green dot), on the card and in
+    # the Choose-a-run list
+    js = (UI / "app.js").read_text()
+    assert "Run finished · " in js
+    assert "need review' : 'nothing left to review'" in js
+    assert "el('span', 'dot' + (left > 0 ? ' grey' : ''))" in js
+    assert "if (r.status === 'done')" in js
+    css = (UI / "styles.css").read_text()
+    assert ".jb-row1 .dot.grey{background:var(--faint);animation:none}" in css
+    # G8-9: (a) the right pane collapses until a row is picked
+    assert "det.hidden = true" in js and "det.hidden = false" in js
+    assert "Click a value to see what was compared." not in js
+    # G8-9: (b) pages grouped by filing — one header per document
+    for word in ("function filingName(s)", "function accession(s)",
+                 "el('details', 'filing' + (isOpen ? ' on' : ''))",
+                 "' · filed ' + (dateShort(f.filed) || 'no date')",
+                 "' · ' + f.pages.length + ' page'"):
+        assert word in js, word
+    assert ".filing summary{" in css and ".filing.on summary{background:var(--blue-soft)}" in css
+    # G8-9: (c) no zoom — and the Codex P2 narrow-screen fix: the mobile
+    # display:block rule must not resurrect a [hidden] pane
+    assert "zoom" not in js.lower()
+    assert "zoom" not in css.lower()
+    assert ".screen.picked .pane.det[hidden]{display:none}" in css
+    # G8-10: the position-matching caveat under the What changed sub-line
+    assert "changed-caveat" in js
+    assert ("Rows are matched by position for now; a wording change can look "
+            "like a date move.") in js
+    assert ".chcaveat{" in css

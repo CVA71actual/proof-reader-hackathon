@@ -89,6 +89,9 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-a
 .ctchip.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .ctchip.zero{cursor:default;color:var(--faint);border-color:transparent;background:transparent;padding-left:0}
 .acc-line{margin-top:6px;font-size:12px;color:var(--blue);font-weight:600;letter-spacing:.01em}
+/* G8-10: the position-matching caveat under the What changed sub-line —
+   removed by Job 32 when the matcher keys on event identity */
+.chcaveat{margin-top:4px;color:var(--amber);font-weight:500}
 .rendnote{font-size:11.5px;color:var(--blue);padding-top:5px;line-height:1.5;word-break:break-word}
 .attnbtn{margin:10px 0 2px;width:100%;padding:8px 12px;border-radius:8px;background:var(--blue-soft);color:var(--blue);font-weight:600;font-size:12.5px;border:1px solid transparent;text-align:left;cursor:pointer;font-family:inherit}
 .attnbtn.on{background:var(--accent);color:#fff}
@@ -207,6 +210,16 @@ input.fld,select.fld{width:100%;border:1px solid var(--line);border-radius:8px;b
 .pendline{color:var(--amber);font-weight:600;font-size:12.5px;margin-top:8px}
 .wtag{font-size:9.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--sub);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:5px;white-space:nowrap}
 .fold summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--sub);margin-top:6px}
+/* G8-9b: the page list groups pages under their filing — one header per
+   document, folded unless it holds the open page (then blue, per G1-16) */
+.filing{margin:2px 0}
+.filing summary{cursor:pointer;padding:7px 8px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.35;list-style:none}
+.filing summary::-webkit-details-marker{display:none}
+.filing summary::before{content:"▸ ";color:var(--faint);font-weight:400}
+.filing[open] summary::before{content:"▾ "}
+.filing summary:hover{background:var(--line2)}
+.filing.on summary{background:var(--blue-soft)}
+.filing .pg{padding-left:22px}
 .recline{font-size:12.5px;color:var(--sub);margin-top:6px}
 .hint{font-size:12px;color:var(--sub);margin-top:8px}
 
@@ -324,6 +337,8 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
 .runcard .jb-row1{display:flex;align-items:center;gap:6px;font-weight:600}
 .runcard .jb-row1.live{color:var(--green)}
 .runcard .jb-row1 .dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex:0 0 auto;animation:jpulse 1.2s ease-in-out infinite}
+/* G8-8: finished with review waiting is a quiet grey, never the pulsing green */
+.runcard .jb-row1 .dot.grey{background:var(--faint);animation:none}
 @keyframes jpulse{0%,100%{opacity:1}50%{opacity:.25}}
 .runcard .jb-sub{color:var(--sub);margin-top:3px}
 .runcard .jb-stop{margin-top:6px;font-size:11.5px;color:var(--amber);background:var(--amber-soft);border-radius:6px;padding:4px 8px;font-weight:500;line-height:1.4}
@@ -346,6 +361,9 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
   .screen.picked .pane.list{display:none}
   .screen.picked .pane.mid{display:block}
   .screen.picked .pane.det{display:block;border-top:1px solid var(--line)}
+  /* Codex P2 (#102): a picked page with no row picked keeps the pane collapsed —
+     the mobile display:block rule must not resurrect a [hidden] pane */
+  .screen.picked .pane.det[hidden]{display:none}
   .backbtn{display:block!important}
   .srcwrap{padding:14px}
 }
