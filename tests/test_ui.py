@@ -1442,6 +1442,60 @@ setTimeout(function () {{
     assert got.returncode == 0, got.stdout + got.stderr
 
 
+def test_u26_glass3_calendar_rows():
+    # Re-glass 3: a month-only date is a period (hollow dot under a
+    # 'February 2027' header, never '1-28 Feb' filled); headers read in the
+    # order the periods close (February before First half and 2027); a full
+    # year folds every wording of it into the one year marker (verified live:
+    # '2027' and 'in 2027' share one marker under the year header).
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    assert "calIsMonthPeriod" in js and "calHeaderOrd" in js
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("calDays", "calIsMonthPeriod", "calIsExact", "calMonths",
+                     "calQuarterKey", "calHeader", "calHeaderOrd"))
+    script = f"""
+var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',
+                    'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+var MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+                   'August', 'September', 'October', 'November', 'December'];
+{fns}
+function mk(date, end) {{ return {{ period: !!end, date: date, end: end || null }}; }}
+// G3-R1: a whole-month period is a month-only date, not an exact range
+if (!calIsMonthPeriod(mk('2027-02-01', '2027-02-28'))) process.exit(2);
+if (!calIsMonthPeriod(mk('2027-01-01', '2027-01-31'))) process.exit(3);
+if (calIsMonthPeriod(mk('2026-11-14', '2026-11-17'))) process.exit(4);   // a congress weekend stays exact
+if (calIsMonthPeriod(mk('2027-01-01', '2027-03-31'))) process.exit(5);   // a quarter is not a month
+if (calIsExact(mk('2027-02-01', '2027-02-28'))) process.exit(6);         // never exact
+if (!calIsExact(mk('2026-11-14', '2026-11-17'))) process.exit(7);
+var mh = calHeader(mk('2027-02-01', '2027-02-28'));
+if (mh.key !== 'm:2027-02' || mh.len !== 2) process.exit(8);             // its month's header
+// G3-R2: headers close in calendar order — month, quarter's month, half-year, year
+var hs = [calHeader(mk('2026-11-14', '2026-11-17')),   // November exact
+          calHeader(mk('2026-12-01', '2026-12-03')),   // December exact
+          calHeader(mk('2027-01-11', '2027-01-14')),   // January exact
+          calHeader(mk('2027-02-01', '2027-02-28')),   // February month period
+          calHeader(mk('2027-01-01', '2027-06-30')),   // first half
+          calHeader(mk('2027-01-01', '2027-12-31'))];  // the year
+hs.splice(4, 0, {{ key: 'm:2027-01', len: 3 }});        // January's header carrying Q1
+hs.sort(function (a, b) {{
+  var oa = calHeaderOrd(a), ob = calHeaderOrd(b);
+  if (oa !== ob) return oa < ob ? -1 : 1;
+  return a.len - b.len;
+}});
+var keys = hs.map(function (h) {{ return h.key + '/' + h.len; }});
+var want = 'm:2026-11/1,m:2026-12/1,m:2027-01/1,m:2027-01/3,m:2027-02/2,h:2027:First/6,y:2027/12';
+if (keys.join(',') !== want) {{ console.error(keys.join(',')); process.exit(9); }}
+// G3-R3 canon lives in renderCalendar; the helper it builds on:
+if (calQuarterKey(mk('2027-01-01', '2027-03-31')) !== 'Q1 2027') process.exit(10);
+console.log('ok');
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
 def test_u24_g1r3_row_landing_scrolls_the_list_column_only():
     # Re-glass 1 finding 7: opening a row from a hash, filter or the rail scrolled
     # the WHOLE .main ~6,000 px (scrollIntoView moves overflow:hidden boxes too),

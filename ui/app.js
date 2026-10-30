@@ -454,7 +454,17 @@
     if (!r.period || !r.end) return 0;
     return Math.round((new Date(r.end.slice(0, 10)) - new Date(r.date.slice(0, 10))) / 86400000);
   }
-  function calIsExact(r) { return !r.period || calDays(r) <= 31; }
+  // G3-R1: a period that is exactly one whole month (the 1st to its last day)
+  // is a month-only date — the source named no day — never an exact range
+  function calIsMonthPeriod(r) {
+    if (!r.period || !r.end) return false;
+    var d1 = parseInt(r.date.slice(8, 10), 10), d2 = parseInt(r.end.slice(8, 10), 10);
+    if (d1 !== 1 || r.date.slice(0, 7) !== r.end.slice(0, 7)) return false;
+    var last = new Date(parseInt(r.end.slice(0, 4), 10),
+                        parseInt(r.end.slice(5, 7), 10), 0).getDate();
+    return d2 === last;
+  }
+  function calIsExact(r) { return !r.period || (calDays(r) <= 31 && !calIsMonthPeriod(r)); }
   // whole months a period spans, inclusive: Jan 1 – Mar 31 is 3
   function calMonths(r) {
     if (!r.period || !r.end) return 1;
@@ -474,6 +484,8 @@
   function calHeader(r) {
     var start = r.date.slice(0, 7);
     if (calIsExact(r)) return { key: 'm:' + start, sort: start, len: 1, label: null };
+    // G3-R1: a month-only date sits in its month's header as a period marker
+    if (calIsMonthPeriod(r)) return { key: 'm:' + start, sort: start, len: 2, label: null };
     var m = calMonths(r);
     if (m <= 3) return { key: 'm:' + start, sort: start, len: 3, label: null };
     var y = r.date.slice(0, 4);
@@ -484,6 +496,15 @@
     }
     if (m === 12) return { key: 'y:' + y, sort: start, len: 12, label: y };
     return { key: 'm:' + start, sort: start, len: m, label: null };
+  }
+  // G3-R2: headers read in the order the periods close — a month's header
+  // comes at its month, a half-year at its mid/end, a year at December —
+  // so February 2027 never lands after 'First half of 2027' or '2027'
+  function calHeaderOrd(h) {
+    if (h.key.slice(0, 2) === 'm:') return h.key.slice(2);
+    var p = h.key.split(':');
+    if (p[0] === 'h') return p[1] + (p[2] === 'First' ? '-06' : '-12');
+    return p[1] + '-12';
   }
   function calendarUndated() {
     var n = 0;
@@ -1783,11 +1804,17 @@
       var h = header(r);
       if (calIsExact(r)) h.exact.push(r);
       else {
-        // G3-4: one marker per canonical quarter — 'Q1 2027', 'Q1 ’27',
-        // 'first quarter of 2027' and '1Q27' share it; each row keeps its
-        // own wording (shown in the row)
+        // G3-R1/G3-R4: one marker per canonical period — a month-only date
+        // reads 'February 2027', every writing of a quarter shares 'Q1 2027',
+        // a full year shares its year label — each row keeps its own wording
+        // G3-R1/G3-R3: one marker per canonical period — a month-only date
+        // reads 'February 2027', every writing of a quarter shares 'Q1 2027',
+        // a full year shares its year label — each row keeps its own wording
         var wording = (r.t.values && r.t.values.date_text) || r.row.date_text || '';
-        var canon = calMonths(r) <= 3 ? calQuarterKey(r) : wording;
+        var canon = calIsMonthPeriod(r) ? monthYear(r.date)
+          : calMonths(r) <= 3 ? calQuarterKey(r)
+          : calMonths(r) === 12 ? r.date.slice(0, 4)
+          : wording;
         var bucket = null;
         h.periods.forEach(function (p) { if (p.label === canon) bucket = p; });
         if (!bucket) { bucket = { label: canon, rows: [] }; h.periods.push(bucket); }
@@ -1795,7 +1822,8 @@
       }
     });
     headers.sort(function (a, b) {
-      if (a.sort !== b.sort) return a.sort < b.sort ? -1 : 1;
+      var oa = calHeaderOrd(a), ob = calHeaderOrd(b);
+      if (oa !== ob) return oa < ob ? -1 : 1;
       return a.len - b.len;
     });
 
