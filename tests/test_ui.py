@@ -741,8 +741,9 @@ def test_u15_glass1_fixes_are_wired():
     html = (UI / "index.html").read_text()
     css = (UI / "styles.css").read_text()
 
-    # G1-7: the mistakes line says 'by you'
-    assert "· by you: " in js and "by a person: " not in js
+    # G1-7/G1-17: the counters say 'by you' and are toggle chips
+    assert "mistakes caught by you" in js and "by a person: " not in js
+    assert "ctchip" in js and "Showing: " in js
     # G1-8: plain words for the accuracy panel and code removals
     for word in ("Our own key, not sealed", "the accuracy numbers"):
         assert word in js, word
@@ -1685,7 +1686,92 @@ setTimeout(function () {{
     assert got.returncode == 0, got.stdout + got.stderr
 
 
-def test_u25_a_rejected_resume_does_not_begin():
+def test_u28_corrected_rows_say_who_caught_it():
+    # G1-18: a Corrected row carries 'Caught by code' / 'Caught by the second
+    # reader' / 'Fixed by you' in place of MATCHED, and the second line reads
+    # the bare before → after — dates in words, event types as their word.
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    assert "Caught by the second reader" in js and "calWords" in js
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("el", "esc", "btn", "statusBadge", "decidedBadge", "dayInWords",
+                     "exclusionFor", "mistakeFor", "auditRow"))
+    script = f"""
+var FIELD_WORDS = {{ date_text: 'Date as written', date: 'Date', event_type: 'Event type' }};
+var STATUS_WORDS = {{ matched: 'matched', proposed: 'proposed' }};
+var DECIDED_BADGE = {{ kept: 'Kept by you', corrected: 'Fixed by you' }};
+var RULE_WORDS = {{}};
+var SAY_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December'];
+function eventWord(v) {{ return {{ regulatory_decision: 'Regulatory decision',
+  advisory_committee: 'Advisory committee' }}[v] || String(v); }}
+function navigate() {{}}
+function currentRunId() {{ return 'run1'; }}
+var audit = {{ selected: null, filter: 'ALL' }};
+var detail = {{ run: {{ rows: [], mistakes: [
+    {{ target: 'e1', caught_by: 'code', what_changed: 'Date changed from 2027-06-03 to 2027-06-30 after the date check failed.' }},
+    {{ target: 'e2', caught_by: 'second_reader', what_changed: 'Company changed from Samplebio Two (SMPL2) to Samplebio Three (SMPL3).' }},
+    {{ target: 'e3', caught_by: 'person', what_changed: 'Event type changed from regulatory_decision to advisory_committee.' }}
+  ], sources: [] }}, state: {{ targets: {{}}, exclusions: [] }} }};
+function make() {{
+  return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, dataset: {{}},
+    append: function () {{ for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); }},
+    addEventListener: function () {{}}, querySelector: function () {{ return null; }} }};
+}}
+global.document = {{ createElement: function (t) {{ var n = make(); n.tag = t; return n; }},
+  createTextNode: function (t) {{ return {{ textContent: t }}; }} }};
+{fns}
+function textOf(n, out) {{
+  out = out || [];
+  if (n.textContent) out.push(n.textContent);
+  (n.children || []).forEach(function (c) {{ textOf(c, out); }});
+  return out.join(' | ');
+}}
+function mkRow(id) {{
+  return {{ id: id, ticker: 'SMPL', title: 'ROW-' + id, date_text: 'June 30, 2027',
+           event_type: 'regulatory_decision', company: 'Samplebio Three', proposed_by: 'Muse Spark' }};
+}}
+// run-level correction caught by code: dates in words, bare before → after
+detail.run.rows = [mkRow('e1')];
+detail.state.targets = {{ e1: {{ group: 'corrected', status: 'matched', decided_by_person: false,
+  fixes: [], values: {{ date: '2027-06-30', date_text: 'June 30, 2027', company: 'Samplebio Three',
+    event_type: 'regulatory_decision', ticker: 'SMPL', title: 'ROW-e1' }} }} }};
+var s1 = textOf(auditRow(mkRow('e1'), detail.state.targets.e1));
+if (s1.indexOf('Caught by code') === -1) {{ console.error(s1); process.exit(2); }}
+if (s1.indexOf('June 3, 2027 → June 30, 2027') === -1) {{ console.error(s1); process.exit(3); }}
+if (s1.indexOf('2027-06-03') !== -1) {{ console.error('raw ISO on screen: ' + s1); process.exit(4); }}
+// caught by the second reader: company words as written
+detail.run.rows = [mkRow('e2')];
+detail.state.targets = {{ e2: {{ group: 'corrected', status: 'matched', decided_by_person: false,
+  fixes: [], values: {{ company: 'Samplebio Three', ticker: 'SMPL', title: 'ROW-e2' }} }} }};
+var s2 = textOf(auditRow(mkRow('e2'), detail.state.targets.e2));
+if (s2.indexOf('Caught by the second reader') === -1) {{ console.error(s2); process.exit(5); }}
+if (s2.indexOf('Samplebio Two (SMPL2) → Samplebio Three') === -1) {{ console.error(s2); process.exit(6); }}
+// Codex P2: the combined label — 'Company and ticker changed from … to …, as the
+// second reading gave.' is the real sample builder wording; it maps to company
+detail.run.mistakes = [{{ target: 'e4', caught_by: 'code',
+  what_changed: 'Company and ticker changed from Samplebio Two (SMPL2) to Samplebio Three (SMPL3), as the second reading gave.' }}];
+detail.run.rows = [mkRow('e4')];
+detail.state.targets = {{ e4: {{ group: 'corrected', status: 'matched', decided_by_person: false,
+  fixes: [], values: {{ company: 'Samplebio Three', ticker: 'SMPL3', title: 'ROW-e4' }} }} }};
+var s4 = textOf(auditRow(mkRow('e4'), detail.state.targets.e4));
+if (s4.indexOf('Samplebio Two (SMPL2) → Samplebio Three') === -1) {{ console.error(s4); process.exit(10); }}
+if (s4.indexOf('Samplebio Three (SMPL3)') === -1) {{ console.error('ticker dropped: ' + s4); process.exit(11); }}
+// caught by you / a person's own fix: 'Fixed by you', and a person's fix line wins
+detail.run.rows = [mkRow('e3')];
+detail.state.targets = {{ e3: {{ group: 'corrected', status: 'matched', decided_by_person: true,
+  fixes: [{{ field: 'event_type', from: 'regulatory_decision', to: 'advisory_committee' }}],
+  values: {{ event_type: 'advisory_committee', ticker: 'SMPL', title: 'ROW-e3' }} }} }};
+var s3 = textOf(auditRow(mkRow('e3'), detail.state.targets.e3));
+if (s3.indexOf('Fixed by you') === -1) {{ console.error(s3); process.exit(7); }}
+if (s3.indexOf('Regulatory decision → Advisory committee') === -1) {{ console.error(s3); process.exit(8); }}
+if (s3.indexOf('decided by you') !== -1) {{ console.error('redundant line: ' + s3); process.exit(9); }}
+console.log('ok');
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
     # Codex P2 on #93: ctx.resume().then(begin, begin) ran begin() even when
     # the resume was rejected — a take on a context that never started. A
     # rejected resume now stops the tracks, closes the context and shows the

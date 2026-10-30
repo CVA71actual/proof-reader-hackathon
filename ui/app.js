@@ -223,6 +223,15 @@
       var g = rowTarget(r).group;
       if (f === 'ALL') return true;
       if (f === 'ATTN') return needsAttention(rowTarget(r));
+      // G1-17: the counter filters — the rows behind each count
+      if (f === 'EXC') return !!exclusionFor(r.id);
+      if (f === 'MCODE' || f === 'MREADER' || f === 'MYOU') {
+        var m = mistakeFor(r.id);
+        if (!m) return false;
+        return (f === 'MCODE' && m.caught_by === 'code') ||
+               (f === 'MREADER' && m.caught_by === 'second_reader') ||
+               (f === 'MYOU' && m.caught_by === 'person');
+      }
       return g === f;
     });
   }
@@ -626,11 +635,30 @@
     rl.textContent = meta.label || '';
     rl.className = 'runlabel' + (meta.sample ? ' sample' : '');
 
-    document.getElementById('audit-counters').textContent =
-      'Mistakes caught by code: ' + st.mistakes.code +
-      ' · by the second reader: ' + st.mistakes.second_reader +
-      ' · by you: ' + st.mistakes.person +
-      ' · Excluded: ' + (st.excluded.code + st.excluded.person);
+    // G1-17: the counters are filters, exactly like Needs attention — click
+    // narrows the list, the chip reads 'Showing: …', the filter rides the
+    // URL, click again clears; zero counts are not clickable
+    var countersEl = clear(document.getElementById('audit-counters'));
+    var chipDefs = [
+      ['MCODE', 'mistakes caught by code', st.mistakes.code],
+      ['MREADER', 'mistakes caught by the second reader', st.mistakes.second_reader],
+      ['MYOU', 'mistakes caught by you', st.mistakes.person],
+      ['EXC', 'excluded', st.excluded.code + st.excluded.person]
+    ];
+    chipDefs.forEach(function (d) {
+      if (!d[2]) {
+        countersEl.append(el('span', 'ctchip zero', d[1] + ': 0'));
+        return;
+      }
+      var on = audit.filter === d[0];
+      var b = btn('ctchip' + (on ? ' on' : ''), '');
+      b.textContent = (on ? 'Showing: ' : '') + d[1] + ' · ' + d[2];
+      b.addEventListener('click', function () {
+        audit.filter = on ? 'ALL' : d[0];
+        navigate({ runId: currentRunId(), screen: 'audit', rowId: audit.selected, filter: audit.filter });
+      });
+      countersEl.append(b);
+    });
     ensureAccuracyLine();
 
     var ab = document.getElementById('attnbtn');
@@ -688,7 +716,9 @@
         ? 'Nothing needs attention. Every row has a home.' : 'No rows in this group.'));
       return;
     }
-    var grouped = audit.filter === 'ALL' || audit.filter === 'ATTN';
+    var grouped = audit.filter === 'ALL' || audit.filter === 'ATTN' ||
+                  audit.filter === 'MCODE' || audit.filter === 'MREADER' ||
+                  audit.filter === 'MYOU' || audit.filter === 'EXC';
     if (grouped) {
       // one heading per group: sort by group order, stable within a group
       var order = {}, idx = {};
@@ -726,20 +756,54 @@
       // G1-8 / G1-S1: a row removed by code says so — never a matched/proposed badge
       l2.append(el('span', 'st st-removed', 'Removed by code'));
     } else {
-      l2.append(t.decided_by_person ? decidedBadge(t.group) : statusBadge(t.status));
+      // G1-18: a corrected row says who caught the mistake, in place of MATCHED
+      if (t.group === 'corrected') {
+        var mm = mistakeFor(row.id);
+        l2.append(el('span', 'st st-corrected',
+          !mm || mm.caught_by === 'person' ? 'Fixed by you'
+          : mm.caught_by === 'code' ? 'Caught by code'
+          : 'Caught by the second reader'));
+      } else {
+        l2.append(t.decided_by_person ? decidedBadge(t.group) : statusBadge(t.status));
+      }
     }
     l2.append(el('span', 'mdl', 'by ' + (row.proposed_by || 'Model')));
     if (x && x.by === 'code') {
       var ruleWords = RULE_WORDS[x.rule] || String(x.rule || '').replace(/_/g, ' ');
       l2.append(el('span', 'fixline', '· ' + ruleWords));
     }
-    if (t.decided_by_person && t.group !== 'removed') {
+    if (t.decided_by_person && t.group !== 'removed' && t.group !== 'corrected') {
       l2.append(el('span', null, '· decided by you'));
     }
-    var fx = (t.fixes || []).slice(-1)[0];
-    if (t.group === 'corrected' && fx) {
-      l2.append(el('span', 'fixline', (FIELD_WORDS[fx.field] || fx.field) + ': ' + (fx.from === null || fx.from === undefined ? '(none)' : fx.from) +
-        ' → ' + (fx.to === null || fx.to === undefined ? '(none)' : fx.to)));
+    if (t.group === 'corrected') {
+      // G1-18: the before → after — a person's fix carries it; a correction
+      // that came with the run keeps the old value in the mistake's record
+      var cfx = (t.fixes || []).slice(-1)[0] || null;
+      if (!cfx) {
+        var cfm = mistakeFor(row.id);
+        var cmm = cfm ? /^([A-Za-z ]+?) changed from (.*?) to /.exec(cfm.what_changed || '') : null;
+        var cfield = cmm ? ({ 'date': 'date', 'company': 'company', 'company and ticker': 'company',
+                              'event type': 'event_type', 'title': 'title', 'program': 'program',
+                              'indication': 'indication' })[cmm[1].toLowerCase()] : null;
+        if (cfield) {
+          var to = t.values && t.values[cfield] !== undefined ? t.values[cfield] : null;
+          // the combined label names the ticker too — the after carries it
+          if (cmm[1].toLowerCase() === 'company and ticker' && to &&
+              t.values && t.values.ticker)
+            to = to + ' (' + t.values.ticker + ')';
+          cfx = { field: cfield, from: cmm[2], to: to };
+        }
+      }
+      if (cfx) {
+        function calWords(v) {
+          if (v === null || v === undefined) return '(none)';
+          if (cfx.field === 'event_type') return eventWord(v);
+          if ((cfx.field === 'date' || cfx.field === 'date_end') && /^\d{4}-\d{2}-\d{2}$/.test(String(v)))
+            return dayInWords(v);
+          return String(v);
+        }
+        l2.append(el('span', 'fixline', calWords(cfx.from) + ' → ' + calWords(cfx.to)));
+      }
     }
     if ((t.group === 'open' || t.group === 'unverified') && t.reason) {
       l2.append(el('span', 'fixline', t.reason.length > 72 ? t.reason.slice(0, 72) + '…' : t.reason));
