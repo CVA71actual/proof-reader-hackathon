@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from jsonschema import Draft202012Validator
 
@@ -69,6 +69,11 @@ def now_utc() -> str:
 # One lock for the whole process: a POST holds it from reading decisions.jsonl to appending its lines, and a
 # read of decisions.jsonl takes it too, so no request sees a half-written batch or decides on a stale state.
 DECISIONS_LOCK = threading.Lock()
+
+
+ACCURACY_UNBOUND_REASON = ("This Accuracy result was saved before the inputs it scored were recorded. "
+                           "Re-score to show it.")
+ACCURACY_MISMATCH_REASON = "This Accuracy result does not match the run's current inputs. Re-score to show it."
 
 
 class RunStore:
@@ -416,12 +421,17 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         """The run's saved scoring (accuracy/export.py). Served only if the run's page files match their hashes and the
         file's own hashes hold: it is not altered since it was written, and it was scored from this run.json."""
         run = store.run(run_id)
+
+        def refuse(detail: str, unbound: bool = False) -> JSONResponse:
+            # `reason` is the sentence for the screen; `detail` carries the field-level cause for logs only
+            return JSONResponse({"reason": ACCURACY_UNBOUND_REASON if unbound else ACCURACY_MISMATCH_REASON,
+                                 "detail": detail}, status_code=409)
         if run.get("accuracy_stale"):
-            raise HTTPException(409, run.get("accuracy_stale_reason") or
-                                "This run's accuracy scoring is stale and must be regenerated.")
+            return refuse(run.get("accuracy_stale_reason") or
+                          "This run's accuracy scoring is stale and must be regenerated.")
         data, problem = accuracy_export.read_if_intact(store.run_dir(run_id))
         if problem:
-            raise HTTPException(409, problem)
+            return refuse(problem, unbound=problem.startswith(accuracy_export.UNBOUND))
         if data is None:
             raise HTTPException(404, "No accuracy scoring is saved for this run.")
         return Response(data, media_type="application/json")

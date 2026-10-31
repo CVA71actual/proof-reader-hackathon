@@ -726,6 +726,13 @@
     (function probe(i) {
       if (i >= urls.length) return;
       fetch(urls[i]).then(function (r) {
+        if (r.status === 409) {      // Job 50b: show the reason, no counts
+          return r.json().then(function (b) {
+            var why = String((b && b.reason) || 'This Accuracy result does not match the run\'s current inputs. Re-score to show it.');
+            accuracyCache = { id: id, line: why, tried: true };
+            if (route && route.screen === 'audit') { slot.textContent = why; slot.hidden = false; }
+          });
+        }
         if (!r.ok) return probe(i + 1);
         return r.json().then(function (acc) {
           var line = accuracyLineFrom(acc);
@@ -1576,6 +1583,13 @@
       (function probe(i) {
         if (i >= urls.length) return resolve(null);
         fetch(urls[i]).then(function (r) {
+          if (r.status === 409) {      // Job 50b: stale or unbound: the reason, never counts
+            return r.json().then(function (b) {
+              var refused = { refused: String((b && b.reason) || 'This Accuracy result does not match the run\'s current inputs. Re-score to show it.') };
+              accCache = { id: id, acc: refused, tried: true };
+              resolve(refused);
+            }).catch(function () { probe(i + 1); });
+          }
           if (!r.ok) return probe(i + 1);
           r.json().then(function (acc) {
             accCache = { id: id, acc: acc, tried: true };
@@ -1662,6 +1676,12 @@
     var foot = el('div', 'hint', 'Every number here comes from the saved run and the accuracy numbers — no model is called for this panel.');
     foot.style.marginTop = '12px';
     accuracyProbe(detail.id).then(function (acc) {
+      if (acc && acc.refused) {
+        sealedHead.textContent = 'Scoring';
+        clear(keyNoteHost); clear(sealedHost); clear(plantedHost);
+        sealedHost.append(el('div', 'hint', acc.refused));
+        return;
+      }
       var sealed = acc && acc.key && acc.key.sealed === true;
       // G6-6: no key at all — no key heading either, just the plain Scoring
       // heading and one line; G1-8: the author-keyed heading in plain words

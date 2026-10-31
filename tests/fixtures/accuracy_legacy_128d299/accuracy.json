@@ -1,0 +1,108 @@
+{
+ "export_version": 1,
+ "run": "sample",
+ "sample": true,
+ "date": "2026-10-29",
+ "made_at": "2026-10-29T04:47:00+00:00",
+ "product_tip": "128d299",
+ "product_dirty": false,
+ "key": {
+  "path": "accuracy/keys/ions_ars_2026_p95.key.json",
+  "sealed": false,
+  "source_sha256": "aabcaf5ef7714c9390fc5bd135d9ab0f5e77ffc559241ad4b5427802ac2f09a2",
+  "page_number": 95,
+  "cells": 69,
+  "events": 0,
+  "complete": true,
+  "key_check": "passed"
+ },
+ "readers": {
+  "first": [
+   "Muse Spark"
+  ],
+  "second_reader": null,
+  "escalation": null
+ },
+ "models": {
+  "Muse Spark": {
+   "values": {
+    "found": 69,
+    "N": 69,
+    "wrong_value": 0,
+    "wrong_place": 0,
+    "missed": 0,
+    "extra": 0,
+    "unscored": 0
+   },
+   "events": null,
+   "planted": {
+    "caught": 12,
+    "total": 12,
+    "by_kind": {
+     "wrong_value": {
+      "total": 4,
+      "caught": 4
+     },
+     "wrong_place": {
+      "total": 4,
+      "caught": 4
+     },
+     "box_drift": {
+      "total": 4,
+      "caught": 4
+     }
+    }
+   },
+   "mistakes_by_type": {},
+   "models": [
+    "Muse Spark"
+   ]
+  }
+ },
+ "planted": {
+  "caught": 12,
+  "total": 12,
+  "by_kind": {
+   "wrong_value": {
+    "total": 4,
+    "caught": 4
+   },
+   "wrong_place": {
+    "total": 4,
+    "caught": 4
+   },
+   "box_drift": {
+    "total": 4,
+    "caught": 4
+   }
+  }
+ },
+ "agreement": {
+  "rows_compared": 8,
+  "rows_agreed": 7,
+  "rows_disagreed": 1,
+  "rate": 0.875,
+  "second_reader_only_rows": 0,
+  "values_disagreed": 0,
+  "both_wrong": {
+   "rows": null,
+   "values": null
+  },
+  "note": "Agreement is not evidence: the checks decide. both_wrong counts what both readers agreed on and the key says is wrong."
+ },
+ "mistake_log": {
+  "from_scoring": {},
+  "from_run": {
+   "PERIOD_MISREAD": 1,
+   "WRONG_COMPANY": 1,
+   "WRONG_EVENT_TYPE": 1
+  },
+  "from_run_by_caught_by": {
+   "code": 1,
+   "second_reader": 1,
+   "person": 1
+  }
+ },
+ "run_sha256": "e08fbe312f10781d1e21727f4176e2c59e6f9ca6c6a425667e1c339fb5328935",
+ "content_sha256": "cd5041096facd5f925bfaff6b3cf7d9e3d52647e21db170e81cb425f6831fe69"
+}

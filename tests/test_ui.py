@@ -352,7 +352,7 @@ def test_u12_audit_line_is_one_models_counts():
     assert "values 1/100" in got.stdout and "events 2/2" not in got.stdout
 
 
-def _panel_text(acc: dict) -> str:
+def _panel_text(acc: dict, status: int = 200) -> str:
     """renderAccuracyPanel's text under the same mock element harness as the redteam UI tests."""
     import json
     import subprocess
@@ -373,7 +373,7 @@ function textOf(node, out) {{
   return out.join('\\n');
 }}
 global.fetch = function () {{
-  return Promise.resolve({{ ok: true, json: function () {{ return Promise.resolve(ACC_DOC); }} }});
+  return Promise.resolve({{ ok: {str(status == 200).lower()}, status: {status}, json: function () {{ return Promise.resolve(ACC_DOC); }} }});
 }};
 var accCache = {{ id: null, acc: null, tried: false }};
 var accPanelHost = el('div');
@@ -3348,3 +3348,36 @@ def test_r48c_unresolved_window_renders_without_date_arithmetic():
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
     assert got.returncode == 0, got.stdout + got.stderr
     assert "Timing unresolved" in js and "w.unresolved ? w.reason" in js
+
+
+def test_job50b_the_409_clears_key_sealed_and_planted_and_shows_the_plain_reason(tmp_path):
+    import json
+    import shutil
+    from fastapi.testclient import TestClient
+    from accuracy import export
+    from server.app import create_app
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    shutil.copytree(REPO / "runs" / "sample", runs / "sample")
+    f = runs / "sample" / export.FILE_NAME
+    doc = json.loads(f.read_text())
+    assert doc["key"]["sealed"] is False and doc["planted"] and doc["models"]       # counts exist to be hidden
+    for k in ("words", "words_sha256", "decisions_sha256", "run_sha256", "export_version"):
+        doc.pop(k, None)
+    doc["content_sha256"] = export.content_hash(doc)
+    f.write_text(json.dumps(doc))
+    r = TestClient(create_app(runs_dir=runs, ui_dir=runs / "no-ui")).get("/api/runs/sample/accuracy")
+    assert r.status_code == 409
+    body = r.json()
+    want = ("This Accuracy result was saved before the inputs it scored were recorded. Re-score to show it.")
+    assert body["reason"] == want and "detail" in body and "models" not in body
+    text = _panel_text(body, status=409)
+    assert want in text
+    top = text.split("\nCost\n")[0]            # the scoring part; the glossary below the panel is fixed text
+    assert "Scoring\n" + want in top
+    for gone in ("Muse Spark", "values", "planted", "sealed", "Our own key", "/", "sha256", "words", "export_version"):
+        assert gone not in top, gone
+    mismatch = _panel_text({"reason": "This Accuracy result does not match the run's current inputs. Re-score to show it.",
+                            "detail": "field detail: run_sha256"}, status=409)
+    assert "does not match the run's current inputs. Re-score to show it." in mismatch
+    assert "run_sha256" not in mismatch and "field detail" not in mismatch

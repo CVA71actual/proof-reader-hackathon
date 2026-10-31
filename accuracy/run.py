@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 from accuracy.key import KeyRefused, check_key, load_key
-from accuracy.mistake_log import load_run, mistake_log
+from accuracy.mistake_log import mistake_log
 from accuracy.report import build_report, render_text
 from accuracy.score import model_family, run_window, score_events, score_planted, score_table
 from checks.status import check_reading
@@ -57,7 +57,11 @@ def _page_of_run(run: dict, key: dict) -> tuple[dict, dict]:
 
 def score_run(key: dict, run_dir: Path, key_path: str | None = None, planted: list[dict] | None = None,
               reading: dict | None = None) -> dict:
-    run, decisions = load_run(run_dir)
+    run_bytes = (run_dir / "run.json").read_bytes()
+    dec_path = run_dir / "decisions.jsonl"
+    dec_bytes = dec_path.read_bytes() if dec_path.exists() else b""
+    run = json.loads(run_bytes)
+    decisions = [json.loads(line) for line in dec_bytes.decode("utf-8").splitlines() if line.strip()]
     source, page = _page_of_run(run, key)
     raw = (run_dir / page["words"]).read_bytes()
     if hashlib.sha256(raw).hexdigest() != page.get("words_sha256"):
@@ -75,8 +79,13 @@ def score_run(key: dict, run_dir: Path, key_path: str | None = None, planted: li
         table = score_table({"rows": [], "model": None}, key)
     events = score_events(effective_rows(rows), key, run.get("exclusions"), window=run_window(run)) if key.get("events") else None
     plant = score_planted(reading, words_doc, planted) if planted and reading else None
-    return build_report(key, key_path, table=table, events=events, planted=plant,
-                        run_log=mistake_log(run, decisions), run_id=run["run"]["id"])
+    rep = build_report(key, key_path, table=table, events=events, planted=plant,
+                       run_log=mistake_log(run, decisions), run_id=run["run"]["id"])
+    # What this report was scored from. It travels with the report; accuracy.export checks it against the disk.
+    rep["inputs"] = {"run_sha256": hashlib.sha256(run_bytes).hexdigest(),
+                     "decisions_sha256": hashlib.sha256(dec_bytes).hexdigest(),
+                     "words": page["words"], "words_sha256": hashlib.sha256(raw).hexdigest()}
+    return rep
 
 
 def score_reading(key: dict, reading: dict, words_path: Path, key_path: str | None = None,
@@ -148,7 +157,11 @@ def main(argv: list[str] | None = None) -> int:
     print(text, end="")
     if a.export:
         from accuracy import export
-        written = export.write(run_dir, rep)
+        try:
+            written = export.write(run_dir, rep)
+        except export.StaleReport as e:
+            print(str(e), file=sys.stderr)
+            return 2
         print(f"Wrote {written}")
     if a.out:
         out = Path(a.out)

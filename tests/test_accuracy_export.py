@@ -365,3 +365,135 @@ def test_a_keep_does_not_change_the_score(tmp_path):
     keep = {"by": "person", "target": run["rows"][0]["id"], "action": "keep", "note": None, "at": "t"}
     kept = _scored(_copy(tmp_path / "b"), hold, [keep])
     assert plain["counts"] == kept["counts"] and plain["counts"]["found"] == 1
+
+
+# ---------------------------------------------------------------- Job 50: results carry the identity of what they scored
+
+Q, QF = "Samplebio Six will report final results on July 9, 2027.", "Samplebio Six will report final results on July 19, 2027."
+# A real correction of e7 (quote, written date and date together), as the probe made it.
+FIXES = [{"target": "e7", "action": "fix", "fix": {"field": f, "from": a, "to": b}}
+         for f, a, b in (("quote", Q, QF), ("date_text", "July 9, 2027", "July 19, 2027"), ("date", "2027-07-09", "2027-07-19"))]
+FIX = FIXES[2]
+
+
+def _correct(client):
+    for f in FIXES:
+        assert client.post("/api/runs/sample/decisions", json=f).status_code == 200
+
+
+def _caught(client):
+    return client.get("/api/runs/sample/accuracy").json()["mistake_log"]["from_run_by_caught_by"]["person"]
+
+
+def test_a_correction_after_scoring_shows_in_the_saved_endpoint_and_not_in_the_model_score(served):
+    client, runs = served
+    shutil.rmtree(runs / "sample" / "report", ignore_errors=True)    # saved reports make a decision rewrite run.json (refused: other test)
+    exported(runs / "sample")
+    before = client.get("/api/runs/sample/accuracy").json()
+    _correct(client)
+    after = client.get("/api/runs/sample/accuracy")
+    assert after.status_code == 200
+    live = after.json()
+    assert live["mistake_log"]["from_run_by_caught_by"]["person"] == before["mistake_log"]["from_run_by_caught_by"]["person"] + 1
+    for k in ("models", "planted", "agreement", "window"):
+        assert live.get(k) == before.get(k), "a person's decision must not change the model's extraction score"
+    assert live["mistake_log"]["from_scoring"] == before["mistake_log"]["from_scoring"]
+    assert live["content_sha256"] == export.content_hash(live)
+
+
+def test_an_older_report_is_refused_for_a_run_that_now_scores_differently(sample):
+    old = scored(sample)
+    assert old["models"]["Muse Spark"]["values"]["found"] == 69
+    run = json.loads((sample / "run.json").read_text())
+    cell = run["tables"][0]["rows"][0]["cells"][0]
+    cell["value"], cell["status"], cell["checks"][0]["result"] = "115,316", "failed", "fail"
+    (sample / "run.json").write_text(json.dumps(run))
+    with pytest.raises(export.StaleReport):
+        export.write(sample, old, now=NOW, tip="t", dirty=False)
+    assert not (sample / export.FILE_NAME).exists()
+    assert scored(sample)["models"]["Muse Spark"]["values"]["found"] == 68
+    export.write(sample, scored(sample), now=NOW, tip="t", dirty=False)
+    assert export.read_if_intact(sample)[1] is None
+
+
+def test_a_report_is_refused_if_decisions_changed_between_scoring_and_writing(sample):
+    rep = scored(sample)
+    (sample / "decisions.jsonl").write_text(json.dumps({"by": "person", "target": "e7", "action": "keep", "at": "t"}) + "\n")
+    with pytest.raises(export.StaleReport):
+        export.write(sample, rep, now=NOW, tip="t", dirty=False)
+
+
+def test_a_changed_words_file_is_not_served(sample):
+    export.write(sample, scored(sample), now=NOW, tip="t", dirty=False)
+    doc = json.loads((sample / export.FILE_NAME).read_text())
+    w = sample / doc["words"]
+    w.write_bytes(w.read_bytes() + b" ")
+    assert export.read_if_intact(sample)[0] is None
+
+
+def test_the_intact_case_is_served_byte_for_byte(sample):
+    out = export.write(sample, scored(sample), now=NOW, tip="t", dirty=False)
+    assert export.read_if_intact(sample) == (out.read_bytes(), None)
+
+
+def test_the_model_score_is_the_same_with_or_without_a_person_fix(sample, tmp_path):
+    other = tmp_path / "other"
+    shutil.copytree(sample, other)
+    (other / "decisions.jsonl").write_text("".join(json.dumps({"by": "person", **f, "note": None, "at": "t"}) + "\n" for f in FIXES))
+    a, b = scored(sample), scored(other)
+    for k in ("table", "events", "planted", "models"):
+        assert a.get(k) == b.get(k)
+
+
+def test_a_decision_that_rewrites_run_json_leaves_the_saved_scoring_refused_as_stale(served):
+    client, runs = served                      # the sample has saved reports: a decision rewrites run.json
+    _correct(client)
+    r = client.get("/api/runs/sample/accuracy")
+    assert r.status_code == 409 and "different version of run.json" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------- Job 50b: a legacy file is never served as current
+
+
+def _resealed(path, mutate):
+    doc = json.loads(path.read_text())
+    mutate(doc)
+    doc["content_sha256"] = export.content_hash(doc)
+    path.write_text(json.dumps(doc))
+
+
+@pytest.mark.parametrize("drop", [("words",), ("words_sha256",), ("decisions_sha256",), ("run_sha256",),
+                                  ("export_version",), ("words", "words_sha256", "decisions_sha256")])
+def test_a_file_missing_any_binding_is_unbound_with_no_counts(served, drop):
+    c, runs = served
+    _resealed(runs / "sample" / export.FILE_NAME, lambda d: [d.pop(k) for k in drop])
+    for url in ("/runs/sample/accuracy.json", "/api/runs/sample/accuracy"):
+        r = c.get(url)
+        assert r.status_code == 409 and "predates input binding; re-score" in r.json()["detail"]
+        assert "models" not in r.text and "found" not in r.text
+
+
+def test_null_or_invalid_bindings_and_a_wrong_version_are_refused(served):
+    c, runs = served
+    f = runs / "sample" / export.FILE_NAME
+    good = f.read_text()
+    for mutate in (lambda d: d.update(words=None, words_sha256=None), lambda d: d.update(decisions_sha256="nope"),
+                   lambda d: d.update(export_version=2), lambda d: d.update(export_version="1")):
+        f.write_text(good)
+        _resealed(f, mutate)
+        data, problem = export.read_if_intact(runs / "sample")
+        assert data is None and "re-score" in problem
+
+
+def test_a_fully_bound_file_still_refreshes_its_decision_counts(served):
+    c, runs = served
+    shutil.rmtree(runs / "sample" / "report", ignore_errors=True)    # no saved reports: a decision leaves run.json alone
+    exported(runs / "sample")
+    before = c.get("/runs/sample/accuracy.json")
+    assert before.status_code == 200
+    n = before.json()["mistake_log"]["from_run_by_caught_by"]["person"]
+    _correct(c)
+    after = c.get("/runs/sample/accuracy.json")
+    assert after.status_code == 200
+    assert after.json()["mistake_log"]["from_run_by_caught_by"]["person"] == n + 1
+    assert after.json()["decisions_sha256"] != before.json()["decisions_sha256"]

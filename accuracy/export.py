@@ -24,6 +24,9 @@ header and the Accuracy panel read, with what the order adds:
     date, product_tip, product_dirty   when it was made, the product commit it was made on, and whether that tree had
                    uncommitted changes
     run_sha256     the sha256 of the run's run.json the numbers were scored from
+    decisions_sha256, words, words_sha256   the rest of what was scored: decisions.jsonl's bytes (the person's decisions,
+                   which feed only mistake_log.from_run, never the model's scores) and the words file. write() refuses a
+                   report whose inputs are not the ones on disk; the server re-reads from_run from the live decisions
     content_sha256 the sha256 of this file's own content (everything but this field)
 
 The server serves it only if both hashes hold (server/app.py): a file edited after it was written, or one that belongs to a
@@ -114,10 +117,26 @@ def readers(run: dict, report: dict) -> dict:
     return {"first": first, "second_reader": meta.get("second_reader"), "escalation": meta.get("escalation")}
 
 
+class StaleReport(Exception):
+    """The report was scored from inputs that are no longer the ones on disk."""
+
+
+def _decisions_bytes(run_dir: Path) -> bytes:
+    f = Path(run_dir) / "decisions.jsonl"
+    return f.read_bytes() if f.exists() else b""
+
+
+def _words_sha(run_dir: Path, words: str | None) -> str | None:
+    f = Path(run_dir) / words if words else None
+    return sha256_bytes(f.read_bytes()) if f and f.is_file() else None
+
+
 def build_export(report: dict, run: dict, run_bytes: bytes, *, now: datetime | None = None, tip: str | None = None,
                  dirty: bool | None = None) -> dict:
     """The file's content for a scored run. `report`: accuracy.report.build_report's output; `run`: run.json parsed and
     `run_bytes` its bytes (the hash binds the numbers to exactly this run)."""
+    if report.get("inputs", {}).get("run_sha256") != sha256_bytes(run_bytes):
+        raise StaleReport("The report was scored from a different run.json than the one being exported.")
     now = now or datetime.now(timezone.utc)
     if tip is None and dirty is None:
         tip, dirty = git_state()
@@ -141,6 +160,7 @@ def build_export(report: dict, run: dict, run_bytes: bytes, *, now: datetime | N
         "mistake_log": {"from_scoring": dict(scoring), "from_run": dict(from_run.get("by_type", {})),
                         "from_run_by_caught_by": dict(from_run.get("by_caught_by", {}))},
         "run_sha256": sha256_bytes(run_bytes),
+        **{k: report["inputs"][k] for k in ("decisions_sha256", "words", "words_sha256")},
     }
     if report.get("events"):                # beside the existing fields; absent when no events were scored
         doc["window"] = window_block(report["events"])
@@ -152,10 +172,35 @@ def write(run_dir: Path, report: dict, **kw) -> Path:
     """Write runs/<id>/accuracy.json for a scored run. Replaces an earlier accuracy.json: the latest scoring stands."""
     run_dir = Path(run_dir)
     run_bytes = (run_dir / "run.json").read_bytes()
+    ident = report.get("inputs") or {}
+    on_disk = {"run_sha256": sha256_bytes(run_bytes), "decisions_sha256": sha256_bytes(_decisions_bytes(run_dir)),
+               "words_sha256": _words_sha(run_dir, ident.get("words"))}
+    changed = [k for k, v in on_disk.items() if ident.get(k) != v]
+    if changed:
+        raise StaleReport(f"Not written: the report was scored from inputs that are not the ones on disk now "
+                          f"({', '.join(changed)}). Score the run again.")
     doc = build_export(report, json.loads(run_bytes), run_bytes, **kw)
     out = run_dir / FILE_NAME
     out.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n")
     return out
+
+
+UNBOUND = "Accuracy file predates input binding; re-score"
+
+
+def _unbound_reason(doc: dict) -> str | None:
+    """A plain reason if the saved file lacks any part of its scoring identity (run, words, decisions hashes; version).
+    Nothing is filled in from today's files and no score is shown."""
+    def is_hash(v):
+        return isinstance(v, str) and len(v) == 64 and all(c in "0123456789abcdef" for c in v)
+    if doc.get("export_version") != EXPORT_VERSION:
+        return f"{UNBOUND} (stale or unbound: the file's version is missing or not {EXPORT_VERSION})."
+    missing = [k for k in ("run_sha256", "words_sha256", "decisions_sha256") if not is_hash(doc.get(k))]
+    if not isinstance(doc.get("words"), str) or not doc.get("words"):
+        missing.append("words")
+    if missing:
+        return f"{UNBOUND} (stale or unbound: missing or invalid {', '.join(missing)})."
+    return None
 
 
 def read_if_intact(run_dir: Path) -> tuple[bytes | None, str | None]:
@@ -171,7 +216,28 @@ def read_if_intact(run_dir: Path) -> tuple[bytes | None, str | None]:
         return None, f"This run's {FILE_NAME} is not valid JSON."
     if not isinstance(doc, dict) or doc.get("content_sha256") != content_hash(doc):
         return None, f"This run's {FILE_NAME} does not match the hash recorded in it: it was changed after it was written."
+    bound = _unbound_reason(doc)
+    if bound:
+        return None, bound
     if doc.get("run_sha256") != sha256_bytes((Path(run_dir) / "run.json").read_bytes()):
         return None, (f"This run's {FILE_NAME} was scored from a different version of run.json than the one on disk; "
                       f"it is not served.")
+    if doc.get("words_sha256") != _words_sha(run_dir, doc.get("words")):
+        return None, f"This run's {FILE_NAME} was scored from a different words file than the one on disk; it is not served."
+    if doc.get("decisions_sha256") != sha256_bytes(_decisions_bytes(run_dir)):
+        doc = _with_current_decisions(doc, Path(run_dir))        # a person decided since: refresh the decision block
+        data = (json.dumps(doc, indent=1, ensure_ascii=False) + "\n").encode("utf-8")
     return data, None
+
+
+def _with_current_decisions(doc: dict, run_dir: Path) -> dict:
+    """The saved doc with only its decision-derived block (mistake_log.from_run*) taken from the live decisions. The
+    model's scores are untouched: a Keep or Fix never changes them."""
+    from accuracy.mistake_log import load_run, mistake_log
+    run, decisions = load_run(run_dir)
+    live = mistake_log(run, decisions)
+    out = {**doc, "mistake_log": {**doc["mistake_log"], "from_run": dict(live["by_type"]),
+                                  "from_run_by_caught_by": dict(live["by_caught_by"])},
+           "decisions_sha256": sha256_bytes(_decisions_bytes(run_dir))}
+    out["content_sha256"] = content_hash(out)
+    return out

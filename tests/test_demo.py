@@ -105,9 +105,9 @@ def test_the_demo_lists_the_runs_then_prints_ptgx_r5s_counts_accuracy_and_cost_p
     assert "calendar: 2 kept or corrected rows" in rest
     spend = run_json("ptgx-r5")["run"]["spend_usd"]
     assert f"cost: ${spend:.4f}; kept rows: 2; cost per kept row: ${spend / 2:.4f}" in rest
-    assert "Unsealed (author key): Muse Spark — events 2/2" in rest, "labelled by the key, which is not sealed"
-    assert "The two readers agreed on 2 of 2 rows; both agreed on 0 the key says are wrong." in rest
-    assert "Key: an author key, not sealed, complete; scored" in rest and "turns:" not in rest
+    # Job 50b: ptgx-r5's committed accuracy.json predates input binding: no counts, a plain re-score reason
+    assert "Accuracy: not shown. Accuracy file predates input binding; re-score" in rest
+    assert "Muse Spark — events" not in rest and "Unsealed" not in rest and "turns:" not in rest
 
 
 def test_the_demo_can_show_the_sample_run_and_says_it_is_sample_data(capsys):
@@ -122,23 +122,23 @@ def test_a_run_with_no_saved_scoring_says_so(capsys):
 
 
 def test_a_scoring_that_does_not_hold_its_hashes_is_not_shown_and_the_reason_is(capsys, runs_dir):
-    f = runs_dir / "ptgx-r5" / export.FILE_NAME
+    f = runs_dir / "sample" / export.FILE_NAME
     doc = json.loads(f.read_text())
-    doc["models"]["Muse Spark"]["events"]["found"] = 0
+    doc["models"]["Muse Spark"]["values"]["found"] = 0
     f.write_text(json.dumps(doc))
-    _, out, _ = say(capsys, "--no-serve", runs_dir=runs_dir)
+    _, out, _ = say(capsys, "--no-serve", "--run", "sample", runs_dir=runs_dir)
     assert "Accuracy: not shown. This run's accuracy.json does not match the hash recorded in it" in out
-    assert "events 0/2" not in out and "Muse Spark — events" not in out
+    assert "values 0/" not in out and "Muse Spark — values" not in out
 
 
 def test_the_label_is_sealed_only_when_the_key_says_sealed(capsys, runs_dir):
-    f = runs_dir / "ptgx-r5" / export.FILE_NAME
+    f = runs_dir / "sample" / export.FILE_NAME
     doc = json.loads(f.read_text())
     doc["key"]["sealed"] = True
     doc["content_sha256"] = export.content_hash(doc)
     f.write_text(json.dumps(doc))
-    _, out, _ = say(capsys, "--no-serve", runs_dir=runs_dir)
-    assert "Sealed set: Muse Spark — events 2/2" in out and "Key: sealed, complete;" in out
+    _, out, _ = say(capsys, "--no-serve", "--run", "sample", runs_dir=runs_dir)
+    assert "Sealed set: Muse Spark — values 69/69" in out and "Key: sealed, complete;" in out
 
 
 def test_an_unknown_run_is_refused_naming_the_saved_ones(capsys):
@@ -155,7 +155,9 @@ def test_it_serves_the_app_on_this_machine_only_on_the_documented_port_and_the_a
     assert "Serving the app at http://127.0.0.1:8777/  (this machine only; Ctrl-C stops it)" in out
     ids = [r["id"] for r in TestClient(app).get("/api/runs").json()]
     assert "ptgx-r5" in ids and "sample" in ids
-    assert TestClient(app).get("/runs/ptgx-r5/accuracy.json").json()["key"]["sealed"] is False
+    assert TestClient(app).get("/runs/sample/accuracy.json").json()["key"]["sealed"] is False
+    legacy = TestClient(app).get("/runs/ptgx-r5/accuracy.json")
+    assert legacy.status_code == 409 and "re-score" in legacy.json()["detail"] and "models" not in legacy.text
 
 
 def test_another_port_is_taken_and_there_is_no_way_to_bind_elsewhere(capsys):
@@ -186,9 +188,10 @@ def test_the_readme_says_how_to_run_the_demo_without_a_key():
 
 
 def test_the_committed_accuracy_files_hold_their_hashes_after_the_rebuild():
-    for name in ("sample", "ptgx-r5"):
-        data, problem = export.read_if_intact(RUNS / name)
-        assert problem is None and data is not None, (name, problem)
+    data, problem = export.read_if_intact(RUNS / "sample")
+    assert problem is None and data is not None, problem
+    data, problem = export.read_if_intact(RUNS / "ptgx-r5")      # legacy: refused, never upgraded
+    assert data is None and "re-score" in problem
 
 
 # ---------------------------------------------------------------- Job 35: reports for every run; the app opens on the printed run
