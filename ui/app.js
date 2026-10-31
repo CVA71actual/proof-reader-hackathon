@@ -299,6 +299,14 @@
   function exclusionFor(rowId) {
     return (detail.state.exclusions || []).filter(function (x) { return x.target === rowId; })[0] || null;
   }
+  // U37: run.json's exclusions[] are history — they stay even after a person
+  // keeps the row — so the pane and the audit note can still say code had
+  // removed it once the live exclusion is gone
+  function codeExclusionHistory(rowId) {
+    return (detail.run.exclusions || []).filter(function (x) {
+      return x.target === rowId && x.by === 'code';
+    })[0] || null;
+  }
 
   function refresh() {
     decisionsCache = { id: null, lines: null };
@@ -336,7 +344,7 @@
     }
     var seg = path.split('/').map(decodeURIComponent);
     var out = { runId: seg[0], screen: seg[1] || 'audit' };
-    if (out.screen === 'audit') { out.rowId = seg[2] || null; out.filter = q.f || null; }
+    if (out.screen === 'audit') { out.rowId = seg[2] || null; out.filter = q.f || null; out.dialog = q.d || null; }
     if (out.screen === 'source') {
       out.srcId = seg[2] || null; out.page = seg[3] || null;
       out.valueId = q.v || null; out.back = q.back || null;
@@ -355,6 +363,7 @@
     if (o.screen === 'audit') {
       if (o.rowId) h += '/' + encodeURIComponent(o.rowId);
       if (o.filter && o.filter !== 'ALL') q.push('f=' + o.filter);
+      if (o.dialog) q.push('d=' + encodeURIComponent(o.dialog));
     } else if (o.screen === 'source') {
       h += '/' + encodeURIComponent(o.srcId) + '/' + o.page;
       if (o.valueId) q.push('v=' + encodeURIComponent(o.valueId));
@@ -766,6 +775,11 @@
     renderAuditRows();
     renderAuditMid();
     renderAuditDet();
+
+    // U37: the Keep-anyway dialog mounts on the audit route too — open it for
+    // the selected row, and make sure no stale dialog survives a plain audit view
+    if (route.dialog && audit.selected && rowOf(audit.selected)) openDialog(rowOf(audit.selected), route.dialog);
+    else closeDialog();
   }
 
   function renderAuditFacets() {
@@ -858,7 +872,13 @@
       var ruleWords = RULE_WORDS[x.rule] || String(x.rule || '').replace(/_/g, ' ');
       l2.append(el('span', 'fixline', '· ' + ruleWords));
     }
-    if (t.decided_by_person && t.group !== 'removed' && t.group !== 'corrected') {
+    // U37: a row the person kept over a code removal says so — 'Kept by you ·
+    // code had removed it' — in place of the generic 'decided by you'
+    var keptAnyway = t.group === 'kept' && t.decided_by_person &&
+                     t.last_action === 'keep' && codeExclusionHistory(row.id);
+    if (keptAnyway) {
+      l2.append(el('span', 'fixline', '· code had removed it'));
+    } else if (t.decided_by_person && t.group !== 'removed' && t.group !== 'corrected') {
       l2.append(el('span', null, '· decided by you'));
     }
     if (t.group === 'corrected') {
@@ -1201,6 +1221,14 @@
         reasonLine.textContent = dayInWords(why);
         box.append(reasonLine);
       }
+      // U37: the code's call can be overruled — a person keeps the row anyway
+      // (a recorded keep decision; the exclusion stays in run.json as history)
+      var kbr = el('div', 'btnrow');
+      kbr.style.marginTop = '10px';
+      kbr.append(btn('btn pri', 'Keep anyway', function () {
+        navigate({ runId: currentRunId(), screen: 'audit', rowId: row.id, dialog: 'keepanyway' });
+      }));
+      box.append(kbr);
       sec.append(box);
       return sec;
     }
@@ -1893,7 +1921,7 @@
           (fx.from === null || fx.from === undefined ? '(none)' : fx.from) + ' → ' +
           (fx.to === null || fx.to === undefined ? '(none)' : fx.to)));
       }
-      if (l.note) body.append(el('div', 'tx', 'Note: “' + l.note + '”'));
+      if (l.note) body.append(el('div', 'tx', 'Note: “' + dayInWords(l.note) + '”'));
       return step;
     }
 
@@ -2752,7 +2780,7 @@
   }
 
   // ---------------------------------------------------------------- decisions
-  function postDecision(rowId, body, successMsg) {
+  function postDecision(rowId, body, successMsg, opts) {
     if (pending) return;
     pending = true;
     // G1-10: an Undo must not wait ~1 s in silence — say it at once
@@ -2766,7 +2794,7 @@
         return;
       }
       // drop the dialog from the hash BEFORE re-rendering, or it would re-open on the old state
-      navigate({ runId: currentRunId(), screen: 'judgment', rowId: rowId });
+      navigate({ runId: currentRunId(), screen: (opts && opts.screen) || 'judgment', rowId: rowId });
       return refresh().then(function () {
         if (body.action !== 'undo') toast(successMsg || 'Decided.');
       });
@@ -2797,7 +2825,35 @@
   function openDialog(row, action) {
     if (action === 'fix') fixDialog(row);
     else if (action === 'remove') removeDialog(row);
+    else if (action === 'keepanyway') keepAnywayDialog(row);
     else closeDialog();
+  }
+
+  // U37: keep a code-removed row anyway — the same reason box as Remove (the
+  // code's reason is pre-filled, the person can edit it), saving records a
+  // person keep that outranks the code exclusion
+  function keepAnywayDialog(row) {
+    var x = exclusionFor(row.id) || codeExclusionHistory(row.id);
+    if (!x) { closeDialog(); return; }
+    clear(dialogHost);
+    dialogHost.append(el('div', 'sh-t', 'Keep this row anyway'));
+    dialogHost.append(el('div', 'sh-s', row.ticker + ' · ' + row.title));
+    dialogHost.append(el('h4', null, 'Why you keep it (required — it is the recorded reason)'));
+    var note = noteField('dnote', 'e.g. It is an upcoming event the rule misjudged.');
+    note.value = x.reason || RULE_WORDS[x.rule] || '';
+    dialogHost.append(note);
+    var br = el('div', 'btnrow');
+    br.style.marginTop = '14px';
+    br.append(btn('btn pri', 'Keep anyway', function () {
+      if (!note.value.trim()) { showDialogError('A reason is required — it is the recorded reason.'); return; }
+      postDecision(row.id, { target: row.id, action: 'keep', note: note.value.trim() },
+        'Kept by you — code had removed it.', { screen: 'audit' });
+    }), btn('btn', 'Cancel', function () {
+      navigate({ runId: currentRunId(), screen: 'audit', rowId: row.id });
+    }));
+    dialogHost.append(br);
+    dialogWrap.hidden = false;
+    note.focus();
   }
 
   function removeDialog(row, prefillNote) {
@@ -3946,8 +4002,10 @@
     if (newrunWrap && !newrunWrap.hidden) { newrunWrap.hidden = true; return; }
     if (runSheetWrap && !runSheetWrap.hidden) { runSheetWrap.hidden = true; return; }
     if (dialogWrap && !dialogWrap.hidden && route && route.dialog) {
-      // G1-6: replace, not push — Back must not re-open the dialog
-      replaceRoute({ runId: currentRunId(), screen: 'judgment', rowId: route.rowId });
+      // G1-6: replace, not push — Back must not re-open the dialog; U37: the
+      // dialog can mount on the audit screen too, not only on judgment
+      replaceRoute({ runId: currentRunId(), screen: route.screen === 'judgment' ? 'judgment' : 'audit',
+                     rowId: route.rowId });
       return;
     }
     // G1-5: Esc closes the details pane (no history entry)

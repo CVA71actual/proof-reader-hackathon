@@ -1040,8 +1040,10 @@ def test_u24_g1r4_removed_pane_reason_dates_in_words_no_null_line():
     import subprocess
 
     js = (UI / "app.js").read_text()
+    # U37: the code-removed pane now also carries the 'Keep anyway' button, so
+    # its btn helper is grabbed too
     fns = "\n".join(_grab_fn(js, n) for n in
-                    ("el", "esc", "removedSection", "dayInWords"))
+                    ("el", "esc", "btn", "removedSection", "dayInWords"))
     script = f"""
 var RULE_WORDS = {{ outside_time_window: 'Outside the time window',
   third_party_calendar_only: 'House rule: a third-party calendar is never a source on its own.',
@@ -1081,7 +1083,8 @@ EXCLUSIONS = [{{ target: 'r2', rule: null, reason: null, by: 'code' }}];
 var p2 = textOf(removedSection({{ id: 'r2' }}, {{ group: 'removed', reason: null, values: {{}} }}));
 if (p2.indexOf('null') !== -1) process.exit(7);
 var lines2 = p2.split('\\n').filter(function (l) {{ return l.trim(); }});
-if (lines2.join('|') !== 'Why it was removed|Removed by code') process.exit(8);
+// (U37: the 'Keep anyway' button is part of the box)
+if (lines2.join('|') !== 'Why it was removed|Removed by code|Keep anyway') process.exit(8);
 // a person removal keeps its own reason, dates in words
 EXCLUSIONS = [{{ target: 'r3', rule: 'person_removed', by: 'person', reason: null }}];
 var p3 = textOf(removedSection({{ id: 'r3' }}, {{ group: 'removed',
@@ -1227,7 +1230,7 @@ def test_u26_glass2_wonder_prompt_folds_and_person_steps_carry_time():
     prompt_steps = re.search(r"var PROMPT_STEPS = \{.*?\};", js, re.S).group(0)
     fns = "\n".join(_grab_fn(js, n) for n in
                     ("el", "esc", "clear", "revealRow", "checkFnFor", "daySpanWords",
-                     "plainProposal", "trailStep"))
+                     "plainProposal", "dayInWords", "trailStep"))
     script = f"""
 {prompt_steps}
 var FIELD_WORDS = {{ date_text: 'Date as written' }};
@@ -3056,3 +3059,61 @@ def test_u36_g9r4_run_sheet_lists_each_run_once():
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
     assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u37_keep_anyway_ui_pins():
+    # U37: the pane of a code-removed row carries a 'Keep anyway' button next
+    # to the reason, opening a dialog with the same reason box as Remove; the
+    # audit row of a kept-anyway row reads 'code had removed it'; the dialog
+    # mounts on the audit route; person trail notes show dates in words
+    js = (UI / "app.js").read_text()
+    for word in ("function keepAnywayDialog(row)",
+                 "'Keep anyway'",
+                 "dialog: 'keepanyway'",
+                 "action: 'keep', note: note.value.trim()",
+                 "function codeExclusionHistory(rowId)",
+                 "'· code had removed it'",
+                 "openDialog(rowOf(audit.selected), route.dialog)",
+                 "'Kept by you — code had removed it.'",
+                 "dayInWords(l.note)"):
+        assert word in js, word
+    # the audit route carries the dialog param both ways (parse + build)
+    assert "out.filter = q.f || null; out.dialog = q.d || null; }" in js
+    assert "if (o.dialog) q.push('d=' + encodeURIComponent(o.dialog));" in js
+    # postDecision can return to the audit screen (default stays judgment)
+    assert "screen: (opts && opts.screen) || 'judgment'" in js
+
+
+def test_u37_a_person_keep_outranks_a_code_exclusion():
+    # U37 state half (runs/state.py already honours it — pinned here): a
+    # person's keep on a code-removed row moves it to 'kept', the live
+    # exclusion drops (Excluded -1, kept +1) while run.json's exclusions stay
+    # as history; Undo restores the code removal and the counters
+    import json
+    from runs.state import current_state
+
+    run = json.loads((REPO / "runs" / "sample" / "run.json").read_text())
+    assert run["exclusions"][0]["target"] == "e6" and run["exclusions"][0]["by"] == "code"
+    base = current_state(run, [])
+    assert base["targets"]["e6"]["group"] == "removed"
+    assert base["excluded"]["code"] == 1 and len(base["exclusions"]) == 1
+    kept_before = base["counts"]["rows"]["kept"]
+    removed_before = base["counts"]["rows"]["removed"]
+
+    keep = {"at": "2026-10-31T14:00:00+00:00", "target": "e6", "action": "keep",
+            "note": "House rule: a third-party calendar is never a source on its own.",
+            "by": "person"}
+    st = current_state(run, [keep])
+    t6 = st["targets"]["e6"]
+    assert t6["group"] == "kept" and t6["decided_by_person"] and t6["last_action"] == "keep"
+    assert st["excluded"]["code"] == 0 and st["exclusions"] == []
+    assert st["counts"]["rows"]["kept"] == kept_before + 1
+    assert st["counts"]["rows"]["removed"] == removed_before - 1
+
+    undo = {"at": "2026-10-31T14:05:00+00:00", "target": "e6", "action": "undo", "by": "person"}
+    back = current_state(run, [keep, undo])
+    assert back["targets"]["e6"]["group"] == "removed"
+    assert not back["targets"]["e6"]["decided_by_person"]
+    assert back["excluded"]["code"] == 1 and len(back["exclusions"]) == 1
+    assert back["counts"]["rows"]["kept"] == kept_before
+    assert back["counts"]["rows"]["removed"] == removed_before
