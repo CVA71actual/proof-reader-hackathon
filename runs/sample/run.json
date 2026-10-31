@@ -7137,7 +7137,14 @@
      "code_ref": {
       "file": "checks/event_checks.py",
       "function": "quote_match"
-     }
+     },
+     "near_match": "Samplebio Six will report final results on July 19, 2027.",
+     "differs": [
+      [
+       "9,",
+       "19,"
+      ]
+     ]
     },
     {
      "name": "selector_match",

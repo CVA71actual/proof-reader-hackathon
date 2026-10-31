@@ -190,6 +190,9 @@
             "word_ids": {"type": "array", "items": {"type": "string"}}
           }
         },
+        "near_match": {"type": ["string", "null"], "description": "Optional. Quote check on a near miss: the page's own wording for the run that nearly matches the quote."},
+        "differs": {"type": "array", "description": "Optional. With near_match: [quote_word, page_word] for each word of that run that differs.",
+                    "items": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "string"}], "items": false, "minItems": 2}},
         "code_ref": {
           "type": "object",
           "additionalProperties": false,

@@ -76,7 +76,7 @@ def to_contract_check(c: dict) -> dict:
         compared["box"] = list(raw["box"]) if raw["box"] is not None else None
     if "word_ids" in raw:
         compared["word_ids"] = list(raw["word_ids"])
-    return {
+    out = {
         "name": c["check"],
         "label": c["label"],
         "kind": c.get("kind", "Code"),
@@ -85,6 +85,10 @@ def to_contract_check(c: dict) -> dict:
         "compared": compared,
         "code_ref": code_ref(c["check"]),
     }
+    if c.get("near_match") is not None or c.get("differs"):    # only a near-miss quote check carries these
+        out["near_match"] = c.get("near_match")
+        out["differs"] = [list(p) for p in c.get("differs") or []]
+    return out
 
 
 def model_display_name(model_id: str) -> str:
