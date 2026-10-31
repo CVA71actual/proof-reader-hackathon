@@ -561,16 +561,16 @@
     return 'Q' + (Math.floor((m - 1) / 3) + 1) + ' ' + y;
   }
 
-  // G3-2: the header a row sits under — never one narrower than its own date.
-  // Quarters live in their start month's header; half-years and years get
-  // their own headers, sorted by period start, then shortest first.
+  // G3-2/G9-R3: the header a row sits under — never one narrower than its
+  // own dates. A month-only date and exact days sit in their month's header;
+  // a quarter or any longer span gets its OWN header, sorted right after the
+  // first month it spans begins; half-years and years get their named headers
   function calHeader(r) {
     var start = r.date.slice(0, 7);
     if (calIsExact(r)) return { key: 'm:' + start, sort: start, len: 1, label: null };
     // G3-R1: a month-only date sits in its month's header as a period marker
     if (calIsMonthPeriod(r)) return { key: 'm:' + start, sort: start, len: 2, label: null };
     var m = calMonths(r);
-    if (m <= 3) return { key: 'm:' + start, sort: start, len: 3, label: null };
     var y = r.date.slice(0, 4);
     if (m === 6) {
       var half = parseInt(r.date.slice(5, 7), 10) <= 6 ? 'First' : 'Second';
@@ -578,14 +578,22 @@
                label: half + ' half of ' + y };
     }
     if (m === 12) return { key: 'y:' + y, sort: start, len: 12, label: y };
-    return { key: 'm:' + start, sort: start, len: m, label: null };
+    // G9-R3: a quarter never sits under its start month's header ('Q4 2026'
+    // under 'October 2026') — its own quarter header, after that month's;
+    // other spans (e.g. 'by year-end', Sep–Dec) get their own header too,
+    // labelled with the source wording
+    return { key: m === 3 ? 'q:' + calQuarterKey(r) : 'p:' + start + ':' + r.end,
+             sort: start, len: m,
+             label: m === 3 ? calQuarterKey(r) : null };
   }
   // G3-R2: headers read in the order the periods close — a month's header
-  // comes at its month, a half-year at its mid/end, a year at December —
-  // so February 2027 never lands after 'First half of 2027' or '2027'
+  // comes at its month, a quarter right after the first month it spans, a
+  // half-year at its mid/end, a year at December — so February 2027 never
+  // lands after 'First half of 2027' or '2027'
   function calHeaderOrd(h) {
     if (h.key.slice(0, 2) === 'm:') return h.key.slice(2);
     var p = h.key.split(':');
+    if (p[0] === 'q' || p[0] === 'p') return h.sort;
     if (p[0] === 'h') return p[1] + (p[2] === 'First' ? '-06' : '-12');
     return p[1] + '-12';
   }
@@ -2061,14 +2069,14 @@
       var h = header(r);
       if (calIsExact(r)) h.exact.push(r);
       else {
-        // G3-R1/G3-R4: one marker per canonical period — a month-only date
-        // reads 'February 2027', every writing of a quarter shares 'Q1 2027',
-        // a full year shares its year label — each row keeps its own wording
-        // G3-R1/G3-R3: one marker per canonical period — a month-only date
-        // reads 'February 2027', every writing of a quarter shares 'Q1 2027',
-        // a full year shares its year label — each row keeps its own wording
+        // G3-R1/G3-R4: one marker per canonical period — every writing of a
+        // quarter shares 'Q1 2027', a full year shares its year label — each
+        // row keeps its own wording
+        // G9-R2: a period marker inside a month carries the source wording
+        // ('early Q1 2027'), never the month's own name repeated from the
+        // header above it
         var wording = (r.t.values && r.t.values.date_text) || r.row.date_text || '';
-        var canon = calIsMonthPeriod(r) ? monthYear(r.date)
+        var canon = calIsMonthPeriod(r) ? (wording || monthYear(r.date))
           : calMonths(r) <= 3 ? calQuarterKey(r)
           : calMonths(r) === 12 ? r.date.slice(0, 4)
           : wording;
@@ -2087,7 +2095,13 @@
     var wrap = el('div', 'calwrap');
     headers.forEach(function (h) {
       var sample = h.exact[0] || (h.periods[0] && h.periods[0].rows[0]);
-      wrap.append(el('div', 'mo', h.label || monthYear(sample ? sample.date : h.sort + '-01')));
+      // G9-R3: a span header that is not a quarter ('by year-end', Sep–Dec)
+      // reads the source wording of its first row, never its start month's name
+      var htext = h.label;
+      if (!htext && sample && sample.period && !calIsExact(sample) &&
+          h.key.slice(0, 2) === 'p:')
+        htext = (sample.t.values && sample.t.values.date_text) || sample.row.date_text;
+      wrap.append(el('div', 'mo', htext || monthYear(sample ? sample.date : h.sort + '-01')));
       // G3-4: exact dates first by day, then periods shortest to longest
       h.exact.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
       // G3-4: periods shortest to longest inside the header
@@ -3830,9 +3844,23 @@
 
   // ---------------------------------------------------------------- run sheet
   var runSheetWrap = document.getElementById('runsheet-wrap');
+  // G9-R4: one entry per run in 'Choose a run' — a copied run directory
+  // keeps the same run number, so entries dedupe by number; a flagged sample
+  // entry wins over the copy (the Sample run listed once, not again as a copy)
+  function dedupeSheetRuns(list) {
+    var byNum = {};
+    list.forEach(function (r) {
+      if (r.number == null) return;
+      var prev = byNum[r.number];
+      if (!prev || (r.sample && !prev.sample)) byNum[r.number] = r;
+    });
+    return list.filter(function (r) {
+      return r.number == null || byNum[r.number] === r;
+    });
+  }
   function openRunSheet() {
     var host = clear(document.getElementById('runsheet-list'));
-    runs.forEach(function (r) {
+    dedupeSheetRuns(runs).forEach(function (r) {
       var b = btn('runopt' + (detail && r.id === detail.id ? ' on' : ''));
       b.append(el('div', 'n', (r.label || r.id) + (r.sample ? ' · sample' : '')));
       // G8-8: a finished run carries the same 'Run finished · …' words as the

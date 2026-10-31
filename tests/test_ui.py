@@ -1508,21 +1508,28 @@ if (calIsExact(mk('2027-02-01', '2027-02-28'))) process.exit(6);         // neve
 if (!calIsExact(mk('2026-11-14', '2026-11-17'))) process.exit(7);
 var mh = calHeader(mk('2027-02-01', '2027-02-28'));
 if (mh.key !== 'm:2027-02' || mh.len !== 2) process.exit(8);             // its month's header
-// G3-R2: headers close in calendar order — month, quarter's month, half-year, year
+// G9-R3: a quarter gets its OWN header right after the first month it spans
+// begins ('Q4 2026' after 'October 2026'), never the start month's header
+var q4 = calHeader(mk('2026-10-01', '2026-12-31'));
+if (q4.key !== 'q:Q4 2026' || q4.label !== 'Q4 2026' || q4.len !== 3) process.exit(11);
+var sepdec = calHeader(mk('2026-09-01', '2026-12-31'));
+if (sepdec.key !== 'p:2026-09:2026-12-31' || sepdec.label !== null) process.exit(12);
+// G3-R2/G9-R3: headers close in calendar order — month, quarter's own header,
+// half-year, year
 var hs = [calHeader(mk('2026-11-14', '2026-11-17')),   // November exact
           calHeader(mk('2026-12-01', '2026-12-03')),   // December exact
           calHeader(mk('2027-01-11', '2027-01-14')),   // January exact
           calHeader(mk('2027-02-01', '2027-02-28')),   // February month period
+          calHeader(mk('2027-01-01', '2027-03-31')),   // Q1 — its own header
           calHeader(mk('2027-01-01', '2027-06-30')),   // first half
           calHeader(mk('2027-01-01', '2027-12-31'))];  // the year
-hs.splice(4, 0, {{ key: 'm:2027-01', len: 3 }});        // January's header carrying Q1
 hs.sort(function (a, b) {{
   var oa = calHeaderOrd(a), ob = calHeaderOrd(b);
   if (oa !== ob) return oa < ob ? -1 : 1;
   return a.len - b.len;
 }});
 var keys = hs.map(function (h) {{ return h.key + '/' + h.len; }});
-var want = 'm:2026-11/1,m:2026-12/1,m:2027-01/1,m:2027-01/3,m:2027-02/2,h:2027:First/6,y:2027/12';
+var want = 'm:2026-11/1,m:2026-12/1,m:2027-01/1,q:Q1 2027/3,m:2027-02/2,h:2027:First/6,y:2027/12';
 if (keys.join(',') !== want) {{ console.error(keys.join(',')); process.exit(9); }}
 // G3-R3 canon lives in renderCalendar; the helper it builds on:
 if (calQuarterKey(mk('2027-01-01', '2027-03-31')) !== 'Q1 2027') process.exit(10);
@@ -2175,7 +2182,11 @@ def test_u30_glass8_leftovers():
     css = (UI / "styles.css").read_text()
     assert ".runcard .pick:focus-visible" not in css
     assert "outline:2px solid var(--accent)" not in css
-    assert "white-space:nowrap}" in css.split(".ctchip{")[1].split("}")[0] + "}"
+    # G9-R1 rev: flex 0 0 auto keeps a chip whole while it fits (the row
+    # stacks whole chips); max-width + normal white-space let an over-wide
+    # chip wrap inside its own pill — no clipped text
+    assert "flex:0 0 auto" in css.split(".ctchip{")[1].split("}")[0]
+    assert "white-space:normal" in css.split(".ctchip{")[1].split("}")[0]
     assert ".ctchip.zero + .ctchip.zero" not in css
 
 
@@ -2945,6 +2956,102 @@ def test_u35_codex_p2s_presence_effective_checks_reader_label():
         # P2-2: the effective checks are the re-check's after set, not the saved row
         "if (effectiveChecks(detail.run.rows[0], detail.state.targets.c1)[0].result !== 'pass') process.exit(3);",
         "if (effectiveChecks(detail.run.rows[1], detail.state.targets.c2)[0].result !== 'pass') process.exit(4);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u36_g9r1_zero_counters_are_grey_pills_that_stack():
+    # GLASS 9 nit 1 (Corey rev 31 Oct): all four counter chips stay pills
+    # whether zero or not; when they do not fit on one line they stack one
+    # per line — never side by side with a sideways scroll, never plain
+    # text that clips. Zero pills are grey and not clickable
+    css = (UI / "styles.css").read_text()
+    zero = css.split(".ctchip.zero{")[1].split("}")[0]
+    assert "cursor:default" in zero
+    assert "var(--faint)" in zero
+    assert "transparent" not in zero
+    assert "white-space:normal" not in zero          # a pill stays one line
+    counters = css.split(".counters{")[1].split("}")[0]
+    assert "flex-wrap:wrap" in counters              # chips stack, no sideways scroll
+    chip = css.split(".ctchip{")[1].split("}")[0]
+    assert "flex:0 0 auto" in chip       # a chip stays whole while it fits
+    assert "max-width:100%" in chip      # an over-wide chip wraps inside its own pill
+    assert "white-space:normal" in chip
+
+
+def test_u36_g9r2_month_period_marker_uses_the_source_wording():
+    # GLASS 9 nit 2: the 'early Q1 2027' period marker inside January read
+    # 'January 2027' — the same words as the month header above it. A
+    # month-period marker now carries the source wording, never the month's
+    # own name
+    js = (UI / "app.js").read_text()
+    assert "(wording || monthYear(r.date))" in js
+
+
+def test_u36_g9r3_quarter_periods_get_their_own_header():
+    # GLASS 9 nit 3: Sample 'Q4 2026' sat under an 'October 2026' month
+    # header. A quarter (or any span longer than a month) now gets its own
+    # header right after the first month it spans begins; the render side
+    # labels a non-quarter span with the source wording
+    import subprocess
+    js = (UI / "app.js").read_text()
+    assert "'p:' + start + ':' + r.end" in js
+    assert "h.key.slice(0, 2) === 'p:'" in js
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("calDays", "calIsMonthPeriod", "calIsExact", "calMonths",
+                     "calQuarterKey", "calHeader", "calHeaderOrd"))
+    script = "\n".join([
+        "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',",
+        "                    'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];",
+        "var MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July',",
+        "                   'August', 'September', 'October', 'November', 'December'];",
+        fns,
+        "function mk(date, end) { return { period: !!end, date: date, end: end || null }; }",
+        # the Sample case: Q4 2026 is its own header, sorted at October —
+        # right after the October month header, never under it
+        "var q4 = calHeader(mk('2026-10-01', '2026-12-31'));",
+        "if (q4.key !== 'q:Q4 2026' || q4.label !== 'Q4 2026') process.exit(2);",
+        "var oct = { key: 'm:2026-10', sort: '2026-10', len: 1 };",
+        "var hs = [q4, oct].sort(function (a, b) {",
+        "  var oa = calHeaderOrd(a), ob = calHeaderOrd(b);",
+        "  if (oa !== ob) return oa < ob ? -1 : 1;",
+        "  return a.len - b.len;",
+        "});",
+        "if (hs[0].key !== 'm:2026-10' || hs[1].key !== 'q:Q4 2026') process.exit(3);",
+        # a month-only date still sits in its month's header (G3-R1 unchanged)
+        "if (calHeader(mk('2027-02-01', '2027-02-28')).key !== 'm:2027-02') process.exit(4);",
+        # a non-quarter span gets its own header keyed by its exact dates
+        "if (calHeader(mk('2026-09-01', '2026-12-31')).key !== 'p:2026-09:2026-12-31') process.exit(5);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u36_g9r4_run_sheet_lists_each_run_once():
+    # GLASS 9 nit 4: the Sample run appeared twice in 'Choose a run' — a
+    # copied run directory keeps the same run number. The sheet now dedupes
+    # by run number and the flagged sample entry wins over the copy
+    import subprocess
+    js = (UI / "app.js").read_text()
+    fns = _grab_fn(js, "dedupeSheetRuns")
+    script = "\n".join([
+        fns,
+        "var list = [",
+        "  { id: 'copy-run-2', number: 2, label: 'Sample run', sample: false },",
+        "  { id: 'sample', number: 2, label: 'Sample run', sample: true },",
+        "  { id: 'run-3', number: 3, label: 'Run 7' },",
+        "  { id: 'odd', label: 'no number' },",
+        "];",
+        "var got = dedupeSheetRuns(list);",
+        "if (got.length !== 3) { console.error('n=' + got.length); process.exit(2); }",
+        "if (got[0].id !== 'sample') { console.error('first=' + got[0].id); process.exit(3); }",
+        "if (got[1].id !== 'run-3' || got[2].id !== 'odd') process.exit(4);",
+        # no collisions -> the list passes through untouched
+        "var plain = dedupeSheetRuns([{ id: 'a', number: 1 }, { id: 'b', number: 2 }]);",
+        "if (plain.length !== 2) process.exit(5);",
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
