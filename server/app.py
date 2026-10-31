@@ -429,6 +429,8 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         number = run.get("run", {}).get("number")
         if not isinstance(number, int) or name not in report_filenames(number):
             raise HTTPException(404, "No such report file.")
+        if run.get("report_stale"):
+            raise HTTPException(404, "This run's report is out of date after a re-check and has not been rebuilt.")
         f = store.run_dir(run_id) / "report" / name
         if not f.is_file():
             raise HTTPException(404, "This run has no saved report file with that name.")

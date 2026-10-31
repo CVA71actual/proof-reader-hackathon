@@ -1,0 +1,82 @@
+# phrase	kind	start	end	note
+# Every line is read with filing date 2026-10-21 (checks/event_checks.parse_date_phrase). The file only grows: never remove a line; add every new wording met in a run.
+# Empty start/end = open or no date. (blank) stands for empty text.
+March 12, 2027	day	2027-03-12	2027-03-12	
+12 March 2027	day	2027-03-12	2027-03-12	
+Wednesday, October 21, 2026	day	2026-10-21	2026-10-21	
+2027-03-12	day	2027-03-12	2027-03-12	
+Nov. 14, 2026	day	2026-11-14	2026-11-14	
+Saturday, November 14,2026	day	2026-11-14	2026-11-14	no space after the comma
+Friday, Sept. 4 at 10:00 a.m. ET	day	2027-09-04	2027-09-04	no year: first such day on or after the filing date
+on or about October 27, 2026	day	2026-10-27	2026-10-27	leading words dropped
+by February 1, 2027	day	2027-02-01	2027-02-01	leading word dropped
+November 10 - 12, 2026	range	2026-11-10	2026-11-12	
+November 16–19, 2026	range	2026-11-16	2026-11-19	
+January 11 – 14, 2027	range	2027-01-11	2027-01-14	
+November 14 – 17, 2026 - Washington, D.C.	range	2026-11-14	2026-11-17	
+August 2026	month	2026-08-01	2026-08-31	
+Aug ’26	month	2026-08-01	2026-08-31	
+Feb ’27*	month	2027-02-01	2027-02-28	footnote mark
+in October 2026	month	2026-10-01	2026-10-31	
+by the end of September 2026	month	2026-09-01	2026-09-30	whole month
+the end of September 2026	month	2026-09-01	2026-09-30	whole month
+Q1 2027	quarter	2027-01-01	2027-03-31	
+Q1 ’27	quarter	2027-01-01	2027-03-31	
+(Q1 ’27)	quarter	2027-01-01	2027-03-31	
+1Q27	quarter	2027-01-01	2027-03-31	
+4Q 2026	quarter	2026-10-01	2026-12-31	
+first quarter of 2027	quarter	2027-01-01	2027-03-31	
+the fourth quarter of 2026	quarter	2026-10-01	2026-12-31	
+during the fourth quarter of 2026	quarter	2026-10-01	2026-12-31	
+early Q1 2027	quarter	2027-01-01	2027-01-31	early = first month of the quarter
+early Q1 '27	quarter	2027-01-01	2027-01-31	
+late Q3 2026	quarter	2026-09-01	2026-09-30	late = last month of the quarter
+Q3 '26	quarter	2026-07-01	2026-09-30	
+1H 2027	half	2027-01-01	2027-06-30	
+1H ’27	half	2027-01-01	2027-06-30	
+H2 2026	half	2026-07-01	2026-12-31	
+2H'26	half	2026-07-01	2026-12-31	
+2H ’27	half	2027-07-01	2027-12-31	
+first half of 2027	half	2027-01-01	2027-06-30	
+in the first half of 2027	half	2027-01-01	2027-06-30	
+the second half of 2026	half	2026-07-01	2026-12-31	
+second half of calendar year 2026	half	2026-07-01	2026-12-31	GLASS 9 #6
+the second half of calendar year 2026	half	2026-07-01	2026-12-31	
+first half of calendar year 2027	half	2027-01-01	2027-06-30	GLASS 9 #8
+second-half 2026	half	2026-07-01	2026-12-31	hyphen spelling
+2027	year	2027-01-01	2027-12-31	
+in 2027	year	2027-01-01	2027-12-31	
+calendar year 2027	year	2027-01-01	2027-12-31	
+calendar year 2028	year	2028-01-01	2028-12-31	outside a 6-month window
+CY2027	year	2027-01-01	2027-12-31	
+FY2027	year	2027-01-01	2027-12-31	
+fiscal 2027	year	2027-01-01	2027-12-31	
+YE 2026	year	2026-09-01	2026-12-31	year-end window Sep-Dec
+YE’26	year	2026-09-01	2026-12-31	year-end window Sep-Dec
+year-end 2026	year	2026-09-01	2026-12-31	year-end window Sep-Dec
+by year-end	year	2026-09-01	2026-12-31	no year: year-end window (Sep-Dec) of the filing year
+by year end	year	2026-09-01	2026-12-31	no year: year-end window of the filing year
+year - end	year	2026-09-01	2026-12-31	OCR spacing; year-end window of the filing year
+end of 2026	year	2026-09-01	2026-12-31	year-end window Sep-Dec (vague_period_window)
+HO2027	none			OCR noise: letters joined to a year; flagged, never read as a year
+today	relative	2026-10-21	2026-10-21	
+Today	relative	2026-10-21	2026-10-21	
+today at 4:30 p.m. Eastern Time	relative	2026-10-21	2026-10-21	
+later this year	relative	2026-10-21	2026-12-31	filing date to 31 Dec
+later this quarter	relative	2026-10-01	2026-12-31	the calendar quarter of the filing date
+this year	relative	2026-01-01	2026-12-31	
+in the coming weeks	relative	2026-10-21		open end: filing date onward
+in the coming months	relative	2026-10-21		open end: filing date onward
+upcoming	relative	2026-10-21		open end: filing date onward
+mid-2027	relative	2027-05-01	2027-08-31	vague: May-Aug
+Mid ’27	relative	2027-05-01	2027-08-31	vague: May-Aug
+early 2027	relative	2027-01-01	2027-04-30	vague: Jan-Apr
+within 12 months	relative	2026-10-21	2027-10-21	filing date plus 12 months
+beginning in 2027	relative	2027-01-01		open end: from 1 Jan
+remainder of 2027	relative	2027-01-01	2027-12-31	later of filing date and 1 Jan, to 31 Dec
+at week 105	none			no date: No day given
+following completion of the study	none			
+upon FDA approval	none			
+(blank)	none			no text
+within 12 weeks	relative	2026-10-21	2027-01-13	filing date plus 12 weeks
+within 2 years	relative	2026-10-21	2028-10-21	filing date plus 2 years

@@ -564,12 +564,12 @@ def test_a_row_later_than_the_window_is_left_out_by_code_and_is_not_a_mistake(ru
 
 
 def test_a_row_dated_before_today_is_left_out(runs_dir, monkeypatch):
-    with_today(monkeypatch, 2027, 2, 1)                # Q1 2027 starts 2027-01-01: before today
+    with_today(monkeypatch, 2027, 4, 1)                # Q1 2027 ENDS 2027-03-31: before today
     client, _ = make(runs_dir)
     run = run_json(runs_dir, start(client, time_window_months=6)["id"])
     by_date = {r["date"]: r for r in run["rows"]}
     assert by_date["2027-01-01"]["group"] == "removed" and by_date["2027-07-01"]["group"] != "removed"
-    assert "is before today (2027-02-01)" in by_date["2027-01-01"]["reason"]
+    assert "the period ends 2027-03-31, before today (2027-04-01)" in by_date["2027-01-01"]["reason"]
 
 
 def test_no_window_leaves_nothing_out_and_an_undated_row_is_never_touched(runs_dir, monkeypatch):

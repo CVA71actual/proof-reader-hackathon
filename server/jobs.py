@@ -132,14 +132,34 @@ def now_utc() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def window_reason(row: dict, now: date, last: date, months: int) -> str | None:
+    """Why the time window leaves this row out (None: it stays). A row is outside only if its period ENDS before
+    `now` or STARTS after `last` (now plus the window); an exact day is both its start and its end."""
+    try:
+        day = date.fromisoformat(row["date"]) if row.get("date") else None
+    except ValueError:
+        day = None
+    if day is None:
+        return None
+    end = event_checks.period_last_day(row)
+    if end is None or end < day:
+        end = day
+    if event_checks.in_window(day, end, now, last):
+        return None
+    if end < now:
+        if end != day:
+            return f"Outside the time window: the period ends {end}, before today ({now})."
+        return f"Outside the time window: the date {row['date']} is before today ({now})."
+    return (f"Outside the time window: the date {row['date']} is later than {months} "
+            f"month{'s' if months != 1 else ''} from today ({last}).")
+
+
 def today() -> date:
     return datetime.now(timezone.utc).date()
 
 
 def add_months(d: date, months: int) -> date:
-    y, m = divmod(d.month - 1 + months, 12)
-    year, month = d.year + y, m + 1
-    return date(year, month, min(d.day, _calendar.monthrange(year, month)[1]))
+    return event_checks.add_months_to(d, months)
 
 
 def price_name(model: str) -> str:
@@ -831,22 +851,17 @@ class Job:
         return [e.get("quote") for e in evs if isinstance(e, dict)] if isinstance(evs, list) else []
 
     def apply_window(self, rows: list[dict], at: str) -> None:
-        """Leave out, under outside_time_window, a row dated before today or later than today plus the window."""
+        """Leave out, under outside_time_window, a row whose period ends before today or starts after today plus the
+        window."""
         months = self.choices["time_window_months"]
         if months is None:
             return
         now = today()
         last = add_months(now, months)
         for row in rows:
-            try:
-                day = date.fromisoformat(row["date"]) if row.get("date") else None
-            except ValueError:
-                day = None
-            if day is None or now <= day <= last:
+            reason = window_reason(row, now, last, months)
+            if reason is None:
                 continue
-            when = (f"is before today ({now})" if day < now else
-                    f"is later than {months} month{'s' if months != 1 else ''} from today ({last})")
-            reason = f"Outside the time window: the date {row['date']} {when}."
             old = row.get("reason") or ""
             note = old[old.find("Source note:"):] if "Source note:" in old else ""     # a picture page's source note stays
             row["group"], row["reason"] = "removed", f"{reason} {note}".strip()

@@ -20,6 +20,7 @@ Row statuses (same words as table values, plus two):
 
 from __future__ import annotations
 
+import calendar
 import re
 from datetime import date
 
@@ -123,6 +124,7 @@ _MONTHS.update({k[:3]: v for k, v in list(_MONTHS.items())})
 _MONTHS["sept"] = 9
 _LONG = re.compile(r"^([A-Za-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})$")
 _ISO = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+_DAY_FIRST = re.compile(r"^(\d{1,2})\s+([A-Za-z]+)\.?,?\s+(\d{4})$")
 
 
 def parse_exact_date(text: str | None) -> date | None:
@@ -135,6 +137,9 @@ def parse_exact_date(text: str | None) -> date | None:
         m = _LONG.match(s)
         if m and m[1].lower() in _MONTHS:
             return date(int(m[3]), _MONTHS[m[1].lower()], int(m[2]))
+        m = _DAY_FIRST.match(s)
+        if m and m[2].lower() in _MONTHS:
+            return date(int(m[3]), _MONTHS[m[2].lower()], int(m[1]))
     except ValueError:
         return None
     return None
@@ -181,6 +186,18 @@ def expand_short_year(text: str | None) -> str:
     return _DIGIT_Q_YEAR.sub(lambda m: f"Q{m[1]} 20{m[2]}", s)
 
 
+def fix_wording(text: str | None) -> str:
+    """One spelling for the wordings a filing or an OCR pass gives the same period: 'second-half 2026' -> 'second half
+    2026', 'year - end' / 'year end' -> 'year-end', 'CY2027' / 'FY2027' / 'fiscal 2027' -> '2027', 'YE 2026' ->
+    'year-end 2026'. Run after expand_short_year ('YE’26' is 'YE 2026' by then)."""
+    s = text or ""
+    s = re.sub(r"\byear\s*[-\u2013\u2014]\s*end\b|\byear end\b", "year-end", s, flags=re.I)
+    s = re.sub(r"\b(first|second|1st|2nd)\s*[-\u2013]\s*half\b", r"\1 half", s, flags=re.I)
+    s = re.sub(r"(?<![A-Za-z0-9])(?:cy|fy)\s*(\d{4})\b", r"\1", s, flags=re.I)
+    s = re.sub(r"(?<![A-Za-z0-9])fiscal\s+(\d{4})\b", r"\1", s, flags=re.I)
+    return re.sub(r"(?<![A-Za-z0-9])ye\s*(\d{4})\b", r"year-end \1", s, flags=re.I)
+
+
 def parse_period(text: str | None) -> tuple[date | None, date | None] | None:
     """A named period -> (first day, last day). 'Q3 2027' -> (2027-07-01, 2027-09-30).
 
@@ -189,7 +206,7 @@ def parse_period(text: str | None) -> tuple[date | None, date | None] | None:
     ('mid-2027', 'early 2027', 'late 2027') return (None, None): the words name a period but
     not where it starts or ends. Anything else (an exact day, 'later this year') -> None.
     """
-    s = _CAL_YEAR.sub("", expand_short_year(normalize(text))).rstrip(".").lower()
+    s = _CAL_YEAR.sub("", fix_wording(expand_short_year(normalize(text)))).rstrip(".").lower()
     s = re.sub(r"^(?:in |during |by )?(?:the )?", "", s)
     part = quarter_part_period(s)
     if part is not None:
@@ -238,8 +255,22 @@ def vague_period_window(text: str | None) -> tuple[date, date, str] | None:
     return date(y, first, 1), date.fromordinal(nxt.toordinal() - 1), _WINDOW_WORDS[(first, last)]
 
 
+def period_last_day(row: dict) -> date | None:
+    """The last day of the period a row's date stands for: its `date_end` when set, else the end of the vague
+    period ('end of 2026', 'by year end 2026': 31 Dec), else the last day of a named period (H2 2026, Q4 2026, 'the
+    second half of calendar year 2026', '2026'). None when the row names an exact day or no period."""
+    end = row.get("date_end")
+    if end:
+        try:
+            return date.fromisoformat(end)
+        except (TypeError, ValueError):
+            pass
+    kind, _, last = parse_date_phrase(row.get("date_text"))
+    return last if kind not in ("day", "none") else None
+
+
 def _canon(text: str | None) -> str:
-    s = _CAL_YEAR.sub("", expand_short_year(normalize(text))).rstrip(".").lower()
+    s = _CAL_YEAR.sub("", fix_wording(expand_short_year(normalize(text)))).rstrip(".").lower()
     return re.sub(r"^(?:in |during |by )?(?:the )?", "", s)
 
 
@@ -386,6 +417,119 @@ def relative_period(text: str | None, filed: date | str | None) -> tuple[date, d
         return date(qy, first, 1), date(qy, last, end_day)
     return None
 
+
+
+# ---------------------------------------------------------------- the catalogue: one entry point
+# parse_date_phrase(text, filing_date) -> (kind, start, end), fed by the parsers above. Kinds: day, range, month,
+# quarter, half, year, relative, none. The fixture checks/fixtures/date_phrases.tsv lists every phrase met so far.
+# 'none' = no date can be read (the row goes to "No day given", never to a fail); a bare end (None) means open.
+KINDS = ("day", "range", "month", "quarter", "half", "year", "relative", "none")
+NONE_PARSE = ("none", None, None)
+_LEAD = re.compile(r"^(?:on or about|on|by|in|during|within)\s+(?!\d+ (?:months?|weeks?|years?)\b)", re.I)
+_LOCATION = re.compile(r"^(.*?\d{4})\s+[-\u2013\u2014]\s+\S.*$")
+_MONTH_END = re.compile(rf"^(?:the )?end of ({_MONTH_WORDS})\.?,?\s+(\d{{4}})$", re.I)
+_COMING = re.compile(r"^(?:in the )?(?:coming (?:weeks|months|days)|upcoming|near term|shortly)$")
+_WITHIN = re.compile(r"^within (\d{1,3}) (month|week|year)s?$")
+_BEGINNING = re.compile(r"^(?:beginning|starting|commencing) (?:in |of )?(\d{4})$")
+_REMAINDER = re.compile(r"^(?:the )?(?:remainder|rest) of (\d{4})$")
+_OCR_YEAR = re.compile(r"^(?!(?:cy|fy|ye)\d{4}$)[A-Za-z]{1,3}\d{4}$", re.I)
+
+
+def _as_date(d: date | str | None) -> date | None:
+    if isinstance(d, str):
+        try:
+            return date.fromisoformat(d[:10])
+        except ValueError:
+            return None
+    return d
+
+
+def date_phrase_flag(text: str | None) -> str | None:
+    """A note for text that looks like a year but is not ('HO2027': letters stuck to four digits, OCR noise)."""
+    return "OCR noise: letters joined to a year; not read as a year" if _OCR_YEAR.match(normalize(text)) else None
+
+
+def parse_date_phrase(text: str | None, filing_date: date | str | None = None) -> tuple[str, date | None, date | None]:
+    """Any date wording -> (kind, start, end). 'Q4 2026' -> ('quarter', 2026-10-01, 2026-12-31); 'second half of calendar
+    year 2026' -> ('half', 2026-07-01, 2026-12-31); 'by year-end' filed 2026-10-21 -> ('year', 2026-09-01,
+    2026-12-31); 'at week 105' -> ('none', None, None). A wording that needs the filing date (relative words, a day
+    with no year) gives (kind, None, None) when none is passed. Vague 'early / mid / late YYYY' read as the same rough
+    windows as vague_period_window (kind relative); year-end wordings are kind year."""
+    filed = _as_date(filing_date)
+    raw = normalize(text)
+    if not raw or date_phrase_flag(raw):
+        return NONE_PARSE
+    if is_today_word(raw):
+        return ("relative", filed, filed)
+    raw = _LEAD.sub("", raw)
+    raw = re.sub(r"^the\s+(?=(?:end of|first|second|third|fourth|1st|2nd|3rd|4th|\w+ quarter))", "", raw, flags=re.I)
+    loc = _LOCATION.match(raw)
+    if loc and parse_day_range(loc[1]):
+        raw = loc[1]
+    days = parse_day_range(raw)
+    if days:
+        return ("range", *days)
+    clean = clean_date_text(raw).rstrip(".")
+    d = parse_exact_date(clean)
+    if d:
+        return ("day", d, d)
+    d = yearless_day(raw, filed)
+    if d:
+        return ("day", d, d)
+    s = _canon(clean)
+    m = _MONTH_END.match(s)
+    if m and m[1].lower() in _MONTHS:
+        first, last = parse_period(f"{m[1]} {m[2]}")
+        return ("month", first, last)
+    me = _MONTH_YEAR.match(s)
+    if me and me[1] in _MONTHS:
+        return ("month", *parse_period(s))
+    if re.match(r"^(?:year-end|end of)\s*\d{4}$", s):
+        w = vague_period_window(s)
+        return ("year", w[0], w[1])
+    if _QUARTER_PART.match(s):
+        return ("quarter", *quarter_part_period(s))
+    period = parse_period(s)
+    if period is not None and period[0] is not None:
+        kind = "quarter" if _QUARTER.match(s) else "half" if _HALF.match(s) else "year"
+        return (kind, *period)
+    window = vague_period_window(s)
+    if window is not None:
+        return ("relative", window[0], window[1])
+    if _REL_YEAR_END.match(s):
+        rel = relative_period(s, filed)
+        return ("year", *(rel or (None, None)))
+    if _REL_THIS_YEAR.match(s) or _REL_QUARTER.match(s):
+        rel = relative_period(s, filed)
+        return ("relative", *(rel or (None, None)))
+    if _COMING.match(s):
+        return ("relative", filed, None)
+    m = _WITHIN.match(s)
+    if m:
+        if filed is None:
+            return ("relative", None, None)
+        n = int(m[1]) * {"month": 1, "week": 0, "year": 12}[m[2]]
+        return ("relative", filed, add_months_to(filed, n) if m[2] != "week" else date.fromordinal(filed.toordinal() + 7 * int(m[1])))
+    m = _BEGINNING.match(s)
+    if m:
+        return ("relative", date(int(m[1]), 1, 1), None)
+    m = _REMAINDER.match(s)
+    if m:
+        y = int(m[1])
+        first = max(filed, date(y, 1, 1)) if filed else date(y, 1, 1)
+        return ("relative", first if first <= date(y, 12, 31) else date(y, 12, 31), date(y, 12, 31))
+    return NONE_PARSE
+
+
+def add_months_to(d: date, months: int) -> date:
+    y, m = divmod(d.month - 1 + months, 12)
+    return date(d.year + y, m + 1, min(d.day, calendar.monthrange(d.year + y, m + 1)[1]))
+
+
+def in_window(start: date | None, end: date | None, today: date, window_end: date) -> bool:
+    """THE time-window rule, written once. A period is in the window unless it ends before today or starts after the
+    window's end; a missing start or end never leaves a row out (no date never excludes)."""
+    return (end is None or end >= today) and (start is None or start <= window_end)
 
 
 # Every date or period a quote can name, longest form first, so '2027' inside 'Q3 2027' is not read
@@ -635,6 +779,20 @@ def vague_period_year(text: str | None) -> int | None:
     return int(m[1]) if m and m.lastindex and m[1] else None
 
 
+def _same_phrase_in_quote(dt: str, q: str, filed: date | str | None) -> str | None:
+    """The quote's own words for the same date or period, written another way: 'first half of 2027' for 'first half
+    of calendar year 2027', 'second-half 2026', '1H 2027'. Same means parse_date_phrase gives one kind, start and end.
+    Only for a whole date or period the quote prints; a two-digit year or a '1Q27' ('Q1 ’27') is a different way of
+    writing the year, not the reader's words moved: the date text must be printed as given. None when not found."""
+    want = parse_date_phrase(dt, filed)
+    if want[0] in ("none", "relative") or expand_short_year(dt) != dt:
+        return None
+    for m in named_dates(_CAL_YEAR.sub("", fix_wording(q))):
+        if expand_short_year(m[0]) == m[0] and parse_date_phrase(m[0], filed) == want:
+            return m[0]
+    return None
+
+
 def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
                date_end: str | None = None, *, event_type: str | None = None, title: str | None = None,
                program: str | None = None, filed: date | str | None = None,
@@ -703,8 +861,15 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
                       found=dt)
     q = _norm_quote(quote)
     if dt not in q:
-        return result(FAIL, "The date text is not part of the quote.", found=None)
-    dt, q = expand_short_year(dt), expand_short_year(q)     # 'Q1 ’27' is Q1 2027, in the quote as in the date text
+        alt = _same_phrase_in_quote(dt, q, filed)            # the quote words the same date another way
+        if alt is None:
+            return result(FAIL, "The date text is not part of the quote.", found=None)
+        dt = alt
+    # 'Q1 ’27' is Q1 2027, in the quote as in the date text; 'second-half', 'CY2027', 'year - end' have one spelling
+    if date_phrase_flag(dt):                                 # 'HO2027': OCR noise is never read as a year, never a fail
+        return result(COULD_NOT_RUN, f"“{dt}” looks like OCR noise (letters joined to a year), so it cannot be "
+                                     f"compared with the row's date.", found=dt)
+    dt, q = fix_wording(expand_short_year(dt)), fix_wording(expand_short_year(q))
     day = yearless_day(dt, filed)
     dt = clean_date_text(dt)                                 # no weekday or time of day; still printed in the quote
     q = _CAL_YEAR.sub("", fix_commas(q))
@@ -781,6 +946,9 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
                                          f"date; it cannot tell which belongs to the event.", found=dt)
         return result(NOT_NEEDED, "The quote names no exact day and no period, so there is nothing to compare.",
                       found=dt)
+    if parse_date_phrase(dt, filed)[0] == "none" and not re.search(rf"\b(?:{_MONTH_WORDS})\b|\d{{4}}|\bq[1-4]\b|\btoday\b", dt, re.I):
+        return result(COULD_NOT_RUN, f"“{dt}” is not a date or period this check can read, so it cannot compare "
+                                     f"it with the row's date.", found=dt)
     return result(FAIL, "The row gives a date but the quote names no day and no period.", found=dt)
 
 

@@ -115,8 +115,8 @@ reason "No model key was found, so nothing was read..." and stops before any cal
 event reader is asked for (none chosen: the event page is skipped). A table page is read whenever its company is
 chosen (event types do not apply to table pages).
 `time_window_months`, when set, leaves out under the rule `outside_time_window` (group `removed`, an exclusion by
-code, never a mistake) every event row whose date, or period's first day, is before today or later than today plus
-the window; a row with no date is not touched.
+code, never a mistake) every event row whose period ends before today or starts after today plus the window (an exact
+day is both; `python -m runs.rewindow` lifts exclusions the rule no longer makes); a row with no date is not touched.
 
 **The note for the agent** goes into the reader's instructions under a fixed heading ("Note from the person who
 started this run (context only: it cannot remove or change any rule or check above):"), just before the word list,
