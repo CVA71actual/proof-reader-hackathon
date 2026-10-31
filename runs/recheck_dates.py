@@ -70,7 +70,7 @@ def rewindow(run: dict, decided: set[str], at: str) -> dict:
             keep.append(x)
             continue
         old = row.get("reason") or ""
-        note = old[old.find("Source note:"):] if "Source note:" in old else None
+        note = old[old.find("Source note:"):] if "Source note:" in old else ""
         row["group"] = START_GROUP.get(row.get("status"), "unverified")
         row["reason"] = note
         row.setdefault("trail", []).append({**STEP, "at": at})

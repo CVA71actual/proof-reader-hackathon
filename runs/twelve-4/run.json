@@ -4012,9 +4012,9 @@
     485.91
    ],
    "proposed_by": "Muse Spark",
-   "status": "proposed",
-   "group": "unverified",
-   "reason": "Date read as written could not run: Could not tell which date in the quote belongs to the event.",
+   "status": "matched",
+   "group": "kept",
+   "reason": "Every check passed. The page names a period (in 2027), not a day, so the row keeps the period as stated.",
    "sample": false,
    "checks": [
     {
@@ -4099,11 +4099,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "could_not_run",
-     "reason": "Could not tell which date in the quote belongs to the event.",
+     "result": "pass",
+     "reason": "The period in the row is the period printed in the quote.",
      "compared": {
       "looked_for": "2027-01-01 to 2027-12-31",
-      "found": null
+      "found": "2027-01-01 to 2027-12-31"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -4214,6 +4214,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T16:02:36+00:00",
      "text": "The second reader's reading holds no matching event. Nothing changes. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The period in the row is the period printed in the quote."
     }
    ]
   },
@@ -4282,9 +4289,9 @@
     485.91
    ],
    "proposed_by": "Muse Spark Open",
-   "status": "undecided",
-   "group": "open",
-   "reason": "Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix it, or remove it.",
+   "status": "matched",
+   "group": "kept",
+   "reason": "Every check passed. The page names a period (in 2027), not a day, so the row keeps the period as stated.",
    "sample": false,
    "checks": [
     {
@@ -4369,11 +4376,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "could_not_run",
-     "reason": "Could not tell which date in the quote belongs to the event.",
+     "result": "pass",
+     "reason": "The period in the row is the period printed in the quote.",
      "compared": {
       "looked_for": "2027-01-01 to 2027-12-31",
-      "found": null
+      "found": "2027-01-01 to 2027-12-31"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -4484,6 +4491,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T16:02:36+00:00",
      "text": "No row from the first reader matches this event. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The period in the row is the period printed in the quote."
     }
    ],
    "found_by": "second_reader"
@@ -5031,9 +5045,9 @@
     235.41
    ],
    "proposed_by": "Muse Spark",
-   "status": "proposed",
-   "group": "unverified",
-   "reason": "Date read as written could not run: Could not tell which date in the quote belongs to the event.",
+   "status": "matched",
+   "group": "kept",
+   "reason": "Every check passed.",
    "sample": false,
    "checks": [
     {
@@ -5116,11 +5130,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "could_not_run",
-     "reason": "Could not tell which date in the quote belongs to the event.",
+     "result": "pass",
+     "reason": "The quote names a period, not a day; the period words are printed in it.",
      "compared": {
       "looked_for": "Early Q1 2027",
-      "found": null
+      "found": "2027-01-01 to 2027-01-31"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -5255,6 +5269,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T16:04:10+00:00",
      "text": "Both readers read the same date, event type, program and indication. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The quote names a period, not a day; the period words are printed in it."
     }
    ]
   },
@@ -6645,7 +6666,7 @@
     399.86
    ],
    "proposed_by": "Muse Spark",
-   "status": "proposed",
+   "status": "matched",
    "group": "removed",
    "reason": "Outside the time window: the date 2026-08-01 is before today (2026-10-29).",
    "sample": false,
@@ -6700,11 +6721,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "could_not_run",
-     "reason": "Could not tell which date in the quote belongs to the event.",
+     "result": "pass",
+     "reason": "The period in the row is the period printed in the quote.",
      "compared": {
       "looked_for": "2026-08-01 to 2026-08-31",
-      "found": null
+      "found": "2026-08-01 to 2026-08-31"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -6846,6 +6867,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T16:10:25+00:00",
      "text": "Both readers read the same date, event type, program and indication. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The period in the row is the period printed in the quote."
     }
    ]
   },
@@ -6870,9 +6898,9 @@
     399.86
    ],
    "proposed_by": "Muse Spark",
-   "status": "undecided",
-   "group": "open",
-   "reason": "The two readers disagree on program: Muse Spark read PN-881, Muse Spark Open read Oral PN-881 • IL-17A/F. A person decides.",
+   "status": "matched",
+   "group": "kept",
+   "reason": "Every check passed. The page names a period (Q1 ’27), not a day, so the row keeps the period as stated.",
    "sample": false,
    "checks": [
     {
@@ -6931,11 +6959,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "could_not_run",
-     "reason": "Could not tell which date in the quote belongs to the event.",
+     "result": "pass",
+     "reason": "The period in the row is the period printed in the quote.",
      "compared": {
       "looked_for": "2027-01-01 to 2027-03-31",
-      "found": null
+      "found": "2027-01-01 to 2027-03-31"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -7070,6 +7098,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T16:10:25+00:00",
      "text": "The readers differ on 1 field. program: Muse Spark read PN-881, Muse Spark Open read Oral PN-881 • IL-17A/F. The row goes to a person; the disagreement is on program."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The period in the row is the period printed in the quote."
     }
    ],
    "disagreement": {
@@ -7714,7 +7749,7 @@
     399.86
    ],
    "proposed_by": "Muse Spark",
-   "status": "proposed",
+   "status": "matched",
    "group": "removed",
    "reason": "Outside the time window: the date 2026-08-01 is before today (2026-10-29).",
    "sample": false,
@@ -7775,11 +7810,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "could_not_run",
-     "reason": "Could not tell which date in the quote belongs to the event.",
+     "result": "pass",
+     "reason": "The period in the row is the period printed in the quote.",
      "compared": {
       "looked_for": "2026-08-01 to 2026-08-31",
-      "found": null
+      "found": "2026-08-01 to 2026-08-31"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -7919,6 +7954,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T16:11:02+00:00",
      "text": "Both readers read the same date, event type, program and indication. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The period in the row is the period printed in the quote."
     }
    ]
   },
@@ -7943,7 +7985,7 @@
     399.86
    ],
    "proposed_by": "Muse Spark",
-   "status": "proposed",
+   "status": "matched",
    "group": "removed",
    "reason": "Outside the time window: the date 2026-08-01 is before today (2026-10-29).",
    "sample": false,
@@ -8002,11 +8044,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "could_not_run",
-     "reason": "Could not tell which date in the quote belongs to the event.",
+     "result": "pass",
+     "reason": "The period in the row is the period printed in the quote.",
      "compared": {
       "looked_for": "2026-08-01 to 2026-08-31",
-      "found": null
+      "found": "2026-08-01 to 2026-08-31"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -8146,6 +8188,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T16:11:49+00:00",
      "text": "Both readers read the same date, event type, program and indication. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The period in the row is the period printed in the quote."
     }
    ]
   },
@@ -8245,11 +8294,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "not_needed",
-     "reason": "The quote names no exact day and no period, so there is nothing to compare.",
+     "result": "pass",
+     "reason": "“year - end” is counted from the filing date (2026-09-01 to 2026-12-31); the row gives no day.",
      "compared": {
       "looked_for": "year - end",
-      "found": "year - end"
+      "found": "2026-09-01 to 2026-12-31"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -8353,6 +8402,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T16:12:43+00:00",
      "text": "The second reader's reading holds no matching event. Nothing changes. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. “year - end” is counted from the filing date (2026-09-01 to 2026-12-31); the row gives no day."
     }
    ]
   },
@@ -8444,11 +8500,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "not_needed",
-     "reason": "The quote names no exact day and no period, so there is nothing to compare.",
+     "result": "pass",
+     "reason": "“year - end” is counted from the filing date (2026-09-01 to 2026-12-31); the row gives no day.",
      "compared": {
       "looked_for": "year - end",
-      "found": "year - end"
+      "found": "2026-09-01 to 2026-12-31"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -8552,6 +8608,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T16:12:43+00:00",
      "text": "The second reader's reading holds no matching event. Nothing changes. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. “year - end” is counted from the filing date (2026-09-01 to 2026-12-31); the row gives no day."
     }
    ]
   },
@@ -8572,8 +8635,8 @@
    "box": null,
    "proposed_by": "Muse Spark Open",
    "status": "failed",
-   "group": "removed",
-   "reason": "Outside the time window: the date 2026-09-01 is before today (2026-10-29).",
+   "group": "open",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -8733,6 +8796,13 @@
      "who": "server.jobs",
      "text": "Outside the time window: the date 2026-09-01 is before today (2026-10-29).",
      "at": "2026-10-29T16:12:43+00:00"
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ],
    "found_by": "second_reader"
@@ -8754,8 +8824,8 @@
    "box": null,
    "proposed_by": "Muse Spark Open",
    "status": "failed",
-   "group": "removed",
-   "reason": "Outside the time window: the date 2026-09-01 is before today (2026-10-29).",
+   "group": "open",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -8915,6 +8985,13 @@
      "who": "server.jobs",
      "text": "Outside the time window: the date 2026-09-01 is before today (2026-10-29).",
      "at": "2026-10-29T16:12:43+00:00"
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ],
    "found_by": "second_reader"
@@ -10702,8 +10779,8 @@
    ],
    "proposed_by": "Muse Spark Open",
    "status": "failed",
-   "group": "removed",
-   "reason": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
+   "group": "open",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -10862,6 +10939,13 @@
      "who": "server.jobs",
      "text": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
      "at": "2026-10-29T16:26:20+00:00"
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ],
    "found_by": "second_reader"
@@ -11750,8 +11834,8 @@
    ],
    "proposed_by": "Muse Spark Open",
    "status": "failed",
-   "group": "removed",
-   "reason": "Outside the time window: the date 2026-01-01 is before today (2026-10-29).",
+   "group": "open",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -11795,11 +11879,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "pass",
-     "reason": "The period in the row is the period printed in the quote.",
+     "result": "could_not_run",
+     "reason": "Could not tell which date in the quote belongs to the event.",
      "compared": {
       "looked_for": "2026-01-01 to 2026-12-31",
-      "found": "2026-01-01 to 2026-12-31"
+      "found": null
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -11910,6 +11994,20 @@
      "who": "server.jobs",
      "text": "Outside the time window: the date 2026-01-01 is before today (2026-10-29).",
      "at": "2026-10-29T16:30:21+00:00"
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: could not run. Could not tell which date in the quote belongs to the event."
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ],
    "found_by": "second_reader"
@@ -12852,8 +12950,8 @@
    ],
    "proposed_by": "Muse Spark Open",
    "status": "failed",
-   "group": "removed",
-   "reason": "Outside the time window: the date 2026-01-01 is before today (2026-10-29).",
+   "group": "open",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -12897,11 +12995,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "pass",
-     "reason": "The period in the row is the period printed in the quote.",
+     "result": "could_not_run",
+     "reason": "Could not tell which date in the quote belongs to the event.",
      "compared": {
       "looked_for": "2026-01-01 to 2026-12-31",
-      "found": "2026-01-01 to 2026-12-31"
+      "found": null
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -13012,6 +13110,20 @@
      "who": "server.jobs",
      "text": "Outside the time window: the date 2026-01-01 is before today (2026-10-29).",
      "at": "2026-10-29T16:36:24+00:00"
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: could not run. Could not tell which date in the quote belongs to the event."
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ],
    "found_by": "second_reader"
@@ -14763,8 +14875,8 @@
    ],
    "proposed_by": "Muse Spark Open",
    "status": "failed",
-   "group": "removed",
-   "reason": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
+   "group": "open",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -14923,6 +15035,13 @@
      "who": "server.jobs",
      "text": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
      "at": "2026-10-29T16:39:29+00:00"
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ],
    "found_by": "second_reader"
@@ -14949,8 +15068,8 @@
    ],
    "proposed_by": "Muse Spark Open",
    "status": "failed",
-   "group": "removed",
-   "reason": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
+   "group": "open",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -15109,6 +15228,13 @@
      "who": "server.jobs",
      "text": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
      "at": "2026-10-29T16:39:29+00:00"
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ],
    "found_by": "second_reader"
@@ -15135,8 +15261,8 @@
    ],
    "proposed_by": "Muse Spark Open",
    "status": "failed",
-   "group": "removed",
-   "reason": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
+   "group": "open",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -15295,6 +15421,13 @@
      "who": "server.jobs",
      "text": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
      "at": "2026-10-29T16:39:29+00:00"
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ],
    "found_by": "second_reader"
@@ -16984,11 +17117,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "could_not_run",
-     "reason": "Could not tell which date in the quote belongs to the event.",
+     "result": "pass",
+     "reason": "The quote names a period, not a day; the period words are printed in it.",
      "compared": {
       "looked_for": "early 2027",
-      "found": null
+      "found": "early 2027"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -17193,6 +17326,13 @@
      "who": "runs.escalate",
      "at": "2026-10-29T16:47:00+00:00",
      "text": "Muse Wonder's reading did not pass every check (a check could not run on it). The row stays as it was."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The quote names a period, not a day; the period words are printed in it."
     }
    ]
   },
@@ -17567,11 +17707,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "not_needed",
-     "reason": "The quote names no exact day and no period, so there is nothing to compare.",
+     "result": "pass",
+     "reason": "“later this quarter” is counted from the filing date (2026-10-01 to 2026-12-31); the row gives no day.",
      "compared": {
       "looked_for": "later this quarter",
-      "found": "later this quarter"
+      "found": "2026-10-01 to 2026-12-31"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -17706,6 +17846,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T16:47:40+00:00",
      "text": "Both readers read the same date, event type, program and indication. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. “later this quarter” is counted from the filing date (2026-10-01 to 2026-12-31); the row gives no day."
     }
    ]
   },
@@ -18257,9 +18404,9 @@
     207.35
    ],
    "proposed_by": "Muse Spark",
-   "status": "proposed",
-   "group": "unverified",
-   "reason": "Date read as written could not run: Could not tell which date in the quote belongs to the event.",
+   "status": "matched",
+   "group": "kept",
+   "reason": "Every check passed.",
    "sample": false,
    "checks": [
     {
@@ -18356,11 +18503,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "could_not_run",
-     "reason": "Could not tell which date in the quote belongs to the event.",
+     "result": "pass",
+     "reason": "The day in the row is the day printed in the quote.",
      "compared": {
       "looked_for": "2026-11-14",
-      "found": null
+      "found": "2026-11-14"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -18495,6 +18642,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T16:49:21+00:00",
      "text": "Both readers read the same date, event type, program and indication. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The day in the row is the day printed in the quote."
     }
    ]
   },
@@ -18519,9 +18673,9 @@
     274.85
    ],
    "proposed_by": "Muse Spark",
-   "status": "proposed",
-   "group": "unverified",
-   "reason": "Date read as written could not run: Could not tell which date in the quote belongs to the event.",
+   "status": "matched",
+   "group": "kept",
+   "reason": "Every check passed.",
    "sample": false,
    "checks": [
     {
@@ -18620,11 +18774,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "could_not_run",
-     "reason": "Could not tell which date in the quote belongs to the event.",
+     "result": "pass",
+     "reason": "The day in the row is the day printed in the quote.",
      "compared": {
       "looked_for": "2026-11-15",
-      "found": null
+      "found": "2026-11-15"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -18759,6 +18913,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T16:49:21+00:00",
      "text": "Both readers read the same date, event type, program and indication. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The day in the row is the day printed in the quote."
     }
    ]
   },
@@ -19019,9 +19180,9 @@
     436.85
    ],
    "proposed_by": "Muse Spark",
-   "status": "failed",
-   "group": "open",
-   "reason": "Date read as written failed: The quote attaches 2026 to the symposium; November 12, 2026 is not the date the quote gives for the event. Waiting for you.",
+   "status": "matched",
+   "group": "kept",
+   "reason": "Every check passed.",
    "sample": false,
    "checks": [
     {
@@ -19088,11 +19249,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "fail",
-     "reason": "The quote attaches 2026 to the symposium; November 12, 2026 is not the date the quote gives for the event.",
+     "result": "pass",
+     "reason": "The day in the row is the day printed in the quote.",
      "compared": {
       "looked_for": "2026-11-12",
-      "found": "2026"
+      "found": "2026-11-12"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -19299,6 +19460,13 @@
      "who": "runs.escalate",
      "at": "2026-10-29T16:51:11+00:00",
      "text": "Muse Wonder's reading did not pass every check (Quote found on page failed: The quote is not printed anywhere on the page.). The row stays as it was."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The day in the row is the day printed in the quote."
     }
    ]
   },
@@ -20269,9 +20437,9 @@
     234.35
    ],
    "proposed_by": "Muse Spark",
-   "status": "undecided",
+   "status": "failed",
    "group": "open",
-   "reason": "The two readers disagree on date: Muse Spark read nothing, Muse Spark Open read 2026-10-28. A person decides.",
+   "reason": "Date read as written failed: “today at 4:30 pm Eastern” is 2026-10-28 but the row gives no day. Waiting for you.",
    "sample": false,
    "checks": [
     {
@@ -20356,11 +20524,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "not_needed",
-     "reason": "The quote names no exact day and no period, so there is nothing to compare.",
+     "result": "fail",
+     "reason": "“today at 4:30 pm Eastern” is 2026-10-28 but the row gives no day.",
      "compared": {
       "looked_for": "today at 4:30 pm Eastern",
-      "found": "at 4:30 pm Eastern"
+      "found": "2026-10-28"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -20500,6 +20668,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T16:52:16+00:00",
      "text": "The readers differ on 1 field. date: Muse Spark read nothing, Muse Spark Open read 2026-10-28. The row goes to a person; the disagreement is on date."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: fail. “today at 4:30 pm Eastern” is 2026-10-28 but the row gives no day."
     }
    ],
    "disagreement": {
@@ -21367,7 +21542,7 @@
     335.01
    ],
    "proposed_by": "Muse Spark",
-   "status": "failed",
+   "status": "matched",
    "group": "removed",
    "reason": "Outside the time window: the date 2026-08-05 is before today (2026-10-29).",
    "sample": false,
@@ -21438,11 +21613,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "fail",
-     "reason": "The row gives a date but the quote names no day and no period.",
+     "result": "pass",
+     "reason": "The day in the row is the release's own day (2026-08-05), what “today at 4:30 p.m. Eastern Time” means.",
      "compared": {
       "looked_for": "2026-08-05",
-      "found": ""
+      "found": "2026-08-05"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -21582,6 +21757,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T17:02:35+00:00",
      "text": "Both readers read the same date, event type, program and indication. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The day in the row is the release's own day (2026-08-05), what “today at 4:30 p.m. Eastern Time” means."
     }
    ]
   },
@@ -21607,8 +21789,8 @@
    ],
    "proposed_by": "Muse Spark",
    "status": "matched",
-   "group": "removed",
-   "reason": "The two readers disagree on indication: Muse Spark read RAS mutant NSCLC, Muse Spark Open read previously treated RAS mutant NSCLC. A person decides.",
+   "group": "kept",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -21867,6 +22049,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T17:03:44+00:00",
      "text": "The readers differ on 1 field. indication: Muse Spark read RAS mutant NSCLC, Muse Spark Open read previously treated RAS mutant NSCLC. The row goes to a person; the disagreement is on indication."
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ],
    "disagreement": {
@@ -22180,8 +22369,8 @@
    ],
    "proposed_by": "Muse Spark",
    "status": "matched",
-   "group": "removed",
-   "reason": "Outside the time window: the date 2026-10-01 is before today (2026-10-29).",
+   "group": "kept",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -22452,6 +22641,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T17:04:59+00:00",
      "text": "Both readers read the same date, event type, program and indication. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ]
   },
@@ -22477,8 +22673,8 @@
    ],
    "proposed_by": "Muse Spark",
    "status": "matched",
-   "group": "removed",
-   "reason": "Outside the time window: the date 2026-10-01 is before today (2026-10-29).",
+   "group": "kept",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -22684,6 +22880,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T17:04:59+00:00",
      "text": "The second reader's reading holds no matching event. Nothing changes. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ]
   },
@@ -22709,8 +22912,8 @@
    ],
    "proposed_by": "Muse Spark",
    "status": "failed",
-   "group": "removed",
-   "reason": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
+   "group": "open",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -22957,6 +23160,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T17:04:59+00:00",
      "text": "Both readers read the same date, event type, program and indication. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ]
   },
@@ -23247,9 +23457,9 @@
     437.01
    ],
    "proposed_by": "Muse Spark",
-   "status": "proposed",
-   "group": "removed",
-   "reason": "Outside the time window: the date 2026-10-01 is before today (2026-10-29).",
+   "status": "matched",
+   "group": "kept",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -23348,11 +23558,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "could_not_run",
-     "reason": "Could not tell which date in the quote belongs to the event.",
+     "result": "pass",
+     "reason": "The period in the row is the period printed in the quote.",
      "compared": {
       "looked_for": "2026-10-01 to 2026-12-31",
-      "found": null
+      "found": "2026-10-01 to 2026-12-31"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -23494,6 +23704,20 @@
      "who": "runs.compare",
      "at": "2026-10-29T17:04:59+00:00",
      "text": "Both readers read the same date, event type, program and indication. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The period in the row is the period printed in the quote."
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ]
   },
@@ -23519,8 +23743,8 @@
    ],
    "proposed_by": "Muse Spark Open",
    "status": "undecided",
-   "group": "removed",
-   "reason": "Outside the time window: the date 2026-10-01 is before today (2026-10-29).",
+   "group": "unverified",
+   "reason": "",
    "sample": false,
    "checks": [
     {
@@ -23733,6 +23957,13 @@
      "who": "server.jobs",
      "text": "Outside the time window: the date 2026-10-01 is before today (2026-10-29).",
      "at": "2026-10-29T17:04:59+00:00"
+    },
+    {
+     "step": "Put back",
+     "tag": "Code",
+     "who": "runs.rewindow",
+     "text": "the time window now tests the period's end",
+     "at": "2026-10-31T15:27:56+00:00"
     }
    ],
    "found_by": "second_reader"
@@ -23758,7 +23989,7 @@
     288.51
    ],
    "proposed_by": "Muse Spark",
-   "status": "proposed",
+   "status": "matched",
    "group": "removed",
    "reason": "Outside the time window: the date 2026-08-05 is before today (2026-10-29).",
    "sample": false,
@@ -23847,11 +24078,11 @@
      "name": "date_match",
      "label": "Date read as written",
      "kind": "Code",
-     "result": "could_not_run",
-     "reason": "Could not tell which date in the quote belongs to the event.",
+     "result": "pass",
+     "reason": "The day in the row is the day printed in the quote.",
      "compared": {
       "looked_for": "2026-08-05",
-      "found": null
+      "found": "2026-08-05"
      },
      "code_ref": {
       "file": "checks/event_checks.py",
@@ -23991,6 +24222,13 @@
      "who": "runs.compare",
      "at": "2026-10-29T17:05:48+00:00",
      "text": "Both readers read the same date, event type, program and indication. Agreement is not a check: the checks above decide."
+    },
+    {
+     "step": "Date re-checked",
+     "tag": "Code",
+     "who": "runs.recheck_dates",
+     "at": "2026-10-31T15:27:56+00:00",
+     "text": "Date read as written: pass. The day in the row is the day printed in the quote."
     }
    ]
   }
@@ -24054,20 +24292,6 @@
    "by": "code"
   },
   {
-   "id": "x9",
-   "target": "e25",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-09-01 is before today (2026-10-29).",
-   "by": "code"
-  },
-  {
-   "id": "x10",
-   "target": "e26",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-09-01 is before today (2026-10-29).",
-   "by": "code"
-  },
-  {
    "id": "x11",
    "target": "e28",
    "rule": "outside_time_window",
@@ -24110,13 +24334,6 @@
    "by": "code"
   },
   {
-   "id": "x17",
-   "target": "e37",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
-   "by": "code"
-  },
-  {
    "id": "x18",
    "target": "e39",
    "rule": "outside_time_window",
@@ -24128,13 +24345,6 @@
    "target": "e42",
    "rule": "outside_time_window",
    "reason": "Outside the time window: the date 2027-07-01 is later than 6 months from today (2027-04-29).",
-   "by": "code"
-  },
-  {
-   "id": "x20",
-   "target": "e43",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-01-01 is before today (2026-10-29).",
    "by": "code"
   },
   {
@@ -24159,13 +24369,6 @@
    "by": "code"
   },
   {
-   "id": "x24",
-   "target": "e49",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-01-01 is before today (2026-10-29).",
-   "by": "code"
-  },
-  {
    "id": "x25",
    "target": "e53",
    "rule": "outside_time_window",
@@ -24184,27 +24387,6 @@
    "target": "e57",
    "rule": "outside_time_window",
    "reason": "Outside the time window: the date 2027-07-01 is later than 6 months from today (2027-04-29).",
-   "by": "code"
-  },
-  {
-   "id": "x28",
-   "target": "e58",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
-   "by": "code"
-  },
-  {
-   "id": "x29",
-   "target": "e59",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
-   "by": "code"
-  },
-  {
-   "id": "x30",
-   "target": "e60",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
    "by": "code"
   },
   {
@@ -24247,48 +24429,6 @@
    "target": "e87",
    "rule": "outside_time_window",
    "reason": "Outside the time window: the date 2026-08-05 is before today (2026-10-29).",
-   "by": "code"
-  },
-  {
-   "id": "x37",
-   "target": "e88",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-01-01 is before today (2026-10-29).",
-   "by": "code"
-  },
-  {
-   "id": "x38",
-   "target": "e90",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-10-01 is before today (2026-10-29).",
-   "by": "code"
-  },
-  {
-   "id": "x39",
-   "target": "e91",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-10-01 is before today (2026-10-29).",
-   "by": "code"
-  },
-  {
-   "id": "x40",
-   "target": "e92",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-07-01 is before today (2026-10-29).",
-   "by": "code"
-  },
-  {
-   "id": "x41",
-   "target": "e94",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-10-01 is before today (2026-10-29).",
-   "by": "code"
-  },
-  {
-   "id": "x42",
-   "target": "e95",
-   "rule": "outside_time_window",
-   "reason": "Outside the time window: the date 2026-10-01 is before today (2026-10-29).",
    "by": "code"
   },
   {

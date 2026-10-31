@@ -229,10 +229,10 @@ def test_the_recorded_runs_numbers_are_the_ones_written_in_the_record():
     assert m["second_reader"] == {"model": "Muse Spark Open", "status": "read", "reason": None, "input": "image"}
     assert (m["escalation"]["rows_sent"], m["escalation"]["rows_replaced"]) == (35, 3)
     state = current_state(run, [])
-    assert state["counts"]["rows"] == {"kept": 14, "corrected": 3, "removed": 28, "unverified": 2, "open": 48}
+    assert state["counts"]["rows"] == {"kept": 30, "corrected": 3, "removed": 31, "unverified": 6, "open": 25}
     assert (state["unresolved"], state["mistakes"], state["excluded"]) == (
-        50, {"code": 3, "second_reader": 0, "person": 0}, {"code": 28, "person": 0})
-    assert state["cost_per_kept_row_usd"] == pytest.approx(0.297355)
+        31, {"code": 3, "second_reader": 0, "person": 0}, {"code": 35, "person": 0})
+    assert state["cost_per_kept_row_usd"] == pytest.approx(0.153183)
     read = {}
     for src in run["sources"]:
         read[src["id"].split("-")[1].upper()] = read.get(src["id"].split("-")[1].upper(), 0) + 1

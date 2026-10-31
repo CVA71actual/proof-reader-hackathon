@@ -217,3 +217,34 @@ def test_write_with_nothing_changed_leaves_reports_untouched(tmp_path):
     assert rd.main(["sample", "--runs-dir", str(runs), "--write"]) == 0
     assert (d / "report" / pdf).read_bytes() == b"kept pdf" and (d / "report" / docx).read_bytes() == b"kept docx"
     assert (d / "run.json").read_bytes() == run_bytes
+
+
+# ---------------------------------------------------------------- Job 45b (put-back reason is a string, never null)
+
+def test_put_back_row_with_no_source_note_gets_empty_reason():
+    from runs import recheck_dates as rd
+    row = _row(group="removed", reason="Outside the 6-month window.", date_text="December 2026",
+               date="2026-12-01", date_end="2026-12-31")
+    run = _run_with(row)
+    run["exclusions"] = [{"id": "x1", "target": "e1", "rule": rd.RULE, "reason": "old", "by": "code"}]
+    assert rd.rewindow(run, set(), "t")["back"] == ["e1"]
+    assert run["rows"][0]["reason"] == ""
+
+
+def test_put_back_row_keeps_its_source_note():
+    from runs import recheck_dates as rd
+    row = _row(group="removed", reason="Outside the window. Source note: kept as read.", date_text="December 2026",
+               date="2026-12-01", date_end="2026-12-31")
+    run = _run_with(row)
+    run["exclusions"] = [{"id": "x1", "target": "e1", "rule": rd.RULE, "reason": "old", "by": "code"}]
+    rd.rewindow(run, set(), "t")
+    assert run["rows"][0]["reason"] == "Source note: kept as read."
+
+
+def test_run_schema_rejects_a_null_row_reason():
+    import json
+    from jsonschema import Draft202012Validator
+    schema = json.loads((Path(__file__).resolve().parent.parent / "runs" / "schema" / "run.schema.json").read_text())
+    row_schema = schema["$defs"]["row"]["properties"]["reason"]
+    v = Draft202012Validator(row_schema)
+    assert v.is_valid("") and not v.is_valid(None)

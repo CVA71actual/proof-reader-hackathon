@@ -229,7 +229,7 @@ endobj
 endobj
 27 0 obj
 <<
-/Length 9457
+/Length 9530
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -271,7 +271,7 @@ q
 1 0 0 1 60 639.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Built on 30 October 2026 at 15:02 \(local time\)) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Built on 31 October 2026 at 08:27 \(local time\)) Tj T* ET
 Q
 Q
 q
@@ -288,7 +288,7 @@ q
 1 0 0 1 60 581.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and kept: 14) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and kept: 30) Tj T* ET
 Q
 Q
 q
@@ -302,35 +302,35 @@ q
 1 0 0 1 60 545.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and removed: 28) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and removed: 31) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 527.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unverified: 2) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unverified: 6) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 509.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open: 48) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open: 25) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 491.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Mistakes caught by code 3 \267 by the second reader 0 \267 by a person 0 \267 Excluded 28) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Mistakes caught by code 3 \267 by the second reader 0 \267 by a person 0 \267 Excluded 35) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 473.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unresolved \(needs attention\): 50) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unresolved \(needs attention\): 31) Tj T* ET
 Q
 Q
 q
@@ -348,49 +348,49 @@ BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Kept and corrected rows only, ordered by date.
 Q
 Q
 q
-1 0 0 1 54 85.6 cm
+1 0 0 1 54 75.6 cm
 q
 .933333 .933333 .933333 rg
-n 0 340 504 -16 re f*
+n 0 350 504 -16 re f*
 0 0 0 rg
 BT /F2 10 Tf 12 TL ET
 q
-1 0 0 1 3 327 cm
+1 0 0 1 3 337 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Date / period) Tj T* ET
 Q
 Q
 q
-1 0 0 1 78.6 327 cm
+1 0 0 1 78.6 337 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Ticker) Tj T* ET
 Q
 Q
 q
-1 0 0 1 118.2 327 cm
+1 0 0 1 118.2 337 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Program) Tj T* ET
 Q
 Q
 q
-1 0 0 1 175.8 327 cm
+1 0 0 1 175.8 337 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Event) Tj T* ET
 Q
 Q
 q
-1 0 0 1 283.8 327 cm
+1 0 0 1 283.8 337 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Source) Tj T* ET
 Q
 Q
 q
-1 0 0 1 427.8 327 cm
+1 0 0 1 427.8 337 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Status) Tj T* ET
@@ -398,10 +398,812 @@ Q
 Q
 BT /F1 10 Tf 12 TL ET
 q
-1 0 0 1 3 311 cm
+1 0 0 1 3 321 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (this year) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 321 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (RVMD) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 321 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (daraxonrasib) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 311 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Phase 3 RASolve 301 trial) Tj T* (enrollment completion) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 301 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Revolution Medicines, Inc. \(filed with) Tj T* (the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 321 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 285 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (by year - end) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 285 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 285 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 275 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Additional opt-out, milestone) Tj T* (and royalty payments) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 265 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 285 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 249 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (by year - end) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 249 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 249 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 239 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Potential share buyback) Tj T* (program announcement) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 229 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 249 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 213 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (later this quarter) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 213 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 213 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VK3019) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 213 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (SAD study completion) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 193 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 213 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 177 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (later this quarter) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 177 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 177 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VK3019) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 177 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Complete SAD study) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 157 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 177 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 131 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (November 10 - 12,) Tj T* (2026) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 141 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 141 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 131 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Stifel 2026 Healthcare) Tj T* (Conference) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 121 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 141 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 95 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (November 12,) Tj T* (2026) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 105 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 105 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 95 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Truist 2026 BioPharma) Tj T* (Symposium) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 85 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 105 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 39 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 32 Tm /F1 8 Tf 10 TL (Saturday,) Tj T* (November) Tj T* (14,2026, 7:30 pm -) Tj T* (8:30 pm ET) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 69 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 69 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VK2735) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 59 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (VANQUISH-2 SC VK2735) Tj T* (Study) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 49 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 69 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 3 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Sunday, November) Tj T* (15, 2026, 2:30 pm -) Tj T* (3:30 pm ET) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 23 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 23 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VK2735) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 23 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VENTURE Study) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 3 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 23 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 J
+1 j
+.8 .8 .8 RG
+.25 w
+n 0 350 m 504 350 l S
+n 0 0 m 0 350 l S
+n 504 0 m 504 350 l S
+n 0 0 m 504 0 l S
+n 0 334 m 504 334 l S
+n 0 298 m 504 298 l S
+n 0 262 m 504 262 l S
+n 0 226 m 504 226 l S
+n 0 190 m 504 190 l S
+n 0 154 m 504 154 l S
+n 0 118 m 504 118 l S
+n 0 82 m 504 82 l S
+n 0 36 m 504 36 l S
+n 75.6 0 m 75.6 350 l S
+n 115.2 0 m 115.2 350 l S
+n 172.8 0 m 172.8 350 l S
+n 280.8 0 m 280.8 350 l S
+n 424.8 0 m 424.8 350 l S
+Q
+Q
+Q
+ 
+endstream
+endobj
+28 0 obj
+<<
+/Length 13422
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+q
+BT /F1 7 Tf 8.4 TL ET
+.266667 .266667 .266667 rg
+BT 1 0 0 1 54 32.4 Tm (Built with Meta Muse models \267 built by code from the saved results) Tj T* ET
+BT 1 0 0 1 536.594 32.4 Tm (page 2) Tj T* ET
+Q
+q
+1 0 0 1 54 87.6 cm
+q
+0 0 0 rg
+BT /F1 10 Tf 12 TL ET
+q
+1 0 0 1 3 625 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (November 16 - 17,) Tj T* (2026) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 635 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 635 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 625 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (UBS Global Biopharma) Tj T* (Conference) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 615 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 635 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 589 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (November 16 - 19,) Tj T* (2026) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 599 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 599 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 589 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Jefferies Global Healthcare) Tj T* (Conference) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 579 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 599 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 553 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (December 1 \226 3,) Tj T* (2026) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 563 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 563 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 553 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Piper Sandler 38th Annual) Tj T* (Healthcare Conference) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 543 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 563 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 527 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\(early Q1 '27\)) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 527 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 527 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PN-881) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 527 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Ph2b PsO study initiation) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 507 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 527 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 491 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Early Q1 2027) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 491 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 491 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PN-881) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 491 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Phase 2b Program Initiation) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 471 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 491 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 455 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (early Q1 2027) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 455 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 455 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PN-881) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 445 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Phase 2 psoriasis program) Tj T* (initiation) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 435 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 455 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 419 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (early Q1 2027) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 419 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 419 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PN-881) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 409 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Phase 2b dose range -) Tj T* (finding study to be initiated) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 399 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 419 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 383 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (early Q1 \22227) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 383 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 383 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (ICOTYDE) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 373 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Comprehensive Ph2b PsO) Tj T* (Initiation) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 363 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 383 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 347 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (1Q27) Tj T* ET
+Q
+Q
+q
+1 0 0 1 78.6 347 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+Q
+Q
+q
+1 0 0 1 118.2 347 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VANQUISH) Tj T* ET
+Q
+Q
+q
+1 0 0 1 175.8 337 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (VANQUISH Extension) Tj T* (Studies commencement) Tj T* ET
+Q
+Q
+q
+1 0 0 1 283.8 327 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+Q
+Q
+q
+1 0 0 1 427.8 347 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
+Q
+Q
+q
+1 0 0 1 3 311 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Q1 2027) Tj T* ET
 Q
 Q
 q
@@ -415,14 +1217,14 @@ q
 1 0 0 1 118.2 311 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PN-881) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PN-8047) Tj T* ET
 Q
 Q
 q
-1 0 0 1 175.8 301 cm
+1 0 0 1 175.8 311 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Phase 2 psoriasis program) Tj T* (initiation) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Phase 1 initiation) Tj T* ET
 Q
 Q
 q
@@ -443,7 +1245,7 @@ q
 1 0 0 1 3 275 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (early Q1 2027) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Q1 \22227) Tj T* ET
 Q
 Q
 q
@@ -461,10 +1263,10 @@ BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PN-881) Tj T* ET
 Q
 Q
 q
-1 0 0 1 175.8 265 cm
+1 0 0 1 175.8 275 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Phase 2b dose range -) Tj T* (finding study to be initiated) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Ph2b initiation in psoriasis) Tj T* ET
 Q
 Q
 q
@@ -485,7 +1287,7 @@ q
 1 0 0 1 3 239 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Q1 2027) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Q1 \22227) Tj T* ET
 Q
 Q
 q
@@ -524,38 +1326,38 @@ BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
 Q
 Q
 q
-1 0 0 1 3 193 cm
+1 0 0 1 3 203 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (the first quarter of) Tj T* (2027) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Q1 \22227) Tj T* ET
 Q
 Q
 q
 1 0 0 1 78.6 203 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
 Q
 Q
 q
 1 0 0 1 118.2 203 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VK3019) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PN-8047) Tj T* ET
 Q
 Q
 q
-1 0 0 1 175.8 183 cm
+1 0 0 1 175.8 203 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (initiate a 28-day multiple) Tj T* (ascending dose study of) Tj T* (VK3019) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Ph1 Initiation) Tj T* ET
 Q
 Q
 q
 1 0 0 1 283.8 183 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
 Q
 Q
 q
@@ -566,38 +1368,38 @@ BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
 Q
 Q
 q
-1 0 0 1 3 167 cm
+1 0 0 1 3 157 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (first half of 2027) Tj T* ET
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (the first quarter of) Tj T* (2027) Tj T* ET
 Q
 Q
 q
 1 0 0 1 78.6 167 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
 Q
 Q
 q
 1 0 0 1 118.2 167 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PN-477) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VK3019) Tj T* ET
 Q
 Q
 q
-1 0 0 1 175.8 157 cm
+1 0 0 1 175.8 147 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Phase 1 oral formulation) Tj T* (study initiation) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (initiate a 28-day multiple) Tj T* (ascending dose study of) Tj T* (VK3019) Tj T* ET
 Q
 Q
 q
 1 0 0 1 283.8 147 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
 Q
 Q
 q
@@ -611,35 +1413,35 @@ q
 1 0 0 1 3 131 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (2027) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (1H \22227) Tj T* ET
 Q
 Q
 q
 1 0 0 1 78.6 131 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
 Q
 Q
 q
 1 0 0 1 118.2 131 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VANQUISH) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PN-477) Tj T* ET
 Q
 Q
 q
-1 0 0 1 175.8 121 cm
+1 0 0 1 175.8 131 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (VANQUISH studies) Tj T* (completion) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Oral Ph1) Tj T* ET
 Q
 Q
 q
 1 0 0 1 283.8 111 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
 Q
 Q
 q
@@ -653,35 +1455,35 @@ q
 1 0 0 1 3 95 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (in 2027) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (first half of 2027) Tj T* ET
 Q
 Q
 q
 1 0 0 1 78.6 95 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
 Q
 Q
 q
 1 0 0 1 118.2 95 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VK2735) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PN-477) Tj T* ET
 Q
 Q
 q
-1 0 0 1 175.8 95 cm
+1 0 0 1 175.8 85 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Part 2 study results) Tj T* ET
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Phase 1 oral formulation) Tj T* (study initiation) Tj T* ET
 Q
 Q
 q
 1 0 0 1 283.8 75 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
 Q
 Q
 q
@@ -695,35 +1497,35 @@ q
 1 0 0 1 3 59 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\(early Q1 '27\)) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (2027) Tj T* ET
 Q
 Q
 q
 1 0 0 1 78.6 59 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
 Q
 Q
 q
 1 0 0 1 118.2 59 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PN-881) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VANQUISH) Tj T* ET
 Q
 Q
 q
-1 0 0 1 175.8 59 cm
+1 0 0 1 175.8 49 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Ph2b PsO study initiation) Tj T* ET
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (VANQUISH studies) Tj T* (completion) Tj T* ET
 Q
 Q
 q
 1 0 0 1 283.8 39 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
 Q
 Q
 q
@@ -737,35 +1539,35 @@ q
 1 0 0 1 3 23 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (by year - end) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (in 2027) Tj T* ET
 Q
 Q
 q
 1 0 0 1 78.6 23 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (IONS) Tj T* ET
 Q
 Q
 q
 1 0 0 1 118.2 23 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (zilganersen) Tj T* ET
 Q
 Q
 q
 1 0 0 1 175.8 13 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Additional opt-out, milestone) Tj T* (and royalty payments) Tj T* ET
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Regulatory submissions in) Tj T* (Europe and Japan) Tj T* ET
 Q
 Q
 q
 1 0 0 1 283.8 3 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (IONIS PHARMACEUTICALS INC) Tj T* (\(filed with the SEC\) \267 page rendered by) Tj T* (code from the filed HTML) Tj T* ET
 Q
 Q
 q
@@ -780,10 +1582,18 @@ q
 1 j
 .8 .8 .8 RG
 .25 w
-n 0 340 m 504 340 l S
-n 0 0 m 0 340 l S
-n 504 0 m 504 340 l S
+n 0 0 m 0 648 l S
+n 504 0 m 504 648 l S
+n 0 648 m 504 648 l S
 n 0 0 m 504 0 l S
+n 0 612 m 504 612 l S
+n 0 576 m 504 576 l S
+n 0 540 m 504 540 l S
+n 0 504 m 504 504 l S
+n 0 468 m 504 468 l S
+n 0 432 m 504 432 l S
+n 0 396 m 504 396 l S
+n 0 360 m 504 360 l S
 n 0 324 m 504 324 l S
 n 0 288 m 504 288 l S
 n 0 252 m 504 252 l S
@@ -793,20 +1603,20 @@ n 0 144 m 504 144 l S
 n 0 108 m 504 108 l S
 n 0 72 m 504 72 l S
 n 0 36 m 504 36 l S
-n 75.6 0 m 75.6 340 l S
-n 115.2 0 m 115.2 340 l S
-n 172.8 0 m 172.8 340 l S
-n 280.8 0 m 280.8 340 l S
-n 424.8 0 m 424.8 340 l S
+n 75.6 0 m 75.6 648 l S
+n 115.2 0 m 115.2 648 l S
+n 172.8 0 m 172.8 648 l S
+n 280.8 0 m 280.8 648 l S
+n 424.8 0 m 424.8 648 l S
 Q
 Q
 Q
  
 endstream
 endobj
-28 0 obj
+29 0 obj
 <<
-/Length 9624
+/Length 8809
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -814,130 +1624,46 @@ q
 BT /F1 7 Tf 8.4 TL ET
 .266667 .266667 .266667 rg
 BT 1 0 0 1 54 32.4 Tm (Built with Meta Muse models \267 built by code from the saved results) Tj T* ET
-BT 1 0 0 1 536.594 32.4 Tm (page 2) Tj T* ET
+BT 1 0 0 1 536.594 32.4 Tm (page 3) Tj T* ET
 Q
 q
-1 0 0 1 54 447.6 cm
+1 0 0 1 54 519.6 cm
 q
 0 0 0 rg
 BT /F1 10 Tf 12 TL ET
 q
-1 0 0 1 3 275 cm
+1 0 0 1 3 203 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (by year - end) Tj T* ET
-Q
-Q
-q
-1 0 0 1 78.6 275 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
-Q
-Q
-q
-1 0 0 1 118.2 275 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
-Q
-Q
-q
-1 0 0 1 175.8 265 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Potential share buyback) Tj T* (program announcement) Tj T* ET
-Q
-Q
-q
-1 0 0 1 283.8 255 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
-Q
-Q
-q
-1 0 0 1 427.8 275 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
-Q
-Q
-q
-1 0 0 1 3 229 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (in the coming) Tj T* (months) Tj T* ET
-Q
-Q
-q
-1 0 0 1 78.6 239 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (IONS) Tj T* ET
-Q
-Q
-q
-1 0 0 1 118.2 239 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (bepirovirsen) Tj T* ET
-Q
-Q
-q
-1 0 0 1 175.8 239 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (key regulatory decisions) Tj T* ET
-Q
-Q
-q
-1 0 0 1 283.8 219 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (IONIS PHARMACEUTICALS INC) Tj T* (\(filed with the SEC\) \267 page rendered by) Tj T* (code from the filed HTML) Tj T* ET
-Q
-Q
-q
-1 0 0 1 427.8 239 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
-Q
-Q
-q
-1 0 0 1 3 193 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (in the coming) Tj T* (weeks) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (in 2027) Tj T* ET
 Q
 Q
 q
 1 0 0 1 78.6 203 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (IONS) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
 Q
 Q
 q
 1 0 0 1 118.2 203 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (ZANVASTRO) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VK2735) Tj T* ET
 Q
 Q
 q
-1 0 0 1 175.8 193 cm
+1 0 0 1 175.8 203 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (ZANVASTRO U.S.) Tj T* (availability) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Part 2 study results) Tj T* ET
 Q
 Q
 q
 1 0 0 1 283.8 183 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (IONIS PHARMACEUTICALS INC) Tj T* (\(filed with the SEC\) \267 page rendered by) Tj T* (code from the filed HTML) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
 Q
 Q
 q
@@ -948,10 +1674,10 @@ BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
 Q
 Q
 q
-1 0 0 1 3 167 cm
+1 0 0 1 3 157 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (later this quarter) Tj T* ET
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (January 11 \226 14,) Tj T* (2027) Tj T* ET
 Q
 Q
 q
@@ -965,14 +1691,14 @@ q
 1 0 0 1 118.2 167 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VK3019) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
 Q
 Q
 q
-1 0 0 1 175.8 167 cm
+1 0 0 1 175.8 157 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (SAD study completion) Tj T* ET
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (J.P. Morgan 2027) Tj T* (Healthcare Conference) Tj T* ET
 Q
 Q
 q
@@ -993,35 +1719,35 @@ q
 1 0 0 1 3 131 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (later this quarter) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Mid \22227) Tj T* ET
 Q
 Q
 q
 1 0 0 1 78.6 131 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
 Q
 Q
 q
-1 0 0 1 118.2 131 cm
+1 0 0 1 118.2 121 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VK3019) Tj T* ET
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Dual GLP/GIP) Tj T* (DCs) Tj T* ET
 Q
 Q
 q
 1 0 0 1 175.8 131 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Complete SAD study) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Ph1 SAD initiation) Tj T* ET
 Q
 Q
 q
 1 0 0 1 283.8 111 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
 Q
 Q
 q
@@ -1032,38 +1758,38 @@ BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
 Q
 Q
 q
-1 0 0 1 3 95 cm
+1 0 0 1 3 85 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (this year) Tj T* ET
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (in the coming) Tj T* (months) Tj T* ET
 Q
 Q
 q
 1 0 0 1 78.6 95 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (RVMD) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (IONS) Tj T* ET
 Q
 Q
 q
 1 0 0 1 118.2 95 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (daraxonrasib) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (bepirovirsen) Tj T* ET
 Q
 Q
 q
-1 0 0 1 175.8 85 cm
+1 0 0 1 175.8 95 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (Phase 3 RASolve 301 trial) Tj T* (enrollment completion) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (key regulatory decisions) Tj T* ET
 Q
 Q
 q
 1 0 0 1 283.8 75 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Revolution Medicines, Inc. \(filed with) Tj T* (the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (IONIS PHARMACEUTICALS INC) Tj T* (\(filed with the SEC\) \267 page rendered by) Tj T* (code from the filed HTML) Tj T* ET
 Q
 Q
 q
@@ -1077,35 +1803,35 @@ q
 1 0 0 1 3 49 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (today at 4:30 pm) Tj T* (Eastern) Tj T* ET
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (in the coming) Tj T* (weeks) Tj T* ET
 Q
 Q
 q
 1 0 0 1 78.6 59 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (VKTX) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (IONS) Tj T* ET
 Q
 Q
 q
 1 0 0 1 118.2 59 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (\227) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (ZANVASTRO) Tj T* ET
 Q
 Q
 q
-1 0 0 1 175.8 39 cm
+1 0 0 1 175.8 49 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (conference call to discuss) Tj T* (Viking's third quarter 2026) Tj T* (financial results) Tj T* ET
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (ZANVASTRO U.S.) Tj T* (availability) Tj T* ET
 Q
 Q
 q
 1 0 0 1 283.8 39 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Viking Therapeutics, Inc. \(filed with the) Tj T* (SEC\) \267 page rendered by code from) Tj T* (the filed HTML) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (IONIS PHARMACEUTICALS INC) Tj T* (\(filed with the SEC\) \267 page rendered by) Tj T* (code from the filed HTML) Tj T* ET
 Q
 Q
 q
@@ -1162,346 +1888,161 @@ q
 1 j
 .8 .8 .8 RG
 .25 w
-n 0 0 m 0 288 l S
-n 504 0 m 504 288 l S
+n 0 0 m 0 216 l S
+n 504 0 m 504 216 l S
 n 0 0 m 504 0 l S
-n 0 288 m 504 288 l S
-n 0 252 m 504 252 l S
 n 0 216 m 504 216 l S
 n 0 180 m 504 180 l S
 n 0 144 m 504 144 l S
 n 0 108 m 504 108 l S
 n 0 72 m 504 72 l S
 n 0 36 m 504 36 l S
-n 75.6 0 m 75.6 288 l S
-n 115.2 0 m 115.2 288 l S
-n 172.8 0 m 172.8 288 l S
-n 280.8 0 m 280.8 288 l S
-n 424.8 0 m 424.8 288 l S
+n 75.6 0 m 75.6 216 l S
+n 115.2 0 m 115.2 216 l S
+n 172.8 0 m 172.8 216 l S
+n 280.8 0 m 280.8 216 l S
+n 424.8 0 m 424.8 216 l S
 Q
-Q
-Q
-q
-1 0 0 1 60 417.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Corrections) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 375.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (e4: Muse Wonder re-read the row after Event type matches the quote failed: event_type from conference to trial_results;) Tj T* (title from Full Lp\(a\)HORIZON data presentation to Full Lp\(a\)HORIZON data presentation at upcoming medical congress;) Tj T* (indication from elevated Lp\(a\) and established cardiovascular disease \(CVD\) to None. \(caught by code\)) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 333.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (e79: Muse Wonder re-read the row after Date read as written failed: title from MAD study initiation to Complete SAD study;) Tj T* (date_text from in 1Q27 to later this quarter; date from 2027-01-01 to None; date_end from 2027-03-31 to None. \(caught by) Tj T* (code\)) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 291.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (e94: Muse Wonder re-read the row after Date read as written failed: title from RASolve 301 enrollment completion to Phase) Tj T* (3 RASolve 301 trial enrollment completion; date from 2026-01-01 to None; date_end from 2026-12-31 to None; indication) Tj T* (from RAS mutant NSCLC to previously treated RAS mutant NSCLC. \(caught by code\)) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 261.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Excluded) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 243.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e5: Outside the time window: the date 2026-09-04 is before today \(2026-10-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 225.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e10: Outside the time window: the date 2026-08-01 is before today \(2026-10-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 207.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e15: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 189.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e17: Outside the time window: the date 2026-08-01 is before today \(2026-10-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 171.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e22: Outside the time window: the date 2026-08-01 is before today \(2026-10-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 153.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e23: Outside the time window: the date 2026-08-01 is before today \(2026-10-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 135.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e30: Outside the time window: the date 2028-01-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 117.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e31: Outside the time window: the date 2028-09-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 99.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e33: Outside the time window: the date 2028-01-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 81.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e34: Outside the time window: the date 2026-08-01 is before today \(2026-10-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 63.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e35: Outside the time window: the date 2034-01-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
- 
-endstream
-endobj
-29 0 obj
-<<
-/Length 6723
->>
-stream
-1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
-q
-BT /F1 7 Tf 8.4 TL ET
-.266667 .266667 .266667 rg
-BT 1 0 0 1 54 32.4 Tm (Built with Meta Muse models \267 built by code from the saved results) Tj T* ET
-BT 1 0 0 1 536.594 32.4 Tm (page 3) Tj T* ET
-Q
-q
-1 0 0 1 60 723.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e39: Outside the time window: the date 2028-01-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 705.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e40: Outside the time window: the date 2026-07-01 is before today \(2026-10-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 687.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e43: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 669.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e48: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 651.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e49: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 633.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e51: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 615.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e52: Outside the time window: the date 2026-07-01 is before today \(2026-10-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 597.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e54: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 579.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e60: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 561.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e62: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 543.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e65: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 525.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e68: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 507.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e69: Outside the time window: the date 2026-10-28 is before today \(2026-10-29\).) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 489.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e73: Outside the time window: the date 2028-01-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Corrections) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 471.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e75: Outside the time window: the date 2028-01-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 453.6 cm
+1 0 0 1 60 447.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e92: Outside the time window: the date 2026-09-29 is before today \(2026-10-29\).) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 435.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e93: Outside the time window: the date 2026-08-05 is before today \(2026-10-29\).) Tj T* ET
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (e4: Muse Wonder re-read the row after Event type matches the quote failed: event_type from conference to trial_results;) Tj T* (title from Full Lp\(a\)HORIZON data presentation to Full Lp\(a\)HORIZON data presentation at upcoming medical congress;) Tj T* (indication from elevated Lp\(a\) and established cardiovascular disease \(CVD\) to None. \(caught by code\)) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 405.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Still open and unverified) Tj T* ET
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (e79: Muse Wonder re-read the row after Date read as written failed: title from MAD study initiation to Complete SAD study;) Tj T* (date_text from in 1Q27 to later this quarter; date from 2027-01-01 to None; date_end from 2027-03-31 to None. \(caught by) Tj T* (code\)) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 375.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL -0.058429 Tw (Still open \267 IONS \267 IMAgINATION study eGFR readout at week 105: Proposed by the second reader only: the first reader did) Tj T* 0 Tw (not read it. Look at it: keep it as an event, fix it, or remove it.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 345.6 cm
+1 0 0 1 60 363.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 IONS \267 Interim analysis data presented: Event type matches the quote failed: The quote's words \(data\) point to) Tj T* (trial results, not conference. Waiting for you.) Tj T* ET
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (e94: Muse Wonder re-read the row after Date read as written failed: title from RASolve 301 enrollment completion to Phase) Tj T* (3 RASolve 301 trial enrollment completion; date from 2026-01-01 to None; date_end from 2026-12-31 to None; indication) Tj T* (from RAS mutant NSCLC to previously treated RAS mutant NSCLC. \(caught by code\)) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 291.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 39 Tm /F1 9 Tf 12 TL (Still open \267 IONS \267 Possible event not read: In June 2026, Ionis entered into a license agreement with Recordati, a global) Tj T* (pharmaceutical company headquartered in Italy, focused on specialty and rare diseases, under which Recordati obtained) Tj T* -0.034091 Tw (exclusive rights t\205: The reader did not turn this sentence into a row. It names 2027, a date or period after 2026-09-04. Look) Tj T* 0 Tw (at it: keep it as an event, fix it, or remove it.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 249.6 cm
+1 0 0 1 60 333.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 IONS \267 Webcast to discuss FDA approval: Outside the time window: the date 2026-09-04 is before today) Tj T* (\(2026-10-29\). The two readers disagree on program: Muse Spark read ZANVASTRO, Muse Spark Open read nothing. A) Tj T* (person decides.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Excluded) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 219.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 PDUFA goal date: The two readers disagree on indication: Muse Spark read Polycythemia Vera, Muse) Tj T* (Spark Open read Polycythemia Vera \(PV\). A person decides.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 177.6 cm
+1 0 0 1 60 315.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph2b initiation in psoriasis: Date read as written failed: The date text is not part of the quote. Waiting for) Tj T* (you. The two readers disagree on program: Muse Spark read PN-881, Muse Spark Open read Oral PN-881. A person) Tj T* (decides.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e5: Outside the time window: the date 2026-09-04 is before today \(2026-10-29\).) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 159.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Oral Ph1: Date read as written failed: The date text is not part of the quote. Waiting for you.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 129.6 cm
+1 0 0 1 60 297.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph1: Date read as written failed: The date text is not part of the quote. Waiting for you. The two readers) Tj T* (disagree on program: Muse Spark read PN-8047, Muse Spark Open read Oral PN-8047. A person decides.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e9: Outside the time window: the date 2026-09-04 is before today \(2026-10-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 279.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e10: Outside the time window: the date 2026-08-01 is before today \(2026-10-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 261.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e12: Outside the time window: the date 2026-08-01 is before today \(2026-10-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 243.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e15: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 225.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e17: Outside the time window: the date 2026-08-01 is before today \(2026-10-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 207.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e22: Outside the time window: the date 2026-08-01 is before today \(2026-10-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 189.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e23: Outside the time window: the date 2026-08-01 is before today \(2026-10-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 171.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e30: Outside the time window: the date 2028-01-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 153.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e31: Outside the time window: the date 2028-09-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 135.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e33: Outside the time window: the date 2028-01-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 117.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e34: Outside the time window: the date 2026-08-01 is before today \(2026-10-29\).) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 99.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Oral Ph1 initiation: Citation located failed: There is no text inside the proposed box. Waiting for you.) Tj T* (Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix it, or remove it.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e35: Outside the time window: the date 2034-01-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 57.6 cm
+1 0 0 1 60 81.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Additional opt-out, milestones and royalty payments expected: Quote found on page failed: The quote is) Tj T* -0.057409 Tw (not printed anywhere on the page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look) Tj T* 0 Tw (at it: keep it as an event, fix it, or remove it.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e39: Outside the time window: the date 2028-01-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 63.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e43: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
 Q
 Q
  
@@ -1509,7 +2050,7 @@ endstream
 endobj
 30 0 obj
 <<
-/Length 6579
+/Length 6489
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -1520,150 +2061,199 @@ BT 1 0 0 1 54 32.4 Tm (Built with Meta Muse models \267 built by code from the s
 BT 1 0 0 1 536.594 32.4 Tm (page 4) Tj T* ET
 Q
 q
-1 0 0 1 60 699.6 cm
+1 0 0 1 60 723.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Potential share buyback program announcement: Quote found on page failed: The quote is not printed) Tj T* (anywhere on the page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep) Tj T* (it as an event, fix it, or remove it.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e48: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 705.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e49: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 687.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e51: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 669.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Primary Completion Date: Date read as written failed: The date text is not part of the quote. Waiting for) Tj T* (you.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e52: Outside the time window: the date 2026-07-01 is before today \(2026-10-29\).) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 639.6 cm
+1 0 0 1 60 651.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Primary Completion Date: Date read as written failed: The date text is not part of the quote. Waiting for) Tj T* (you.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e54: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 633.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e58: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 615.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e60: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 597.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 ICONIC-PsA 2 Phase 3 Primary Completion: Quote found on page failed: The quote is not printed) Tj T* (anywhere on the page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep) Tj T* (it as an event, fix it, or remove it.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e62: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 555.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Phase 2b dose range-finding study initiation: Quote found on page failed: The quote is not printed) Tj T* (anywhere on the page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep) Tj T* (it as an event, fix it, or remove it.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 513.6 cm
+1 0 0 1 60 579.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph2b PsO study initiation: Quote found on page failed: The quote is not printed anywhere on the page.) Tj T* (Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix it, or) Tj T* (remove it.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e65: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 483.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL -0.077609 Tw (Still open \267 PTGX \267 Ph1 topline: Quote found on page failed: The quote is not printed anywhere on the page. Waiting for you.) Tj T* 0 Tw (Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix it, or remove it.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 465.6 cm
+1 0 0 1 60 561.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Phase 1 initiation: Date read as written failed: The date text is not part of the quote. Waiting for you.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e68: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 543.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e69: Outside the time window: the date 2026-10-28 is before today \(2026-10-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 525.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e73: Outside the time window: the date 2028-01-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 507.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e75: Outside the time window: the date 2028-01-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 489.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e90: Outside the time window: the date 2026-09-22 is before today \(2026-10-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 471.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e92: Outside the time window: the date 2026-09-29 is before today \(2026-10-29\).) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 453.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e93: Outside the time window: the date 2026-08-05 is before today \(2026-10-29\).) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 435.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 IND-enabling studies: The two readers disagree on date: Muse Spark read 2026-01-01, Muse Spark) Tj T* (Open read 2027-01-01. A person decides.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e9: Outside the time window: the date 2026-09-04 is before today \(2026-10-29\).) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 417.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph1 Initiation: Date read as written failed: The date text is not part of the quote. Waiting for you.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e12: Outside the time window: the period ends 2026-08-31, before today \(2026-10-29\).) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 387.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph1 PD Clinical PoC*: Event type matches the quote failed: The quote's words \(initiation\) point to) Tj T* (milestone, not trial results. Waiting for you.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 345.6 cm
+1 0 0 1 60 399.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph1 PD Clinical PoC: Quote found on page failed: The quote is not printed anywhere on the page.) Tj T* (Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix it, or) Tj T* (remove it.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e58: Outside the time window: the date 2027-07-01 is later than 6 months from today \(2027-04-29\).) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 303.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 PN-477sc Ph1b MAD initiation: Quote found on page failed: The quote is not printed anywhere on the) Tj T* (page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix) Tj T* (it, or remove it.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 261.6 cm
+1 0 0 1 60 381.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 PN-477o Ph1 SAD/MAD initiation: Quote found on page failed: The quote is not printed anywhere on the) Tj T* (page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix) Tj T* (it, or remove it.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e90: Outside the time window: the date 2026-09-22 is before today \(2026-10-29\).) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 231.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Comprehensive Ph2b PsO Initiation: Date read as written failed: The date text is not part of the quote.) Tj T* (Waiting for you.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 213.6 cm
+1 0 0 1 60 351.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph1 PD PoC: Date read as written failed: The date text is not part of the quote. Waiting for you.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Still open and unverified) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 171.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph2 PV initiation: Outside the time window: the date 2027-07-01 is later than 6 months from today) Tj T* (\(2027-04-29\). The two readers disagree on program: Muse Spark read Rusfertide, Muse Spark Open read PN-8047*. A) Tj T* (person decides.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 153.6 cm
+1 0 0 1 60 321.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph1 SAD initiation: Date read as written failed: The date text is not part of the quote. Waiting for you.) Tj T* ET
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL -0.058429 Tw (Still open \267 IONS \267 IMAgINATION study eGFR readout at week 105: Proposed by the second reader only: the first reader did) Tj T* 0 Tw (not read it. Look at it: keep it as an event, fix it, or remove it.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 135.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 PN-477o Ph1 SAD: Date read as written failed: The date text is not part of the quote. Waiting for you.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 93.6 cm
+1 0 0 1 60 291.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Comprehensive Ph2b PsO Initiation: Quote found on page failed: The quote is not printed anywhere on) Tj T* -0.09084 Tw (the page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event,) Tj T* 0 Tw (fix it, or remove it.) Tj T* ET
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 IONS \267 Interim analysis data presented: Event type matches the quote failed: The quote's words \(data\) point to) Tj T* (trial results, not conference. Waiting for you.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 63.6 cm
+1 0 0 1 60 237.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 PN-477o Ph1 SAD Initiation: Quote found on page failed: The quote is not printed anywhere on the) Tj T* (page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix) Tj T* ET
+BT 1 0 0 1 0 39 Tm /F1 9 Tf 12 TL (Still open \267 IONS \267 Possible event not read: In June 2026, Ionis entered into a license agreement with Recordati, a global) Tj T* (pharmaceutical company headquartered in Italy, focused on specialty and rare diseases, under which Recordati obtained) Tj T* -0.034091 Tw (exclusive rights t\205: The reader did not turn this sentence into a row. It names 2027, a date or period after 2026-09-04. Look) Tj T* 0 Tw (at it: keep it as an event, fix it, or remove it.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 207.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Oral Ph1 initiation: Citation located failed: There is no text inside the proposed box. Waiting for you.) Tj T* (Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix it, or remove it.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 165.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Additional opt-out, milestones and royalty payments expected: Quote found on page failed: The quote is) Tj T* -0.057409 Tw (not printed anywhere on the page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look) Tj T* 0 Tw (at it: keep it as an event, fix it, or remove it.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 123.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Potential share buyback program announcement: Quote found on page failed: The quote is not printed) Tj T* (anywhere on the page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep) Tj T* (it as an event, fix it, or remove it.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 81.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 ICONIC-PsA 2 Phase 3 Primary Completion: Quote found on page failed: The quote is not printed) Tj T* (anywhere on the page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep) Tj T* (it as an event, fix it, or remove it.) Tj T* ET
 Q
 Q
  
@@ -1671,7 +2261,7 @@ endstream
 endobj
 31 0 obj
 <<
-/Length 6343
+/Length 6708
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -1682,150 +2272,136 @@ BT 1 0 0 1 54 32.4 Tm (Built with Meta Muse models \267 built by code from the s
 BT 1 0 0 1 536.594 32.4 Tm (page 5) Tj T* ET
 Q
 q
-1 0 0 1 60 723.6 cm
+1 0 0 1 60 699.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (it, or remove it.) Tj T* ET
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Phase 2b dose range-finding study initiation: Quote found on page failed: The quote is not printed) Tj T* (anywhere on the page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep) Tj T* (it as an event, fix it, or remove it.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 693.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL -0.010773 Tw (Still open \267 PTGX \267 Ph1 PD PoC: Citation located failed: There is no text inside the proposed box. Waiting for you. Proposed) Tj T* 0 Tw (by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix it, or remove it.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 663.6 cm
+1 0 0 1 60 681.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph1 SAD Initiation: Citation located failed: There is no text inside the proposed box. Waiting for you.) Tj T* (Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix it, or remove it.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph1 completion: No reason recorded.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 633.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 RVMD \267 RASolve 301 initial readout: The two readers disagree on indication: Muse Spark read RAS mutant) Tj T* (NSCLC, Muse Spark Open read previously treated RAS mutant NSCLC. A person decides.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 603.6 cm
+1 0 0 1 60 639.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 VANQUISH Extension Studies commencement: Date read as written failed: The row gives a date but the) Tj T* (quote names no day and no period. Waiting for you.) Tj T* ET
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph2b PsO study initiation: Quote found on page failed: The quote is not printed anywhere on the page.) Tj T* (Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix it, or) Tj T* (remove it.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 561.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 VANQUISH Extension Studies commencement: Citation located failed: The box does not hold every) Tj T* -0.012 Tw (word of the quote \(missing VANQUISH, Extension, Studies, to ...\). Waiting for you. Proposed by the second reader only: the) Tj T* 0 Tw (first reader did not read it. Look at it: keep it as an event, fix it, or remove it.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 531.6 cm
+1 0 0 1 60 609.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 VANQUISH extension studies begin: Event type matches the quote failed: The quote's words \(results\)) Tj T* (point to trial results, not milestone. Waiting for you.) Tj T* ET
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL -0.077609 Tw (Still open \267 PTGX \267 Ph1 topline: Quote found on page failed: The quote is not printed anywhere on the page. Waiting for you.) Tj T* 0 Tw (Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix it, or remove it.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 489.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 VANQUISH-2 SC VK2735 Study: Date read as written failed: The row gives a date but the quote names) Tj T* (no day and no period. Waiting for you. The two readers disagree on indication: Muse Spark read Overweight, Muse Spark) Tj T* (Open read Overweight and Type 2 Diabetes. A person decides.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 459.6 cm
+1 0 0 1 60 579.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 VENTURE Study: Date read as written failed: The row gives a date but the quote names no day and no) Tj T* (period. Waiting for you.) Tj T* ET
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph1 PD Clinical PoC*: Event type matches the quote failed: The quote's words \(initiation\) point to) Tj T* (milestone, not trial results. Waiting for you.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 429.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 Stifel 2026 Healthcare Conference: Date read as written failed: The row gives a date but the quote) Tj T* (names no day and no period. Waiting for you.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 399.6 cm
+1 0 0 1 60 537.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 Truist 2026 BioPharma Symposium: Date read as written failed: The quote attaches 2026 to the) Tj T* (biopharma; November 12, 2026 is not the date the quote gives for the event. Waiting for you.) Tj T* ET
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph1 PD Clinical PoC: Quote found on page failed: The quote is not printed anywhere on the page.) Tj T* (Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix it, or) Tj T* (remove it.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 495.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 PN-477sc Ph1b MAD initiation: Quote found on page failed: The quote is not printed anywhere on the) Tj T* (page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix) Tj T* (it, or remove it.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 453.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 PN-477o Ph1 SAD/MAD initiation: Quote found on page failed: The quote is not printed anywhere on the) Tj T* (page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix) Tj T* (it, or remove it.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 411.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Comprehensive Ph2b PsO Initiation: Quote found on page failed: The quote is not printed anywhere on) Tj T* -0.09084 Tw (the page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event,) Tj T* 0 Tw (fix it, or remove it.) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 369.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 UBS Global Biopharma Conference: Date read as written failed: The row gives a date but the quote) Tj T* (names no day and no period. Waiting for you.) Tj T* ET
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 PN-477o Ph1 SAD Initiation: Quote found on page failed: The quote is not printed anywhere on the) Tj T* (page. Waiting for you. Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix) Tj T* (it, or remove it.) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 339.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 Jefferies Global Healthcare Conference: Date read as written failed: The row gives a date but the quote) Tj T* (names no day and no period. Waiting for you.) Tj T* ET
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL -0.010773 Tw (Still open \267 PTGX \267 Ph1 PD PoC: Citation located failed: There is no text inside the proposed box. Waiting for you. Proposed) Tj T* 0 Tw (by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix it, or remove it.) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 309.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 Piper Sandler 38th Annual Healthcare Conference: Date read as written failed: The row gives a date but) Tj T* (the quote names no day and no period. Waiting for you.) Tj T* ET
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 PTGX \267 Ph1 SAD Initiation: Citation located failed: There is no text inside the proposed box. Waiting for you.) Tj T* (Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an event, fix it, or remove it.) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 279.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL -0.124909 Tw (Still open \267 VKTX \267 J.P. Morgan 2027 Healthcare Conference: Date read as written failed: The row gives a date but the quote) Tj T* 0 Tw (names no day and no period. Waiting for you.) Tj T* ET
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 RVMD \267 RASolve 301 initial readout: The two readers disagree on indication: Muse Spark read RAS mutant) Tj T* (NSCLC, Muse Spark Open read previously treated RAS mutant NSCLC. A person decides.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 225.6 cm
+1 0 0 1 60 237.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 VANQUISH Extension Studies commencement: Citation located failed: The box does not hold every) Tj T* -0.012 Tw (word of the quote \(missing VANQUISH, Extension, Studies, to ...\). Waiting for you. Proposed by the second reader only: the) Tj T* 0 Tw (first reader did not read it. Look at it: keep it as an event, fix it, or remove it.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 207.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 VANQUISH extension studies begin: Event type matches the quote failed: The quote's words \(results\)) Tj T* (point to trial results, not milestone. Waiting for you.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 177.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 conference call to discuss Viking's third quarter 2026 financial results: Date read as written failed: \223today) Tj T* (at 4:30 pm Eastern\224 is 2026-10-28 but the row gives no day. Waiting for you.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 123.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 39 Tm /F1 9 Tf 12 TL -0.1245 Tw (Still open \267 VKTX \267 Possible event not read: To participate in the conference call, please dial \(844\) 850-0543 from the U.S. or) Tj T* 0 Tw (\(412\) 317-5199 from outside the U.S. In addition, following the completion of the call, a telephone replay will be accessible) Tj T* (until\205: The reader did not turn this sentence into a row. It names November 4, 2026, a date or period after 2026-10-28.) Tj T* (Look at it: keep it as an event, fix it, or remove it.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 195.6 cm
+1 0 0 1 60 93.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 Conference Call: Outside the time window: the date 2026-09-22 is before today \(2026-10-29\). The two) Tj T* (readers disagree on program: Muse Spark read VK2735, Muse Spark Open read nothing. A person decides.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 165.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 conference call to discuss top line results: The two readers disagree on date: Muse Spark read nothing,) Tj T* (Muse Spark Open read 2026-09-22. A person decides.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 135.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Unverified \267 IONS \267 Regulatory submissions in Europe and Japan: Date read as written could not run: Could not tell which) Tj T* (date in the quote belongs to the event.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 105.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Unverified \267 PTGX \267 Phase 2b Program Initiation: Date read as written could not run: Could not tell which date in the quote) Tj T* (belongs to the event.) Tj T* ET
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Still open \267 VKTX \267 conference call to discuss top line results: Date read as written failed: \223today at 8:00 am Eastern\224 is) Tj T* (2026-09-22 but the row gives no day. Waiting for you.) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 75.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Sources) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unverified \267 PTGX \267 Ph1: Date read as written could not run: Could not tell which date in the quote belongs to the event.) Tj T* ET
 Q
 Q
  
@@ -1833,7 +2409,7 @@ endstream
 endobj
 32 0 obj
 <<
-/Length 6488
+/Length 6190
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -1844,224 +2420,210 @@ BT 1 0 0 1 54 32.4 Tm (Built with Meta Muse models \267 built by code from the s
 BT 1 0 0 1 536.594 32.4 Tm (page 6) Tj T* ET
 Q
 q
-1 0 0 1 60 723.6 cm
+1 0 0 1 60 711.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Unverified \267 PTGX \267 Primary Completion Date: Date read as written could not run: Could not tell which date in the quote) Tj T* (belongs to the event.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 681.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Unverified \267 PTGX \267 Primary Completion Date: Date read as written could not run: Could not tell which date in the quote) Tj T* (belongs to the event.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 651.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Unverified \267 PTGX \267 IND-enabling studies: Date read as written could not run: Could not tell which date in the quote belongs) Tj T* (to the event.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 621.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Unverified \267 PTGX \267 Ph1 PD PoC: Date read as written could not run: Could not tell which date in the quote belongs to the) Tj T* (event.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 591.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Unverified \267 PTGX \267 PN-477o Ph1 SAD: Date read as written could not run: Could not tell which date in the quote belongs to) Tj T* (the event.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 561.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Sources) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 543.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-10-23) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 708.6 cm
+1 0 0 1 60 528.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126040631/ef20084325_ex99-1.htm) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 693.6 cm
+1 0 0 1 60 513.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 9edaf6ba25ddc8cba8f937562791b851fe9b2dc4fccd46319cd4cbaf3072977c) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 667.6 cm
+1 0 0 1 60 487.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* -0.107429 Tw (d4f337f7cf4ac63167dd42e6a3f289e835364a580cf9f6396a42f2cba8c0c034 \267 renderer: Google Chrome 156.0.8078.48 headless print-to-pdf) Tj T* 0 Tw ET
 Q
 Q
 q
-1 0 0 1 60 649.6 cm
+1 0 0 1 60 469.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-10-23) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 634.6 cm
+1 0 0 1 60 454.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126040631/ef20084325_ex99-1.htm) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 619.6 cm
+1 0 0 1 60 439.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 9edaf6ba25ddc8cba8f937562791b851fe9b2dc4fccd46319cd4cbaf3072977c) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 593.6 cm
+1 0 0 1 60 413.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* -0.107429 Tw (d4f337f7cf4ac63167dd42e6a3f289e835364a580cf9f6396a42f2cba8c0c034 \267 renderer: Google Chrome 156.0.8078.48 headless print-to-pdf) Tj T* 0 Tw ET
 Q
 Q
 q
-1 0 0 1 60 575.6 cm
+1 0 0 1 60 395.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-10-23) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 560.6 cm
+1 0 0 1 60 380.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126040631/ef20084325_ex99-1.htm) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 545.6 cm
+1 0 0 1 60 365.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 9edaf6ba25ddc8cba8f937562791b851fe9b2dc4fccd46319cd4cbaf3072977c) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 519.6 cm
+1 0 0 1 60 339.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* -0.107429 Tw (d4f337f7cf4ac63167dd42e6a3f289e835364a580cf9f6396a42f2cba8c0c034 \267 renderer: Google Chrome 156.0.8078.48 headless print-to-pdf) Tj T* 0 Tw ET
 Q
 Q
 q
-1 0 0 1 60 501.6 cm
+1 0 0 1 60 321.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-10-21) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 486.6 cm
+1 0 0 1 60 306.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126040388/ef20084189_ex99-1.htm) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 471.6 cm
+1 0 0 1 60 291.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 34698fad90fa8a9e0567342952cee768d947a59b43f532a726fd0680608c5941) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 435.6 cm
+1 0 0 1 60 255.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (60426d71b3edb8c8aece22e6f6a7e334da7c2b308ebca4dde291419cfebab8c4 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 417.6 cm
+1 0 0 1 60 237.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-10-21) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 402.6 cm
+1 0 0 1 60 222.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126040388/ef20084189_ex99-1.htm) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 387.6 cm
+1 0 0 1 60 207.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 34698fad90fa8a9e0567342952cee768d947a59b43f532a726fd0680608c5941) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 351.6 cm
+1 0 0 1 60 171.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (60426d71b3edb8c8aece22e6f6a7e334da7c2b308ebca4dde291419cfebab8c4 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 333.6 cm
+1 0 0 1 60 153.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-10-21) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 318.6 cm
+1 0 0 1 60 138.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126040388/ef20084189_ex99-1.htm) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 303.6 cm
+1 0 0 1 60 123.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 34698fad90fa8a9e0567342952cee768d947a59b43f532a726fd0680608c5941) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 267.6 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (60426d71b3edb8c8aece22e6f6a7e334da7c2b308ebca4dde291419cfebab8c4 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 249.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-10-21) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 234.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126040388/ef20084189_ex99-1.htm) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 219.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 34698fad90fa8a9e0567342952cee768d947a59b43f532a726fd0680608c5941) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 183.6 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (60426d71b3edb8c8aece22e6f6a7e334da7c2b308ebca4dde291419cfebab8c4 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 165.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-10-21) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 150.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126040388/ef20084189_ex99-1.htm) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 135.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 34698fad90fa8a9e0567342952cee768d947a59b43f532a726fd0680608c5941) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 99.6 cm
+1 0 0 1 60 87.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (60426d71b3edb8c8aece22e6f6a7e334da7c2b308ebca4dde291419cfebab8c4 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
@@ -2114,56 +2676,56 @@ q
 1 0 0 1 60 639.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-09-23) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-10-21) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 624.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126037371/ef20082626_ex99-1.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126040388/ef20084189_ex99-1.htm) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 609.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 5b558015e2f28510c98fd9c16457cf31f23ac0c4869a35d52fd6d2658ad6e569) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 34698fad90fa8a9e0567342952cee768d947a59b43f532a726fd0680608c5941) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 573.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (eadd1e8897aaf0404f2e9453f28908253ce5dedd094a7f24085caa194b8dd51c \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (60426d71b3edb8c8aece22e6f6a7e334da7c2b308ebca4dde291419cfebab8c4 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 555.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-09-23) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-10-21) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 540.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126037371/ef20082626_ex99-1.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126040388/ef20084189_ex99-1.htm) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 525.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 5b558015e2f28510c98fd9c16457cf31f23ac0c4869a35d52fd6d2658ad6e569) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 34698fad90fa8a9e0567342952cee768d947a59b43f532a726fd0680608c5941) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 489.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (eadd1e8897aaf0404f2e9453f28908253ce5dedd094a7f24085caa194b8dd51c \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (60426d71b3edb8c8aece22e6f6a7e334da7c2b308ebca4dde291419cfebab8c4 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
@@ -2198,112 +2760,112 @@ q
 1 0 0 1 60 387.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-09-04) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-09-23) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 372.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126035802/ef20081690_ex99-1.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126037371/ef20082626_ex99-1.htm) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 357.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 90fe432702c71a28c1470bf0ffd373173f4625559a6b1778b88b455ec75bbffb) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 5b558015e2f28510c98fd9c16457cf31f23ac0c4869a35d52fd6d2658ad6e569) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 331.6 cm
+1 0 0 1 60 321.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (dfc31d7c8f81b97a97a48ac1d276f22e52b67bf960b7affdaeba7fcfa8ba1f14 \267 renderer: Google Chrome 156.0.8078.48 headless print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (eadd1e8897aaf0404f2e9453f28908253ce5dedd094a7f24085caa194b8dd51c \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 313.6 cm
+1 0 0 1 60 303.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-09-23) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 288.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126037371/ef20082626_ex99-1.htm) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 273.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 5b558015e2f28510c98fd9c16457cf31f23ac0c4869a35d52fd6d2658ad6e569) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 237.6 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (eadd1e8897aaf0404f2e9453f28908253ce5dedd094a7f24085caa194b8dd51c \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 219.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-09-04) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 298.6 cm
+1 0 0 1 60 204.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126035802/ef20081690_ex99-1.htm) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 283.6 cm
+1 0 0 1 60 189.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 90fe432702c71a28c1470bf0ffd373173f4625559a6b1778b88b455ec75bbffb) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 257.6 cm
+1 0 0 1 60 163.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (dfc31d7c8f81b97a97a48ac1d276f22e52b67bf960b7affdaeba7fcfa8ba1f14 \267 renderer: Google Chrome 156.0.8078.48 headless print-to-pdf) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 239.6 cm
+1 0 0 1 60 145.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-09-04) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 224.6 cm
+1 0 0 1 60 130.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126035657/ef20081649_ex99-1.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126035802/ef20081690_ex99-1.htm) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 209.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: f12caf40570cf54eb2be31ae6a01bca13beebe9c52b34b567cf55d94e2859b7e) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 173.6 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (aa38cf5911234789ed410c419dcc6e6cf9533ce01a9e14afe98175cb50f07337 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 155.6 cm
+1 0 0 1 60 115.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-09-04) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 140.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126035657/ef20081649_ex99-1.htm) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 125.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: f12caf40570cf54eb2be31ae6a01bca13beebe9c52b34b567cf55d94e2859b7e) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 90fe432702c71a28c1470bf0ffd373173f4625559a6b1778b88b455ec75bbffb) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 89.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (aa38cf5911234789ed410c419dcc6e6cf9533ce01a9e14afe98175cb50f07337 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 12 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (dfc31d7c8f81b97a97a48ac1d276f22e52b67bf960b7affdaeba7fcfa8ba1f14 \267 renderer: Google Chrome 156.0.8078.48 headless print-to-pdf) Tj T* ET
 Q
 Q
  
@@ -2311,7 +2873,7 @@ endstream
 endobj
 34 0 obj
 <<
-/Length 6488
+/Length 6476
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -2409,56 +2971,56 @@ q
 1 0 0 1 60 471.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Protagonist Therapeutics, Inc \(filed with the SEC\) \267 filing \267 2026-08-05) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-09-04) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 456.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1377121/000110465926091099/tm2622272d1_ex99-1.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126035657/ef20081649_ex99-1.htm) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 441.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: e48c384a66d65fb1fd94a882f17148c7a733bcd2879257606e2e7e5013692512) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: f12caf40570cf54eb2be31ae6a01bca13beebe9c52b34b567cf55d94e2859b7e) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 405.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (d5a1e7d6035cc8bf2d9b0e38fa78485501befc072d8251a40ede562b6eede6c7 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (aa38cf5911234789ed410c419dcc6e6cf9533ce01a9e14afe98175cb50f07337 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 387.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Protagonist Therapeutics, Inc \(filed with the SEC\) \267 filing \267 2026-08-05) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (IONIS PHARMACEUTICALS INC \(filed with the SEC\) \267 filing \267 2026-09-04) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 372.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1377121/000110465926091099/tm2622272d1_ex99-1.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126035657/ef20081649_ex99-1.htm) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 357.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: e48c384a66d65fb1fd94a882f17148c7a733bcd2879257606e2e7e5013692512) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: f12caf40570cf54eb2be31ae6a01bca13beebe9c52b34b567cf55d94e2859b7e) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 321.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (d5a1e7d6035cc8bf2d9b0e38fa78485501befc072d8251a40ede562b6eede6c7 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (aa38cf5911234789ed410c419dcc6e6cf9533ce01a9e14afe98175cb50f07337 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
@@ -2599,21 +3161,21 @@ q
 1 0 0 1 60 624.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1377121/000110465926091099/tm2622272d1_ex99-2.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1377121/000110465926091099/tm2622272d1_ex99-1.htm) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 609.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 2614badcbdd3108252c6e20948608492f25ee57c3b817e75c0c7f2ecf04a77a6) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: e48c384a66d65fb1fd94a882f17148c7a733bcd2879257606e2e7e5013692512) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 573.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (1942420749a2be6efe6dc9365155060966f0c9df4fd74eabb3cb70241b54639e \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (d5a1e7d6035cc8bf2d9b0e38fa78485501befc072d8251a40ede562b6eede6c7 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
@@ -2627,21 +3189,21 @@ q
 1 0 0 1 60 540.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1377121/000110465926091099/tm2622272d1_ex99-2.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1377121/000110465926091099/tm2622272d1_ex99-1.htm) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 525.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 2614badcbdd3108252c6e20948608492f25ee57c3b817e75c0c7f2ecf04a77a6) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: e48c384a66d65fb1fd94a882f17148c7a733bcd2879257606e2e7e5013692512) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 489.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (1942420749a2be6efe6dc9365155060966f0c9df4fd74eabb3cb70241b54639e \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (d5a1e7d6035cc8bf2d9b0e38fa78485501befc072d8251a40ede562b6eede6c7 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
@@ -3984,7 +4546,7 @@ endstream
 endobj
 41 0 obj
 <<
-/Length 6441
+/Length 6463
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -4054,56 +4616,56 @@ q
 1 0 0 1 60 555.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Viking Therapeutics, Inc. \(filed with the SEC\) \267 filing \267 2026-10-28) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Protagonist Therapeutics, Inc \(filed with the SEC\) \267 filing \267 2026-08-05) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 540.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1607678/000119312526436145/vktx-ex99_1.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1377121/000110465926091099/tm2622272d1_ex99-2.htm) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 525.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 01174a9bc72e24eeff3de5873dcaae7a823a0ecb4e4740343c994cb1c1801005) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 2614badcbdd3108252c6e20948608492f25ee57c3b817e75c0c7f2ecf04a77a6) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 489.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (00804514dd1a4377d1d3314df2297994329ff74ea1abfde9565cea80664e2774 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (1942420749a2be6efe6dc9365155060966f0c9df4fd74eabb3cb70241b54639e \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 471.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Viking Therapeutics, Inc. \(filed with the SEC\) \267 filing \267 2026-10-28) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Protagonist Therapeutics, Inc \(filed with the SEC\) \267 filing \267 2026-08-05) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 456.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1607678/000119312526436145/vktx-ex99_1.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1377121/000110465926091099/tm2622272d1_ex99-2.htm) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 441.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 01174a9bc72e24eeff3de5873dcaae7a823a0ecb4e4740343c994cb1c1801005) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 2614badcbdd3108252c6e20948608492f25ee57c3b817e75c0c7f2ecf04a77a6) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 405.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (00804514dd1a4377d1d3314df2297994329ff74ea1abfde9565cea80664e2774 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (1942420749a2be6efe6dc9365155060966f0c9df4fd74eabb3cb70241b54639e \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
@@ -4504,56 +5066,56 @@ q
 1 0 0 1 60 639.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Viking Therapeutics, Inc. \(filed with the SEC\) \267 filing \267 2026-09-22) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Viking Therapeutics, Inc. \(filed with the SEC\) \267 filing \267 2026-10-28) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 624.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1607678/000119312526397219/vktx-ex99_1.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1607678/000119312526436145/vktx-ex99_1.htm) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 609.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 3c1b52e4e36952e84ceb716a0d2a6879444d92299ba294d5cc20c231427200ff) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 01174a9bc72e24eeff3de5873dcaae7a823a0ecb4e4740343c994cb1c1801005) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 573.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (de34669cda8d25cf5cb6e649667e1d494846681b1a41fbf5f761c14c6f68b4b5 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (00804514dd1a4377d1d3314df2297994329ff74ea1abfde9565cea80664e2774 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 555.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Viking Therapeutics, Inc. \(filed with the SEC\) \267 filing \267 2026-09-22) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Viking Therapeutics, Inc. \(filed with the SEC\) \267 filing \267 2026-10-28) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 540.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1607678/000119312526397219/vktx-ex99_1.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1607678/000119312526436145/vktx-ex99_1.htm) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 525.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 3c1b52e4e36952e84ceb716a0d2a6879444d92299ba294d5cc20c231427200ff) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 01174a9bc72e24eeff3de5873dcaae7a823a0ecb4e4740343c994cb1c1801005) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 489.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (de34669cda8d25cf5cb6e649667e1d494846681b1a41fbf5f761c14c6f68b4b5 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (00804514dd1a4377d1d3314df2297994329ff74ea1abfde9565cea80664e2774 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
@@ -4701,7 +5263,7 @@ endstream
 endobj
 44 0 obj
 <<
-/Length 6421
+/Length 6419
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -4883,56 +5445,56 @@ q
 1 0 0 1 60 219.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Revolution Medicines, Inc. \(filed with the SEC\) \267 filing \267 2026-08-05) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Viking Therapeutics, Inc. \(filed with the SEC\) \267 filing \267 2026-09-22) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 204.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1628171/000119312526335039/rvmd-ex99_1.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1607678/000119312526397219/vktx-ex99_1.htm) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 189.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 34981aee2f6b0a1dc8f6729ec5920b21062feeb6fb7f7f7c17c8a7a0a40241e4) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 3c1b52e4e36952e84ceb716a0d2a6879444d92299ba294d5cc20c231427200ff) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 153.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (a6d7cc0c0ddf31c5c6feabcb7b80aee6ad17db54fde4d6e8bc5f9fae8fd75878 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (de34669cda8d25cf5cb6e649667e1d494846681b1a41fbf5f761c14c6f68b4b5 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 135.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Revolution Medicines, Inc. \(filed with the SEC\) \267 filing \267 2026-08-05) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Viking Therapeutics, Inc. \(filed with the SEC\) \267 filing \267 2026-09-22) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 120.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1628171/000119312526335039/rvmd-ex99_1.htm) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1607678/000119312526397219/vktx-ex99_1.htm) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 105.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 34981aee2f6b0a1dc8f6729ec5920b21062feeb6fb7f7f7c17c8a7a0a40241e4) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 3c1b52e4e36952e84ceb716a0d2a6879444d92299ba294d5cc20c231427200ff) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 69.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (a6d7cc0c0ddf31c5c6feabcb7b80aee6ad17db54fde4d6e8bc5f9fae8fd75878 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (de34669cda8d25cf5cb6e649667e1d494846681b1a41fbf5f761c14c6f68b4b5 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
 Q
 Q
  
@@ -4940,7 +5502,7 @@ endstream
 endobj
 45 0 obj
 <<
-/Length 1017
+/Length 2563
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -4973,6 +5535,62 @@ Q
 Q
 q
 1 0 0 1 60 657.6 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (a6d7cc0c0ddf31c5c6feabcb7b80aee6ad17db54fde4d6e8bc5f9fae8fd75878 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 639.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Revolution Medicines, Inc. \(filed with the SEC\) \267 filing \267 2026-08-05) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 624.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1628171/000119312526335039/rvmd-ex99_1.htm) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 609.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 34981aee2f6b0a1dc8f6729ec5920b21062feeb6fb7f7f7c17c8a7a0a40241e4) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 573.6 cm
+q
+.2 .2 .2 rg
+BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (a6d7cc0c0ddf31c5c6feabcb7b80aee6ad17db54fde4d6e8bc5f9fae8fd75878 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 555.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Revolution Medicines, Inc. \(filed with the SEC\) \267 filing \267 2026-08-05) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 540.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1628171/000119312526335039/rvmd-ex99_1.htm) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 525.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 34981aee2f6b0a1dc8f6729ec5920b21062feeb6fb7f7f7c17c8a7a0a40241e4) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 489.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (a6d7cc0c0ddf31c5c6feabcb7b80aee6ad17db54fde4d6e8bc5f9fae8fd75878 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
@@ -5011,24 +5629,24 @@ xref
 0000004237 00000 n 
 0000004565 00000 n 
 0000004751 00000 n 
-0000014260 00000 n 
-0000023936 00000 n 
-0000030711 00000 n 
-0000037342 00000 n 
-0000043737 00000 n 
-0000050277 00000 n 
-0000056771 00000 n 
-0000063311 00000 n 
-0000069869 00000 n 
-0000076428 00000 n 
-0000082987 00000 n 
-0000089546 00000 n 
-0000096105 00000 n 
-0000102664 00000 n 
-0000109157 00000 n 
-0000115628 00000 n 
-0000122099 00000 n 
-0000128572 00000 n 
+0000014333 00000 n 
+0000027808 00000 n 
+0000036669 00000 n 
+0000043210 00000 n 
+0000049970 00000 n 
+0000056212 00000 n 
+0000062706 00000 n 
+0000069234 00000 n 
+0000075792 00000 n 
+0000082351 00000 n 
+0000088910 00000 n 
+0000095469 00000 n 
+0000102028 00000 n 
+0000108587 00000 n 
+0000115102 00000 n 
+0000121573 00000 n 
+0000128044 00000 n 
+0000134515 00000 n 
 trailer
 <<
 /ID 
@@ -5040,5 +5658,5 @@ trailer
 /Size 46
 >>
 startxref
-129641
+137130
 %%EOF
