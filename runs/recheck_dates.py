@@ -26,7 +26,7 @@ from pathlib import Path
 from checks import event_checks
 from checks.common import CheckResult
 from runs.build_entry import START_GROUP, row_reason
-from runs.state import current_state
+from runs.state import current_state, run_reference_date
 from server.jobs import past_candidate_reason, past_reason
 
 RULE = "event_in_past"
@@ -39,11 +39,7 @@ def run_day(run: dict, exclusion: dict) -> date | None:
     m = _TODAY.search(exclusion.get("reason") or "")
     if m:
         return date.fromisoformat(m[1])
-    started = (run.get("run") or {}).get("started_at") or ""
-    try:
-        return date.fromisoformat(started[:10])
-    except ValueError:
-        return None
+    return run_reference_date(run)
 
 
 def rewindow(run: dict, decided: set[str], at: str) -> dict:

@@ -63,6 +63,8 @@ def build_docx(view: dict) -> bytes:
 
     _line(doc, f"Run {view['run_number']}: {view['run_label']}")
     _line(doc, f"Run date: {view['run_date']}")
+    if view.get("as_of_note"):
+        _line(doc, view["as_of_note"])
     _line(doc, f"Run status: {view['run_status']}")
     _line(doc, "Companies read: " + (" · ".join(view["companies_read"]) or "none recorded"))
     _line(doc, "Companies unread: " + (" · ".join(view["companies_unread"]) or "none recorded"))

@@ -89,6 +89,7 @@ def main(argv: list[str] | None = None, readers: tuple | None = None) -> int:
     ap.add_argument("--reader-tools", action="store_true",
                     help="let the first reader call the checks as tools while it reads (default off)")
     ap.add_argument("--id", default=None)
+    ap.add_argument("--as-of", default=None, help="the run's reference date, YYYY-MM-DD (default: today)")
     args = ap.parse_args(argv)
 
     try:
@@ -100,6 +101,7 @@ def main(argv: list[str] | None = None, readers: tuple | None = None) -> int:
         companies = ["all"] if args.companies.strip().lower() == "all" else \
             [c.strip().upper() for c in args.companies.split(",") if c.strip()]
         types = list(read_events.EVENT_TYPES) if not args.types else [t.strip() for t in args.types.split(",")]
+        as_of = jobs.validate_as_of(args.as_of)
         choices = jobs.validate_choices({"companies": companies, "event_types": types, "time_window_months": args.window,
                                          "spending_limit_usd": args.limit, "note_for_agent": args.note,
                                          "reader_tools": args.reader_tools}, index)
@@ -112,7 +114,7 @@ def main(argv: list[str] | None = None, readers: tuple | None = None) -> int:
 
     args.runs_dir.mkdir(parents=True, exist_ok=True)
     try:
-        run = jobs.create_run(args.runs_dir, choices, args.turns, args.id)
+        run = jobs.create_run(args.runs_dir, choices, args.turns, args.id, as_of)
     except ValueError as e:
         print(str(e), file=sys.stderr)
         return 2

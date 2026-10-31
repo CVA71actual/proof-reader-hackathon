@@ -458,7 +458,7 @@
     // the card header: run, date in words, needs attention
     document.getElementById('runcard-sub').textContent =
       'Run ' + meta.number + ' · ' + dateTimeWords(meta.started_at) +
-      ' · needs attention ' + st.unresolved;
+      ' · needs attention ' + st.unresolved + (detail.run.as_of_note ? ' · ' + detail.run.as_of_note : '');
     // the saved-runs button's count rides the same runs list
     updateSavedRunsBtn();
     // the sample warning stays warm; 'click to switch runs' is gone
@@ -2034,7 +2034,7 @@
   }
   function calWindow() {
     var win = 6;
-    var anchor = ((detail.run.run || {}).started_at || '').slice(0, 10) || '0000-00-00';
+    var anchor = (detail.run.calendar_window && detail.run.calendar_window.start) || '0000-00-00';
     var y = Number(anchor.slice(0, 4)), m = Number(anchor.slice(5, 7)) - 1 + win;
     y += Math.floor(m / 12); m = ((m % 12) + 12) % 12;
     var lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
@@ -3984,7 +3984,8 @@
         tail = 'Run finished · ' + (r.unresolved > 0
           ? r.unresolved + ' need review' : 'nothing left to review');
       }
-      b.append(el('div', 'm', 'Run ' + r.number + ' · ' + dateTimeWords(r.started_at) + ' · ' + tail));
+      b.append(el('div', 'm', 'Run ' + r.number + ' · ' + dateTimeWords(r.started_at) + ' · ' + tail +
+        (r.as_of_note ? ' · ' + r.as_of_note : '')));
       b.addEventListener('click', function () {
         runSheetWrap.hidden = true;
         if (!detail || r.id !== detail.id) switchRun(r.id);

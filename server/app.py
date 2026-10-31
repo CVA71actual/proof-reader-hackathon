@@ -47,7 +47,7 @@ from runs.calendar import calendar_entries, run_interval_partition
 from runs.ids import require_unique_target_ids
 from runs.recheck import recheck_cell, recheck_row
 from report.data import report_filenames
-from runs.state import PERSON_ACTIONS, current_state
+from runs.state import PERSON_ACTIONS, as_of_note, current_state
 from server import jobs
 
 REPO = Path(__file__).resolve().parent.parent
@@ -272,17 +272,19 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
             out.append({"id": run_id, "number": meta.get("number"), "label": meta.get("label"),
                         "sample": meta.get("sample"), "started_at": meta.get("started_at"),
                         "finished_at": meta.get("finished_at"), "status": meta.get("status"),
-                        "counts": state["counts"],
+                        "as_of_note": as_of_note(run), "counts": state["counts"],
                         "unresolved": state["unresolved"]})
         return out
 
     @app.post("/api/runs/new", status_code=202)
     def new_run(body: dict = Body(...)) -> dict:
         try:
+            body = dict(body)
+            as_of = jobs.validate_as_of(body.pop("as_of", None))
             choices = jobs.validate_choices(body, index)
         except ValueError as e:
             raise HTTPException(422, str(e)) from None
-        run = jobs.create_run(store.runs_dir, choices)
+        run = jobs.create_run(store.runs_dir, choices, as_of=as_of)
         start_job(run["run"]["id"])
         return jobs_view(store, run["run"]["id"])
 
@@ -327,7 +329,8 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         state = current_state(run, decisions)
         partition, window_start, window_end = run_interval_partition(run, state)
         return {**run, "state": state, "calendar_partition": partition,
-                "calendar_window": {"start": window_start, "end": window_end}}
+                "calendar_window": {"start": window_start, "end": window_end},
+                "as_of_note": as_of_note(run)}
 
     @app.get("/api/runs/{run_id}/decisions")
     def get_decisions(run_id: str) -> list:

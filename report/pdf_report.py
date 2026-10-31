@@ -103,6 +103,8 @@ def build_pdf(view: dict) -> bytes:
     story.append(_p(view["title"], styles["title"]))
     story.append(_p(f"Run {view['run_number']}: {view['run_label']}", styles["body"]))
     story.append(_p(f"Run date: {view['run_date']}", styles["body"]))
+    if view.get("as_of_note"):
+        story.append(_p(view["as_of_note"], styles["body"]))
     story.append(_p(f"Run status: {view['run_status']}", styles["body"]))
     story.append(_p("Companies read: " + (" · ".join(view["companies_read"]) or "none recorded"), styles["body"]))
     story.append(_p("Companies unread: " + (" · ".join(view["companies_unread"]) or "none recorded"), styles["body"]))

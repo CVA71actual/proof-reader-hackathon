@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import date
 
 from checks.event_checks import add_months_to, period_last_day
+from runs.state import run_reference_date
 
 CALENDAR_GROUPS = ("kept", "corrected")
 
@@ -84,11 +85,7 @@ def partition_intervals(entries: list[dict], anchor: str, end: str) -> dict[str,
 
 def run_interval_partition(run: dict, state: dict) -> tuple[dict[str, list[dict]], str, str]:
     """The six-month, run-anchored partition used by the screen and reports."""
-    anchor = (run.get("run") or {}).get("started_at", "")[:10]
-    try:
-        start = date.fromisoformat(anchor)
-    except (TypeError, ValueError):
-        start = date.today()
-        anchor = start.isoformat()
+    start = run_reference_date(run) or date.today()
+    anchor = start.isoformat()
     end = add_months_to(start, 6).isoformat()
     return partition_intervals(calendar_entries(run, state), anchor, end), anchor, end

@@ -53,6 +53,7 @@ from capture.capture_source import load_entry
 from checks import event_checks
 from runs import picture, build_entry, build_run, compare, coverage, escalate, prices, scan, sources
 from runs.ids import reserve_row_numbers, require_unique_target_ids
+from runs.state import as_of_note, run_reference_date
 
 DEFAULT_TURN_LIMIT = 40
 MAX_PAGE_FAILURES = 2      # a page that stops the run this many times is skipped, and the run goes on with the rest
@@ -295,7 +296,20 @@ def label_for(number: int, choices: dict) -> str:
 _RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
-def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None, run_id: str | None = None) -> dict:
+def validate_as_of(value) -> str | None:
+    """The run's reference date as ISO text (YYYY-MM-DD), None when not given, or a ValueError."""
+    if value is None:
+        return None
+    try:
+        if not isinstance(value, str) or len(value) != 10:
+            raise ValueError
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        raise ValueError("as_of must be a date written YYYY-MM-DD, or null.") from None
+
+
+def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None, run_id: str | None = None,
+               as_of: str | None = None) -> dict:
     """Make runs/<id>/ with run.json (queued), an empty decisions.jsonl and job.json. Returns the run.json dict.
     `turn_limit`: the budget of model calls before the run pauses (default DEFAULT_TURN_LIMIT). `run_id`: the folder's
     name (default run-<number>), for a run that is to be kept under a name, such as twelve-1; ValueError if it is not a
@@ -321,6 +335,7 @@ def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None, run
         run_dir = runs_dir / (run_id or f"run-{number}")
         (run_dir / "pages").mkdir(parents=True)
         now = now_utc()
+        as_of = validate_as_of(as_of)
         run = {
             "schema_version": build_run.SCHEMA_VERSION,
             "run": {
@@ -332,6 +347,8 @@ def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None, run
             },
             "sources": [], "tables": [], "rows": [], "mistakes": [], "exclusions": [],
         }
+        if as_of:       # the one reference date (runs.state.run_reference_date); absent = the start day
+            run["run"]["as_of"] = as_of
         (run_dir / "decisions.jsonl").write_text("")
         _write(run_dir / "job.json", {"attempts": {}, "next_row_number": 1, "unpriced_calls": 0,
                                       "second": {}, "openrouter_spend_usd": 0.0,
@@ -893,7 +910,7 @@ class Job:
 
         Future proposals remain available; the calendar presents those beyond its six-month window in Later.
         """
-        run_date = date.fromisoformat(self.meta["started_at"][:10])
+        run_date = run_reference_date({"run": self.meta})
         exclusions = self.run.setdefault("exclusions", [])
         for row in rows:
             if row.get("group") == "removed" or not row.get("date"):
@@ -922,7 +939,11 @@ class Job:
     def coverage_date(self, source: dict) -> date:
         """A dated sentence counts when its date is after this day: `as_of` if the run was given one, else the day the
         source was published (a filing's own date), never the day the run was made."""
-        return self.as_of or date.fromisoformat(source["published_date"])
+        if self.as_of:
+            return self.as_of
+        if as_of_note(self.run):          # a run given a past as_of counts dates after it
+            return run_reference_date(self.run)
+        return date.fromisoformat(source["published_date"])
 
     # ------------------------------------------------------------ the second reader
 

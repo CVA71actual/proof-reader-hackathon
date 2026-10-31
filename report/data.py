@@ -7,7 +7,7 @@ import json
 from datetime import date, datetime
 from pathlib import Path
 
-from runs.state import current_state
+from runs.state import as_of_note, current_state, run_reference_date
 from runs.calendar import on_calendar, run_interval_partition
 from runs.state import _needs_attention
 from checks import event_checks
@@ -253,9 +253,10 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
             "reason": st.get("reason") or row.get("reason") or "",
         })
     calendar.sort(key=lambda r: (r["sort_key"], r["ticker"], r["id"]))
-    started = (meta.get("started_at") or "")[:10]
     try:
-        window_start = date.fromisoformat(started)
+        window_start = run_reference_date(run)
+        if window_start is None:
+            raise ValueError
         # The calendar and saved report always use the same six-month horizon.
         months = 6
         window_end = event_checks.add_months_to(window_start, months)
@@ -392,6 +393,7 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         "run_label": meta.get("label") or meta["id"],
         "sample": bool(meta.get("sample")),
         "sample_stamp": SAMPLE_STAMP if meta.get("sample") else None,
+        "as_of_note": as_of_note(run),
         "run_date": date_in_words(meta.get("finished_at") or meta.get("started_at") or ""),
         "run_status": status_label,
         "stopping_reason": meta.get("status_reason") or "No stopping reason recorded.",

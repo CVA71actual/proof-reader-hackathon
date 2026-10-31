@@ -62,6 +62,34 @@ import re
 from accuracy.types import primary_type, type_for_field
 from runs.prices import cost_per_kept_row_usd
 from runs.ids import require_unique_target_ids
+from datetime import date
+
+
+def run_reference_date(run: dict) -> date | None:
+    """THE one reference date of a run: `as_of` in run.json, else the day it started. None when neither reads as a
+    date. Everything that needs "the run date" reads it here; started_at itself is the real timestamp and is never
+    changed."""
+    meta = run.get("run") or {}
+    for key in ("as_of", "started_at"):
+        try:
+            return date.fromisoformat(str(meta.get(key) or "")[:10])
+        except ValueError:
+            continue
+    return None
+
+
+def as_of_note(run: dict) -> str | None:
+    """"as of 13 Oct 2026 · run on 31 Oct 2026" when as_of is set and is not the start day; otherwise None."""
+    meta = run.get("run") or {}
+    ref, started = run_reference_date(run), str(meta.get("started_at") or "")[:10]
+    try:
+        began = date.fromisoformat(started)
+    except ValueError:
+        return None
+    if not meta.get("as_of") or ref is None or ref == began:
+        return None
+    f = lambda d: f"{d.day} {d.strftime('%b %Y')}"
+    return f"as of {f(ref)} · run on {f(began)}"
 
 
 def _plain_field(field) -> str:
