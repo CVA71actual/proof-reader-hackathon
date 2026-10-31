@@ -156,7 +156,17 @@ def test_only_dates_after_today_count():
     assert coverage.dated_sentences(page("Data came in Q1 2026."), TODAY) == []
     assert coverage.dated_sentences(page("Nothing is dated here."), TODAY) == []
     assert len(coverage.dated_sentences(page("Data came in Q1 2026 and are due in Q2 2027."), TODAY)) == 1
-    assert coverage.dated_sentences(page("Data are due on August 5, 2026."), TODAY) == [], "today itself is not after today"
+    assert len(coverage.dated_sentences(page("Data are due on August 5, 2026."), TODAY)) == 1, \
+        "a day is not past until its end is before the run date — today itself still counts"
+
+
+def test_a_period_counts_until_its_end_passes():
+    t = date(2026, 10, 13)
+    for text in ("Trial starts in Q4 2026.", "Data are due in 2H 2026.",
+                 "Results are expected by year-end 2026.", "Filing is due in October 2026."):
+        assert len(coverage.dated_sentences(page(text), t)) == 1, text
+    for text in ("Results came in Q3 2026.", "Filed in September 2026."):
+        assert coverage.dated_sentences(page(text), t) == [], text
 
 
 def test_the_ptgx_page_names_two_future_events(ptgx_words_doc):
@@ -363,12 +373,14 @@ def test_a_quote_that_is_only_a_piece_of_a_longer_sentence_leaves_it_uncovered()
 
 
 def test_the_repeated_token_sentence_raises_a_not_read_row(ptgx_run, ptgx_words_doc):
-    words = page("Q3 2027 is planned and Q3 2027 is planned and Q3 2027 is planned.")
+    """A fragment quote cannot cover a passage that holds more than it: the whole unresolved passage surfaces."""
+    words = page("Q3 2027 is planned and Q1 2028 is planned.")
     doc = {"words": words, "page_width": 612.0, "page_height": 792.0}
     short = [{"quote": "Q3 2027 is planned and", "status": "matched"}]
     rows = possible_event_rows(doc, short, ptgx_run["sources"][0], first_index=1, at="2026-10-29T00:00:00+00:00",
                                today=TODAY, ticker="PTGX", company="Protagonist")
-    assert len(rows) == 1 and rows[0]["quote"].startswith("Q3 2027 is planned and Q3 2027")
+    assert len(rows) == 1 and rows[0]["quote"] == "Q3 2027 is planned and Q1 2028 is planned."
+    assert "several events or periods" in rows[0]["status_text"]
 
 
 def test_coverage_counts_dates_after_the_sources_published_date_not_the_run_day(reading, tmp_path):
@@ -659,4 +671,238 @@ def test_coverage_vague_period_and_known_program():
 def test_coverage_nothing_to_guess_is_all_null():
     (row,) = _rows_for("Plans for next steps in 2027.")
     assert row["guess"]["program"] is None and row["guess"]["event_type"] is None
+
+
+# ---- R2-20: the coverage splitter — one candidate per sentence/action, never the first date for all
+
+
+def _items(*lines):
+    """Words in lines with block/line ids: each line is (block, line, x0, [texts])."""
+    out = []
+    for li, (block, ln, x0, texts) in enumerate(lines):
+        for wi, t in enumerate(texts):
+            out.append({"id": f"i{li}w{wi}", "text": t, "x0": x0 + wi * 44.0, "y0": li * 16.0,
+                        "x1": x0 + wi * 44.0 + 40.0, "y1": li * 16.0 + 10.0, "block": block, "line": ln})
+    return out
+
+
+def test_a_slide_stream_is_cut_at_its_bullet_glyphs():
+    got = coverage.sentences(page("Milestones » Topline data in Q3 2027 » Enrollment ends in 1H 2028"))
+    assert [s["text"] for s in got] == ["Milestones", "Topline data in Q3 2027", "Enrollment ends in 1H 2028"]
+
+
+def test_a_lowercase_o_at_a_line_start_is_a_sub_bullet():
+    words = _items((0, 0, 33.8, ["The", "list"]), (0, 1, 51.9, ["o", "Data", "in", "Q3", "2027."]))
+    assert [s["text"] for s in coverage.sentences(words)] == ["The list", "Data in Q3 2027."]
+    # twelve-4 ex991-p2 w428: the 'o' bullet is the only word of its own line in the text layer
+    got = coverage.sentences(page("Initiation expected in early Q1 2027. o PN-881 achieved levels."))
+    assert [s["text"] for s in got] == ["Initiation expected in early Q1 2027.", "PN-881 achieved levels."]
+
+
+def test_a_lowercase_o_inside_a_line_is_a_letter_not_a_bullet():
+    # twelve-4 ex992-p15/p25/p38: chart labels arrive as one letter per token ("Hematocrit", "Body")
+    got = coverage.sentences(page("H e m a t o c r i t control in Q3 2027."))
+    assert [s["text"] for s in got] == ["H e m a t o c r i t control in Q3 2027."]
+
+
+def test_a_dash_inside_a_line_is_a_dash_not_a_bullet():
+    got = coverage.sentences(page("PN - 881 expects topline data in Q3 2027."))
+    assert [s["text"] for s in got] == ["PN - 881 expects topline data in Q3 2027."]
+    got = coverage.sentences(_items((0, 0, 33.8, ["IL", "-", "17", "antagonist", "in", "Q3", "2027."])))
+    assert [s["text"] for s in got] == ["IL - 17 antagonist in Q3 2027."]
+
+
+def test_a_dash_or_star_opening_a_line_is_a_bullet():
+    words = _items((0, 0, 33.8, ["The", "list"]), (0, 1, 33.8, ["-", "Data", "in", "Q3", "2027."]),
+                   (0, 2, 33.8, ["*", "More", "in", "1H", "2028"]))
+    assert [s["text"] for s in coverage.sentences(words)] == ["The list", "Data in Q3 2027.", "More in 1H 2028"]
+
+
+def test_a_new_block_or_another_indent_alone_never_cuts():
+    # the code adviser's reproductions: ordinary layouts must not split a wrapped sentence
+    words = _items((0, 0, 54.0, ["A", "heading"]), (1, 0, 54.0, ["data", "in", "Q3", "2027."]))
+    assert [s["text"] for s in coverage.sentences(words)] == ["A heading data in Q3 2027."]
+    words = _items((0, 0, 51.9, ["Topline", "data", "in", "Q3", "2027"]),
+                   (0, 1, 51.9, ["and", "enrollment", "to", "follow"]),
+                   (0, 2, 33.8, ["Next", "block."]))
+    assert [s["text"] for s in coverage.sentences(words)] == [
+        "Topline data in Q3 2027 and enrollment to follow Next block."]
+
+
+def test_a_wrapped_sentence_stays_one_across_indents_and_blocks():
+    words = _items((0, 0, 72.0, ["We", "expect", "topline", "data"]), (0, 1, 54.0, ["in", "Q3", "2027."]))
+    assert [s["text"] for s in coverage.sentences(words)] == ["We expect topline data in Q3 2027."]
+    words = _items((0, 0, 54.0, ["•", "PN-1", "will", "report"]), (0, 1, 72.0, ["in", "Q3", "2027."]))
+    assert [s["text"] for s in coverage.sentences(words)] == ["PN-1 will report in Q3 2027."]
+    words = _items((0, 0, 54.0, ["We", "expect", "topline", "data"]), (1, 0, 54.0, ["in", "Q3", "2027."]))
+    assert [s["text"] for s in coverage.sentences(words)] == ["We expect topline data in Q3 2027."]
+
+
+def test_the_sendback_check_accepts_a_wrapped_sentence():
+    from server.jobs import Job
+    words = _items((0, 0, 72.0, ["We", "expect", "topline", "data"]), (0, 1, 54.0, ["in", "Q3", "2027."]))
+    assert Job.is_printed_sentence("We expect topline data in Q3 2027.", {"words": words}) is True
+
+
+def test_a_lowercase_o_inside_a_word_run_is_a_letter():
+    assert [s["text"] for s in coverage.sentences(page("The class o shares will be issued in Q3 2027."))] == [
+        "The class o shares will be issued in Q3 2027."]
+
+
+def test_a_smart_quote_does_not_swallow_the_next_sentence():
+    got = coverage.sentences(page("She said it ends.” Next starts here. He spoke.”"))
+    assert [s["text"] for s in got] == ["She said it ends.”", "Next starts here.", "He spoke.”"]
+
+
+def test_one_candidate_per_action_each_with_its_own_date():
+    # Job 2j ruling (orders/DEVIN_JOB_2J_NO_SPLIT.md): within-sentence splitting is removed — a known-program
+    # list names programs, not actions; a multi-timing sentence is ONE unresolved candidate for the person.
+    got = coverage.dated_sentences(page("PN-100 reports in Q1 2027 and PN-200 reports in Q3 2027."), TODAY)
+    [s] = got
+    assert s["several"] and s["dates"] == ["Q1 2027", "Q3 2027"]
+    assert s["text"] == "PN-100 reports in Q1 2027 and PN-200 reports in Q3 2027."
+
+
+def test_a_non_program_subject_keeps_one_unresolved_passage():
+    got = coverage.dated_sentences(page("Study A reports in Q1 2027 and Study B in Q3 2027."), TODAY)
+    [s] = got
+    assert s["several"], "no second program name: the whole passage stays unresolved"
+
+
+def test_a_conditional_timing_clause_keeps_one_unresolved_passage():
+    for cond in ("if the FDA requests additional follow-up", "if Phase 2 follow-up takes longer",
+                 "after 3 additional months of follow-up", "if follow-up takes longer"):
+        text = f"PN-100 results are expected in Q1 2027 or, {cond}, in Q3 2027."
+        [row] = _rows_for(None, words=page(text))
+        assert row["quote"] == text and row["status"] == "undecided", cond
+
+
+def test_a_regulator_or_shape_lookalike_never_splits_known_or_not():
+    for name in ("MHRA", "PMDA", "DSMB", "ESC", "COVID-19", "PHASE-2"):
+        text = f"PN-100 results are expected in Q1 2027 or, if the {name} requests more data, in Q3 2027."
+        [row] = _rows_for(None, words=page(text))
+        assert row["quote"] == text and "several events or periods" in row["status_text"], name
+        [row] = _rows_for(None, words=page(text), rows=[{"program": "PN-100"}, {"program": name}])
+        assert row["quote"] == text and "several events or periods" in row["status_text"], \
+            f"{name} on the known list is still a condition, not a second event"
+
+
+def test_a_known_program_inside_a_condition_is_not_a_second_event():
+    text = ("PN-100 results are expected in Q1 2027 or, if PN-200 recruitment delays shared sites, "
+            "in Q3 2027.")
+    [row] = _rows_for(None, words=page(text), rows=[{"program": "PN-100"}, {"program": "PN-200"}])
+    assert row["quote"] == text and "several events or periods" in row["status_text"]
+
+
+def test_two_actions_of_the_same_program_are_one_unresolved_candidate():
+    text = "PN-100 reports topline data in Q1 2027 and PN-100 submits the NDA in Q3 2027."
+    [row] = _rows_for(None, words=page(text), rows=[{"program": "PN-100"}, {"program": "PN-200"}])
+    assert row["quote"] == text and "several events or periods" in row["status_text"]
+    assert row["guess"]["program"] is None, "one program, two actions: the person splits it"
+
+
+def test_an_unrecognised_program_stays_visible_as_unresolved():
+    text = "ZZ-900 reports in Q1 2027 and ZZ-900 submits the NDA in Q3 2027."
+    [row] = _rows_for(None, words=page(text), rows=[{"program": "PN-100"}])
+    assert row["quote"] == text and "several events or periods" in row["status_text"]
+    assert row["guess"]["program"] is None, "never dropped, never attached to the previous program"
+
+
+def test_two_actions_on_one_date_are_one_unresolved_candidate():
+    # Job 2j ruling: even two known programs in one sentence is ONE unresolved candidate — no split.
+    got = coverage.dated_sentences(page("PN-100 reports in Q1 2027 and PN-200 reports in Q1 2027."), TODAY)
+    [s] = got
+    assert s["several"] and s["text"] == "PN-100 reports in Q1 2027 and PN-200 reports in Q1 2027."
+
+
+def test_an_unresolved_passage_attaches_no_program():
+    text = "PN-100 results are expected in Q1 2027 or, if follow-up takes longer, in Q3 2027."
+    [row] = _rows_for(None, words=page(text), rows=[{"program": "PN-100"}, {"program": "PN-200"}])
+    assert "several events or periods" in row["status_text"] and row["guess"]["program"] is None
+
+
+def test_a_respectively_list_is_one_unresolved_candidate_never_per_date_copies():
+    got = coverage.dated_sentences(page("Trials A and B are expected in 2027 and 2028, respectively."), TODAY)
+    [s] = got
+    assert s["several"] and s["dates"] == ["2027", "2028"]
+    assert (s["date"], s["date_end"]) == ("2027-01-01", "2028-12-31")
+    got = coverage.dated_sentences(
+        page("PN-100 and PN-200 report results in Q1 2027 and Q3 2027, respectively."), TODAY)
+    [s] = got
+    assert s["several"] and s["dates"] == ["Q1 2027", "Q3 2027"]
+
+
+def test_an_interval_is_one_candidate_with_its_own_end():
+    [s] = coverage.dated_sentences(page("PN-100 enrollment runs from Q1 2027 through Q3 2027."), TODAY)
+    assert not s["several"] and s["date_text"] == "Q1 2027 through Q3 2027"
+    assert (s["date"], s["date_end"]) == ("2027-01-01", "2027-09-30")
+
+
+def test_an_apostrophe_year_bullet_is_a_candidate_like_the_parser_reads_it():
+    [s] = coverage.dated_sentences(page("» Ph2b PsO study initiation (early Q1 '27)"), TODAY)
+    assert s["date_text"] == "early Q1 '27" and s["date"] == "2027-01-01"
+    assert s["text"] == "Ph2b PsO study initiation (early Q1 '27)"
+    [s] = coverage.dated_sentences(page("» Ph1 Initiation (Q1 ’27)"), TODAY)
+    assert s["date_text"] == "Q1 ’27" and s["date"] == "2027-01-01"
+    assert s["text"] == "Ph1 Initiation (Q1 ’27)"
+
+
+def test_the_short_year_spellings_the_catalogue_reads_all_count():
+    t = date(2026, 10, 13)
+    for text, start in (("Data in Q1 '27.", "2027-01-01"), ("Data in 1H ’27.", "2027-01-01"),
+                        ("Data in Mid ’27.", "2027-05-01"), ("Data in YE’26.", "2026-09-01"),
+                        ("Data in 1Q27.", "2027-01-01")):
+        [s] = coverage.dated_sentences(page(text), t)
+        assert s["date"] == start, text
+    assert coverage.dated_sentences(page("We met in '27 and left."), t) == [], "a bare '27 is no mention"
+
+
+def test_each_mention_maps_to_its_own_printed_occurrence():
+    assert coverage._mentions("Q1 '27 Q1 2027") == [(0, 6), (7, 14)]
+    assert coverage._mentions("Data expected in Q1 '27–Q3 '28.") == [(17, 23), (24, 30)]
+    assert coverage._mentions("Data in Q1 '27.") == [(8, 14)]
+    assert coverage._mentions("Data in YE’26.") == [(8, 13)]
+
+
+def test_a_short_year_range_is_one_unresolved_candidate_never_vanished():
+    for text in ("Data expected in Q1 '27–Q3 '28.", "Data expected in Q1 2027–Q3 2028."):
+        (row,) = _rows_for(None, words=page(text))
+        assert row["quote"] == text and (row["date"], row["date_end"]) == ("2027-01-01", "2028-09-30")
+        assert "several events or periods" in row["status_text"] and row["guess"]["program"] is None
+
+
+def test_alternative_timing_is_not_another_action():
+    for text in ("PN-100 reports in Q1 2027 or Q3 2027.", "PN-100 reports in Q1 2027 or in Q3 2027."):
+        (row,) = _rows_for(None, words=page(text))
+        assert row["quote"] == text and "several events or periods" in row["status_text"]
+
+
+def test_a_qualified_range_is_one_interval_candidate():
+    (row,) = _rows_for(None, words=page("PN-100 enrollment runs from Q1 2027 through approximately Q3 2027."))
+    assert row["quote"] == "PN-100 enrollment runs from Q1 2027 through approximately Q3 2027."
+    assert (row["date"], row["date_end"]) == ("2027-01-01", "2027-09-30")
+
+
+def test_a_bare_year_counts_only_when_a_list_joins_it_to_a_real_mention():
+    assert coverage.dated_sentences(page("A column of years: 2026 2027 2028."), TODAY) == []
+    got = coverage.dated_sentences(page("Revenue in 2027 and profits 2028."), TODAY)
+    assert [s["date_text"] for s in got] == ["2027"], "a word, not a comma, between the years"
+
+
+def test_a_slide_page_gives_one_open_row_per_action_not_one_composite(ptgx_run):
+    words = page("Clinical plans » Ph2b topline in 1H 2028 » Ph1 completion in Q4 2026 » More items")
+    rows = _rows_for(None, words=words)
+    assert [(r["date_text"], r["date"]) for r in rows] == [("1H 2028", "2028-01-01"), ("Q4 2026", "2026-10-01")]
+    assert [r["quote"] for r in rows] == ["Ph2b topline in 1H 2028", "Ph1 completion in Q4 2026"]
+    assert all(r["title"].startswith(TITLE) and r["status"] == "undecided" for r in rows)
+
+
+def test_a_multi_event_passage_is_one_row_saying_a_person_must_split_it(ptgx_run):
+    (row,) = _rows_for("Trials A and B are expected in 2027 and 2028, respectively.")
+    assert row["quote"] == "Trials A and B are expected in 2027 and 2028, respectively."
+    assert row["status_text"] == ("Both readers skipped this sentence. It holds several events or periods "
+                                  "(2027, 2028). A person must split it.")
+    assert row["guess"]["program"] is None, "no program suggestion on a several-events row"
+    assert "several events or periods (2027, 2028)" in row["reason"]
+    assert "several events or periods" in row["trail"][1]["text"]
 

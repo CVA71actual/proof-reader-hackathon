@@ -177,13 +177,27 @@ _SHORT_YEAR = re.compile(r"(?<=[A-Za-z0-9])\s*['’‘](\d{2})\b")
 _DIGIT_Q_YEAR = re.compile(r"(?<![A-Za-z0-9])([1-4])Q([23]\d)(?![A-Za-z0-9])", re.I)
 _CAL_YEAR = re.compile(r"\bcalendar year\s+", re.I)
 
+# The two normalisation passes as (pattern, replacement) pairs — THE spelling catalogue, one list. Consumers
+# that need each printed phrase's own span (checks/coverage.py's mention scan) replay the same subs while
+# tracking source offsets, rather than guessing them afterwards.
+_EXPAND_SUBS = [(_SHORT_YEAR, lambda m: f" 20{m[1]}"), (_DIGIT_Q_YEAR, lambda m: f"Q{m[1]} 20{m[2]}")]
+_FIX_SUBS = [
+    (re.compile(r"\byear\s*[-\u2013\u2014]\s*end\b|\byear end\b", re.I), "year-end"),
+    (re.compile(r"\b(first|second|1st|2nd)\s*[-\u2013]\s*half\b", re.I), r"\1 half"),
+    (re.compile(r"(?<![A-Za-z0-9])(?:cy|fy)\s*(\d{4})\b", re.I), r"\1"),
+    (re.compile(r"(?<![A-Za-z0-9])fiscal\s+(\d{4})\b", re.I), r"\1"),
+    (re.compile(r"(?<![A-Za-z0-9])ye\s*(\d{4})\b", re.I), r"year-end \1"),
+]
+
 
 def expand_short_year(text: str | None) -> str:
     """A two-digit year written with an apostrophe is 20YY: 'Q1 ’27' -> 'Q1 2027', 'Aug ’26' -> 'Aug 2026', '1H ’27' ->
     '1H 2027'. Slide-style dates. Without the apostrophe 'Aug 26' is a day, so it is left alone. The quarter forms
     '1Q27' and '4Q26' (no apostrophe) are Q1 2027 and Q4 2026 when the two digits are 20-39."""
-    s = _SHORT_YEAR.sub(lambda m: f" 20{m[1]}", text or "")
-    return _DIGIT_Q_YEAR.sub(lambda m: f"Q{m[1]} 20{m[2]}", s)
+    s = text or ""
+    for pattern, repl in _EXPAND_SUBS:
+        s = pattern.sub(repl, s)
+    return s
 
 
 def fix_wording(text: str | None) -> str:
@@ -191,11 +205,9 @@ def fix_wording(text: str | None) -> str:
     2026', 'year - end' / 'year end' -> 'year-end', 'CY2027' / 'FY2027' / 'fiscal 2027' -> '2027', 'YE 2026' ->
     'year-end 2026'. Run after expand_short_year ('YE’26' is 'YE 2026' by then)."""
     s = text or ""
-    s = re.sub(r"\byear\s*[-\u2013\u2014]\s*end\b|\byear end\b", "year-end", s, flags=re.I)
-    s = re.sub(r"\b(first|second|1st|2nd)\s*[-\u2013]\s*half\b", r"\1 half", s, flags=re.I)
-    s = re.sub(r"(?<![A-Za-z0-9])(?:cy|fy)\s*(\d{4})\b", r"\1", s, flags=re.I)
-    s = re.sub(r"(?<![A-Za-z0-9])fiscal\s+(\d{4})\b", r"\1", s, flags=re.I)
-    return re.sub(r"(?<![A-Za-z0-9])ye\s*(\d{4})\b", r"year-end \1", s, flags=re.I)
+    for pattern, repl in _FIX_SUBS:
+        s = pattern.sub(repl, s)
+    return s
 
 
 def parse_period(text: str | None) -> tuple[date | None, date | None] | None:
