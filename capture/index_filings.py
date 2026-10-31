@@ -46,6 +46,13 @@ NAME_LINE = re.compile(
 _TAGS = re.compile(r"(?s)<(script|style)\b.*?</\1>|<[^>]+>")
 
 
+def _rel_base(filings_root: Path) -> Path:
+    """The ONE path convention: index paths are relative to ~/proof-reader-docs/filings (FILINGS), so a set under
+    FILINGS/<subdir>/ gets "<subdir>/<TICKER>/<accession>/...". A root outside FILINGS (tests) is its own base."""
+    real, base = filings_root.resolve(), FILINGS.resolve()
+    return base if real == base or base in real.parents else real
+
+
 def _read_json(path: Path):
     try:
         return json.loads(path.read_text())
@@ -122,7 +129,8 @@ def index_exhibit(ticker: str, company: str, cik: str | None, form: str, filing_
     renderer = "unknown (indexed from files on disk)"
     captured_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     source_url = ARCHIVES.format(cik=int(cik), acc_nodash=accession.replace("-", "")) + html_path.name if cik else None
-    local_rel = html_path.resolve().relative_to(filings_root.resolve()).as_posix()
+    rel_base = _rel_base(filings_root)
+    local_rel = html_path.resolve().relative_to(rel_base).as_posix()
     pages = []
     for n in nums:
         page_pdf = acc_dir / f"{stem}_p{n}.pdf"
@@ -144,8 +152,8 @@ def index_exhibit(ticker: str, company: str, cik: str | None, form: str, filing_
             "source_url": source_url, "source_format": "html",
             "source_sha256": source_sha, "rendered_pdf_sha256": pdf_sha, "renderer": renderer,
             "rendered_page_count": len(nums), "page_number": n,
-            "page_file": f"{accession}/{page_pdf.name}", "page_sha256": sha256_file(page_pdf),
-            "words_file": f"{accession}/{words_path.name}", "words_sha256": sha256_file(words_path),
+            "page_file": page_pdf.resolve().relative_to(rel_base).as_posix(), "page_sha256": sha256_file(page_pdf),
+            "words_file": words_path.resolve().relative_to(rel_base).as_posix(), "words_sha256": sha256_file(words_path),
             "word_count": wc, "captured_at": captured_at, "capture_tool": f"pymupdf {pymupdf.VersionBind}",
             "id": f"{ticker.lower()}-{re.sub(r'[^a-z0-9]', '', form.lower())}-{accession}-ex{exhibit.replace('.', '')}-p{n}",
             "kind": "events",
@@ -279,7 +287,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Wrote {args.full_out}")
     doc = build_index(by_ticker)
     doc["note"] = ("Written by capture/index_filings.py from files on disk under "
-                   "~/proof-reader-docs/filings/<TICKER>/<accession>/; never in the repo.")
+                   "~/proof-reader-docs/filings/[<subdir>/]<TICKER>/<accession>/; never in the repo. page_file, words_file and "
+                   "local_path are relative to ~/proof-reader-docs/filings (including any <subdir>/), not to the ticker dir.")
     if args.merge:
         base = _read_json(args.merge)
         if not isinstance(base, dict) or "companies" not in base:

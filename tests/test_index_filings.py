@@ -46,7 +46,7 @@ def test_index_hashes_files_and_falls_back(tmp_path):
     assert p["exhibit"] == "99.1" and p["kind"] == "events"
     assert p["page_sha256"] == sha256_file(d / "ex_p1.pdf")
     assert p["words_sha256"] == sha256_file(d / "ex_p1.words.json")
-    assert p["page_file"] == f"{ACC}/ex_p1.pdf"
+    assert p["page_file"] == f"FAKE/{ACC}/ex_p1.pdf"
     assert not str(p["local_path"]).startswith("/")
 
 
@@ -118,3 +118,16 @@ def test_malformed_words_skipped(tmp_path, capsys, body):
     pages = ix.index_ticker("FAKE", tmp_path)
     assert [p["page_number"] for p in pages] == [2]
     assert "malformed" in capsys.readouterr().err
+
+
+def test_subdir_paths_relative_to_filings_root_and_resolvable(tmp_path, monkeypatch):
+    filings = tmp_path / "filings"
+    _make(filings / "fourteen-now")
+    monkeypatch.setattr(ix, "FILINGS", filings)
+    monkeypatch.setattr(sources, "FILINGS", filings)
+    p = ix.index_ticker("FAKE", filings / "fourteen-now")[0]
+    assert p["page_file"] == f"fourteen-now/FAKE/{ACC}/ex_p1.pdf"
+    assert p["words_file"] == f"fourteen-now/FAKE/{ACC}/ex_p1.words.json"
+    assert p["local_path"] == f"fourteen-now/FAKE/{ACC}/ex.htm"
+    for k in ("page_file", "words_file", "local_path"):
+        assert sources._resolve(p[k], "FAKE", None) == filings / p[k]
