@@ -5,10 +5,12 @@ Usage (from the repo root):
     python -m capture.fetch_filings --tickers all --days 90
 
 For each ticker: list 8-K filings from the EDGAR submissions JSON in the last N days, fetch each filing's
-EX-99.* HTML exhibits (User-Agent from SEC_USER_AGENT), render each to a Letter PDF with headless Chrome
-exactly as the PTGX pin (--headless --disable-gpu --no-pdf-header-footer --print-to-pdf), hash the HTML
-and the PDF, cut every page and its words, and store under ~/proof-reader-docs/filings/<TICKER>/<accession>/
-(never in the repo). Writes runs/sources_index.twelve.json for Job 9 (MANIFEST-shaped page entries, kind=events).
+EX-99.* HTML exhibits (User-Agent from SEC_USER_AGENT), render each to PDF with headless Chrome
+(--headless --disable-gpu --no-pdf-header-footer --print-to-pdf; paper sized to fit wide slides/tables,
+never crop at a fixed Letter width), hash the HTML and the PDF, cut every page and its words, and store
+under ~/proof-reader-docs/filings/<TICKER>/<accession>/ (never in the repo). A page whose content box
+extends past the rendered page is marked capture_incomplete in its words doc. Writes
+runs/sources_index.twelve.json for Job 9 (MANIFEST-shaped page entries, kind=events).
 
 At most 10 requests per second. No model calls.
 """
@@ -33,7 +35,7 @@ from urllib.parse import urljoin
 import pymupdf
 
 from capture.capture_page import extract_page, page_words, sha256_file
-from capture.capture_source import DOCS
+from capture.capture_source import DOCS, apply_capture_completeness, completeness_fields
 
 REPO = Path(__file__).resolve().parent.parent
 FILINGS = DOCS / "filings"
@@ -331,13 +333,80 @@ def renderer_label(chrome: Path) -> str:
     return f"{ver} headless print-to-pdf"
 
 
+# Letter defaults; widened when the exhibit holds a wider image or table.
+LETTER_WIDTH_IN = 8.5
+LETTER_HEIGHT_IN = 11.0
+PRINT_MARGIN_IN = 0.4
+# CSS px → inches at the print reference density Chrome uses for intrinsic image sizes.
+CSS_PX_PER_IN = 96.0
+
+
+def _image_pixel_size(path: Path) -> tuple[int, int] | None:
+    """(width, height) of a raster next to the exhibit, or None when unreadable."""
+    try:
+        pix = pymupdf.Pixmap(path)
+    except Exception:
+        return None
+    try:
+        return int(pix.width), int(pix.height)
+    finally:
+        pix = None
+
+
+def paper_size_for_html(html_path: Path) -> tuple[float, float]:
+    """Paper width/height in inches that fits the exhibit: at least Letter; wider when a local image needs it."""
+    html_dir = html_path.parent
+    text = html_path.read_text(encoding="utf-8", errors="replace")
+    max_w_in = LETTER_WIDTH_IN
+    max_h_in = LETTER_HEIGHT_IN
+    for m in IMG_REF.finditer(text):
+        ref = m.group(1).strip().split("?", 1)[0]
+        if ref.startswith(("http://", "https://", "data:", "#")):
+            continue
+        img_path = html_dir / Path(ref).name
+        if not img_path.is_file():
+            continue
+        size = _image_pixel_size(img_path)
+        if not size:
+            continue
+        w_in = size[0] / CSS_PX_PER_IN + 2 * PRINT_MARGIN_IN
+        h_in = size[1] / CSS_PX_PER_IN + 2 * PRINT_MARGIN_IN
+        max_w_in = max(max_w_in, w_in)
+        # Keep height at least Letter; a tall slide still paginates vertically under @page height.
+        max_h_in = max(max_h_in, min(h_in, LETTER_HEIGHT_IN * 2))
+    # Cap absurd sizes (broken metadata) so Chrome still prints.
+    return min(max_w_in, 36.0), min(max_h_in, 36.0)
+
+
+def _print_html_with_page_size(html_path: Path, width_in: float, height_in: float) -> Path:
+    """Write a sibling HTML that sets @page to the content-fit size (Chrome headless honors it on print)."""
+    raw = html_path.read_text(encoding="utf-8", errors="replace")
+    style = (
+        f"<style>@page{{size:{width_in:.4f}in {height_in:.4f}in;margin:{PRINT_MARGIN_IN}in}}"
+        "html,body{margin:0}"
+        # Do not shrink wide slides to Letter — the page grows to fit them.
+        "img{max-width:none!important;height:auto!important}"
+        "</style>"
+    )
+    if re.search(r"(?i)<head>", raw):
+        html = re.sub(r"(?i)<head>", lambda m: m.group(0) + style, raw, count=1)
+    else:
+        html = style + raw
+    out = html_path.parent / f".print_{html_path.name}"
+    out.write_text(html, encoding="utf-8")
+    return out
+
+
 def render_html_to_pdf(html_path: Path, pdf_path: Path, chrome: Path | None = None) -> str:
-    """Render a local HTML file to a Letter PDF with headless Chrome (PTGX pin flags). Returns the renderer label."""
+    """Render a local HTML exhibit to PDF with headless Chrome. Paper is sized to fit wide images/tables
+    (not cropped at Letter). Returns the renderer label."""
     chrome = find_chrome(chrome)
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     if pdf_path.exists():
         pdf_path.unlink()
-    url = html_path.resolve().as_uri()
+    width_in, height_in = paper_size_for_html(html_path)
+    print_html = _print_html_with_page_size(html_path, width_in, height_in)
+    url = print_html.resolve().as_uri()
     cmd = [
         str(chrome),
         "--headless",
@@ -353,6 +422,11 @@ def render_html_to_pdf(html_path: Path, pdf_path: Path, chrome: Path | None = No
         raise FetchError(f"Chrome failed to render {html_path.name}: {err or e}.") from e
     except subprocess.TimeoutExpired as e:
         raise FetchError(f"Chrome timed out rendering {html_path.name}.") from e
+    finally:
+        try:
+            print_html.unlink(missing_ok=True)
+        except OSError:
+            pass
     if not pdf_path.is_file() or pdf_path.stat().st_size < 64:
         raise FetchError(f"Chrome wrote no PDF for {html_path.name}.")
     return renderer_label(chrome)
@@ -415,8 +489,11 @@ def save_exhibit_assets(
             continue
 
 
-def cut_pages(full_pdf: Path, dest_dir: Path, stem: str) -> list[dict]:
-    """Cut each page of the rendered PDF into a single-page PDF + words.json. Returns page records (no hashes yet)."""
+def cut_pages(full_pdf: Path, dest_dir: Path, stem: str, *, html_text: str | None = None) -> list[dict]:
+    """Cut each page of the rendered PDF into a single-page PDF + words.json. Returns page records (no hashes yet).
+
+    Completeness is assessed once into the words doc and copied onto each page record (not reconstructed later).
+    """
     doc = pymupdf.open(full_pdf)
     count = doc.page_count
     doc.close()
@@ -427,17 +504,19 @@ def cut_pages(full_pdf: Path, dest_dir: Path, stem: str) -> list[dict]:
         words_file = f"{stem}_p{page_no}.words.json"
         page_pdf = dest_dir / page_file
         extract_page(full_pdf, i, page_pdf)
-        words = page_words(page_pdf, page_no)
+        words = apply_capture_completeness(page_words(page_pdf, page_no), page_pdf, html_text=html_text)
         words_path = dest_dir / words_file
         words_path.write_text(json.dumps(words, indent=1) + "\n")
-        pages.append({
+        rec = {
             "page_number": page_no,
             "page_file": page_file,
             "words_file": words_file,
             "page_sha256": sha256_file(page_pdf),
             "words_sha256": sha256_file(words_path),
             "word_count": len(words["words"]),
-        })
+        }
+        rec.update(completeness_fields(words))
+        pages.append(rec)
     return pages
 
 
@@ -473,7 +552,8 @@ def capture_exhibit(
     full_pdf = dest_dir / f"{stem}.pdf"
     renderer = render(dest_dir / html_name, full_pdf, chrome)
     rendered_sha = sha256_file(full_pdf)
-    page_bits = cut_pages(full_pdf, dest_dir, stem)
+    html_text = html_bytes.decode("utf-8", errors="replace")
+    page_bits = cut_pages(full_pdf, dest_dir, stem, html_text=html_text)
     exhibit = exhibit or exhibit_number(html_name)
     captured_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     source_url = urljoin(base_url, html_name)
@@ -522,6 +602,8 @@ def capture_exhibit(
         }
         if exhibit_title:
             entry["exhibit_title"] = exhibit_title
+        # Carry the words-doc completeness record onto the exhibit entry (do not drop or recompute).
+        entry.update(completeness_fields(p))
         out.append(entry)
     return out
 

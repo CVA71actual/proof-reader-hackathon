@@ -31,6 +31,7 @@ from pathlib import Path
 import pymupdf
 
 from capture.capture_page import sha256_file
+from capture.capture_source import completeness_fields
 from capture.fetch_filings import (
     ARCHIVES, CIKS, FILINGS, build_index, exhibit_number, write_index,
 )
@@ -164,6 +165,17 @@ def index_exhibit(ticker: str, company: str, cik: str | None, form: str, filing_
             entry["cik"] = str(int(cik))
         if date_source:
             entry["filing_date_source"] = date_source
+        # Carry completeness from the words doc (one authoritative record). Legacy words without a
+        # completeness field are not certified complete — silence is not establishment.
+        carried = completeness_fields(words)
+        if carried:
+            entry.update(carried)
+        else:
+            entry["completeness_not_established"] = True
+            entry["certified_complete"] = False
+            entry["completeness_reason"] = (
+                "Completeness was not recorded in the words doc at capture; it is not established at index time."
+            )
         pages.append(entry)
     return pages
 

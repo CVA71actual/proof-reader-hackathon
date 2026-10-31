@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +33,154 @@ REPO = Path(__file__).resolve().parent.parent
 FIXTURES = REPO / "fixtures"
 MANIFEST_FILE = "MANIFEST.json"
 DOCS = Path.home() / "proof-reader-docs"
+
+# A drawn/image/text box that extends past the page (beyond this slack in PDF points) is clipped.
+CLIP_SLACK_PT = 1.0
+# Default get_text("words") clips to the page; off-page text is invisible to that call. Use an unbounded
+# clip so geometry reflects what the PDF actually holds (MuPDF still has the glyphs).
+_UNBOUNDED = pymupdf.Rect(-1e5, -1e5, 1e5, 1e5)
+# CSS that can discard layout before print — surviving PDF geometry cannot show retention.
+_HTML_CLIP_CSS = re.compile(
+    r"overflow\s*:\s*(hidden|clip)\b|clip-path\s*:|clip\s*:\s*rect\s*\(",
+    re.IGNORECASE,
+)
+# Fields that form the one capture-completeness record (written once, copied forward — never reconstructed).
+COMPLETENESS_KEYS = (
+    "capture_incomplete",
+    "capture_incomplete_reason",
+    "certified_complete",
+    "completeness_not_established",
+    "completeness_reason",
+)
+
+
+def completeness_fields(src: dict) -> dict:
+    """Copy the completeness record from words or a page entry (authoritative fields only)."""
+    return {k: src[k] for k in COMPLETENESS_KEYS if k in src}
+
+
+def page_content_bbox(page: pymupdf.Page) -> pymupdf.Rect | None:
+    """Union of text (including off-page glyphs), image, and path bounds, or None when empty."""
+    boxes: list[pymupdf.Rect] = []
+    for w in page.get_text("words", clip=_UNBOUNDED) or []:
+        boxes.append(pymupdf.Rect(w[:4]))
+    for info in page.get_image_info() or []:
+        bbox = info.get("bbox")
+        if bbox:
+            boxes.append(pymupdf.Rect(bbox))
+    for d in page.get_drawings() or []:
+        r = d.get("rect")
+        if r:
+            boxes.append(pymupdf.Rect(r))
+    if not boxes:
+        return None
+    out = pymupdf.Rect(boxes[0])
+    for b in boxes[1:]:
+        out |= b
+    return out
+
+
+def page_clip_reason(pdf: Path, slack_pt: float = CLIP_SLACK_PT) -> str | None:
+    """If any page's content box extends past the rendered page box, return a plain reason; else None.
+
+    Uses unbounded text extraction so text positioned outside the page is not mistaken for absence.
+    """
+    doc = pymupdf.open(pdf)
+    try:
+        for i in range(doc.page_count):
+            page = doc[i]
+            content = page_content_bbox(page)
+            if content is None:
+                continue
+            pr = page.rect
+            overflow_right = content.x1 - pr.x1
+            overflow_left = pr.x0 - content.x0
+            overflow_bottom = content.y1 - pr.y1
+            overflow_top = pr.y0 - content.y0
+            if max(overflow_right, overflow_left, overflow_bottom, overflow_top) <= slack_pt:
+                continue
+            parts = []
+            if overflow_right > slack_pt:
+                parts.append(f"right by {overflow_right:.1f}pt")
+            if overflow_left > slack_pt:
+                parts.append(f"left by {overflow_left:.1f}pt")
+            if overflow_bottom > slack_pt:
+                parts.append(f"bottom by {overflow_bottom:.1f}pt")
+            if overflow_top > slack_pt:
+                parts.append(f"top by {overflow_top:.1f}pt")
+            where = f"page {i + 1} of {pdf.name}" if doc.page_count > 1 else pdf.name
+            return (f"Content bounding box extends past the rendered page box on {where} "
+                    f"({', '.join(parts)}; content "
+                    f"[{content.x0:.1f},{content.y0:.1f},{content.x1:.1f},{content.y1:.1f}] vs page "
+                    f"[{pr.x0:.1f},{pr.y0:.1f},{pr.x1:.1f},{pr.y1:.1f}]).")
+    finally:
+        doc.close()
+    return None
+
+
+def html_has_clipping_css(html_text: str | None) -> bool:
+    """True when the source HTML can discard laid-out content before print (overflow/clip)."""
+    return bool(html_text and _HTML_CLIP_CSS.search(html_text))
+
+
+def assess_capture_completeness(
+    page_pdf: Path,
+    *,
+    html_text: str | None = None,
+    slack_pt: float = CLIP_SLACK_PT,
+) -> dict:
+    """One completeness record for a captured page.
+
+    Overflow measured at the page boundary -> capture_incomplete. Anything else -> completeness_not_established.
+    Completeness is never inferred from absence: a CSS clipping blacklist (inline, linked or otherwise) finding
+    nothing establishes nothing, and discarded content cannot be recovered from the surviving PDF. Nothing here sets
+    certified_complete=True; there is no positive completeness signal available at this layer.
+    """
+    clip_reason = page_clip_reason(page_pdf, slack_pt=slack_pt)
+    if clip_reason:
+        return {
+            "capture_incomplete": True,
+            "certified_complete": False,
+            "capture_incomplete_reason": clip_reason,
+        }
+    if html_has_clipping_css(html_text):
+        reason = (
+            "Source HTML uses CSS clipping (overflow:hidden/clip or clip-path). Content discarded "
+            "before PDF generation cannot be recovered from surviving PDF objects. No page-boundary "
+            "overflow was detected; that does not establish a complete capture."
+        )
+    else:
+        reason = (
+            "No page-boundary overflow was detected, which does not establish a complete capture "
+            "(clipping can come from inline or linked CSS or elsewhere and is not reliably detectable). "
+            "Completeness is not established."
+        )
+    return {
+        "completeness_not_established": True,
+        "certified_complete": False,
+        "completeness_reason": reason,
+    }
+
+
+def apply_capture_completeness(
+    words: dict,
+    page_pdf: Path | None = None,
+    *,
+    html_text: str | None = None,
+    slack_pt: float = CLIP_SLACK_PT,
+    assessment: dict | None = None,
+) -> dict:
+    """Write the one completeness record into the words doc.
+
+    Pass `assessment` to reuse an already-computed record (pinned capture computes it once).
+    """
+    fields = assessment if assessment is not None else assess_capture_completeness(
+        page_pdf, html_text=html_text, slack_pt=slack_pt)
+    words = dict(words)
+    for k in COMPLETENESS_KEYS:
+        words.pop(k, None)
+    words.update(fields)
+    return words
 
 # One entry per pinned page. The pin record is orders/R4A_PIN_PTGX_2026-10-28.md in the ops record.
 PINS = {
@@ -79,6 +228,9 @@ def capture(pin_id: str, source: Path | None = None, fixtures: Path = FIXTURES) 
     page_file, words_file = f"{pin_id}.pdf", f"{pin_id}.words.json"
     page_pdf = fixtures / page_file
     extract_page(source, pin["page_number"] - 1, page_pdf)
+    completeness = assess_capture_completeness(page_pdf)
+    # Pinned fixture words stay byte-stable (their hash is pinned); the one assessment, computed above,
+    # is carried on the manifest entry instead.
     words = page_words(page_pdf, pin["page_number"])
     words_path = fixtures / words_file
     words_path.write_text(json.dumps(words, indent=1) + "\n")
@@ -93,6 +245,7 @@ def capture(pin_id: str, source: Path | None = None, fixtures: Path = FIXTURES) 
         "captured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "capture_tool": f"pymupdf {pymupdf.VersionBind}",
     })
+    entry.update(completeness)
     manifest_path = fixtures / MANIFEST_FILE
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
     manifest.setdefault("entries", {})[pin_id] = entry
