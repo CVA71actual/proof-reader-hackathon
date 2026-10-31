@@ -419,12 +419,25 @@ def test_several_events_none_of_them_this_rows_means_no_answer_for_it(runs_dir):
     assert "held no event for this row" in next(t for t in row["trail"] if t["step"] == "Escalation result")["text"]
 
 
-def test_one_event_with_no_overlap_is_still_the_answer_when_the_rows_own_quote_was_the_problem():
+def test_a_single_unrelated_result_cannot_replace_a_row(runs_dir):
+    first = FakeReader(answer=lambda p, n: json.dumps({"events": wrong_date_events()}))
+    other = [e for e in right_events() if e["date_text"] != "Q1 2027"]
+    elsewhere = [{**other[0], "program": "PN-1", "quote": "Something else is expected in Q4 2028."}]
+    _, rid = start(runs_dir, first, None, FakeWonder(answer=lambda p, i, n: elsewhere))
+    run = run_of(runs_dir, rid)
+    row = next(r for r in run["rows"] if r["date_text"] == "Q1 2027")
+    assert row["status"] == "failed" and row["group"] == "open"
+    assert not run["mistakes"] and "held no event for this row" in next(
+        t for t in row["trail"] if t["step"] == "Escalation result")["text"]
+
+
+def test_a_single_unrelated_event_is_not_this_rows_answer_but_a_same_event_correction_is():
     row = {"quote": "A quote the reader mangled."}
     only = {"quote": "The real sentence.", "program": "X"}
-    assert escalate.pick(row, [only]) is only
+    assert escalate.pick(row, [only]) is None
     assert escalate.pick(row, [only, {"quote": "Another one."}]) is None
     assert escalate.pick({"quote": "The real sentence."}, [{"quote": "Another one."}, only]) is only
+    assert escalate.pick({"quote": "The real sentence is here."}, [only]) is only
 
 
 # ---------------------------------------------------------------- the saved live runs
@@ -480,3 +493,208 @@ def test_the_two_reader_run_records_that_the_second_reader_read_the_image():
         step = next(t for t in row["trail"] if t["step"] == "Sent the page image to Muse Spark Open")
         assert step["tag"] == "Code"
         assert row["status"] == "matched" and "disagreement" not in row
+
+
+# ---------------------------------------------------------------- Job 49c: a disagreement is held whatever was saved
+
+
+def _held_row(runs_dir, words_doc):
+    """The adviser's sequence: Q1 2027 read as 2027-02-01 by the first reader (the date check fails) and 2027-01-01
+    by the second reader (a real two-sided disagreement on date); Wonder supplies the date."""
+    first = FakeReader(answer=lambda p, n: json.dumps({"events": wrong_date_events()}))
+    wonder = FakeWonder(answer=reread_right(words_doc))
+    client, rid = start(runs_dir, first, FakeSecond(answer=lambda p, n: json.dumps({"events": right_events()})), wonder)
+    run = run_of(runs_dir, rid)
+    row = next(r for r in run["rows"] if r["date_text"] == "Q1 2027")
+    return client, rid, run, row, wonder
+
+
+def test_escalation_replaces_the_proposal_but_leaves_a_real_disagreement_held(runs_dir, words_doc):
+    _, rid, run, row, wonder = _held_row(runs_dir, words_doc)
+    assert row["disagreement"]["field"] == "date" and wonder.prompts
+    assert row["date"] == "2027-01-01"                                  # the proposal was replaced
+    assert (row["status"], row["group"]) == ("undecided", "open")        # and the hold stays
+    st = current_state(run, [])
+    t = st["targets"][row["id"]]
+    assert (t["status"], t["group"], t["decided_by_person"]) == ("undecided", "open", False)
+    assert st["unresolved"] >= 1
+
+
+def test_a_fix_of_another_field_does_not_clear_the_hold_but_a_fix_of_the_disputed_field_does(runs_dir, words_doc):
+    _, rid, run, row, _ = _held_row(runs_dir, words_doc)
+    d = row["disagreement"]
+    pass_rc = {"result": "pass", "reason": None, "checks": [], "before": {"result": "fail"}, "after": {"result": "pass"}}
+
+    def fix(field, frm, to):
+        return [{"by": "person", "target": row["id"], "action": "fix", "fix": {"field": field, "from": frm, "to": to},
+                 "at": "t"},
+                {"by": "code", "target": row["id"], "action": "recheck", "recheck": pass_rc, "at": "t"}]
+
+    other = current_state(run, fix("title", row["title"], "A new title"))["targets"][row["id"]]
+    assert other["status"] == "undecided"                                # base held: date fix cannot settle it
+    settled = current_state(run, fix("date", row["date"], "2027-01-02"))["targets"][row["id"]]
+    assert settled["status"] == "matched" and settled["group"] == "corrected"
+    # the same row with the readers disputing the program instead: a date fix leaves it held
+    prog = copy.deepcopy(run)
+    r2 = next(r for r in prog["rows"] if r["id"] == row["id"])
+    r2["disagreement"] = {"field": "program", "first_reader": "A", "second_reader": "B"}
+    held = current_state(prog, fix("date", row["date"], "2027-01-02"))["targets"][row["id"]]
+    assert held["status"] == "undecided" and held["group"] == "corrected"
+    assert current_state(prog, fix("program", row["program"], "B"))["targets"][row["id"]]["status"] == "matched"
+
+
+def test_a_date_send_back_keeps_an_existing_disagreement_held(runs_dir, words_doc):
+    """A row the readers disagree on (date) whose date text is off its quote is sent back for the sentence: the
+    proposal takes the sentence and its checks, but the disagreement stays held."""
+    _, rid = start(runs_dir, FakeReader(), FakeSecond(answer=lambda p, n: json.dumps({"events": wrong_date_events()})))
+    run = run_of(runs_dir, rid)
+    row = next(r for r in run["rows"] if r.get("disagreement"))
+    assert row["disagreement"]["field"] == "date"
+    quote = row["quote"]
+    row["date_text"], row["status"], row["group"] = "Q1 \u201927", "matched", "corrected"     # as an earlier pass left it
+    job = jobs.Job.__new__(jobs.Job)
+    job.run = run
+    reading = {"usage": {"prompt_tokens": 10, "completion_tokens": 5}, "model": "muse-spark-1.3", "prompt_text": "prompt"}
+    job.apply_send_back(row, {"id": row["id"], "quote": quote, "date_text": "Q1 2027"}, reading, run["sources"][0],
+                        words_doc, (10, 5, 1), "prompt", "t")
+    assert "Send-back result" in [t["step"] for t in row["trail"]] and row["date_text"] == "Q1 2027"
+    assert (row["status"], row["group"]) == ("undecided", "open")
+
+
+# ---------------------------------------------------------------- Job 49d: the hold clears only when every disputed field is fixed
+
+
+def _two_field_run(runs_dir, words_doc):
+    _, rid, run, row, _ = _held_row(runs_dir, words_doc)
+    run = copy.deepcopy(run)
+    r = next(x for x in run["rows"] if x["id"] == row["id"])
+    r["status"], r["group"] = "matched", "kept"                      # saved as settled; the disagreement still holds
+    r["disagreement"] = {"field": "date", "first_reader": "2027-02-01", "second_reader": "2027-01-01",
+                         "also": [{"field": "program", "first_reader": "A", "second_reader": "B"}]}
+    return run, r
+
+
+def _fix_pair(r, field, to):
+    pass_rc = {"result": "pass", "reason": None, "checks": [], "before": {"result": "fail"}, "after": {"result": "pass"}}
+    return [{"by": "person", "target": r["id"], "action": "fix", "fix": {"field": field, "from": r.get(field), "to": to},
+             "at": "t"},
+            {"by": "code", "target": r["id"], "action": "recheck", "recheck": pass_rc, "at": "t"}]
+
+
+@pytest.mark.parametrize("first,second", [("program", "date"), ("date", "program")])
+def test_a_two_field_disagreement_clears_only_when_both_fields_are_fixed(runs_dir, words_doc, first, second):
+    from runs.calendar import calendar_entries
+    run, r = _two_field_run(runs_dir, words_doc)
+    new = {"date": "2027-01-02", "program": "B"}
+    t = current_state(run, [])["targets"][r["id"]]
+    assert (t["status"], t["group"]) == ("undecided", "open")
+    d1 = _fix_pair(r, first, new[first])
+    st = current_state(run, d1)
+    t = st["targets"][r["id"]]
+    assert t["status"] == "undecided" and f"still disputed: {second}" in t["reason"].lower()
+    assert st["unresolved"] >= 1 and r["id"] not in [e["id"] for e in calendar_entries(run, st)]
+    st = current_state(run, d1 + _fix_pair({**r, first: new[first]}, second, new[second]))
+    t = st["targets"][r["id"]]
+    assert (t["status"], t["group"]) == ("matched", "corrected")
+    assert r["id"] in [e["id"] for e in calendar_entries(run, st)]
+    assert st["unresolved"] == 0
+
+
+def test_a_keep_clears_a_two_field_hold_and_a_single_field_hold_is_unchanged(runs_dir, words_doc):
+    run, r = _two_field_run(runs_dir, words_doc)
+    keep = [{"by": "person", "target": r["id"], "action": "keep", "note": None, "at": "t"}]
+    assert current_state(run, keep)["targets"][r["id"]]["group"] == "kept"
+    del r["disagreement"]["also"]
+    one = current_state(run, _fix_pair(r, "date", "2027-01-02"))["targets"][r["id"]]
+    assert (one["status"], one["group"]) == ("matched", "corrected")
+
+
+# ---------------------------------------------------------------- Job 49e: resolution independent of correction order
+
+
+def _date_and_program_run(runs_dir):
+    """Readers disagree on date AND program; the first reader's date (2027-02-01) fails the date check."""
+    ev1, ev2 = wrong_date_events(), copy.deepcopy(right_events())
+    for evs in (ev1, ev2):
+        for e in evs:
+            if e["date_text"] == "Q1 2027":
+                e["indication"] = "Shared indication"          # the readers pair on a shared name
+                if evs is ev2:
+                    e["program"] = "Other program"
+    first = FakeReader(answer=lambda p, n: json.dumps({"events": ev1}))
+    client, rid = start(runs_dir, first, FakeSecond(answer=lambda p, n: json.dumps({"events": ev2})))
+    row = next(r for r in run_of(runs_dir, rid)["rows"] if r["date_text"] == "Q1 2027")
+    d = row["disagreement"]
+    assert {x["field"] for x in [d, *d.get("also", [])]} == {"date", "program"}
+    return client, rid, row
+
+
+def _decide(client, rid, row, action, field=None, to=None):
+    fix = None if field is None else {"field": field, "from": None, "to": to}
+    if fix:
+        cur = client.get(f"/api/runs/{rid}").json()["state"]["targets"][row["id"]]["values"][field]
+        fix["from"] = cur
+    return client.post(f"/api/runs/{rid}/decisions", json={"target": row["id"], "action": action, "note": None,
+                                                          "fix": fix})
+
+
+def _target(client, rid, row):
+    return client.get(f"/api/runs/{rid}").json()["state"]["targets"][row["id"]]
+
+
+def _held(t):
+    return t["group"] == "open" and t["status"] in ("undecided", "failed")
+
+
+@pytest.mark.parametrize("order", [("date", "program"), ("program", "date")])
+def test_date_and_program_disputes_resolve_in_either_order(runs_dir, order):
+    client, rid, row = _date_and_program_run(runs_dir)
+    new = {"date": "2027-01-01", "program": "Other program"}
+    assert _held(_target(client, rid, row))
+    for i, f in enumerate(order):
+        r = _decide(client, rid, row, "fix", f, new[f])
+        assert r.status_code == 200, r.text
+        t = _target(client, rid, row)
+        if i == 0:
+            assert t["status"] != "matched"
+            if f == "program":
+                assert t["status"] == "failed"          # the date is still wrong at this re-check
+        else:
+            assert (t["status"], t["group"]) == ("matched", "corrected"), t["reason"]
+            assert "Still disputed" not in t["reason"]
+    # the choices are not code validation: re-sending the same value is still a no-op
+    assert _decide(client, rid, row, "fix", "program", new["program"]).status_code == 422
+
+
+@pytest.mark.parametrize("order", [("date", "program"), ("program", "date")])
+def test_undo_in_either_order_restores_the_hold(runs_dir, order):
+    client, rid, row = _date_and_program_run(runs_dir)
+    new = {"date": "2027-01-01", "program": "Other program"}
+    for f in order:
+        assert _decide(client, rid, row, "fix", f, new[f]).status_code == 200
+    assert _target(client, rid, row)["status"] == "matched"
+    assert _decide(client, rid, row, "undo").status_code == 200       # takes back the last fix
+    t = _target(client, rid, row)
+    assert t["status"] != "matched"
+    assert _decide(client, rid, row, "undo").status_code == 200
+    assert _held(_target(client, rid, row))
+    # redo in the other order after undoing both: still resolves
+    for f in reversed(order):
+        assert _decide(client, rid, row, "fix", f, new[f]).status_code == 200
+    assert _target(client, rid, row)["status"] == "matched"
+
+
+def test_a_failed_final_recheck_keeps_the_hold(runs_dir):
+    client, rid, row = _date_and_program_run(runs_dir)
+    assert _decide(client, rid, row, "fix", "program", "Other program").status_code == 200
+    # a date that is still wrong: the re-check fails, so nothing is cleared
+    assert _decide(client, rid, row, "fix", "date", "2027-03-03").status_code == 200
+    t = _target(client, rid, row)
+    assert t["status"] == "failed" and t["group"] == "open"
+
+
+def test_an_untouched_field_stays_held(runs_dir):
+    client, rid, row = _date_and_program_run(runs_dir)
+    assert _decide(client, rid, row, "fix", "date", "2027-01-01").status_code == 200
+    t = _target(client, rid, row)
+    assert t["status"] == "undecided" and "Still disputed: program" in t["reason"]

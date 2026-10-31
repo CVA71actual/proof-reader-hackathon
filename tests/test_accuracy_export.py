@@ -317,3 +317,51 @@ def test_the_committed_sample_accuracy_is_what_the_scorer_makes_now_apart_from_w
     committed = json.loads((RUNS / "sample" / export.FILE_NAME).read_text())
     drop = ("date", "made_at", "product_tip", "product_dirty", "content_sha256")
     assert {k: v for k, v in fresh.items() if k not in drop} == {k: v for k, v in committed.items() if k not in drop}
+
+
+# ---------------------------------------------------------------- Job 49c: accuracy scores the effective status
+
+
+def _scored(d, mutate, decisions=None):
+    run = json.loads((d / "run.json").read_text())
+    mutate(run["rows"])
+    (d / "run.json").write_text(json.dumps(run))
+    if decisions:
+        (d / "decisions.jsonl").write_text("".join(json.dumps(x) + "\n" for x in decisions))
+    return score_run(load_key(PTGX_KEY), d, "k")["events"]
+
+
+def _copy(tmp_path):
+    d = tmp_path / "ptgx-r5"
+    shutil.copytree(RUNS / "ptgx-r5", d)
+    return d
+
+
+def test_a_saved_pass_that_now_fails_scores_unsupported_not_found(tmp_path):
+    base = _scored(_copy(tmp_path / "a"), lambda rows: None)
+    assert base["counts"]["found"] == 2 and base["counts"]["unsupported"] == 0
+
+    def break_check(rows):
+        c = rows[0]["checks"][0]
+        c["result"], c["reason"] = "fail", "The check now fails."
+        rows[0]["status"], rows[0]["group"] = "matched", "kept"          # the saved status is stale
+    sc = _scored(_copy(tmp_path / "b"), break_check)
+    assert (sc["counts"]["found"], sc["counts"]["unsupported"]) == (1, 1)
+
+
+def test_a_saved_fail_that_now_passes_scores_found(tmp_path):
+    def fail_then_repair(rows):
+        rows[0]["status"], rows[0]["group"] = "failed", "open"            # saved as failed; its checks all pass
+    sc = _scored(_copy(tmp_path), fail_then_repair)
+    assert sc["counts"]["found"] == 2
+
+
+def test_a_keep_does_not_change_the_score(tmp_path):
+    def hold(rows):
+        c = rows[0]["checks"][0]
+        c["result"], c["reason"] = "fail", "The check now fails."
+    plain = _scored(_copy(tmp_path / "a"), hold)
+    run = json.loads((_copy(tmp_path / "x") / "run.json").read_text())
+    keep = {"by": "person", "target": run["rows"][0]["id"], "action": "keep", "note": None, "at": "t"}
+    kept = _scored(_copy(tmp_path / "b"), hold, [keep])
+    assert plain["counts"] == kept["counts"] and plain["counts"]["found"] == 1

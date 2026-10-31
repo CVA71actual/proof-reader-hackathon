@@ -60,6 +60,7 @@ import copy
 import re
 
 from accuracy.types import primary_type, type_for_field
+from checks import event_checks
 from runs.prices import cost_per_kept_row_usd
 from runs.ids import require_unique_target_ids
 from datetime import date
@@ -146,15 +147,67 @@ def _real_disagreement(d) -> dict | None:
 
 def _drop_empty_undecided(t: dict, raw, checks=None) -> None:
     """A target held as undecided only for a one-sided "disagreement" (one reader read nothing) has nothing to
-    decide: it is matched, provided every check passed or was not needed. A check that could not run keeps the
-    target as the run left it (open, not matched). An undecided target that never had a disagreement is left
-    as it is."""
-    if any(c.get("result") == "could_not_run" for c in checks or []):
-        return
-    if raw and t["status"] == "undecided" and t["disagreement"] is None:
+    decide: it is matched, provided the checks say matched (checks.event_checks.row_status: at least one pass and
+    every other check passed or not needed). A failed, could-not-run or missing check keeps the target as the run
+    left it (open, not matched). An undecided target that never had a disagreement is left as it is. Repair tools
+    only replace a check result; they never write status."""
+    if raw and t["status"] == "undecided" and t["disagreement"] is None \
+            and event_checks.row_status(checks or []) == event_checks.MATCHED:
         t["status"] = "matched"
         if t["group"] == "open":
             t["group"] = "kept"
+
+
+_REVIEW_FOUND_BY = ("coverage", "second_reader")
+
+
+def derive_status(row: dict, checks: list | None = None, disagreement=None) -> tuple[str, str, bool]:
+    """The one place a saved row's (status, group) is worked out from its CURRENT effective checks (pass `checks`
+    when they differ from row["checks"]) and the readers' disagreement. Returns (status, group, derived).
+    Repair tools only replace a check result; they never write status or group, and current_state calls this.
+
+    - a code exclusion (group "removed") is left exactly as it is;
+    - a row only the second reader or the coverage scan found needs review: undecided (failed if a check failed),
+      open, whatever its checks say;
+    - a real two-sided disagreement is held whatever status was saved (escalation or a repair tool never settles it;
+      only a person's fix of the disputed field, a keep or a remove does, in _apply): failed if a check failed, else
+      undecided; open;
+    - otherwise the checks decide (event_checks.row_status): matched -> kept, failed -> open, anything else
+      -> unverified. A row left undecided only for a one-sided "disagreement" is matched when the checks say matched
+      and otherwise stays as the run left it. A row with no checks, or a status the checks do not own (unreadable),
+      stays as saved.
+    Human decisions (keep, fix, remove) are applied afterwards by _apply and override this."""
+    saved = (row["status"], row["group"], False)
+    if row["group"] == "removed":
+        return saved
+    checks = row.get("checks") or [] if checks is None else checks
+    disagreement = _real_disagreement(row.get("disagreement")) if disagreement is None else disagreement
+    fails = any(c.get("result") == "fail" for c in checks)
+    if row.get("found_by") in _REVIEW_FOUND_BY:
+        return ("failed" if fails else "undecided", "open", True)
+    if disagreement:
+        return ("failed" if fails else "undecided", "open", True)
+    if row["status"] in ("unreadable", "unchecked") or not checks:
+        return saved
+    status = event_checks.row_status(checks)
+    if row["status"] == "undecided" and status != event_checks.MATCHED:
+        return saved
+    if status == row["status"]:
+        return saved
+    group = "kept" if status == event_checks.MATCHED else "open" if status == event_checks.FAILED else "unverified"
+    return (status, group, True)
+
+
+def _derived_reason(row: dict, status: str, group: str, checks: list) -> str | None:
+    """A new reason only when the derivation changed the row's status or group; else None (keep the saved one)."""
+    if (status, group) == (row["status"], row["group"]):
+        return None
+    if status == "failed":
+        bad = next((c for c in checks if c.get("result") == "fail"), None)
+        return (bad or {}).get("reason") or "A check failed."
+    if status == "matched":
+        return "Every check passed on the date as it now reads."
+    return row.get("reason")
 
 
 _PERIOD_FOUND = re.compile(r"^(\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})$")
@@ -180,16 +233,17 @@ def _base_targets(run: dict) -> dict:
         bounds = _period_bounds(row)
         if bounds:
             values["date"], values["date_end"] = bounds
+        dis = _real_disagreement(row.get("disagreement"))
+        status, group, _ = derive_status(row, disagreement=dis)
         targets[row["id"]] = {
             "kind": "row",
-            "group": row["group"],
-            "status": row["status"],
-            "reason": row.get("reason"),
+            "group": group,
+            "status": status,
+            "reason": _derived_reason(row, status, group, row.get("checks") or []) or row.get("reason"),
             "saved_checks": copy.deepcopy(row.get("checks") or []),
             "values": values,
-            "disagreement": _real_disagreement(row.get("disagreement")),
+            "disagreement": dis,
         }
-        _drop_empty_undecided(targets[row["id"]], row.get("disagreement"), row.get("checks"))
     for table in run.get("tables", []):
         for trow in table.get("rows", []):
             for cell in trow.get("cells", []):
@@ -215,9 +269,13 @@ def _apply(base: dict, stack: list[dict]) -> dict:
     s["fixes"] = []
     s["before"] = {}
     s["recheck"] = None
-    disputed = (base.get("disagreement") or {}).get("field")
-    # The readers' disagreement stays open until a fix of the disputed field passes its re-check.
-    unsettled = base["status"] == "undecided"
+    dis0 = base.get("disagreement") or {}
+    disputed = [x.get("field") for x in [dis0, *dis0.get("also", [])] if x and x.get("field")]
+    # The readers' disagreement stays open until a fix of EVERY disputed field (the main one and each "also")
+    # has passed its re-check, or a person keeps or removes the row.
+    remaining = list(dict.fromkeys(disputed)) if base.get("disagreement") is not None else []
+    unsettled = base.get("disagreement") is not None
+    fixed: set[str] = set()
     for d in stack:
         action, note = d["action"], d.get("note")
         if action == "keep":
@@ -229,10 +287,11 @@ def _apply(base: dict, stack: list[dict]) -> dict:
         elif action == "fix":
             fx = d["fix"]
             s["before"].setdefault(fx["field"], base["values"][fx["field"]])
+            fixed.add(fx["field"])
             s["values"][fx["field"]] = fx["to"]
             rc = d.get("recheck")
             covered = fx["field"] in checked_fields(s["kind"])
-            settles = unsettled and disputed is not None and fx["field"] == disputed
+            settles = unsettled and fx["field"] in remaining
             outcome = _fix_outcome(rc, covered or settles)
             # a fix that puts in what the second reader read, on the field the readers disagreed on, is the
             # second reader's catch, not the person's
@@ -248,9 +307,16 @@ def _apply(base: dict, stack: list[dict]) -> dict:
                 s["recheck"] = rc
                 if rc["result"] == "pass":
                     if settles:
-                        unsettled = False
+                        # this re-check ran on the row as it now reads, so it also covers an earlier fix of any
+                        # disputed field (checked or judged, e.g. program) whose own re-check failed only because
+                        # another field was still wrong. This records the person's choice, not code validation.
+                        done = {fx["field"], *fixed}
+                        remaining = [f for f in remaining if f not in done]
+                        unsettled = bool(remaining)
                     s["status"] = "undecided" if unsettled else "matched"
                     s["reason"] = rc.get("reason") or "The checks were run again on the fixed value and passed."
+                    if unsettled:
+                        s["reason"] = f"{s['reason']} Still disputed: {', '.join(remaining)}."
                     if not outcome["mistake"] and outcome["not_counted_reason"]:
                         s["reason"] = f"{s['reason']} {outcome['not_counted_reason']}"
                 elif rc["result"] == "could_not_run":

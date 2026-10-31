@@ -53,7 +53,7 @@ from capture.capture_source import load_entry
 from checks import event_checks
 from runs import picture, build_entry, build_run, compare, coverage, escalate, prices, scan, sources
 from runs.ids import reserve_row_numbers, require_unique_target_ids
-from runs.state import run_reference_date
+from runs.state import _real_disagreement, as_of_note, derive_status, run_reference_date
 
 DEFAULT_TURN_LIMIT = 40
 MAX_PAGE_FAILURES = 2      # a page that stops the run this many times is skipped, and the run goes on with the rest
@@ -1454,8 +1454,13 @@ class Job:
                                          "it was."})
             return
         old = next(c for c in row["checks"] if c["name"] == "date_match")
+        held = _real_disagreement(row.get("disagreement"))
+        keep = ("status", "group", "reason") if held else ()
         for f in ("quote", "date_text", "date", "date_end", "box", "checks", "status", "group", "reason"):
-            row[f] = proposal[f]
+            if f not in keep:
+                row[f] = proposal[f]
+        if held:       # an existing two-sided disagreement is preserved: only a person's fix settles it
+            row["status"], row["group"], _ = derive_status(row)
         if row.get("found_by") == "second_reader":      # nobody else read it: it stays an open row of the second reader
             failed = any(c["result"] == "fail" for c in row["checks"])
             row["status"] = event_checks.row_status(row["checks"], second_reader_agrees=False)

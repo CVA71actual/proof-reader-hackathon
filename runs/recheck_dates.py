@@ -104,18 +104,11 @@ def recheck_dates(run: dict, run_dir: Path, decided: set[str], at: str) -> dict:
             continue
         row["checks"][idx] = new
         out["mutated"].append(row["id"])
-        results = [_to_result(c) for c in row["checks"]]
-        status = event_checks.row_status(results)
         if new["result"] != old["result"]:
             out["changed"].append((row["id"], old["result"], new["result"]))
         row.setdefault("trail", []).append({
             "step": "Date re-checked", "tag": "Code", "who": "runs.recheck_dates", "at": at,
             "text": f"Date read as written: {new['result'].replace('_', ' ')}. {new['reason']}"})
-        if status != row.get("status"):
-            row["status"] = status
-            if row.get("group") != "removed":
-                row["group"] = START_GROUP.get(status, "unverified")
-                row["reason"] = row_reason(status, results, row)
     return out
 
 

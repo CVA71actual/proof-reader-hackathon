@@ -28,6 +28,7 @@ from capture import read_events, read_table
 from checks.common import normalize
 from checks.selector_match import _quote_run
 from runs import build_entry, prices
+from runs.state import _real_disagreement, derive_status
 
 WONDER = "Muse Wonder"
 WHO = "runs.escalate"
@@ -123,14 +124,10 @@ def prompt(entry: dict, trig: dict, y_range: tuple[float, float], words_doc: dic
 
 def pick(row: dict, events: list[dict]) -> dict | None:
     """The event in Wonder's answer that is this row's: the one whose quote overlaps the row's quote (the band may hold
-    other events too). With one event and no overlap (the row's own quote may be what was wrong) that one; with
-    several and none overlapping, none."""
+    other events too). Overlap is the only identity: with none, the row has no answer (never "the only event")."""
     from runs.compare import _same_quote
 
-    same = [e for e in events if _same_quote(row.get("quote"), e.get("quote"))]
-    if same:
-        return same[0]
-    return events[0] if len(events) == 1 else None
+    return next((e for e in events if _same_quote(row.get("quote"), e.get("quote"))), None)
 
 
 def to_page_points(event: dict, y_range: tuple[float, float], words_doc: dict) -> dict:
@@ -216,8 +213,13 @@ def apply(row: dict, event: dict | None, reading: dict, source: dict, words_doc:
     old_check = next(c for c in row["checks"] if c["result"] == "fail")
     for f in FIELDS:
         row[f] = proposal[f]
-    row["checks"], row["status"], row["group"] = proposal["checks"], "matched", "corrected"
-    row["reason"] = (f"Re-read by {WONDER} after {trig['label']} failed; its reading passed every check.")
+    row["checks"] = proposal["checks"]
+    if _real_disagreement(row.get("disagreement")):
+        # a two-sided disagreement is settled only by a person: the proposal is replaced, the hold stays
+        row["status"], row["group"], _ = derive_status(row)
+    else:
+        row["status"], row["group"] = "matched", "corrected"
+        row["reason"] = (f"Re-read by {WONDER} after {trig['label']} failed; its reading passed every check.")
     row["trail"].append({"step": "Escalation result", "tag": "Code", "who": WHO, "at": at,
                          "text": f"{WONDER}'s reading passed every check. The row takes it"
                                  + (f" ({'; '.join(changed)})" if changed else "") + "."})

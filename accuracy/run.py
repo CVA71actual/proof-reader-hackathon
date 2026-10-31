@@ -24,6 +24,7 @@ from accuracy.mistake_log import load_run, mistake_log
 from accuracy.report import build_report, render_text
 from accuracy.score import model_family, run_window, score_events, score_planted, score_table
 from checks.status import check_reading
+from runs.state import derive_status
 
 REPO = Path(__file__).resolve().parent.parent
 RUNS = REPO / "runs"
@@ -31,6 +32,17 @@ RUNS = REPO / "runs"
 
 class Refused(Exception):
     pass
+
+
+def effective_rows(rows: list[dict]) -> list[dict]:
+    """Each saved proposal as the model's output stands NOW: status and group re-derived from its current checks and
+    the readers' disagreement (runs.state.derive_status). No human decision is applied: a Keep does not raise the model's
+    score and a Fix is not model output."""
+    out = []
+    for r in rows:
+        status, group, _ = derive_status(r)
+        out.append({**r, "status": status, "group": group})
+    return out
 
 
 def _page_of_run(run: dict, key: dict) -> tuple[dict, dict]:
@@ -61,7 +73,7 @@ def score_run(key: dict, run_dir: Path, key_path: str | None = None, planted: li
     table = score_table(tables[0], key) if key.get("cells") and tables else None
     if key.get("cells") and not tables:
         table = score_table({"rows": [], "model": None}, key)
-    events = score_events(rows, key, run.get("exclusions"), window=run_window(run)) if key.get("events") else None
+    events = score_events(effective_rows(rows), key, run.get("exclusions"), window=run_window(run)) if key.get("events") else None
     plant = score_planted(reading, words_doc, planted) if planted and reading else None
     return build_report(key, key_path, table=table, events=events, planted=plant,
                         run_log=mistake_log(run, decisions), run_id=run["run"]["id"])
