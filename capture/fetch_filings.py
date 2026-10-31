@@ -65,6 +65,11 @@ CIKS: dict[str, tuple[str, str]] = {
     "ROIV": ("1635088", "Roivant Sciences Ltd."),
 }
 
+COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+COMPANY_TICKERS_CACHE = DOCS / "company_tickers.json"
+TICKER_RE = re.compile(r"^[A-Z0-9.-]{1,10}$")
+# Forms the wider capture can take (--forms). Default stays 8-K only (the twelve pipeline).
+FORM_FAMILIES = ("8-K", "10-K", "10-Q", "S-1", "424B")
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:0>10}.json"
 ARCHIVES = "https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nodash}/"
 EX99_HTML = re.compile(r"(?i)(?:^|[^a-z0-9])ex[-_]?99(?:[-._]\d+)+\.html?$")
@@ -160,18 +165,33 @@ class RateLimitedFetcher:
 # ---------------------------------------------------------------- listing exhibits
 
 
-def recent_8k_filings(submissions: dict, days: int, today: date | None = None) -> list[dict]:
-    """8-K / 8-K/A filings in the submissions JSON whose filing date is within the last `days` days."""
+def form_family(form: str) -> str | None:
+    """'10-K/A' -> '10-K'; '424B5' -> '424B'; 'S-1/A' -> 'S-1'; anything else None."""
+    base = form.split("/")[0].strip().upper()
+    if base.startswith("424B"):
+        return "424B"
+    return base if base in FORM_FAMILIES else None
+
+
+def select_filings(
+    submissions: dict,
+    days: int,
+    today: date | None = None,
+    until: date | None = None,
+    forms: tuple[str, ...] = ("8-K",),
+) -> list[dict]:
+    """Filings of the wanted form families filed in [reference - days, until]; reference is `until` if given, else today."""
     today = today or date.today()
-    cutoff = today - timedelta(days=days)
+    ref = until or today
+    cutoff = ref - timedelta(days=days)
     recent = submissions.get("filings", {}).get("recent") or {}
-    forms = recent.get("form") or []
     out = []
-    for i, form in enumerate(forms):
-        if form not in ("8-K", "8-K/A"):
+    for i, form in enumerate(recent.get("form") or []):
+        if form_family(form) not in forms:
             continue
         filing_date = recent["filingDate"][i]
-        if date.fromisoformat(filing_date) < cutoff:
+        fd = date.fromisoformat(filing_date)
+        if fd < cutoff or (until is not None and fd > until):
             continue
         out.append({
             "form": form,
@@ -180,6 +200,37 @@ def recent_8k_filings(submissions: dict, days: int, today: date | None = None) -
             "primary_document": recent.get("primaryDocument", [""])[i] if recent.get("primaryDocument") else "",
         })
     return out
+
+
+def recent_8k_filings(submissions: dict, days: int, today: date | None = None, until: date | None = None) -> list[dict]:
+    """8-K / 8-K/A filings in the submissions JSON whose filing date is within the last `days` days."""
+    return select_filings(submissions, days, today=today, until=until, forms=("8-K",))
+
+
+def resolve_cik(
+    ticker: str,
+    fetcher: "RateLimitedFetcher | None" = None,
+    cache_path: Path = COMPANY_TICKERS_CACHE,
+    tickers_doc: dict | None = None,
+) -> tuple[str, str]:
+    """(cik, company) for a ticker: the built-in map first, else SEC company_tickers.json (cached locally, no key)."""
+    ticker = ticker.upper()
+    if ticker in CIKS:
+        return CIKS[ticker]
+    if tickers_doc is None:
+        if cache_path.is_file():
+            tickers_doc = json.loads(cache_path.read_text())
+        elif fetcher is not None:
+            tickers_doc = fetcher.get_json(COMPANY_TICKERS_URL)
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            cache_path.write_text(json.dumps(tickers_doc))
+        else:
+            raise FetchError(f"Unknown ticker {ticker}: not in the built-in map and no company_tickers.json available.")
+    rows = tickers_doc.values() if isinstance(tickers_doc, dict) else tickers_doc
+    for row in rows:
+        if str(row.get("ticker", "")).upper() == ticker:
+            return str(int(row["cik_str"])), row.get("title") or ticker
+    raise FetchError(f"Unknown ticker {ticker}: not in the built-in map or SEC company_tickers.json.")
 
 
 def is_ex99_html(name: str) -> bool:
@@ -296,7 +347,7 @@ def render_html_to_pdf(html_path: Path, pdf_path: Path, chrome: Path | None = No
         url,
     ]
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120)
+        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=300)
     except subprocess.CalledProcessError as e:
         err = (e.stderr or e.stdout or "").strip()
         raise FetchError(f"Chrome failed to render {html_path.name}: {err or e}.") from e
@@ -436,7 +487,8 @@ def capture_exhibit(
     out = []
     for p in page_bits:
         ex_slug = exhibit.replace(".", "")
-        page_id = f"{ticker.lower()}-8k-{accession}-ex{ex_slug}-p{p['page_number']}"
+        form_slug = re.sub(r"[^a-z0-9]", "", form.lower())
+        page_id = f"{ticker.lower()}-{form_slug}-{accession}-ex{ex_slug}-p{p['page_number']}"
         entry = {
             "ticker": ticker,
             "company": company,
@@ -485,22 +537,31 @@ def fetch_ticker(
     filings_root: Path = FILINGS,
     chrome: Path | None = None,
     today: date | None = None,
+    until: date | None = None,
+    forms: tuple[str, ...] = ("8-K",),
     submissions: dict | None = None,
     index_by_accession: dict[str, dict] | None = None,
     headers_by_accession: dict[str, str] | None = None,
     html_by_url: dict[str, bytes] | None = None,
     render: Callable[[Path, Path, Path | None], str] = render_html_to_pdf,
+    tickers_doc: dict | None = None,
+    failures: list[str] | None = None,
 ) -> list[dict]:
-    """Fetch and capture every recent EX-99.* HTML exhibit for one ticker. Returns page entries."""
+    """Fetch and capture every wanted filing's EX-99.* HTML exhibits for one ticker. Returns page entries.
+
+    For 10-K/10-Q/S-1/424B the filing's primary document is captured too (exhibit "main"); 8-Ks give exhibits only.
+    A document that fails to fetch or render is recorded in `failures` (and printed) and the rest carry on.
+    """
     ticker = ticker.upper()
-    if ticker not in CIKS:
-        raise FetchError(f"Unknown ticker {ticker}; expected one of the twelve.")
-    cik, company = CIKS[ticker]
+    cik, company = resolve_cik(ticker, fetcher, tickers_doc=tickers_doc)
     if submissions is None:
         submissions = fetcher.get_json(SUBMISSIONS_URL.format(cik=cik))
         # Prefer the live company name when present.
         company = submissions.get("name") or company
-    filings = recent_8k_filings(submissions, days, today=today)
+    # Cached beside the filings so capture/index_filings.py can read cik, company, form and date from it.
+    (filings_root / ticker).mkdir(parents=True, exist_ok=True)
+    (filings_root / ticker / "submissions.json").write_text(json.dumps(submissions))
+    filings = select_filings(submissions, days, today=today, until=until, forms=forms)
     pages: list[dict] = []
     for filing in filings:
         acc = filing["accession"]
@@ -532,35 +593,51 @@ def fetch_ticker(
                 {"filename": n, "exhibit": exhibit_number(n), "title": None, "type": f"EX-{exhibit_number(n)}"}
                 for n in list_ex99_html(index_doc)
             ]
+        primary = filing.get("primary_document") or ""
+        if form_family(filing["form"]) != "8-K" and primary.lower().endswith((".htm", ".html")) and "/" not in primary:
+            if all(e["filename"] != primary for e in exhibits):
+                exhibits = [{"filename": primary, "exhibit": "main", "title": filing["form"], "type": filing["form"]}] + exhibits
         dest = filings_root / ticker / acc
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "filing.json").write_text(json.dumps({
+            "form": filing["form"], "filing_date": filing["filing_date"], "accession": acc,
+            "primary_document": primary,
+            "documents": {e["filename"]: {"exhibit": e["exhibit"], "title": e.get("title")} for e in exhibits},
+        }, indent=1) + "\n")
         for ex in exhibits:
             html_name = ex["filename"]
             url = urljoin(base_url, html_name)
-            if html_by_url is not None:
-                html_bytes = html_by_url[url]
-                use_fetcher = None
-            else:
-                html_bytes = fetcher.get(url)
-                use_fetcher = fetcher
-            pages.extend(capture_exhibit(
-                ticker=ticker,
-                company=company,
-                cik=str(int(cik)),
-                form=filing["form"],
-                filing_date=filing["filing_date"],
-                accession=acc,
-                html_name=html_name,
-                html_bytes=html_bytes,
-                dest_dir=dest,
-                base_url=base_url,
-                index_names=all_names,
-                fetcher=use_fetcher,
-                chrome=chrome,
-                render=render,
-                exhibit=ex.get("exhibit"),
-                exhibit_title=ex.get("title"),
-                filings_root=filings_root,
-            ))
+            try:
+                if html_by_url is not None:
+                    html_bytes = html_by_url[url]
+                    use_fetcher = None
+                else:
+                    html_bytes = fetcher.get(url)
+                    use_fetcher = fetcher
+                pages.extend(capture_exhibit(
+                    ticker=ticker,
+                    company=company,
+                    cik=str(int(cik)),
+                    form=filing["form"],
+                    filing_date=filing["filing_date"],
+                    accession=acc,
+                    html_name=html_name,
+                    html_bytes=html_bytes,
+                    dest_dir=dest,
+                    base_url=base_url,
+                    index_names=all_names,
+                    fetcher=use_fetcher,
+                    chrome=chrome,
+                    render=render,
+                    exhibit=ex.get("exhibit"),
+                    exhibit_title=ex.get("title"),
+                    filings_root=filings_root,
+                ))
+            except FetchError as e:
+                msg = f"{ticker} {filing['form']} {acc} {html_name}: {e}"
+                print(f"  FAILED {msg}", file=sys.stderr)
+                if failures is not None:
+                    failures.append(msg)
     return pages
 
 
@@ -596,8 +673,8 @@ def parse_tickers(raw: str) -> list[str]:
     out = []
     for part in raw.replace(",", " ").split():
         t = part.strip().upper()
-        if t not in CIKS:
-            raise SystemExit(f"Unknown ticker {part!r}; use one of {', '.join(TICKERS)} or 'all'.")
+        if not TICKER_RE.match(t):
+            raise SystemExit(f"Bad ticker {part!r}: use A-Z, 0-9, '.' or '-' (1-10 characters), or 'all'.")
         if t not in out:
             out.append(t)
     if not out:
@@ -607,12 +684,22 @@ def parse_tickers(raw: str) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--tickers", required=True, help="'all' or a comma/space list of the twelve tickers")
+    ap.add_argument("--tickers", required=True, help="'all' (the twelve) or a comma/space list; others resolve via SEC company_tickers.json")
+    ap.add_argument("--until", type=date.fromisoformat, default=None, metavar="YYYY-MM-DD",
+                    help="only filings with filing_date <= this date; the --days window counts back from it")
+    ap.add_argument("--out", type=Path, default=None, metavar="DIR", help="filings store; same as --filings-root")
+    ap.add_argument("--forms", default="8-K", help=f"comma list from {', '.join(FORM_FAMILIES)} (424B = any 424B*); default 8-K")
     ap.add_argument("--days", type=int, default=90, help="how many days of 8-K filings to take (default 90)")
     ap.add_argument("--filings-root", type=Path, default=FILINGS, help="local store (default ~/proof-reader-docs/filings)")
     ap.add_argument("--index", type=Path, default=INDEX_PATH, help="where to write runs/sources_index.twelve.json")
     ap.add_argument("--chrome", type=Path, default=None, help="Chrome binary (default: auto-detect)")
     args = ap.parse_args(argv)
+    if args.out is not None:
+        args.filings_root = args.out
+    forms = tuple(f.strip().upper() for f in args.forms.split(",") if f.strip())
+    bad = [f for f in forms if f not in FORM_FAMILIES]
+    if bad or not forms:
+        raise SystemExit(f"--forms: unknown {bad or forms}; choose from {', '.join(FORM_FAMILIES)}.")
 
     tickers = parse_tickers(args.tickers)
     ua = load_user_agent()
@@ -620,13 +707,15 @@ def main(argv: list[str] | None = None) -> int:
     chrome = find_chrome(args.chrome)
     print(f"Chrome: {renderer_label(chrome)}")
     print(f"Filings root: {args.filings_root}")
-    print(f"Tickers ({len(tickers)}), last {args.days} days of 8-K EX-99.* HTML.")
+    print(f"Tickers ({len(tickers)}), last {args.days} days{f' to {args.until}' if args.until else ''}, forms {','.join(forms)}.")
 
     by_ticker: dict[str, list[dict]] = {}
+    failures: list[str] = []
     for t in tickers:
         print(f"\n=== {t} ===")
         pages = fetch_ticker(
             t, days=args.days, fetcher=fetcher, filings_root=args.filings_root, chrome=chrome,
+            until=args.until, forms=forms, failures=failures,
         )
         by_ticker[t] = pages
         exhibits = {(p["accession"], p["exhibit"]) for p in pages}
@@ -648,6 +737,10 @@ def main(argv: list[str] | None = None) -> int:
     write_index(doc, args.index)
     total_pages = sum(len(v) for v in by_ticker.values())
     print(f"\nWrote {args.index} ({total_pages} page entries).")
+    if failures:
+        print(f"{len(failures)} document(s) failed:", file=sys.stderr)
+        for f in failures:
+            print(f"  {f}", file=sys.stderr)
     return 0
 
 
