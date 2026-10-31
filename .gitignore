@@ -27,3 +27,7 @@ env
 
 # Runs started from the New run panel (the server makes them; their pages and decisions stay local)
 runs/run-*/
+
+# Indexes of filings that live outside the repo
+runs/sources_index.json
+runs/sources_index.eval2.json
