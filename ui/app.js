@@ -1284,7 +1284,14 @@
     } else {
       // A-C5: the shown reason is the state's current reason — never a reason
       // stored on the raw row from before the state rule re-derived it
-      box.textContent = t.reason || 'Waiting for you.';
+      var shown = t.reason || 'Waiting for you.';
+      // U38: when a failed check carries a near-miss sentence, a generic
+      // "not printed on the page" reason must never be shown instead
+      var near = (row.checks || []).filter(function (c) {
+        return c.result === 'fail' && c.reason && c.reason.indexOf('nearly matches') >= 0;
+      })[0];
+      if (near && /not printed/i.test(shown)) shown = near.reason;
+      box.textContent = shown;
     }
     sec.append(box);
     return sec;
@@ -2361,7 +2368,7 @@
     }
     l2.append(el('span', 'mdl', 'by ' + (row.proposed_by || 'Model')));
     if (t.reason && (!t.decided_by_person || needsAttention(t))) {
-      l2.append(el('span', 'fixline', t.reason.length > 72 ? t.reason.slice(0, 72) + '…' : t.reason));
+      l2.append(el('span', 'fixline', listReasonLine(row, t)));
     }
     b.append(l1, l2);
     b.addEventListener('click', function () {
@@ -2851,10 +2858,38 @@
   }
 
   function openDialog(row, action) {
-    if (action === 'fix') fixDialog(row);
+    // U38: on a row whose quote check failed with a near match, the Fix
+    // dialog opens on the quote field pre-filled with the page's wording —
+    // one Save fix click accepts it (the person can still edit)
+    if (action === 'fix') fixDialog(row, nearMissPrefill(row));
     else if (action === 'remove') removeDialog(row);
     else if (action === 'keepanyway') keepAnywayDialog(row);
     else closeDialog();
+  }
+
+  // U38 rework (Job 47): one source of truth — the check itself carries
+  // near_match, the page's wording the check found. The UI never rebuilds
+  // the wording from the sentence (a repeated word or a ’ token broke that).
+  function nearMissCheck(row) {
+    return (row.checks || []).filter(function (c) {
+      return c.name === 'quote_match' && c.result === 'fail' && c.reason &&
+             c.reason.indexOf('nearly matches') >= 0;
+    })[0] || null;
+  }
+  // the Fix-dialog pre-fill: the check's near_match, verbatim; old runs whose
+  // checks carry no near_match get no pre-fill (null)
+  function nearMissPrefill(row) {
+    var chk = nearMissCheck(row);
+    if (!chk || typeof chk.near_match !== 'string' || !chk.near_match) return null;
+    return { field: 'quote', to: chk.near_match };
+  }
+  // the sub-line under a judgment-list row: the state's reason, except a
+  // generic "not printed" reason loses to the check's own near-miss sentence
+  function listReasonLine(row, t) {
+    var shown = t.reason || '';
+    var nm = nearMissCheck(row);
+    if (nm && /not printed/i.test(shown)) shown = nm.reason;
+    return shown.length > 72 ? shown.slice(0, 72) + '…' : shown;
   }
 
   // U37: keep a code-removed row anyway — the same reason box as Remove (the

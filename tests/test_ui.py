@@ -425,7 +425,7 @@ def _judgment_screen(row_id):
              "needsAttention", "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
              "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
              "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith",
-             "revealRow", "sourceOf")
+             "revealRow", "sourceOf", "nearMissCheck", "listReasonLine")
     rows = [
         {"id": "r-cnr", "title": "ROW-COULD-NOT-RUN", "ticker": "ACME", "proposed_by": "Muse Spark",
          "checks": [], "date_text": "Q3 2027"},
@@ -2962,8 +2962,12 @@ def test_u35_clean_room_ac5_ac6_ac9():
     # sentence from before the state rule re-derived the row; 'Kept by you'
     # only ever renders on a person decision
     js = (UI / "app.js").read_text()
-    assert "t.reason || 'Waiting for you.'" in _grab_fn(js, "whySection")
-    assert "row.reason" not in _grab_fn(js, "whySection")
+    why = _grab_fn(js, "whySection")
+    assert "t.reason || 'Waiting for you.'" in why
+    assert "row.reason" not in why
+    # U38: a generic "not printed" reason yields to the check's near-miss sentence
+    assert "c.reason.indexOf('nearly matches') >= 0" in why
+    assert "/not printed/i.test(shown)" in why
     # A-C6: one sentence on the Accuracy panel under an unsealed key
     assert "This key was written from the same page text, so it tests the checks, not the reader." in js
     assert "clear(keyNoteHost)" in js and "if (acc && !sealed)" in js
@@ -3123,6 +3127,141 @@ def test_u36_g9r4_run_sheet_lists_each_run_once():
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
     assert got.returncode == 0, got.stdout + got.stderr
 
+
+def test_u38_near_miss_prefill_pins():
+    # U38 rework (Job 47): the Fix dialog pre-fill reads the check's
+    # near_match verbatim — one source of truth, no word-swapping in the UI
+    js = (UI / "app.js").read_text()
+    for word in ("function nearMissCheck(row)",
+                 "function nearMissPrefill(row)",
+                 "function listReasonLine(row, t)",
+                 "fixDialog(row, nearMissPrefill(row))",
+                 "c.reason.indexOf('nearly matches') >= 0",
+                 "typeof chk.near_match !== 'string'",
+                 "listReasonLine(row, t)"):
+        assert word in js, word
+    # the word-swap reconstruction is gone for good
+    for gone in ("nearMissFixPrefill", "foldWord", "quote ‘(.+?)’, page ‘(.+?)’",
+                 "and \\d+ more"):
+        assert gone not in js, gone
+    # the pane renders the check reason as-is — never a generic "not printed"
+    # override: the only place that sentence can come from is the reason itself
+    assert "not printed anywhere" not in js
+
+
+def test_u38_near_miss_prefill_reads_the_checks_near_match():
+    # Job 47 serializes near_match (the page's wording) on the quote check;
+    # the pre-fill is that string verbatim — the Red Team's two failures (a
+    # repeated differing word landing on the wrong occurrence, a ’ token cut
+    # off) came from rebuilding the wording in the UI and cannot recur
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = _grab_fn(js, "nearMissCheck") + "\n" + _grab_fn(js, "nearMissPrefill")
+    script = "\n".join([
+        fns,
+        "function mk(nearMatch, reason) {",
+        "  return { id: 'r1', checks: reason === null ? [] :",
+        "    [{ name: 'quote_match', result: 'fail', reason: reason, near_match: nearMatch }] };",
+        "}",
+        # the sample's real SMPL6 near miss after Job 47
+        "var s = nearMissPrefill(mk('Samplebio Six will report final results on July 19, 2027.',",
+        "  'The quote nearly matches the page; 1 word differs — quote ‘9,’, page ‘19,’.'));",
+        "if (!s || s.field !== 'quote') { console.error('no prefill'); process.exit(2); }",
+        "if (s.to !== 'Samplebio Six will report final results on July 19, 2027.')",
+        "  { console.error('to=' + s.to); process.exit(3); }",
+        # Red Team case 1: a repeated 'the' — near_match is taken verbatim,
+        # never reconstructed, so the wrong-occurrence swap is impossible
+        "var s2 = nearMissPrefill(mk(",
+        "  'The company expects topline data for its program in the second half of 2027',",
+        "  'The quote nearly matches the page; 1 word differs — quote ‘the’, page ‘its’.'));",
+        "if (!s2 || s2.to !== 'The company expects topline data for its program in the second half of 2027')",
+        "  { console.error('to2=' + (s2 && s2.to)); process.exit(4); }",
+        # Red Team case 2: a ’ token survives untouched
+        "var s3 = nearMissPrefill(mk('Patient’s data.',",
+        "  'The quote nearly matches the page; 1 word differs — quote ‘patients’, page ‘patient’s’.'));",
+        "if (!s3 || s3.to !== 'Patient’s data.') { console.error('to3=' + (s3 && s3.to)); process.exit(5); }",
+        # an old run whose check carries NO near_match -> no pre-fill
+        "if (nearMissPrefill({ id: 'r2', checks: [{ name: 'quote_match', result: 'fail',",
+        "  reason: 'The quote nearly matches the page; 1 word differs — quote ‘9’, page ‘10’.' }] }) !== null)",
+        "  process.exit(6);",
+        # an empty near_match is no pre-fill either
+        "if (nearMissPrefill(mk('', 'The quote nearly matches the page; 1 word differs — quote ‘a’, page ‘b’.')) !== null)",
+        "  process.exit(7);",
+        # a fail that is not a near miss -> nothing
+        "if (nearMissPrefill(mk(null, 'The quote is not printed anywhere on the page.')) !== null) process.exit(8);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u38_judgment_list_sub_line_shows_the_near_miss_sentence():
+    # The judgment-needed list row's sub-line shows the check's own near-miss
+    # sentence instead of a stale generic "not printed" state reason; any
+    # other reason passes through (still truncated at 72 chars)
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = _grab_fn(js, "nearMissCheck") + "\n" + _grab_fn(js, "listReasonLine")
+    script = "\n".join([
+        fns,
+        "var chk = { name: 'quote_match', result: 'fail',",
+        "  reason: 'The quote nearly matches the page; 1 word differs — quote ‘9,’, page ‘19,’.',",
+        "  near_match: 'Samplebio Six will report final results on July 19, 2027.' };",
+        "var row = { id: 'e7', checks: [chk] };",
+        # the sample's stale generic reason loses to the near-miss sentence
+        "var got = listReasonLine(row, { reason: 'The quote is not printed on the page as given. Waiting for you.' });",
+        "if (got.indexOf('nearly matches') === -1) { console.error('got=' + got); process.exit(2); }",
+        "if (/not printed/i.test(got)) { console.error('generic shown: ' + got); process.exit(3); }",
+        # a non-generic state reason passes through untouched
+        "var other = listReasonLine(row, { reason: 'The day in the row differs from the day printed in the quote.' });",
+        "if (other !== 'The day in the row differs from the day printed in the quote.')",
+        "  { console.error('other=' + other); process.exit(4); }",
+        # long reasons truncate at 72 chars with an ellipsis
+        "var long = listReasonLine({ id: 'x', checks: [] }, { reason: new Array(30).join('abcd ') });",
+        "if (long.length !== 73 || long.slice(-1) !== '…') { console.error('long=' + long.length); process.exit(5); }",
+        # no near-miss check + generic reason -> the reason stands (A-C5)
+        "var plain = listReasonLine({ id: 'y', checks: [] },",
+        "  { reason: 'The quote is not printed anywhere on the page.' });",
+        "if (plain.indexOf('not printed') === -1) { console.error('plain=' + plain); process.exit(6); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_u38_why_section_shows_the_near_miss_not_a_generic_not_printed():
+    # U38 third ruling: the pane never says "not printed on the page" when the
+    # check result carries a near match — the check's own sentence wins over a
+    # stale generic reason (the sample's e7 stores one in run.json)
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fn = re.search(r"function whySection.*?\n  \}\n", js, re.S).group(0)
+    script = "\n".join([
+        "var FIELD_WORDS = { quote: 'Quote' };",
+        "function bothReadersWord() { return 'The readers'; }",
+        "function el(tag, cls, text) { return { tag: tag, className: cls || '', textContent: text || '',",
+        "  children: [], style: {},",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        fn,
+        # the sample's real case: a stale generic reason + a near-miss check
+        "var row = { checks: [{ result: 'fail', reason: 'The quote nearly matches the page; 1 word differs — quote ‘9,’ page ‘19,’.' }] };",
+        "var t = { group: 'open', reason: 'The quote is not printed on the page as given. Waiting for you.', disagreement: null };",
+        "var txt = JSON.stringify(whySection(row, t));",
+        "if (/not printed/i.test(txt)) { console.error('generic reason shown'); process.exit(2); }",
+        "if (txt.indexOf('nearly matches') === -1) { console.error('near-miss sentence missing'); process.exit(3); }",
+        # no near match -> the state reason shows as before (A-C5)
+        "var row2 = { checks: [{ result: 'fail', reason: 'The quote is not printed anywhere on the page.' }] };",
+        "if (JSON.stringify(whySection(row2, t)).indexOf('not printed') === -1) process.exit(4);",
+        # no reason at all -> Waiting for you.
+        "var sec3 = whySection({ checks: [] }, { group: 'open', reason: null, disagreement: null });",
+        "if (JSON.stringify(sec3).indexOf('Waiting for you.') === -1) process.exit(5);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
 
 def test_u37_keep_anyway_ui_pins():
     # U37: the pane of a code-removed row carries a 'Keep anyway' button next
