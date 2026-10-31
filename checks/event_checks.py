@@ -51,11 +51,12 @@ def quote_match(quote: str | None, words: list[dict], box=None) -> CheckResult:
     that box, is a picture: the check could not run (it is not a failure)."""
     want = _norm_quote(quote)
 
-    def result(res: str, reason: str, found=None, word_ids=None) -> CheckResult:
+    def result(res: str, reason: str, found=None, word_ids=None, near_match=None, differs=None) -> CheckResult:
         compared = {"value": want, "found": found}
         if word_ids is not None:
             compared["word_ids"] = word_ids
-        return CheckResult(QUOTE_ID, QUOTE_LABEL, res, reason, compared)
+        return CheckResult(QUOTE_ID, QUOTE_LABEL, res, reason, compared,
+                           near_match=near_match, differs=list(differs or []))
 
     picture = bool(words) and _valid_box(box) and is_picture_at(box, words)
     if not words:
@@ -72,7 +73,45 @@ def quote_match(quote: str | None, words: list[dict], box=None) -> CheckResult:
                           found=join_words(run), word_ids=[w["id"] for w in run])
     if picture:
         return result(COULD_NOT_RUN, PICTURE_REASON)
+    near = _near_run(want.split(" "), words, n)
+    if near:
+        run, differs = near
+        k = len(differs)
+        shown = "; ".join(f"quote \u2018{q}\u2019, page \u2018{p}\u2019" for q, p in differs[:3])
+        more = f" (and {k - 3} more)" if k > 3 else ""
+        what = "1 word differs" if k == 1 else f"{k} words differ"
+        return result(FAIL, f"The quote nearly matches the page; {what} \u2014 {shown}{more}.",
+                      near_match=join_words(run), differs=differs)
     return result(FAIL, "The quote is not printed anywhere on the page.")
+
+
+NEAR_RATIO = 0.9
+_EDGE = re.compile(r"^\W+|\W+$")
+
+
+def _fold(word: str) -> str:
+    return _EDGE.sub("", _norm_quote(word)).casefold()
+
+
+def _near_run(qwords: list[str], words: list[dict], n: int):
+    """Best same-length run of page words that matches the quote at >= NEAR_RATIO word by word (case and edge
+    punctuation ignored), with the (quote_word, page_word) pairs that differ. None when there is no such run."""
+    qf = [_fold(w) for w in qwords]
+    best = None
+    for i in range(0, len(words) - n + 1):
+        run = words[i : i + n]
+        if any(w.get("break") for w in run):
+            continue
+        same = sum(1 for a, w in zip(qf, run) if a == _fold(w["text"]))
+        if same / n >= NEAR_RATIO and (best is None or same > best[0]):
+            best = (same, run)
+    if best is None:
+        return None
+    run = best[1]
+    differs = [(q, w["text"]) for q, w, f in zip(qwords, run, qf) if f != _fold(w["text"])]
+    if not differs:     # only case or punctuation differs: say which words
+        differs = [(q, w["text"]) for q, w in zip(qwords, run) if q != _norm_quote(w["text"])]
+    return (run, differs) if differs else None
 
 
 # ---------------------------------------------------------------- date

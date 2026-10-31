@@ -7129,7 +7129,7 @@
      "label": "Quote found on page",
      "kind": "Code",
      "result": "fail",
-     "reason": "The quote is not printed anywhere on the page.",
+     "reason": "The quote nearly matches the page; 1 word differs — quote ‘9,’, page ‘19,’.",
      "compared": {
       "looked_for": "Samplebio Six will report final results on July 9, 2027.",
       "found": null
@@ -7260,7 +7260,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "quote_match",
-     "text": "Quote found on page: fail. The quote is not printed anywhere on the page.",
+     "text": "Quote found on page: fail. The quote nearly matches the page; 1 word differs — quote ‘9,’, page ‘19,’.",
      "at": "2026-10-27T15:08:10+00:00"
     },
     {

@@ -22,13 +22,18 @@ class CheckResult:
     reason: str  # one short plain sentence
     compared: dict = field(default_factory=dict)  # what was compared with what
     kind: str = "Code"  # who ran it: always code for these checks
+    near_match: str | None = None  # quote check: the page's wording for a run that nearly matches the quote
+    differs: list = field(default_factory=list)  # quote check: [(quote_word, page_word), ...] for that run
 
     def __post_init__(self) -> None:
         if self.result not in RESULTS:
             raise ValueError(f"unknown check result {self.result!r}")
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        if d["near_match"] is None and not d["differs"]:    # only a near-miss quote check carries these
+            del d["near_match"], d["differs"]
+        return d
 
 
 _SPACES = re.compile(r"\s+")
