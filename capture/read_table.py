@@ -275,10 +275,11 @@ def _silent_record(prompt: str, exc: BaseException | None = None) -> dict:
 
 
 def _call(client, messages, json_mode: bool):
-    kwargs = {"model": MODEL, "messages": messages, "temperature": 0}
+    from capture import http
+
+    kwargs = {"model": MODEL, "messages": messages, "temperature": 0, "max_tokens": http.MAX_COMPLETION_TOKENS}
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
-    from capture import http
 
     return http.call_with_retry(lambda: client.chat.completions.create(**kwargs))
 

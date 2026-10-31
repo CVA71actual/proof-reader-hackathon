@@ -210,6 +210,23 @@ def test_a_silent_sam_call_is_unknown_cost_not_zero_and_unpriced_under_a_limit(r
     assert run["run"]["spend_usd"] in (0, 0.0, None)
 
 
+class SamRetriedOnTable(test_scan.FakeSam):
+    def segment(self, image, concept):
+        r = super().segment(image, concept)
+        if concept == "table":
+            r.extra = {"retried_after_timeout": True}
+        return r
+
+
+def test_a_sam_retry_is_charged_the_same_image_cost_again(runs_dir):
+    from runs import prices
+    client, rid = test_scan.start(runs_dir, FakeReader(), SamRetriedOnTable(test_scan.TWO_BOXES), spending_limit_usd=5)
+    job, run = job_of(runs_dir, rid), run_of(runs_dir, rid)
+    one = prices.image_cost_usd("SAM 3.1", 1)
+    assert job["unpriced_calls"] == 0 and job["retries_charged"] == 1
+    assert one and job["retry_worst_case_usd"] == one == run["run"]["retry_worst_case_usd"]
+
+
 def test_a_silent_sam_call_with_no_limit_counts_no_unpriced_call(runs_dir):
     client, rid = test_scan.start(runs_dir, FakeReader(), SamSilentOnTable(test_scan.TWO_BOXES))
     assert job_of(runs_dir, rid)["unpriced_calls"] == 0
@@ -400,15 +417,64 @@ SENTENCE = ("One call to {m} was answered only on a second try; the first try ma
             "so its cost is unknown.")
 
 
-def test_a_read_timeout_then_success_under_a_limit_is_one_unpriced_call(runs_dir):
+def test_a_read_timeout_then_success_under_a_limit_is_charged_at_the_worst_case_and_the_run_goes_on(runs_dir):
     reader = FlakyThenAnswers(httpx.ReadTimeout("x"))
     rid = start(runs_dir, reader, companies=["PTGX"], spending_limit_usd=5)
     run, job = run_of(runs_dir, rid), job_of(runs_dir, rid)
-    assert run["run"]["turns_total"] == 1 and run["run"]["spend_usd"] > 0          # counted with its known cost
-    assert job["unpriced_calls"] == 1 and reader.model in job["unpriced_models"]
-    assert job["retried_after_timeout"] == 1
+    assert job["unpriced_calls"] == 0 and job["retried_after_timeout"] == 1 and job["retries_charged"] == 1
+    assert run["run"]["status"] == "done"
+    bound = job["retry_worst_case_usd"]
+    assert bound > 0 and run["run"]["retry_worst_case_usd"] == bound
+    assert run["run"]["spend_usd"] >= bound            # the lost try is a real cost inside the spend
+
+
+def test_the_bound_is_the_same_prompt_with_the_longest_answer():
+    from runs import prices
+    assert prices.cost_usd("Muse Spark", 1000, http.MAX_COMPLETION_TOKENS) > prices.cost_usd("Muse Spark", 1000, 500)
+
+
+def test_a_retry_with_no_bound_is_the_unpriced_stop_as_before(runs_dir):
+    class NoTokens(FlakyThenAnswers):
+        def call(self, prompt, image=None):
+            r = super().call(prompt, image)
+            r.prompt_tokens = None
+            return r
+
+    reader = NoTokens(httpx.ReadTimeout("x"))
+    rid = start(runs_dir, reader, companies=["PTGX"], spending_limit_usd=5)
+    run, job = run_of(runs_dir, rid), job_of(runs_dir, rid)
+    assert job["unpriced_calls"] == 1 and not job.get("retries_charged")
     assert run["run"]["status"] == "needs_input"
     assert run["run"]["status_reason"].endswith(SENTENCE.format(m=reader.model))
+
+
+def test_a_retry_that_lands_the_charge_over_the_limit_stops_the_run_cleanly(runs_dir):
+    reader = FlakyThenAnswers(httpx.ReadTimeout("x"))
+    probe = start(runs_dir, FlakyThenAnswers(httpx.ReadTimeout("x")), companies=["PTGX"], spending_limit_usd=5)
+    bound = job_of(runs_dir, probe)["retry_worst_case_usd"]
+    rid = start(runs_dir, reader, companies=["PTGX", "IONS"], spending_limit_usd=bound)
+    run, job = run_of(runs_dir, rid), job_of(runs_dir, rid)
+    assert run["run"]["status"] == "needs_input" and job["unpriced_calls"] == 0
+    assert "spending limit" in run["run"]["status_reason"]
+    assert run["run"]["turns_total"] == 1                # nothing more was sent after the double charge
+
+
+def test_every_text_call_asks_for_the_completion_cap():
+    seen = []
+
+    class Comp:
+        def create(self, **kw):
+            seen.append(kw)
+            raise ValueError("stop")
+
+    class C:
+        chat = type("X", (), {"completions": Comp()})()
+
+    from capture import reader as rd, read_table
+    for fn in (lambda: rd.create(C(), "m", [], True), lambda: read_table._call(C(), [], True)):
+        with pytest.raises(ValueError):
+            fn()
+    assert [k["max_tokens"] for k in seen] == [http.MAX_COMPLETION_TOKENS] * 2
 
 
 def test_a_connect_failure_then_success_is_free_and_the_run_goes_on(runs_dir):

@@ -68,8 +68,9 @@ def timeout_reply(name: str, model: str, images: int | None = None, extra: dict 
 
 
 def create(client, model: str, messages: list[dict], json_mode: bool):
-    """One chat call. No token cap: these models reason before they answer and a small cap leaves the answer empty."""
-    kwargs = {"model": model, "messages": messages, "temperature": 0}
+    """One chat call, capped at http.MAX_COMPLETION_TOKENS (roomy: these models reason before they answer)."""
+    kwargs = {"model": model, "messages": messages, "temperature": 0,
+              "max_tokens": http.MAX_COMPLETION_TOKENS}
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
     return http.call_with_retry(lambda: client.chat.completions.create(**kwargs))
@@ -122,7 +123,8 @@ class LiveReader:
         sent; if api.meta.ai rejects it (400 or 422) the Reply has an error and extra["tools_rejected"] is True, and the
         caller goes on with the JSON tool request (capture/reader_tools.py). Never raises."""
         client = http.openai_client(read_table.BASE_URL, self._key())
-        kwargs = {"model": self.model, "messages": messages, "temperature": 0}
+        kwargs = {"model": self.model, "messages": messages, "temperature": 0,
+              "max_tokens": http.MAX_COMPLETION_TOKENS}
         if tools:
             kwargs["tools"] = tools
         if json_mode:

@@ -17,6 +17,10 @@ CONNECT_TIMEOUT_S = 20
 READ_TIMEOUT_S = 120
 VOICE_TIMEOUT_S = 60
 RETRY_DELAY_S = 5
+# Every text model call asks for at most this many completion tokens, so a call's worst cost is known: a try that got no
+# answer is charged prompt tokens + this many (server/jobs.py). The largest completion in the saved runs is 5902 tokens;
+# 12288 leaves 2x headroom (reasoning tokens count).
+MAX_COMPLETION_TOKENS = 12288
 
 _SILENT_NAMES = {"APITimeoutError", "APIConnectionError", "TimeoutException", "TransportError"}
 

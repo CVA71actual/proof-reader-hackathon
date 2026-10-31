@@ -47,6 +47,7 @@ from pathlib import Path
 from accuracy import types as T
 from capture import read_events, read_table, reader_tools, sam as sam_module
 from capture.reader import Reply
+from capture.http import MAX_COMPLETION_TOKENS
 from capture.second_reader import CAP_REACHED, OPENROUTER_CAP_USD, UNPRICED
 from checks.common import normalize
 from checks.coverage import sentence_covered, sentences as coverage_sentences
@@ -496,10 +497,24 @@ class Job:
             # a call that got no answer cost an unknown amount, unless every failure was connect-only (nothing was sent)
             self.job["unpriced_calls"] += 1
         if (reply.extra or {}).get("retried_after_timeout") and not reply.timed_out:
-            # answered only on a second try that followed a possibly-billed timeout: the first try's cost is unknown
+            # answered only on a second try that followed a possibly-billed timeout: the first try's cost is unknown, but
+            # it is bounded: the same prompt and the longest answer the call may ask for (max_tokens), or the same image cost
             self.job["retried_after_timeout"] = self.job.get("retried_after_timeout", 0) + 1
-            if self.choices["spending_limit_usd"] is not None:
-                self.job["unpriced_calls"] += 1
+            if reply.images is not None:
+                bound = prices.image_cost_usd(price_name(reply.model), reply.images)
+            else:
+                bound = prices.cost_usd(price_name(reply.model), reply.prompt_tokens, MAX_COMPLETION_TOKENS)
+            if bound is not None:
+                self.meta["spend_usd"] = round((self.meta["spend_usd"] or 0) + bound, prices.ROUND_TO)
+                if (reply.extra or {}).get("route") == "openrouter":
+                    self.job["openrouter_spend_usd"] = round(self.job.get("openrouter_spend_usd", 0.0) + bound,
+                                                             prices.ROUND_TO)
+                total = round(self.job.get("retry_worst_case_usd", 0.0) + bound, prices.ROUND_TO)
+                self.job["retry_worst_case_usd"] = self.meta["retry_worst_case_usd"] = total
+                self.job["retries_charged"] = self.job.get("retries_charged", 0) + 1
+            elif self.choices["spending_limit_usd"] is not None:      # no bound can be computed: an unpriced call
+                if cost is not None:      # (a reply with no cost was already counted above)
+                    self.job["unpriced_calls"] += 1
                 for key in ("unpriced_models", "retried_models"):
                     models = self.job.setdefault(key, [])
                     if reply.model not in models:
@@ -1180,9 +1195,11 @@ class Job:
             if self.stopped_before_a_call(self.wonder):
                 return False
             reply = self.wonder.call(text, image=region)
+            retry_before = self.job.get("retry_worst_case_usd", 0.0)
             self.count_turn(reply)
             call_cost = prices.cost_usd(price_name(reply.model), reply.prompt_tokens, reply.completion_tokens)
-            self.job["wonder_spend_usd"] = round(self.job.get("wonder_spend_usd", 0.0) + (call_cost or 0.0),
+            lost = self.job.get("retry_worst_case_usd", 0.0) - retry_before      # a lost try counts in Wonder's share too
+            self.job["wonder_spend_usd"] = round(self.job.get("wonder_spend_usd", 0.0) + (call_cost or 0.0) + lost,
                                                  prices.ROUND_TO)
             if reply.timed_out:      # no answer: the row stays as it was and the next row goes on
                 row["trail"].append({"step": "Escalation result", "tag": "Code", "who": "capture.http",
