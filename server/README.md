@@ -10,10 +10,10 @@ model, the env file or `MODEL_API_KEY`.
 From the repo root, on this machine only (uvicorn binds to 127.0.0.1 unless told otherwise; do not pass `--host`):
 
 ```sh
-~/proof-reader-docs/.venv/bin/python -m uvicorn server.app:app --port 8777
+.venv/bin/python -m uvicorn server.app:app --port 8777
 ```
 
-Then open http://127.0.0.1:8777/ (the `ui/` folder, when it exists).
+Then open http://127.0.0.1:8777/ (the `ui/` folder).
 
 ## Endpoints
 

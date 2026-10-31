@@ -176,11 +176,13 @@ def test_nothing_is_served_with_no_serve_and_no_key_or_model_is_touched(capsys, 
     assert code == 0 and not seen and "Serving" not in out
 
 
-def test_the_readme_has_five_lines_for_running_the_demo():
+def test_the_readme_says_how_to_run_the_demo_without_a_key():
     text = (REPO / "README.md").read_text()
-    section = text.split("## Run the demo\n", 1)[1].split("\n## ", 1)[0].strip().splitlines()
-    assert len(section) == 5 and [l.split(".")[0] for l in section] == ["1", "2", "3", "4", "5"]
-    assert "python -m runs.demo" in section[1] and "127.0.0.1:8777" in section[2]
+    section = text.split("## Run it without a key\n", 1)[1].split("\n## ", 1)[0]
+    assert ".venv/bin/python -m runs.demo" in section and "127.0.0.1:8777/#/ptgx-r5/audit" in section
+    assert "proof-reader-docs" not in text and "proof-reader-docs" not in (REPO / "server/README.md").read_text()
+    walk = [l for l in section.splitlines() if l[:2] in {f"{n}." for n in range(1, 7)}]
+    assert len(walk) == 6 and "ptgx-r5" in walk[0] and "twelve-4" in walk[4]
 
 
 def test_the_committed_accuracy_files_hold_their_hashes_after_the_rebuild():
@@ -219,5 +221,5 @@ def test_the_default_run_setting_is_served_and_the_demo_prints_where_to_open(run
 
     demo.main(["--runs-dir", str(runs_dir)],
               serve=lambda app, host, port: seen.update(body=TestClient(app).get("/api/settings").json()))
-    assert seen["body"] == {"default_run": None}
-    assert "Open http://" not in capsys.readouterr().out
+    assert seen["body"] == {"default_run": "ptgx-r5"}
+    assert "Open http://127.0.0.1:8777/#/ptgx-r5/audit" in capsys.readouterr().out

@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None, serve=None) -> int:
     """`serve`: how to serve the app (default uvicorn.run); a test passes its own."""
     ap = argparse.ArgumentParser(prog="python -m runs.demo", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--run", default=None, help="the run the app opens on (default: unchanged)")
+    ap.add_argument("--run", default=None, help="the run the app opens on (default: ptgx-r5)")
     ap.add_argument("--runs-dir", type=Path, default=build_run.RUNS)
     ap.add_argument("--port", type=int, default=PORT)
     ap.add_argument("--no-serve", action="store_true")
@@ -112,10 +112,9 @@ def main(argv: list[str] | None = None, serve=None) -> int:
         return 0
     from server.app import create_app
 
-    app = create_app(runs_dir=args.runs_dir, default_run=args.run)
+    app = create_app(runs_dir=args.runs_dir, default_run=args.run or DEMO_RUN)
     print(f"\nServing the app at http://{HOST}:{args.port}/  (this machine only; Ctrl-C stops it)")
-    if args.run:
-        print(f"Open http://{HOST}:{args.port}/#/{args.run}/audit")
+    print(f"Open http://{HOST}:{args.port}/#/{args.run or DEMO_RUN}/audit")
     if serve is None:
         import uvicorn
 
