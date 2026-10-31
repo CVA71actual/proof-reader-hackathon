@@ -59,7 +59,7 @@ def test_transcribe_sends_the_documented_request(monkeypatch):
     monkeypatch.setenv("MODEL_API_KEY", "k")
     monkeypatch.setattr(voice.httpx, "post", post)
     out = voice.transcribe(wav())
-    assert out == {"transcript": "keep it", "audio_ms": 3000, "cost_usd": 0.00015}
+    assert out == {"transcript": "keep it", "audio_ms": 3000, "cost_usd": 0.00015, "attempts": 1, "billed_attempts": 1}
     assert seen["url"] == "https://api.meta.ai/v1/asr/transcribe"
     assert seen["headers"]["Accept"] == "application/json" and seen["headers"]["Authorization"] == "Bearer k"
     name, text, ctype = seen["files"]["request"]

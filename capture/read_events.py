@@ -274,15 +274,16 @@ def read_live(words_doc: dict, entry: dict) -> dict:
             "No model key found. Set MODEL_API_KEY in the environment or in "
             f"{ENV_FILE} as MODEL_API_KEY=\"...\", then run again. (Use --fake to work offline.)"
         )
-    from openai import OpenAI  # imported here so --fake and tests need no network client
+    from capture import http
 
-    client = OpenAI(base_url=BASE_URL, api_key=key)
+    client = http.openai_client(BASE_URL, key)
     del key
     prompt = build_prompt(words_doc, entry)
     messages = [{"role": "user", "content": prompt}]
     base = {"base_url": BASE_URL, "requested_model": MODEL}
 
     response_format_used = "json_object"
+    http.take_billed()
     try:
         resp = read_table._call(client, messages, json_mode=True)
     except Exception as e:  # some endpoints reject response_format; retry once without it
@@ -299,6 +300,8 @@ def read_live(words_doc: dict, entry: dict) -> dict:
     events, problem = parse_events(raw)
     usage = getattr(resp, "usage", None)
     extra = {**base, "response_format": response_format_used}
+    if http.take_billed():
+        extra["retried_after_timeout"] = True
     if usage is not None:
         extra["usage"] = {k: getattr(usage, k, None) for k in ("prompt_tokens", "completion_tokens", "total_tokens")}
     return _record(model=getattr(resp, "model", None) or MODEL, prompt=prompt, raw=raw, events=events,
@@ -307,8 +310,12 @@ def read_live(words_doc: dict, entry: dict) -> dict:
 
 def _failed(prompt: str, entry: dict, e: Exception, extra: dict) -> dict:
     """The call did not succeed: record that, with no events. Nothing is made up."""
-    return _record(model=MODEL, prompt=prompt, raw=None, events=None, problem=_plain_error(e), entry=entry,
-                   extra={**extra, "call_failed": True})
+    from capture import http
+
+    silent = http.is_silent(e)
+    return _record(model=MODEL, prompt=prompt, raw=None, events=None,
+                   problem=http.did_not_answer(read_table.SPARK_NAME) if silent else _plain_error(e), entry=entry,
+                   extra={**extra, "call_failed": True, **({"timed_out": True, "may_have_been_billed": http.may_have_been_billed(e)} if silent else {})})
 
 
 # ---------------------------------------------------------------- fake reading

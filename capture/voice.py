@@ -17,7 +17,7 @@ import wave
 
 import httpx
 
-from capture import read_table
+from capture import http, read_table
 from runs import prices
 
 NAME = "Muse Voice Transcribe"
@@ -31,7 +31,12 @@ NO_KEY = "No model key was found, so nothing was transcribed. Add MODEL_API_KEY 
 
 
 class VoiceError(Exception):
-    """A plain sentence a person can read."""
+    """A plain sentence a person can read. `billed_attempts`: how many attempts failed in a way that may have been billed
+    (0, 1 or 2; only the no-answer failure sets it)."""
+
+    def __init__(self, message: str = "", billed_attempts: int = 0):
+        super().__init__(message)
+        self.billed_attempts = billed_attempts
 
 
 def _format_code(data: bytes):
@@ -95,27 +100,45 @@ def _key() -> str:
 
 
 def transcribe(wav_bytes: bytes) -> dict:
-    """{transcript, audio_ms, cost_usd} for one WAV. VoiceError (a plain sentence) when the audio is refused or the call fails."""
+    """{transcript, audio_ms, attempts, billed_attempts, cost_usd} for one WAV. VoiceError (a plain sentence) when the audio is refused or the call fails."""
     check_wav(wav_bytes)
     key = _key()
     if not key:
         raise VoiceError(NO_KEY)
     request = {"model": MODEL, "audioEncoding": "WAV", "mode": "PUSH_TO_TALK"}
+    posts, billed = [], []
     try:
-        r = httpx.post(URL, headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
-                       files={"request": (None, json.dumps(request), "application/json"),
-                              "audio": ("audio.wav", bytes(wav_bytes), "audio/wav")}, timeout=60)
-    except httpx.HTTPError:
+        r = http.call_with_retry(lambda: posts.append(1) or httpx.post(
+            URL, headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
+            files={"request": (None, json.dumps(request), "application/json"),
+                   "audio": ("audio.wav", bytes(wav_bytes), "audio/wav")}, timeout=http.VOICE_TIMEOUT_S),
+            on_retry=lambda e, b: billed.append(b))
+    except Exception as e:
+        if http.is_silent(e):
+            n = sum(1 for b in billed if b) + (1 if http.may_have_been_billed(e) else 0)
+            msg = http.did_not_answer(NAME) + (" The attempt may have been billed." if n else "")
+            raise VoiceError(msg, billed_attempts=n) from None
+        if not isinstance(e, httpx.HTTPError):
+            raise
         raise VoiceError("The transcription service could not be reached.") from None
+    earlier = sum(1 for b in billed if b)          # a first attempt that may have been billed stays charged on every failure
     if r.status_code != 200:
-        raise VoiceError(f"The transcription service refused the audio (HTTP {r.status_code}).")
+        raise VoiceError(f"The transcription service refused the audio (HTTP {r.status_code}).",
+                         billed_attempts=earlier)
     try:
         doc = r.json()
         transcript, ms = str(doc["transcript"]).strip(), doc["audioDurationMs"]
     except (ValueError, KeyError, TypeError):
-        raise VoiceError("The transcription service answered in a shape that was not understood.") from None
-    check_audio_ms(ms)
-    return {"transcript": transcript, "audio_ms": ms, "cost_usd": prices.audio_cost_usd(NAME, ms)}
+        raise VoiceError("The transcription service answered in a shape that was not understood.",
+                         billed_attempts=earlier) from None
+    try:
+        check_audio_ms(ms)
+    except VoiceError as e:
+        raise VoiceError(str(e), billed_attempts=earlier) from None
+    billed_attempts = 2 if any(billed) else 1      # a retry after a read timeout may follow a billed request
+    cost = prices.audio_cost_usd(NAME, ms)
+    return {"transcript": transcript, "audio_ms": ms, "attempts": len(posts), "billed_attempts": billed_attempts,
+            "cost_usd": None if cost is None else round(cost * billed_attempts, prices.ROUND_TO)}
 
 
 # ---------------------------------------------------------------- rules: words -> a proposal (no model)

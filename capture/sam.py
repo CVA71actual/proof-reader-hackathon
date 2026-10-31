@@ -31,7 +31,8 @@ from pathlib import Path
 
 from capture import read_events, read_table
 from capture.capture_source import FIXTURES, load_entry
-from capture.reader import NO_KEY, Reply
+from capture import http
+from capture.reader import NO_KEY, Reply, retried, timeout_reply
 
 NAME = "SAM 3.1"
 MODEL = "sam-3.1"
@@ -74,11 +75,10 @@ class SamReader:
 
     def segment(self, image: bytes, concept: str) -> Reply:
         """One request for one concept. The Reply's raw is the answer line; `images` is the images processed."""
-        from openai import OpenAI  # imported here so tests and offline use need no network client
-
         uri = "data:image/png;base64," + base64.b64encode(image).decode("ascii")
-        client = OpenAI(base_url=read_table.BASE_URL, api_key=self._key())
-        try:
+        client = http.openai_client(read_table.BASE_URL, self._key())
+
+        def ask():
             stream = client.responses.create(model=MODEL, stream=True, input=[{"role": "user", "content": [
                 {"type": "input_text", "text": concept}, {"type": "input_image", "image_url": uri}]}])
             parts, images = [], 1
@@ -89,10 +89,17 @@ class SamReader:
                 elif kind == "response.completed":
                     usage = getattr(getattr(event, "response", None), "usage", None)
                     images = getattr(usage, "images_processed", None) or images
+            return parts, images
+
+        http.take_billed()
+        try:
+            parts, images = http.call_with_retry(ask)
         except Exception as e:
+            if http.is_silent(e):
+                return timeout_reply(NAME, MODEL, exc=e)      # images unknown: SAM may have billed the dropped call
             return Reply(None, MODEL, error=read_table._plain_error(e), images=0)
         return Reply("".join(parts), MODEL, images=images,
-                     extra={"base_url": read_table.BASE_URL, "requested_model": MODEL, "concept": concept})
+                     extra=retried({"base_url": read_table.BASE_URL, "requested_model": MODEL, "concept": concept}))
 
 
 def main(argv: list[str] | None = None) -> int:

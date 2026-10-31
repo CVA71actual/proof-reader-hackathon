@@ -366,6 +366,8 @@ class Job:
                  index: sources.Index | None = None):
         self.dir, self.reader, self.second, self.as_of, self.wonder = run_dir, reader, second, as_of, wonder
         self.sam = sam
+        if second is not None and hasattr(second, "before_fallback"):
+            second.before_fallback = self._before_fallback
         self.index = index or sources.load_index()
         self._held: int | None = None             # the budget reservation of the call in flight (count_turn releases it)
         self.current_page: str | None = None      # the page being worked on, so a failed stop is charged to it
@@ -442,7 +444,27 @@ class Job:
             if disk is not None:
                 self.meta["spend_usd"] = disk
 
+    def _before_fallback(self, silent_reply) -> bool:
+        """The second reader's Baseten call got no answer and OpenRouter is next. Count the silent turn now (unpriced
+        under a limit), then put the fallback call through the budget gate. False: the fallback is not made."""
+        with RUN_LOCK:
+            self.refresh_spend()
+            self._count_turn(silent_reply)
+            release_budget(self.dir.name, self._held)
+            self._held = None
+            self.save(refresh=False)
+            limit = self.choices["spending_limit_usd"]
+            if limit is None:
+                return True
+            if not _finite_limit(limit) or (self.meta["spend_usd"] or 0) >= limit:
+                return False
+            self._held = reserve_budget(self.dir.name, self.meta["spend_usd"], limit, MODEL_CALL_UNBOUNDED,
+                                        alone_may_cross=True)
+            return self._held is not None
+
     def count_turn(self, reply) -> None:
+        if (reply.extra or {}).get("already_counted"):      # counted before the fallback gate; nothing more to add
+            return
         with RUN_LOCK:       # the spend is added and the reservation released as one step: the gate never sees both
             self.refresh_spend()      # read-modify-write: the call's cost goes onto the persisted spend
             self._count_turn(reply)
@@ -469,8 +491,19 @@ class Job:
             if (reply.extra or {}).get("route") == "openrouter":   # the fallback route has its own $20 cap
                 self.job["openrouter_spend_usd"] = round(self.job.get("openrouter_spend_usd", 0.0) + cost,
                                                          prices.ROUND_TO)
-        elif self.choices["spending_limit_usd"] is not None and not reply.error:
+        elif self.choices["spending_limit_usd"] is not None and (not reply.error or (
+                reply.timed_out and (reply.extra or {}).get("may_have_been_billed", True))):
+            # a call that got no answer cost an unknown amount, unless every failure was connect-only (nothing was sent)
             self.job["unpriced_calls"] += 1
+        if (reply.extra or {}).get("retried_after_timeout") and not reply.timed_out:
+            # answered only on a second try that followed a possibly-billed timeout: the first try's cost is unknown
+            self.job["retried_after_timeout"] = self.job.get("retried_after_timeout", 0) + 1
+            if self.choices["spending_limit_usd"] is not None:
+                self.job["unpriced_calls"] += 1
+                for key in ("unpriced_models", "retried_models"):
+                    models = self.job.setdefault(key, [])
+                    if reply.model not in models:
+                        models.append(reply.model)
 
     def stopped_before_a_call(self, reader=None) -> bool:
         """The checks made before every model call. True (and the run is stopped) when it must not go on. When it
@@ -522,9 +555,16 @@ class Job:
         return "Stopped at the spending limit. Raise the limit and press Resume to read more."
 
     def unpriced_reason(self, limit: float, reader=None) -> str:
-        models = ", ".join(self.job.get("unpriced_models") or [getattr(reader, "model", "the model")])
-        return (f"The cost of a call could not be counted (runs/prices.py has no price for {models}), so the spending "
-                f"limit of {money(limit)} cannot be kept. Nothing more was read.")
+        retried = self.job.get("retried_models") or []
+        models = [m for m in (self.job.get("unpriced_models") or []) if m not in retried or not prices.has_price(price_name(m))]
+        parts = []
+        if models or not retried:
+            names = ", ".join(models or [getattr(reader, "model", "the model")])
+            parts.append(f"The cost of a call could not be counted (runs/prices.py has no price for {names}), so the "
+                         f"spending limit of {money(limit)} cannot be kept. Nothing more was read.")
+        parts += [f"One call to {m} was answered only on a second try; the first try may have been billed, so its "
+                  f"cost is unknown." for m in retried]
+        return " ".join(parts)
 
     def stopped_after_the_last_call(self) -> bool:
         """The checks made when no call is left: a run is done only if every call stayed inside its spending limit. The
@@ -621,7 +661,7 @@ class Job:
         page_facts = {"words_sha256": entry["words_sha256"], "page_sha256": entry["page_sha256"], "pin": entry["id"]}
 
         attempts = self.job["attempts"].setdefault(source["id"], [])
-        reply, parsed = None, None
+        reply, parsed, no_answer = None, None, None
         tool_box = None
         if kind == "events" and self.choices.get("reader_tools"):
             if hasattr(self.reader, "chat"):
@@ -636,11 +676,17 @@ class Job:
                 reply, prompt = self.converse(prompt, tool_box)
                 if reply is None:
                     return False
+                if reply.timed_out:
+                    no_answer = reply.error
+                    break
             else:
                 if self.stopped_before_a_call():
                     return False
                 reply = self.reader.call(prompt)
                 self.count_turn(reply)
+                if reply.timed_out:
+                    no_answer = reply.error
+                    break
                 if reply.error:
                     self.stop("failed", f"{reply.error} Resume to try again.")
                     return False
@@ -655,7 +701,8 @@ class Job:
         at = now_utc()
         if parsed is None:
             cap = reader_tools.MAX_MODEL_CALLS if len(attempts) < UNREADABLE_LIMIT else None   # why the loop ended
-            self.run["rows"].append(self.refused_row(entry, source, prompt, who, attempts, at, calls_cap=cap))
+            self.run["rows"].append(self.refused_row(entry, source, prompt, who, attempts, at,
+                                                     calls_cap=None if no_answer else cap, no_answer=no_answer))
         elif kind == "events":
             extra = {**(reply.extra or {}), **page_facts, "usage": {"prompt_tokens": reply.prompt_tokens,
                                                                     "completion_tokens": reply.completion_tokens}}
@@ -707,6 +754,8 @@ class Job:
                                      json_mode=not native)
             self.count_turn(reply)
             box.model_calls += 1
+            if reply.timed_out:
+                return reply, prompt      # the service did not answer: the page goes to a person (read_page)
             if reply.error:
                 if native and (reply.extra or {}).get("tools_rejected"):
                     # api.meta.ai rejected the tools parameter: the same loop on the JSON tool request, from here on
@@ -953,6 +1002,9 @@ class Job:
                 return False
             reply = self.second.call(prompt, image=png)
             self.count_turn(reply)
+            if reply.timed_out:      # no answer even after the one retry: the first reader's rows stand, nothing is compared
+                parsed, why = None, reply.error
+                break
             if reply.error:
                 self.stop("failed", f"The second reader: {reply.error} Resume to try again.")
                 return False
@@ -968,7 +1020,8 @@ class Job:
         name = price_name(reply.model)
         if parsed is None:
             self.note_second(sid, "unreadable", why, name, got)
-            self.save(f"The second reader's answer could not be read ({why}); nothing was compared.")
+            self.save(why + " Nothing was compared." if reply.timed_out
+                      else f"The second reader's answer could not be read ({why}); nothing was compared.")
             return True
         at = now_utc()
         extra = {**(reply.extra or {}), "input": got, "words_sha256": entry["words_sha256"],
@@ -1131,6 +1184,12 @@ class Job:
             call_cost = prices.cost_usd(price_name(reply.model), reply.prompt_tokens, reply.completion_tokens)
             self.job["wonder_spend_usd"] = round(self.job.get("wonder_spend_usd", 0.0) + (call_cost or 0.0),
                                                  prices.ROUND_TO)
+            if reply.timed_out:      # no answer: the row stays as it was and the next row goes on
+                row["trail"].append({"step": "Escalation result", "tag": "Code", "who": "capture.http",
+                                     "text": f"{reply.error} The row stays as it was.", "at": now_utc()})
+                self.job["escalated_rows"][row["id"]] = "kept"
+                self.save(reply.error)
+                continue
             if reply.error:
                 self.stop("failed", f"Muse Wonder: {reply.error} Resume to try again.")
                 return False
@@ -1221,6 +1280,10 @@ class Job:
             return False
         reply = reader.call(prompt)
         self.count_turn(reply)
+        if reply.timed_out:      # no answer: the rows stay as they were, for the checks and a person
+            done[key] = "no answer"
+            self.save(reply.error)
+            return True
         if reply.error:
             self.stop("failed", f"{reply.error} Resume to try again.")
             return False
@@ -1305,7 +1368,7 @@ class Job:
                                   f"fake reading, no model called")
 
     def refused_row(self, entry: dict, source: dict, prompt: str, who: str, attempts: list, at: str,
-                    calls_cap: int | None = None) -> dict:
+                    calls_cap: int | None = None, no_answer: str | None = None) -> dict:
         """An unreadable page: one row, group open, for a person to look at. `attempts`: the answers that were not
         understood. `calls_cap`: set when the page's model calls ran out before three answers were refused (the
         reader_tools cap); the reason and a trail step then say so, and THREE_REFUSALS is kept for three parse failures."""
@@ -1320,14 +1383,47 @@ class Job:
             trail.append({"step": f"Model-call cap reached ({calls_cap} calls)", "tag": "Code", "who": "server.jobs",
                           "text": f"The page's {calls_cap} model calls were used; {len(attempts)} answer"
                                   f"{'s were' if len(attempts) != 1 else ' was'} not understood.", "at": at})
+        title = f"{ticker} page {page_number}: the reader's answer could not be read"
+        if no_answer:       # the service did not answer, even after the one retry (capture/http.py)
+            reason = no_answer
+            title = f"{ticker} page {page_number}: the reader did not answer in time"
+            trail.append({"step": "No answer from the model", "tag": "Code", "who": "capture.http", "text": no_answer,
+                          "at": at})
         trail.append({"step": "Sent to a person", "tag": "Code", "who": "server.jobs", "text": reason, "at": at})
         return {
             "id": f"e{len(self.run['rows']) + 1}", "ticker": ticker, "company": entry["company"],
-            "event_type": "unknown", "title": f"{ticker} page {page_number}: the reader's answer could not be read",
+            "event_type": "unknown", "title": title,
             "date_text": None, "date": None, "quote": None, "source_id": source["id"], "page_number": page_number,
             "box": None, "proposed_by": build_run.MUSE_SPARK, "status": "unreadable", "group": "open",
             "reason": reason, "sample": False, "checks": [], "trail": trail,
         }
+
+
+def record_voice_unpriced(runs_dir: Path, run_id: str, billed_attempts: int, model: str = "Muse Voice Transcribe") -> None:
+    """A voice call got no answer but may have been billed (billed_attempts > 0): its cost is unknown, so the run's
+    budget state gets one unpriced call, the same marker an unpriced reader call leaves. Call it only under a limit."""
+    if not billed_attempts:
+        return
+    run_dir = Path(runs_dir) / run_id
+    with RUN_LOCK:
+        job_file = run_dir / "job.json"
+        job = json.loads(job_file.read_text()) if job_file.is_file() else {"log": []}
+        job["unpriced_calls"] = job.get("unpriced_calls", 0) + 1
+        models = job.setdefault("unpriced_models", [])
+        if model not in models:
+            models.append(model)
+        job.setdefault("log", []).append({"at": now_utc(), "note": "A spoken decision got no answer; it may have been "
+                                                                   "billed, so the spend is not known."})
+        _write(job_file, job)
+
+
+def fail_voice(runs_dir: Path, run_id: str, token: int | None, billed_attempts: int, limited: bool) -> None:
+    """A voice call failed: release its reservation and, if it may have been billed under a limit, persist the
+    unknown-spend marker, in ONE RUN_LOCK acquisition, so the run worker's gate never sees neither."""
+    with RUN_LOCK:
+        if limited and billed_attempts:
+            record_voice_unpriced(runs_dir, run_id, billed_attempts)
+        release_budget(run_id, token)
 
 
 def count_voice_turn(runs_dir: Path, run_id: str, heard: dict, token: int | None = None) -> None:

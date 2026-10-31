@@ -369,7 +369,8 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
                 allowed = voice.allowed_ms(voice.check_wav(body))
                 # Reserve the most this recording can be billed (the same bound the reply is held to) on the run's
                 # budget gate, shared with the run worker: spend + every held reservation must stay inside the limit.
-                worst = (prices.audio_cost_usd(voice.NAME, allowed) or 0) if limit is not None else 0
+                # two transcriptions worst case: a read timeout may follow a billed request, then the retry is billed too
+                worst = 2 * (prices.audio_cost_usd(voice.NAME, allowed) or 0) if limit is not None else 0
                 token = jobs.reserve_voice(store.runs_dir, run_id, limit, worst)
                 if token is None:
                     raise HTTPException(409, "The run is at its spending limit; raise it to keep using voice.")
@@ -381,7 +382,7 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
                 heard = transcriber(body)
                 voice.check_audio_ms(heard.get("audio_ms"), allowed)
             except voice.VoiceError as e:
-                jobs.release_budget(run_id, token)
+                jobs.fail_voice(store.runs_dir, run_id, token, getattr(e, "billed_attempts", 0), limit is not None)
                 raise HTTPException(422, str(e)) from None
             except BaseException:
                 jobs.release_budget(run_id, token)

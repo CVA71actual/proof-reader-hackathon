@@ -20,7 +20,7 @@ import base64
 import os
 from dataclasses import dataclass
 
-from capture import read_table
+from capture import http, read_table
 
 NO_KEY = ("No model key was found, so nothing was read. Add MODEL_API_KEY to ~/.config/proof-reader/env "
           "and resume.")
@@ -36,6 +36,7 @@ class Reply:
     extra: dict | None = None
     images: int | None = None      # images processed, for a model priced per image (SAM 3.1)
     tool_calls: list | None = None  # OpenAI-shape tool_calls of a chat() answer that asked for the tools
+    timed_out: bool = False        # the service did not answer (after the one retry); error holds the plain reason
 
 
 def messages_for(prompt: str, image: bytes | None = None) -> list[dict]:
@@ -47,18 +48,38 @@ def messages_for(prompt: str, image: bytes | None = None) -> list[dict]:
                                          {"type": "image_url", "image_url": {"url": uri}}]}]
 
 
+def retried(extra: dict | None) -> dict | None:
+    """extra with retried_after_timeout set when the call just made was answered only on a retry that followed a
+    possibly-billed timeout (capture/http.py take_billed); extra unchanged otherwise."""
+    if http.take_billed():
+        return {**(extra or {}), "retried_after_timeout": True}
+    return extra
+
+
+def timeout_reply(name: str, model: str, images: int | None = None, extra: dict | None = None,
+                  exc: BaseException | None = None) -> Reply:
+    """The Reply of a call whose service did not answer, even after the one retry (capture/http.py). extra carries
+    may_have_been_billed: whether ANY attempt may have been billed (False only when every attempt failed in the connect phase);
+    True when the failure is not known."""
+    earlier = http.take_billed()       # an earlier attempt of this call may have been sent: any such attempt is billable
+    flag = True if exc is None else (earlier or http.may_have_been_billed(exc))
+    return Reply(None, model, error=http.did_not_answer(name), timed_out=True, images=images,
+                 extra={**(extra or {}), "may_have_been_billed": flag})
+
+
 def create(client, model: str, messages: list[dict], json_mode: bool):
     """One chat call. No token cap: these models reason before they answer and a small cap leaves the answer empty."""
     kwargs = {"model": model, "messages": messages, "temperature": 0}
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
-    return client.chat.completions.create(**kwargs)
+    return http.call_with_retry(lambda: client.chat.completions.create(**kwargs))
 
 
 class LiveReader:
     """Muse Spark on the Meta Model API. WonderReader (capture/wonder.py) is the same call to another model."""
 
     model = read_table.MODEL
+    name = "Muse Spark"
 
     def _key(self) -> str:
         read_table.load_env_file()
@@ -68,20 +89,23 @@ class LiveReader:
         return None if self._key() else NO_KEY
 
     def call(self, prompt: str, image: bytes | None = None) -> Reply:
-        from openai import OpenAI  # imported here so tests and offline use need no network client
-
-        client = OpenAI(base_url=read_table.BASE_URL, api_key=self._key())
+        client = http.openai_client(read_table.BASE_URL, self._key())
         messages = messages_for(prompt, image)
         response_format = "json_object"
+        http.take_billed()
         try:
             resp = create(client, self.model, messages, json_mode=True)
         except Exception as e:  # some endpoints reject response_format; retry once without it
+            if http.is_silent(e):
+                return timeout_reply(self.name, self.model, exc=e)
             if read_table._status(e) not in (400, 422):
                 return Reply(None, self.model, error=read_table._plain_error(e))
             response_format = "none"
             try:
                 resp = create(client, self.model, messages, json_mode=False)
             except Exception as e2:
+                if http.is_silent(e2):
+                    return timeout_reply(self.name, self.model, exc=e2)
                 return Reply(None, self.model, error=read_table._plain_error(e2))
         raw = resp.choices[0].message.content if resp.choices else None
         usage = getattr(resp, "usage", None)
@@ -91,23 +115,24 @@ class LiveReader:
             extra["usage"] = {k: getattr(usage, k, None) for k in ("prompt_tokens", "completion_tokens", "total_tokens")}
         return Reply(raw, getattr(resp, "model", None) or self.model,
                      prompt_tokens=getattr(usage, "prompt_tokens", None),
-                     completion_tokens=getattr(usage, "completion_tokens", None), extra=extra)
+                     completion_tokens=getattr(usage, "completion_tokens", None), extra=retried(extra))
 
     def chat(self, messages: list[dict], tools: list[dict] | None = None, json_mode: bool = False) -> Reply:
         """One call of a conversation (the tool loop in server/jobs.py). With `tools` the OpenAI "tools" parameter is
         sent; if api.meta.ai rejects it (400 or 422) the Reply has an error and extra["tools_rejected"] is True, and the
         caller goes on with the JSON tool request (capture/reader_tools.py). Never raises."""
-        from openai import OpenAI
-
-        client = OpenAI(base_url=read_table.BASE_URL, api_key=self._key())
+        client = http.openai_client(read_table.BASE_URL, self._key())
         kwargs = {"model": self.model, "messages": messages, "temperature": 0}
         if tools:
             kwargs["tools"] = tools
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
+        http.take_billed()
         try:
-            resp = client.chat.completions.create(**kwargs)
+            resp = http.call_with_retry(lambda: client.chat.completions.create(**kwargs))
         except Exception as e:
+            if http.is_silent(e):
+                return timeout_reply(self.name, self.model, exc=e)
             rejected = bool(tools) and read_table._status(e) in (400, 422)
             return Reply(None, self.model, error=read_table._plain_error(e),
                          extra={"tools_rejected": rejected, "status": read_table._status(e)})
@@ -121,4 +146,4 @@ class LiveReader:
                  "response_format": "json_object" if json_mode else "none", "tools_sent": bool(tools)}
         return Reply(getattr(msg, "content", None) if msg is not None else None, getattr(resp, "model", None) or self.model,
                      prompt_tokens=getattr(usage, "prompt_tokens", None),
-                     completion_tokens=getattr(usage, "completion_tokens", None), extra=extra, tool_calls=calls)
+                     completion_tokens=getattr(usage, "completion_tokens", None), extra=retried(extra), tool_calls=calls)

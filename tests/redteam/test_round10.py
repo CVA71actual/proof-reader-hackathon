@@ -216,17 +216,18 @@ def _reply(ms, calls):
     return fake
 
 
-def test_a_30s_wav_with_exactly_the_31s_cost_left_is_taken(tmp_path):
+def test_a_30s_wav_with_exactly_twice_the_31s_cost_left_is_taken(tmp_path):
+    # the reservation covers two transcriptions: a retry after a read timeout may follow a billed first request
     calls, cost = [], prices.audio_cost_usd(voice.NAME, 31_000)
-    limit = round(_at() + cost, 6)
+    limit = round(_at() + 2 * cost, 6)
     client, d, row = _voice(tmp_path, _reply(31_000, calls), limit=limit)
     assert _post(client, row).status_code == 200
     assert _spend(d) <= limit
 
 
-def test_a_30s_wav_with_a_cent_less_than_the_31s_cost_is_refused(tmp_path):
+def test_a_30s_wav_with_less_than_twice_the_31s_cost_is_refused(tmp_path):
     calls, cost = [], prices.audio_cost_usd(voice.NAME, 31_000)
-    client, d, row = _voice(tmp_path, _reply(31_000, calls), limit=round(_at() + cost - 0.01, 6))
+    client, d, row = _voice(tmp_path, _reply(31_000, calls), limit=round(_at() + 2 * cost - 0.01, 6))
     assert _post(client, row).status_code == 409 and not calls
     assert _spend(d) == _at()
 
@@ -243,7 +244,7 @@ def test_two_concurrent_calls_with_headroom_for_one_take_one(tmp_path):
     import asyncio
     import httpx
     calls, cost = [], prices.audio_cost_usd(voice.NAME, 31_000)
-    limit = round(_at() + cost, 6)
+    limit = round(_at() + 2 * cost, 6)      # one call reserves two transcriptions' worst case
     client, d, row = _voice(tmp_path, _reply(30_000, calls), limit=limit)
 
     async def go():

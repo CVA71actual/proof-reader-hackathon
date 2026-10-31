@@ -34,6 +34,7 @@ FAKE_READING_PATH = FIXTURES / "ions_ars_2026_p95.reading.fake.json"
 ENV_FILE = Path.home() / ".config" / "proof-reader" / "env"
 BASE_URL = "https://api.meta.ai/v1"
 MODEL = "muse-spark-1.3"
+SPARK_NAME = "Muse Spark"
 FAKE_MODEL = "fake"
 
 INSTRUCTIONS = """\
@@ -224,14 +225,15 @@ def read_live(words_doc: dict) -> dict:
             "No model key found. Set MODEL_API_KEY in the environment or in "
             f"{ENV_FILE} as MODEL_API_KEY=\"...\", then run again. (Use --fake to work offline.)"
         )
-    from openai import OpenAI  # imported here so --fake and tests need no network client
+    from capture import http
 
-    client = OpenAI(base_url=BASE_URL, api_key=key)
+    client = http.openai_client(BASE_URL, key)
     del key
     prompt = build_prompt(words_doc)
     messages = [{"role": "user", "content": prompt}]
 
     response_format_used = "json_object"
+    http.take_billed()
     try:
         resp = _call(client, messages, json_mode=True)
     except Exception as e:  # some endpoints reject response_format; retry once without it
@@ -240,27 +242,45 @@ def read_live(words_doc: dict) -> dict:
             try:
                 resp = _call(client, messages, json_mode=False)
             except Exception as e2:
+                if http.is_silent(e2):
+                    return _silent_record(prompt, e2)
                 raise SystemExit(_plain_error(e2)) from None
+        elif http.is_silent(e):
+            return _silent_record(prompt, e)
         else:
             raise SystemExit(_plain_error(e)) from None
 
     raw = resp.choices[0].message.content if resp.choices else None
     table, problem = parse_table(raw)
+    retried = http.take_billed()
     return _reading_record(
         model=getattr(resp, "model", None) or MODEL,
         prompt=prompt,
         raw=raw,
         table=table,
         problem=problem,
-        extra={"base_url": BASE_URL, "requested_model": MODEL, "response_format": response_format_used},
+        extra={"base_url": BASE_URL, "requested_model": MODEL, "response_format": response_format_used,
+               **({"retried_after_timeout": True} if retried else {})},
     )
+
+
+def _silent_record(prompt: str, exc: BaseException | None = None) -> dict:
+    """The service did not answer (even after the one retry): an unreadable record with the plain reason."""
+    from capture import http
+
+    return _reading_record(model=MODEL, prompt=prompt, raw=None, table=None,
+                           problem=http.did_not_answer(SPARK_NAME),
+                           extra={"base_url": BASE_URL, "requested_model": MODEL, "call_failed": True, "timed_out": True,
+                                  "may_have_been_billed": True if exc is None else http.may_have_been_billed(exc)})
 
 
 def _call(client, messages, json_mode: bool):
     kwargs = {"model": MODEL, "messages": messages, "temperature": 0}
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
-    return client.chat.completions.create(**kwargs)
+    from capture import http
+
+    return http.call_with_retry(lambda: client.chat.completions.create(**kwargs))
 
 
 def _status(e: Exception):

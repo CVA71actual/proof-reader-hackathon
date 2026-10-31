@@ -28,7 +28,8 @@ from pathlib import Path
 
 from capture import read_events, read_table
 from capture.capture_source import FIXTURES, load_entry
-from capture.reader import Reply, create, messages_for
+from capture import http
+from capture.reader import Reply, create, messages_for, retried, timeout_reply
 
 NAME = "Muse Spark Open"
 BASETEN_BASE_URL = "https://inference.baseten.co/v1"
@@ -52,6 +53,7 @@ class SecondReader:
     def __init__(self) -> None:
         self.openrouter_allowed = True   # the job turns this off once the $20 cap is reached (or a call went unpriced)
         self.openrouter_blocked: str | None = None   # and says why, in one plain sentence
+        self.before_fallback = None   # the job's gate: called with the timed-out Baseten Reply; False = no fallback call
 
     def _key(self, name: str) -> str:
         read_table.load_env_file()
@@ -81,26 +83,34 @@ class SecondReader:
             return Reply(None, BASETEN_MODEL, error=self.ready() or NO_KEY)
         reply = self._ask(route, prompt, image)
         if reply.error and route == "baseten" and self._key("OPENROUTER_API_KEY") and self.openrouter_allowed:
+            if reply.timed_out and self.before_fallback is not None:
+                # the silent Baseten turn is counted (unknown cost) and the fallback goes through the budget gate
+                if not self.before_fallback(reply):
+                    reply.extra = {**(reply.extra or {}), "already_counted": True, "fallback_skipped": True}
+                    return reply
             reply = self._ask("openrouter", prompt, image)   # Baseten did not answer: the fallback, under its cap
         return reply
 
     def _ask(self, route: str, prompt: str, image: bytes | None = None) -> Reply:
-        from openai import OpenAI  # imported here so tests and offline use need no network client
-
         base, model, key = ((BASETEN_BASE_URL, BASETEN_MODEL, self._key("BASETEN_API_KEY")) if route == "baseten"
                             else (OPENROUTER_BASE_URL, OPENROUTER_MODEL, self._key("OPENROUTER_API_KEY")))
-        client = OpenAI(base_url=base, api_key=key)
+        client = http.openai_client(base, key)
         messages = messages_for(prompt, image)
         response_format = "json_object"
+        http.take_billed()
         try:
             resp = self._create(client, model, messages, json_mode=True)
         except Exception as e:  # some endpoints reject response_format; retry once without it
+            if http.is_silent(e):
+                return timeout_reply(NAME, model, extra={"route": route}, exc=e)
             if read_table._status(e) not in (400, 422):
                 return Reply(None, model, error=read_table._plain_error(e), extra={"route": route})
             response_format = "none"
             try:
                 resp = self._create(client, model, messages, json_mode=False)
             except Exception as e2:
+                if http.is_silent(e2):
+                    return timeout_reply(NAME, model, extra={"route": route}, exc=e2)
                 return Reply(None, model, error=read_table._plain_error(e2), extra={"route": route})
         raw = resp.choices[0].message.content if resp.choices else None
         usage = getattr(resp, "usage", None)
@@ -108,7 +118,7 @@ class SecondReader:
                  "input": "image" if image is not None else "words"}
         return Reply(raw, getattr(resp, "model", None) or model,
                      prompt_tokens=getattr(usage, "prompt_tokens", None),
-                     completion_tokens=getattr(usage, "completion_tokens", None), extra=extra)
+                     completion_tokens=getattr(usage, "completion_tokens", None), extra=retried(extra))
 
     @staticmethod
     def _create(client, model: str, messages: list, json_mode: bool):
