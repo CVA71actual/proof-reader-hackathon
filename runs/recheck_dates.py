@@ -32,14 +32,6 @@ from server.jobs import past_candidate_reason, past_reason
 RULE = "event_in_past"
 STEP = {"step": "Put back", "tag": "Code", "who": "runs.rewindow",
         "text": "the past-event rule now tests the period's end against the run date"}
-_TODAY = re.compile(r"before this run began \((\d{4}-\d{2}-\d{2})\)")
-
-
-def run_day(run: dict, exclusion: dict) -> date | None:
-    m = _TODAY.search(exclusion.get("reason") or "")
-    if m:
-        return date.fromisoformat(m[1])
-    return run_reference_date(run)
 
 
 def rewindow(run: dict, decided: set[str], at: str) -> dict:
@@ -55,7 +47,7 @@ def rewindow(run: dict, decided: set[str], at: str) -> dict:
         if x.get("rule") != RULE or x.get("by") != "code" or row is None or row.get("group") != "removed":
             keep.append(x)
             continue
-        now = run_day(run, x)
+        now = run_reference_date(run)
         if now is None or past_reason(row, now) is not None:
             keep.append(x)
             continue
@@ -78,13 +70,6 @@ def _to_result(c: dict) -> CheckResult:
     compared = c.get("compared") or {}
     return CheckResult(c["name"], c["label"], c["result"], c["reason"],
                        {"value": compared.get("looked_for"), "found": compared.get("found")})
-
-
-def _today_of(run: dict) -> date | None:
-    for x in run.get("exclusions", []):
-        if x.get("rule") == RULE and _TODAY.search(x.get("reason") or ""):
-            return run_day(run, x)
-    return run_day(run, {})
 
 
 def recheck_dates(run: dict, run_dir: Path, decided: set[str], at: str) -> dict:
@@ -138,7 +123,7 @@ def exclude_again(run: dict, decided: set[str], at: str) -> dict:
     """Leave out, under the rule, the rows the window now excludes that are still in. Returns {"out": [row ids]}."""
     months = ((run.get("run") or {}).get("choices") or {}).get("time_window_months")
     out = {"out": []}
-    now = _today_of(run)
+    now = run_reference_date(run)
     if months is None or now is None:
         return out
     for row in run.get("rows", []):

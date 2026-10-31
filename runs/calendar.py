@@ -83,9 +83,11 @@ def partition_intervals(entries: list[dict], anchor: str, end: str) -> dict[str,
     return out
 
 
-def run_interval_partition(run: dict, state: dict) -> tuple[dict[str, list[dict]], str, str]:
+def run_interval_partition(run: dict, state: dict) -> tuple[dict[str, list[dict]], str | None, str | None]:
     """The six-month, run-anchored partition used by the screen and reports."""
-    start = run_reference_date(run) or date.today()
+    start = run_reference_date(run)
+    if start is None:       # no wall-clock fallback: placement is unresolved
+        return {"calendar": [], "later": [], "past": [], "contingent": calendar_entries(run, state)}, None, None
     anchor = start.isoformat()
     end = add_months_to(start, 6).isoformat()
     return partition_intervals(calendar_entries(run, state), anchor, end), anchor, end

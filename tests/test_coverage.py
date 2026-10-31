@@ -384,7 +384,7 @@ def test_coverage_counts_dates_after_the_sources_published_date_not_the_run_day(
     assert [r.get("found_by") for r in late["rows"]] == [None], "both periods are before 2028-01-01"
 
 
-def test_a_job_uses_the_published_date_or_the_date_it_was_given(tmp_path, monkeypatch):
+def test_a_job_uses_the_run_reference_date_or_the_date_it_was_given(tmp_path, monkeypatch):
     monkeypatch.setattr(jobs, "today", lambda: date(2031, 1, 1))     # the run day: far after every date on the page
     events = json.loads(FakeReader.default("Protagonist"))["events"]
     runs_dir = tmp_path / "runs"
@@ -399,7 +399,9 @@ def test_a_job_uses_the_published_date_or_the_date_it_was_given(tmp_path, monkey
                                                   "note_for_agent": None}).json()["id"]
         return [r.get("found_by") for r in json.loads((runs_dir / rid / "run.json").read_text())["rows"]]
 
-    assert make() == [None, "coverage"], "the run day (2031) is not the day that counts"
+    monkeypatch.setattr(jobs, "now_utc", lambda: "2031-01-01T00:00:00+00:00")
+    assert make() == [None], "no as_of: the run's start day is the one reference date (the filing date is not)"
+    assert make(date(2026, 8, 5)) == [None, "coverage"], "as_of is persisted and is the reference date"
     assert make(date(2028, 1, 1)) == [None]
 
 

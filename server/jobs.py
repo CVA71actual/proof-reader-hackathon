@@ -53,7 +53,7 @@ from capture.capture_source import load_entry
 from checks import event_checks
 from runs import picture, build_entry, build_run, compare, coverage, escalate, prices, scan, sources
 from runs.ids import reserve_row_numbers, require_unique_target_ids
-from runs.state import as_of_note, run_reference_date
+from runs.state import run_reference_date
 
 DEFAULT_TURN_LIMIT = 40
 MAX_PAGE_FAILURES = 2      # a page that stops the run this many times is skipped, and the run goes on with the rest
@@ -415,8 +415,8 @@ def run_job(runs_dir: Path, run_id: str, reader, second=None, as_of: date | None
     `index`: the sources index (default: runs/sources_index.json, else the built-in one).
     `sam`: SAM 3.1 (capture/sam.py), which finds the regions of a scanned page.
     `wonder`: the escalation model (capture/wonder.py, Muse Wonder), or None for a run that never escalates.
-    `as_of`: the day a date must be after to count as upcoming for the dated-sentence coverage; by default the
-    source's published date, so an old filing's already-past dates raise no open rows."""
+    `as_of`: must equal the run's persisted as_of (else refused); if the run has none it is persisted. Coverage counts
+    dates after the run's reference date (runs.state.run_reference_date) only."""
     job = Job(Path(runs_dir) / run_id, reader, second, as_of, wonder, sam, index)
     try:
         job.drive()
@@ -441,6 +441,11 @@ class Job:
         self.job = json.loads((run_dir / "job.json").read_text())
         self.meta = self.run["run"]
         self.choices = self.meta["choices"]
+        if as_of is not None:       # one clock: the run's persisted as_of; a different one is refused, a new one persisted
+            given, persisted = as_of.isoformat(), self.meta.get("as_of")
+            if persisted and persisted != given:
+                raise JobError(409, f"as_of {given} conflicts with this run's as_of {persisted}.")
+            self.meta["as_of"] = given
         reserve_row_numbers(self.run, self.job, 0)
         if self.meta["status"] == "done":
             raise JobError(409, "This run is finished; it is never written again.")
@@ -937,13 +942,12 @@ class Job:
                                "rule": "event_in_past", "reason": reason, "by": "code"})
 
     def coverage_date(self, source: dict) -> date:
-        """A dated sentence counts when its date is after this day: `as_of` if the run was given one, else the day the
-        source was published (a filing's own date), never the day the run was made."""
-        if self.as_of:
-            return self.as_of
-        if as_of_note(self.run):          # a run given a past as_of counts dates after it
-            return run_reference_date(self.run)
-        return date.fromisoformat(source["published_date"])
+        """A dated sentence counts when its date is after the run's reference date: the persisted
+        runs.state.run_reference_date (as_of, else the start day). One clock; the source is not consulted."""
+        ref = run_reference_date(self.run)
+        if ref is None:
+            raise JobError(409, "This run has no usable reference date (as_of or started_at).")
+        return ref
 
     # ------------------------------------------------------------ the second reader
 

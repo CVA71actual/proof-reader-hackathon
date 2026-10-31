@@ -2034,7 +2034,13 @@
   }
   function calWindow() {
     var win = 6;
-    var anchor = (detail.run.calendar_window && detail.run.calendar_window.start) || '0000-00-00';
+    var cw = detail.run.calendar_window || {};
+    // no usable reference date: no window, and no date arithmetic on a non-date
+    if (cw.unresolved || !cw.start) {
+      return { win: win, anchor: null, end: null, unresolved: true,
+               reason: cw.reason || 'This run has no usable reference date (as_of or started_at).' };
+    }
+    var anchor = cw.start;
     var y = Number(anchor.slice(0, 4)), m = Number(anchor.slice(5, 7)) - 1 + win;
     y += Math.floor(m / 12); m = ((m % 12) + 12) % 12;
     var lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
@@ -2094,7 +2100,7 @@
     // A-F2(b): the count includes the rows with no parsed day
     var total = rows.length + past.length + nodates.length + later.length;
     subrow.append(el('div', 'sub', 'Kept events, by date · ' + total + ' row' +
-      (total === 1 ? '' : 's') + ' · ' + w.anchor + ' – ' + w.end));
+      (total === 1 ? '' : 's') + ' · ' + (w.unresolved ? w.reason : w.anchor + ' – ' + w.end)));
     head.append(subrow);
     var rl = el('div', 'runlabel' + (meta.sample ? ' sample' : ''), meta.label || '');
     head.append(rl);
@@ -2173,7 +2179,7 @@
     // A-F2(b): kept rows whose date text names no day sit in a final section,
     // the date text as written with a hollow dot — never dropped
     if (nodates.length) {
-      wrap.append(el('div', 'mo', 'Contingent · ' + nodates.length));
+      wrap.append(el('div', 'mo', (w.unresolved ? 'Timing unresolved · ' : 'Contingent · ') + nodates.length));
       nodates.forEach(function (r) { wrap.append(calRow(r, '', true)); });
     }
     if (past.length) {

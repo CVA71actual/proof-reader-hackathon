@@ -26,7 +26,8 @@ def _row(rid="r1", **kw):
 
 
 def _run(*rows):
-    return {"run": {"id": "run-t", "number": 1, "choices": {}}, "rows": list(rows), "tables": [], "sources": [], "mistakes": [],
+    return {"run": {"id": "run-t", "number": 1, "choices": {}, "started_at": "2026-10-30T00:00:00+00:00"},
+            "rows": list(rows), "tables": [], "sources": [], "mistakes": [],
             "exclusions": []}
 
 

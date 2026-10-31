@@ -78,10 +78,15 @@ def run_reference_date(run: dict) -> date | None:
     return None
 
 
+UNRESOLVED_REASON = "This run has no usable reference date (as_of or started_at)."
+
+
 def as_of_note(run: dict) -> str | None:
     """"as of 13 Oct 2026 · run on 31 Oct 2026" when as_of is set and is not the start day; otherwise None."""
     meta = run.get("run") or {}
     ref, started = run_reference_date(run), str(meta.get("started_at") or "")[:10]
+    if ref is None:
+        return UNRESOLVED_REASON
     try:
         began = date.fromisoformat(started)
     except ValueError:

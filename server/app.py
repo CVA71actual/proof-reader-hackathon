@@ -47,7 +47,7 @@ from runs.calendar import calendar_entries, run_interval_partition
 from runs.ids import require_unique_target_ids
 from runs.recheck import recheck_cell, recheck_row
 from report.data import report_filenames
-from runs.state import PERSON_ACTIONS, as_of_note, current_state
+from runs.state import PERSON_ACTIONS, UNRESOLVED_REASON, as_of_note, current_state
 from server import jobs
 
 REPO = Path(__file__).resolve().parent.parent
@@ -329,7 +329,9 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         state = current_state(run, decisions)
         partition, window_start, window_end = run_interval_partition(run, state)
         return {**run, "state": state, "calendar_partition": partition,
-                "calendar_window": {"start": window_start, "end": window_end},
+                "calendar_window": ({"start": window_start, "end": window_end} if window_start else
+                                    {"start": None, "end": None, "unresolved": True,
+                                     "reason": UNRESOLVED_REASON}),
                 "as_of_note": as_of_note(run)}
 
     @app.get("/api/runs/{run_id}/decisions")

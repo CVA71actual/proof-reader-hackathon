@@ -649,7 +649,7 @@ def test_u17_calendar_glass3_fixes():
     js = (UI / "app.js").read_text()
     css = (UI / "styles.css").read_text()
     # Discovery and calendar presentation have no arbitrary date horizon.
-    assert " · ' + w.anchor + ' – ' + w.end" in js
+    assert "w.anchor + ' – ' + w.end" in js
     assert "r.date && r.date <= w.end" not in js
     # G3-2: headers are the period as given, sorted by start then shortest first
     for word in ("calHeader", "half + ' half of ' + y", "calMonths", "calDays"):
@@ -2731,7 +2731,7 @@ def test_u35_af2b_calendar_lists_rows_with_no_parsed_day():
     import subprocess
     js = (UI / "app.js").read_text()
     assert "nodate: !d" in js
-    assert "'Contingent · ' + nodates.length" in js
+    assert "'Contingent · ') + nodates.length" in js
     assert "var total = rows.length + past.length + nodates.length + later.length" in js
     rows = [
         {"id": "k1", "ticker": "PTGX", "program": "PN-1", "event_type": "milestone",
@@ -3319,3 +3319,32 @@ def test_u37_a_person_keep_outranks_a_code_exclusion():
     assert back["excluded"]["code"] == 1 and len(back["exclusions"]) == 1
     assert back["counts"]["rows"]["kept"] == kept_before
     assert back["counts"]["rows"]["removed"] == removed_before
+
+
+def test_r48c_unresolved_window_renders_without_date_arithmetic():
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    rows = [{"id": "a1", "ticker": "PTGX", "program": "P", "event_type": "milestone",
+             "date": "2027-01-01", "date_text": "Q1 2027"}]
+    targets = {"a1": {"group": "kept", "values": {"date": "2027-01-01", "date_text": "Q1 2027"}}}
+    reason = "This run has no usable reference date (as_of or started_at)."
+    run = {"rows": rows, "calendar_window": {"start": None, "end": None, "unresolved": True, "reason": reason},
+           "calendar_partition": {"calendar": [], "past": [], "later": [], "contingent": [{"id": "a1"}]}}
+    script = "\n".join([
+        "var detail = { run: " + json.dumps(run) + ", state: { targets: " + json.dumps(targets) + " } };",
+        "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
+        "var RealDate = Date; Date = function () { throw new Error('Date() called'); };",
+        _grab_fn(js, "shownVal"),
+        _grab_fn(js, "effectiveChecks"),
+        _grab_fn(js, "calendarRows"),
+        _grab_fn(js, "calWindow("),
+        "var got = calendarRows();",
+        "if (got.length !== 1 || got[0].bucket !== 'contingent') process.exit(2);",
+        "var w = calWindow();",
+        "if (!w.unresolved || w.reason !== " + json.dumps(reason) + " || w.anchor !== null) process.exit(3);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+    assert "Timing unresolved" in js and "w.unresolved ? w.reason" in js

@@ -7,7 +7,7 @@ import json
 from datetime import date, datetime
 from pathlib import Path
 
-from runs.state import as_of_note, current_state, run_reference_date
+from runs.state import UNRESOLVED_REASON, as_of_note, current_state, run_reference_date
 from runs.calendar import on_calendar, run_interval_partition
 from runs.state import _needs_attention
 from checks import event_checks
@@ -263,7 +263,7 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         window_text = f"{window_start.isoformat()} – {window_end.isoformat()}"
     except (TypeError, ValueError):
         window_start = window_end = None
-        window_text = "Six months from the run date"
+        window_text = UNRESOLVED_REASON
     past = [r for r in calendar if r["bucket"] == "past"]
     later = [r for r in calendar if r["bucket"] == "later"]
     contingent = [r for r in calendar if r["bucket"] == "contingent"]
