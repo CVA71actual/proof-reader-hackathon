@@ -377,7 +377,7 @@ def test_coverage_counts_dates_after_the_sources_published_date_not_the_run_day(
     one = one_event_reading(reading)
     run = build_entry.build_entry_run(one, tmp_path / "x", finished_at="2030-01-01T00:00:00+00:00")
     assert [r.get("found_by") for r in run["rows"]] == [None, "coverage"]
-    assert "after 2026-08-05" in run["rows"][1]["trail"][0]["text"]
+    assert "after 5 Aug 2026" in run["rows"][1]["trail"][0]["text"]
     from datetime import date as d
     late = build_entry.build_entry_run(one, tmp_path / "y", finished_at="2030-01-01T00:00:00+00:00",
                                        as_of=d(2028, 1, 1))
@@ -573,3 +573,88 @@ def test_a_key_may_carry_the_same_drug_on_several_events_and_is_still_checked(wo
     twice = _key([CLDX[0], {**CLDX[0]}])
     assert any("twice" in p["problem"] for p in check_key(twice, {"words": [{"id": "w", "text": "x", "x0": 0, "y0": 0,
                                                                               "x1": 1, "y1": 1}]}))
+
+
+# ---- Job 42: coverage rows are cleaned and pre-filled (GLASS 9 #9)
+def _rows_for(text, rows=(), today=date(2026, 8, 5), words=None):
+    src = {"id": "s1", "pages": [{"page_number": 23}]}
+    doc = {"words": words if words is not None else page(text)}
+    return possible_event_rows(doc, list(rows), src, first_index=1, at="2026-08-05T00:00:00Z", today=today,
+                               ticker="RYTM", company="Rhythm")
+
+
+def _brk(i):
+    return {"id": f"w{i}", "text": "", "x0": 0, "y0": 0, "x1": 0, "y1": 0, "break": True}
+
+
+def _imcivree_words():
+    """A page: '23' set apart by line breaks, then the sentence ending in a small raised '1'."""
+    out = [_brk(0), w(1, "23"), _brk(2)]
+    for k, t in enumerate("® IMCIVREE HO Country-level Launches Expected in 2027".split()):
+        out.append(w(3 + k, t, x=k * 12.0))
+    out.append({"id": "w20", "text": "1", "x0": 200, "y0": 0, "x1": 205, "y1": 5})     # small, raised
+    return out
+
+
+def test_coverage_row_is_cleaned_and_prefilled():
+    (row,) = _rows_for(None, words=_imcivree_words())
+    assert row["quote"] == "IMCIVREE HO Country-level Launches Expected in 2027"
+    assert row["title"] == TITLE + row["quote"]
+    assert row["raw_sentence"] == "® IMCIVREE HO Country-level Launches Expected in 2027 1"
+    assert row["kind"] == "missed" and row["found_by"] == "coverage"
+    assert row["guess"] == {"date_text": "2027", "date": "2027-01-01", "date_end": "2027-12-31",
+                            "program": "IMCIVREE", "event_type": "launch"}
+    assert row["status_text"] == "Both readers skipped this sentence. It names 2027. Is it an event?"
+    assert "2026-08-05" not in row["reason"] and "after 5 Aug 2026" in row["reason"]
+
+
+def test_coverage_page_number_found_by_line_breaks_not_by_value():
+    from runs.coverage import clean_sentence
+    ws = [w(0, "Launch"), w(1, "expected"), w(2, "in"), w(3, "2027"), w(4, "12")]
+    assert clean_sentence("", ws[:4] + [ws[4]], ws) == "Launch expected in 2027 12"     # no break: a count stays
+    ws2 = ws[:4] + [_brk(9), ws[4], w(8, "Next")]
+    assert clean_sentence("", ws[:5], ws2) == "Launch expected in 2027 12"             # break only before: stays
+    ws3 = ws[:4] + [_brk(9), ws[4], _brk(10)]
+    assert clean_sentence("", ws[:5], ws3) == "Launch expected in 2027"                # breaks both sides: page number
+    assert clean_sentence("", [ws[4], w(5, "Patients")], [ws[4], w(5, "Patients")]) == "12 Patients"   # opens the page but no break after: a count
+
+
+def test_coverage_leading_count_on_its_page_is_untouched():
+    ws = [w(i, t, x=i * 12.0) for i, t in enumerate("12 Patients are expected to enroll in Q4 2027.".split())]
+    (row,) = _rows_for(None, words=ws)      # the source page is 23; a count of 12 is not a page number either way
+    assert row["quote"] == "12 Patients are expected to enroll in Q4 2027."
+    from runs.coverage import clean_sentence
+    assert clean_sentence("", ws, ws) == "12 Patients are expected to enroll in Q4 2027."
+
+
+def test_coverage_trailing_normal_size_digit_is_untouched():
+    from runs.coverage import clean_sentence
+    ws = [w(i, t, x=i * 12.0) for i, t in enumerate("The first trial ends in 2027 and the second enrolls 1.".split())]
+    assert clean_sentence("", ws, ws) == "The first trial ends in 2027 and the second enrolls 1."
+
+
+def test_clean_sentence_string_fallback_strips_only_symbols():
+    from runs.coverage import clean_sentence
+    assert clean_sentence("12 Patients are expected in Q4 2027.") == "12 Patients are expected in Q4 2027."
+    assert clean_sentence("® 23 IMCIVREE Launches Expected in 2027 1.") == "23 IMCIVREE Launches Expected in 2027 1."
+    assert clean_sentence("Results† from the study in 2027™ 14") == "Results from the study in 2027 14"
+
+
+def test_coverage_no_guessable_program_stays_null():
+    (row,) = _rows_for("The company expects a decision in 2027.")
+    g = row["guess"]
+    assert g["program"] is None and g["event_type"] == "regulatory_decision"
+
+
+def test_coverage_vague_period_and_known_program():
+    known = [{"program": "setmelanotide", "quote": "unrelated", "status": "proposed"}]
+    (row,) = _rows_for("Setmelanotide data expected mid-2027.", rows=known)
+    g = row["guess"]
+    assert (g["date_text"], g["date"], g["date_end"]) == ("mid-2027", "2027-05-01", "2027-08-31")
+    assert g["program"] == "Setmelanotide" and g["event_type"] == "trial_results"
+
+
+def test_coverage_nothing_to_guess_is_all_null():
+    (row,) = _rows_for("Plans for next steps in 2027.")
+    assert row["guess"]["program"] is None and row["guess"]["event_type"] is None
+

@@ -394,6 +394,23 @@ three times in the sentence needs three in the quote; a quote that is only a pie
 becomes one open row (`runs/coverage.py`): title "Possible
 event not read: <sentence>", `status` undecided, `group` open, the sentence as its `quote` with its box, the date
 or period it names, no checks, `found_by` "coverage", and a trail that says no model was asked and code found it.
+Fields a coverage row carries (Job 42), for the screen to read:
+
+- `quote` and the title hold the sentence **cleaned**: leading or trailing page numbers, footnote marks (digits glued
+  after a word, daggers) and ® ™ © and stray symbols are taken off, spaces collapsed. `raw_sentence` keeps it exactly as
+  the page prints it. ("® 23 IMCIVREE HO Country-level Launches Expected in 2027 1." becomes "IMCIVREE HO Country-level
+  Launches Expected in 2027".) The sentence's own full stop stays unless it belonged to a stripped page number, so the
+  quote still matches the page.
+- `guess`: `{date_text, date, date_end, program, event_type}`, every field a guess code made, null when it cannot see
+  one. The date or period is the first one the sentence names, read by the date check's parsers ("2027" is the year
+  period 2027-01-01 to 2027-12-31; "mid-2027" the window May to August). `program` is a program the run already has a
+  row for if the sentence names it, else the first all-caps or brand-cased word before the verb. `event_type` is one
+  of the app's types (`trial_results`, `regulatory_decision`, `launch`, `conference`, `filing`, `milestone`) chosen
+  from the same word table the type check uses (initiation and dosing give `milestone`).
+- `kind`: "missed", the marker for a possible event neither reader turned into a row; `found_by` stays "coverage".
+- `status_text`: what the pane says: "Both readers skipped this sentence. It names <period>. Is it an event?". Dates
+  in `reason` and the trail are in words ("after 4 Aug 2026"), never ISO.
+
 A person keeps it as an event, fixes it, or removes it; until then it is under Needs attention and never on the
 calendar. The scorer never counts these rows as proposals; a key event the reader missed that one of them surfaced
 is typed `MISSED_DATED_SENTENCE` and counted as caught by code.
