@@ -211,6 +211,9 @@ def build_demo_run(reading: dict, run_dir: Path, *, finished_at: str | None = No
 
 
 def write_run(run: dict, run_dir: Path) -> Path:
+    from runs.ids import require_unique_target_ids
+
+    require_unique_target_ids(run)
     out = run_dir / "run.json"
     if "prices" not in run["run"]:  # a run made now carries the price table in force (Job 19)
         run["run"]["prices"] = prices.snapshot()

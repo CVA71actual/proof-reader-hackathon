@@ -460,10 +460,9 @@ def test_the_saved_live_wonder_escalation_of_the_ptgx_page():
 def test_the_saved_live_image_second_reading_of_the_ptgx_page():
     rec = json.loads((FIXTURES / f"{PIN}.events.second.json").read_text())
     assert rec["input"] == "image" and rec["model"] == "meta-models/muse-spark-open-1026" and rec["route"] == "baseten"
-    # sealed before Job 14: the saved prompt is today's prompt without the event-type word lines
     now = read_events.build_image_prompt(load_entry(PIN))
-    rule = read_events.INSTRUCTIONS_IMAGE.split('- "event_type" goes by')[1].split("\n- ")[0]
-    assert rec["prompt_text"] == now.replace('- "event_type" goes by' + rule.format(guide=read_events.type_guide()) + "\n", "")
+    assert '"type_hint"' in now and '"event_type"' not in now
+    assert rec["prompt_sha256"] == read_events.sha256_text(rec["prompt_text"])
     assert "\nw0|" not in rec["prompt_text"] and "id|text|x0|y0|x1|y1" not in rec["prompt_text"], "no word list"
     assert [e["program"] for e in rec["events"]] == ["PN-458o", "PN-8047"]
     assert all(isinstance(e["box"], list) and len(e["box"]) == 4 and max(e["box"]) <= 1000 for e in rec["events"]), \
@@ -478,6 +477,6 @@ def test_the_two_reader_run_records_that_the_second_reader_read_the_image():
     RUN_SCHEMA.validate(run)
     assert run["run"]["second_reader"]["input"] == "image"
     for row in run["rows"]:
-        step = next(t for t in row["trail"] if t["step"] == "Second reader input")
-        assert "does not depend on the text layer" in step["text"]
+        step = next(t for t in row["trail"] if t["step"] == "Sent the page image to Muse Spark Open")
+        assert step["tag"] == "Code"
         assert row["status"] == "matched" and "disagreement" not in row

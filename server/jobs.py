@@ -28,9 +28,7 @@ written again. job.json holds what the job needs to carry on (unreadable answers
 Both files are replaced whole (write a temp file, then rename), so a read never sees half a file. Every rewrite
 of run.json also appends one line to job.json's log (status, turn_count, spend_usd, the reason if there is one).
 
-time_window_months: a row whose date (a period's first day) is before today or later than today plus the window is
-left out under the rule outside_time_window (group removed, an exclusion by code, never a mistake). A row with no
-date is not touched.
+Legacy category/window choices remain readable but do not narrow new research or remove proposals.
 """
 
 from __future__ import annotations
@@ -54,6 +52,7 @@ from checks.coverage import sentence_covered, sentences as coverage_sentences
 from capture.capture_source import load_entry
 from checks import event_checks
 from runs import picture, build_entry, build_run, compare, coverage, escalate, prices, scan, sources
+from runs.ids import reserve_row_numbers, require_unique_target_ids
 
 DEFAULT_TURN_LIMIT = 40
 MAX_PAGE_FAILURES = 2      # a page that stops the run this many times is skipped, and the run goes on with the rest
@@ -154,6 +153,34 @@ def window_reason(row: dict, now: date, last: date, months: int) -> str | None:
             f"month{'s' if months != 1 else ''} from today ({last}).")
 
 
+def past_reason(row: dict, run_date: date) -> str | None:
+    """Code exclusion only when the event's full period ended strictly before the run date."""
+    # A parsed value is only a proposal until the date check supports it. In
+    # particular, a failed or uncheckable date must remain reviewable.
+    date_check = next((c for c in row.get("checks", [])
+                       if c.get("name") == "date_match" or c.get("id") == "date_match"
+                       or c.get("label") == "Date read as written"), None)
+    if not date_check or date_check.get("result") != "pass":
+        return None
+    return past_candidate_reason(row, run_date)
+
+
+def past_candidate_reason(row: dict, run_date: date) -> str | None:
+    """The date-only past rationale, used as a proposal when date_match is not pass."""
+    try:
+        start = date.fromisoformat(row["date"]) if row.get("date") else None
+    except (TypeError, ValueError):
+        return None
+    if start is None:
+        return None
+    end = event_checks.period_last_day(row) or start
+    if end >= run_date:
+        return None
+    if end != start:
+        return f"Already past: the event period ended {end.isoformat()} before this run began ({run_date.isoformat()})."
+    return f"Already past: the event date {start.isoformat()} was before this run began ({run_date.isoformat()})."
+
+
 def today() -> date:
     return datetime.now(timezone.utc).date()
 
@@ -216,7 +243,7 @@ def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
     extra = set(body) - set(CHOICE_FIELDS)
     if extra:
         raise ValueError(f"Unknown choice: {', '.join(sorted(extra))}.")
-    companies, types = body.get("companies"), body.get("event_types")
+    companies, types = body.get("companies"), body.get("event_types", list(read_events.EVENT_TYPES))
     if not isinstance(companies, list) or not companies or not all(isinstance(c, str) for c in companies):
         raise ValueError("Choose at least one company.")
     if companies == ["all"]:
@@ -252,7 +279,7 @@ def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
         tools = False
     if not isinstance(tools, bool):
         raise ValueError("reader_tools must be true or false.")
-    return {"companies": list(companies), "event_types": list(types), "time_window_months": window,
+    return {"companies": list(companies), "event_types": list(read_events.EVENT_TYPES), "time_window_months": 6,
             "spending_limit_usd": limit, "note_for_agent": note.strip() or None if isinstance(note, str) else None,
             "reader_tools": tools}
 
@@ -306,7 +333,8 @@ def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None, run
             "sources": [], "tables": [], "rows": [], "mistakes": [], "exclusions": [],
         }
         (run_dir / "decisions.jsonl").write_text("")
-        _write(run_dir / "job.json", {"attempts": {}, "unpriced_calls": 0, "second": {}, "openrouter_spend_usd": 0.0,
+        _write(run_dir / "job.json", {"attempts": {}, "next_row_number": 1, "unpriced_calls": 0,
+                                      "second": {}, "openrouter_spend_usd": 0.0,
                                       "openrouter_unpriced_calls": 0,
                                       "log": [snapshot(run["run"], "Run created.")]})
         _write(run_dir / "run.json", run)
@@ -396,6 +424,7 @@ class Job:
         self.job = json.loads((run_dir / "job.json").read_text())
         self.meta = self.run["run"]
         self.choices = self.meta["choices"]
+        reserve_row_numbers(self.run, self.job, 0)
         if self.meta["status"] == "done":
             raise JobError(409, "This run is finished; it is never written again.")
 
@@ -403,6 +432,7 @@ class Job:
 
     def save(self, reason: str | None = None, refresh: bool = True) -> None:
         with RUN_LOCK:
+            require_unique_target_ids(self.run)
             if refresh:      # a voice call may have raised the persisted spend since this worker last wrote
                 self.refresh_spend()      # (count_turn passes False: it refreshed in this lock and has unsaved spend)
             self._merge_voice_from_disk()
@@ -621,6 +651,9 @@ class Job:
 
     def drive(self) -> None:
         self.meta["status"], self.meta["status_reason"] = "running", "Reading the captured sources."
+        selected_pages = [page for ticker in self.choices["companies"] for page in self.index.pages(ticker)]
+        self.meta["pages_total"] = len(selected_pages)
+        self.meta["pages_read"] = len(self.run.get("sources", []))
         self.save()
         problem = self.reader.ready()
         if problem:
@@ -670,7 +703,7 @@ class Job:
             return self.read_scan_page(page)
         entry = page["record"]            # the index's record of the page: ticker, company, filing date, hashes, ...
         if kind == "events":
-            types = tuple(t for t in read_events.EVENT_TYPES if t in self.choices["event_types"])
+            types = read_events.EVENT_TYPES
             if not types:
                 self.job["log"].append({"at": now_utc(), "note": f"{entry['ticker']} page skipped: no event type "
                                                                  f"was chosen."})
@@ -736,7 +769,8 @@ class Job:
         at = now_utc()
         if parsed is None:
             cap = reader_tools.MAX_MODEL_CALLS if len(attempts) < UNREADABLE_LIMIT else None   # why the loop ended
-            self.run["rows"].append(self.refused_row(entry, source, prompt, who, attempts, at,
+            row_number = reserve_row_numbers(self.run, self.job, 1)
+            self.run["rows"].append(self.refused_row(entry, source, prompt, who, attempts, at, row_number,
                                                      calls_cap=None if no_answer else cap, no_answer=no_answer))
         elif kind == "events":
             extra = {**(reply.extra or {}), **page_facts, "usage": {"prompt_tokens": reply.prompt_tokens,
@@ -747,7 +781,7 @@ class Job:
             n = len(parsed)
             shares = list(zip(prices.split_tokens(usage.get("prompt_tokens"), n),
                               prices.split_tokens(usage.get("completion_tokens"), n), [n] * n))
-            first = len(self.run["rows"]) + 1
+            first = reserve_row_numbers(self.run, self.job, n)
             new_rows = [build_entry.build_row(first + i, ev, reading, source, words_doc, at, share=shares[i],
                                               tool_steps=(tool_box.steps_for(ev.get("quote"), at, build_entry.MUSE_SPARK)
                                                           + tool_box.unrecorded_steps(at, build_entry.MUSE_SPARK)
@@ -755,9 +789,12 @@ class Job:
                                               tool_type=(tool_box.type_found(ev.get("quote"))
                                                          if tool_box is not None else None))
                         for i, ev in enumerate(parsed)]
-            new_rows += coverage.possible_event_rows(words_doc, new_rows, source, first_index=first + len(new_rows),
-                                                     at=at, today=self.coverage_date(source), ticker=entry["ticker"],
-                                                     company=entry["company"])
+            coverage_rows = coverage.possible_event_rows(words_doc, new_rows, source,
+                                                         first_index=self.job["next_row_number"], at=at,
+                                                         today=self.coverage_date(source), ticker=entry["ticker"],
+                                                         company=entry["company"])
+            self.job["next_row_number"] += len(coverage_rows)
+            new_rows += coverage_rows
             self.add_picture_trail(new_rows, picture_state, at)
             self.apply_window(new_rows, at)
             self.run["rows"] += new_rows
@@ -770,6 +807,7 @@ class Job:
                 page_number=source["pages"][0]["page_number"]))
             self.mark_fake(reading)
         self.run["sources"].append(source)
+        self.meta["pages_read"] = len(self.run["sources"])
         self.save()
         return True
 
@@ -851,23 +889,35 @@ class Job:
         return [e.get("quote") for e in evs if isinstance(e, dict)] if isinstance(evs, list) else []
 
     def apply_window(self, rows: list[dict], at: str) -> None:
-        """Leave out, under outside_time_window, a row whose period ends before today or starts after today plus the
-        window."""
-        months = self.choices["time_window_months"]
-        if months is None:
-            return
-        now = today()
-        last = add_months(now, months)
+        """Mark only events whose full period ended before this run as code exclusions.
+
+        Future proposals remain available; the calendar presents those beyond its six-month window in Later.
+        """
+        run_date = date.fromisoformat(self.meta["started_at"][:10])
+        exclusions = self.run.setdefault("exclusions", [])
         for row in rows:
-            reason = window_reason(row, now, last, months)
-            if reason is None:
+            if row.get("group") == "removed" or not row.get("date"):
                 continue
-            old = row.get("reason") or ""
-            note = old[old.find("Source note:"):] if "Source note:" in old else ""     # a picture page's source note stays
-            row["group"], row["reason"] = "removed", f"{reason} {note}".strip()
-            row["trail"].append({"step": "Left out", "tag": "Code", "who": "server.jobs", "text": reason, "at": at})
-            self.run["exclusions"].append({"id": f"x{len(self.run['exclusions']) + 1}", "target": row["id"],
-                                           "rule": "outside_time_window", "reason": reason, "by": "code"})
+            reason = past_reason(row, run_date)
+            if reason is None:
+                candidate = past_candidate_reason(row, run_date)
+                date_check = next((c for c in row.get("checks", []) if c.get("name") == "date_match"), None)
+                if candidate and (not date_check or date_check.get("result") != "pass"):
+                    proposal = (f"{candidate} Proposed exclusion not applied because Date read as written is "
+                                f"{(date_check or {}).get('result') or 'unavailable'}.")
+                    row["past_exclusion_proposal"] = proposal
+                    row.setdefault("trail", []).append({"step": "Past exclusion not applied", "tag": "Code",
+                        "who": "server.jobs", "at": at, "text": proposal})
+                continue
+            prior = row.get("reason")
+            if prior:
+                reason += " " + prior
+            row["group"] = "removed"
+            row["reason"] = reason
+            row.setdefault("trail", []).append({"step": "Left out as already past", "tag": "Code",
+                "who": "server.jobs", "at": at, "text": reason})
+            exclusions.append({"id": f"x{len(exclusions) + 1}", "target": row["id"],
+                               "rule": "event_in_past", "reason": reason, "by": "code"})
 
     def coverage_date(self, source: dict) -> date:
         """A dated sentence counts when its date is after this day: `as_of` if the run was given one, else the day the
@@ -1013,7 +1063,7 @@ class Job:
         note = self.choices["note_for_agent"]
         entry = page["record"]
         if page["kind"] == "events":
-            types = tuple(t for t in read_events.EVENT_TYPES if t in self.choices["event_types"])
+            types = read_events.EVENT_TYPES
             attempts = [("image", read_events.build_image_prompt(entry, types, note), image),
                         ("image_and_words", read_events.build_prompt(words_doc, entry, types, note), image)]
             parse = read_events.parse_events
@@ -1064,9 +1114,10 @@ class Job:
             reading = read_events._record(model=reply.model, prompt=prompt, raw=reply.raw, events=parsed,
                                           problem=None, entry=entry, extra=extra)
             rows = [r for r in self.run["rows"] if r["source_id"] == sid]
-            ids = [int(r["id"][1:]) for r in self.run["rows"] if r["id"][1:].isdigit()]
+            next_row = reserve_row_numbers(self.run, self.job, 0)
             _, new_rows = compare.apply_events(rows, parsed, reading, source, words_doc, at,
-                                               next_index=max(ids, default=0) + 1)
+                                               next_index=next_row)
+            self.job["next_row_number"] += len(new_rows)
             self.add_picture_trail(new_rows, self.job.get("picture", {}).get(sid), at, costs=False)
             self.apply_window(new_rows, at)
             # a dated sentence the second reader turned into a row no longer needs its "not read" row
@@ -1091,7 +1142,7 @@ class Job:
         turn each; the rows are built with the region check in place of the text-layer box check (runs/scan.py).
         What each call returned is kept in job.json, so a resume never pays for a call twice."""
         entry = load_entry(read_events.PIN)
-        types = tuple(t for t in read_events.EVENT_TYPES if t in self.choices["event_types"])
+        types = read_events.EVENT_TYPES
         if not types:
             self.job["log"].append({"at": now_utc(), "note": f"{entry['ticker']} scanned page skipped: no event type "
                                                               f"was chosen."})
@@ -1144,11 +1195,13 @@ class Job:
         source = scan.scanned_source(entry, self.dir, png, w, h, regions, stem=page["record"]["file_stem"])
         by_id = {r["id"]: r for r in regions}
         reads = [{**r, "region": by_id[r["region_id"]]} for r in st["reads"].values() if r["region_id"] in by_id]
-        ids = [int(r["id"][1:]) for r in self.run["rows"] if r["id"][1:].isdigit()]
-        rows = scan.assemble_rows(reads, source, st["calls"], now_utc(), first_index=max(ids, default=0) + 1)
+        first = reserve_row_numbers(self.run, self.job, 0)
+        rows = scan.assemble_rows(reads, source, st["calls"], now_utc(), first_index=first)
+        self.job["next_row_number"] += len(rows)
         self.apply_window(rows, now_utc())
         self.run["rows"] += rows
         self.run["sources"].append(source)
+        self.meta["pages_read"] = len(self.run["sources"])
         self.save()
         return True
 
@@ -1188,7 +1241,7 @@ class Job:
         words_doc = json.loads((self.dir / page0["words"]).read_text())
         image = (self.dir / page0["image"]).read_bytes()
         entry = page["record"]
-        types = tuple(t for t in read_events.EVENT_TYPES if t in self.choices["event_types"])
+        types = read_events.EVENT_TYPES
         for row in rows:
             if self.wonder_budget_spent():
                 done[sid] = "budget"
@@ -1399,7 +1452,7 @@ class Job:
             self.meta["label"] = (f"Practice run ({', '.join(self.choices['companies'])}): "
                                   f"fake reading, no model called")
 
-    def refused_row(self, entry: dict, source: dict, prompt: str, who: str, attempts: list, at: str,
+    def refused_row(self, entry: dict, source: dict, prompt: str, who: str, attempts: list, at: str, row_number: int,
                     calls_cap: int | None = None, no_answer: str | None = None) -> dict:
         """An unreadable page: one row, group open, for a person to look at. `attempts`: the answers that were not
         understood. `calls_cap`: set when the page's model calls ran out before three answers were refused (the
@@ -1423,7 +1476,7 @@ class Job:
                           "at": at})
         trail.append({"step": "Sent to a person", "tag": "Code", "who": "server.jobs", "text": reason, "at": at})
         return {
-            "id": f"e{len(self.run['rows']) + 1}", "ticker": ticker, "company": entry["company"],
+            "id": f"e{row_number}", "ticker": ticker, "company": entry["company"],
             "event_type": "unknown", "title": title,
             "date_text": None, "date": None, "quote": None, "source_id": source["id"], "page_number": page_number,
             "box": None, "proposed_by": build_run.MUSE_SPARK, "status": "unreadable", "group": "open",

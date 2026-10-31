@@ -60,6 +60,7 @@
    "ticker": "PTGX",
    "company": "Protagonist Therapeutics, Inc.",
    "event_type": "milestone",
+   "type_hint": "milestone",
    "title": "Phase 1 initiation",
    "date_text": "the second half of 2027",
    "date": "2027-07-01",
@@ -209,6 +210,13 @@
    ],
    "trail": [
     {
+     "step": "Sent the page to Muse Spark",
+     "tag": "Code",
+     "who": "capture.read_events",
+     "at": "2026-10-28T19:18:31+00:00",
+     "text": "Code chose what Muse Spark would read and sent it, with the instructions below."
+    },
+    {
      "step": "Instructions sent",
      "tag": "Code",
      "who": "capture.read_events",
@@ -223,7 +231,7 @@
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
-     "text": "PTGX PN-458o milestone on 2027-07-01 to 2027-12-31, printed as “the second half of 2027.”: “PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.”",
+     "text": "PTGX PN-458o type hint milestone on the second half of 2027., printed as “the second half of 2027.”: “PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.”",
      "at": "2026-10-28T19:18:31+00:00",
      "tokens": {
       "prompt": 5293,
@@ -231,6 +239,20 @@
       "call_rows": 2
      },
      "cost_usd": 0.014092
+    },
+    {
+     "step": "Took the reading into the row",
+     "tag": "Code",
+     "who": "runs.build_entry",
+     "at": "2026-10-28T19:18:31+00:00",
+     "text": "Copied the reader's proposal and box into the row. Nothing is checked yet."
+    },
+    {
+     "step": "Assigned event type",
+     "tag": "Code",
+     "who": "runs.build_entry",
+     "at": "2026-10-28T19:18:31+00:00",
+     "text": "Assigned milestone from the quoted words; retained the reader's type hint separately."
     },
     {
      "step": "Tidied",
@@ -281,6 +303,7 @@
    "ticker": "PTGX",
    "company": "Protagonist Therapeutics, Inc.",
    "event_type": "milestone",
+   "type_hint": "milestone",
    "title": "Phase 1 initiation",
    "date_text": "Q1 2027",
    "date": "2027-01-01",
@@ -428,6 +451,13 @@
    ],
    "trail": [
     {
+     "step": "Sent the page to Muse Spark",
+     "tag": "Code",
+     "who": "capture.read_events",
+     "at": "2026-10-28T19:18:31+00:00",
+     "text": "Code chose what Muse Spark would read and sent it, with the instructions below."
+    },
+    {
      "step": "Instructions sent",
      "tag": "Code",
      "who": "capture.read_events",
@@ -442,7 +472,7 @@
      "step": "Proposed",
      "tag": "Model",
      "who": "Muse Spark",
-     "text": "PTGX PN-8047 milestone on 2027-01-01 to 2027-03-31, printed as “Q1 2027.”: “PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.”",
+     "text": "PTGX PN-8047 type hint milestone on Q1 2027., printed as “Q1 2027.”: “PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.”",
      "at": "2026-10-28T19:18:31+00:00",
      "tokens": {
       "prompt": 5293,
@@ -450,6 +480,20 @@
       "call_rows": 2
      },
      "cost_usd": 0.014092
+    },
+    {
+     "step": "Took the reading into the row",
+     "tag": "Code",
+     "who": "runs.build_entry",
+     "at": "2026-10-28T19:18:31+00:00",
+     "text": "Copied the reader's proposal and box into the row. Nothing is checked yet."
+    },
+    {
+     "step": "Assigned event type",
+     "tag": "Code",
+     "who": "runs.build_entry",
+     "at": "2026-10-28T19:18:31+00:00",
+     "text": "Assigned milestone from the quoted words; retained the reader's type hint separately."
     },
     {
      "step": "Tidied",

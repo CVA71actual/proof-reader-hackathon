@@ -25,11 +25,11 @@ Events, per key event (M = len(key events)):
                  twice (DUPLICATE), or an answer that could not be read (UNREADABLE_OUTPUT)
     found + wrong_date + wrong_type + unsupported + missed = M.
 
-The run's time window (a run started with time_window_months leaves out, under outside_time_window, a row dated
-before the run's start day or later than start + months). Every key event gets `in_window`: True when its first day
-(the day, or the first day of its period) lies in [start, start + months], False when outside, None when its date
-is a vague period that cannot be placed ("mid-2027"). The five buckets above count the in-window key events only
-(M_in_window of them; this is the number the write-up quotes). The others are not dropped:
+The six-month horizon organizes the calendar only; run scoring passes no window, so every key event is scored.
+`score_events` can still accept an explicit window for standalone callers. With one, every key event gets
+`in_window`: True when its first day (the day, or the first day of its period) lies in [start, start + months],
+False when outside, None when its date is a vague period that cannot be placed ("mid-2027"). The other events
+are not dropped:
     outside_window  key events outside the window: proposed_excluded (a row the run proposed and left out under
                     outside_time_window), proposed_not_excluded (proposed, not left out), never_proposed
     unplaced        key events with in_window None, split the same way
@@ -210,16 +210,8 @@ def add_months(d: date, months: int) -> date:
 
 
 def run_window(run: dict) -> tuple[date, int] | None:
-    """(start day, months) from run.json: run.started_at's date and run.choices.time_window_months; None when the
-    run had no window (or no usable start)."""
-    meta = (run or {}).get("run") or {}
-    months = (meta.get("choices") or {}).get("time_window_months")
-    if not isinstance(months, int) or isinstance(months, bool) or months < 0:
-        return None
-    try:
-        return date.fromisoformat(str(meta.get("started_at"))[:10]), months
-    except ValueError:
-        return None
+    """There is no score window: the six-month horizon organizes the calendar, not discovery or accuracy."""
+    return None
 
 
 def in_window(date_text: str | None, window: tuple[date, int] | None) -> bool | None:
@@ -291,8 +283,8 @@ def score_events(rows: list[dict], key: dict, exclusions: list[dict] | None = No
     with three indications on a page is three key events, matched by their dates and indications; a key may carry the
     same drug alias on several. The kind of event is compared after the match: a different kind is `wrong_type`
     unless the quote holds words of both milestone and trial results (then found, with a note).
-    `window`: (start day, months) of the run (run_window); key events outside it or unplaced leave the five key
-    buckets for outside_window / unplaced, and rows the window removed are excluded_by_window, not invented."""
+    `window`: optional explicit (start day, months); run scoring currently passes None, so the six-month calendar
+    horizon does not limit accuracy. When supplied, outside/unplaced key events leave the five main buckets."""
     kes = list(key.get("events") or [])
     complete = is_complete(key)
     # Rows code found (a dated sentence no reader row quotes) are not proposals: they are never scored as

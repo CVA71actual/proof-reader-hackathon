@@ -148,7 +148,7 @@ def test_u5_trail_contract_on_screen():
 def test_u6_calendar_rules_on_screen():
     js = (UI / "app.js").read_text()
     # kept and corrected only, periods placed under their period as written, no invented day
-    for word in ("calendarRows", "periodhead", "no date to place"):
+    for word in ("calendarRows", "periodhead", "No day given"):
         assert word in js, word
     assert "date_end" in js
     assert "Kept by you" in js and "Fixed by you" in js
@@ -156,6 +156,7 @@ def test_u6_calendar_rules_on_screen():
     assert "monthYear" in js and "dayMonth" in js
     # the left-rail count is the rows on the calendar
     assert "calendarRows().length" in js
+    assert "detail.run.calendar_partition" in js and "Past · " in js
 
 
 def test_u5_u6_format_helpers():
@@ -193,9 +194,9 @@ def test_u8_new_run_panel_is_wired():
     # the panel: twelve companies, plain event words, window, limit, note caption
     for tk in ("IONS", "PTGX", "ABVX", "ROIV", "ZLAB", "CLDX", "VKTX", "TSHA", "MNPR", "ENTA", "RYTM", "RVMD"):
         assert tk in js, tk
-    assert "Steers the focus only — a note can never turn off a check." in html
+    assert "Adds context without narrowing discovery or turning off checks." in html
     for word in ("Next 3 months", "Next 6 months", "Next 12 months"):
-        assert word in html, word
+        assert word not in html, word
     # Run now POSTs to the run-controls endpoints; nothing calls a model from the UI
     assert "POST" in js and "/api/runs/new" in js
     assert "/resume" in js
@@ -218,6 +219,7 @@ def test_u9_export_is_wired():
     # the file names as the builder writes them, probed at /runs/<id>/report/<file>
     assert "biotech-coverage-catalyst-calendar-run" in js
     assert "/report/" in js
+    assert "report_stale_reason" in js and "Saved report is out of date." in js
     # G5-2b: no command line, no run id on screen; until the file is served
     # the honest sentence, never a dead label
     assert "Built from the command line" not in js
@@ -330,8 +332,7 @@ def test_u12_audit_line_is_one_models_counts():
     # Red Team round 5 finding 6: the audit header line names one model and never
     # stitches missing parts from another model into the same score.
     js = (UI / "app.js").read_text()
-    for word in ("M_total", "in the run’s window ", "outside the window ", "unplaced "):
-        assert word in js, word
+    assert "Accuracy counts all dated and undated key events." in js
     # footer: 'sealed-set file' only when key.sealed is true, else 'the accuracy numbers' (G1-8)
     assert "sealed-set file" in js and "the accuracy numbers" in js
     # behavior: two models, each with one part — the line must not carry both
@@ -387,9 +388,9 @@ setTimeout(function () {{ console.log(textOf(accPanelHost)); }}, 0);
     return got.stdout
 
 
-def test_u12_panel_footer_and_window_numbers():
-    # Red Team round 5 finding 7 + Job 16: an author-keyed file is never called a
-    # sealed set, and the run's window numbers sit under the per-model lines.
+def test_u12_panel_footer_explains_accuracy_window_scope():
+    # An author-keyed file is never called a sealed set; scoring covers all
+    # key events while the six-month horizon organizes the calendar only.
     sealed = {"key": {"sealed": True},
               "models": {"Muse Spark": {"events": {"found": 2, "M": 2, "M_total": 5,
                                                    "outside_window": {"count": 2},
@@ -397,8 +398,8 @@ def test_u12_panel_footer_and_window_numbers():
     text = _panel_text(sealed)
     assert "The sealed set" in text
     assert "its sealed-set file" in text
-    assert "Muse Spark — in the run’s window 2 of 5 key events" in text
-    assert "outside the window 2" in text and "unplaced 1" in text
+    assert "Accuracy counts all dated and undated key events." in text
+    assert "in the run’s window" not in text
     unsealed = {"key": {"sealed": False},
                 "models": {"Muse Spark": {"values": {"found": 1, "N": 100}}}}
     text = _panel_text(unsealed)
@@ -421,7 +422,7 @@ def _judgment_screen(row_id):
     import subprocess
     js = (UI / "app.js").read_text()
     names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "rowBadge", "checkDot", "checkResultWord",
-             "needsAttention", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
+             "needsAttention", "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
              "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
              "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith",
              "revealRow", "sourceOf")
@@ -647,12 +648,9 @@ def test_u17_calendar_glass3_fixes():
     # G3-6 back origin + list follows the row; G3-7 source page list.
     js = (UI / "app.js").read_text()
     css = (UI / "styles.css").read_text()
-    # G3-1: the pills, the window default, the ?w selection in the URL
-    for word in ("calpill", "calWindowMonths", "Next ' + n + ' months",
-                 "' after this window.'", "next ' + w.win + ' months"):
-        assert word in js, word
-    assert out_hash_has("calendar", "w=")
-    assert ".calpill.on" in css
+    # Discovery and calendar presentation have no arbitrary date horizon.
+    assert " · ' + w.anchor + ' – ' + w.end" in js
+    assert "r.date && r.date <= w.end" not in js
     # G3-2: headers are the period as given, sorted by start then shortest first
     for word in ("calHeader", "half + ' half of ' + y", "calMonths", "calDays"):
         assert word in js, word
@@ -730,9 +728,8 @@ def test_u20_accuracy_glass6_rows():
                  "the events listed in that answer key.",
                  "key events the reader found but could not give a date to."):
         assert word in js, word
-    # G6-11b: the readers-together bucket reads 'Both readers', in the header
-    # line, the model lines and the window lines
-    assert js.count("? 'Both readers' : name") >= 3
+    # G6-11b: the readers-together bucket reads 'Both readers' in score lines.
+    assert js.count("? 'Both readers' : name") >= 2
     # money in the panel in cents
     assert "'Cost per kept row ' + usdCents(cpkr)" in js
 
@@ -2226,16 +2223,12 @@ def test_u31_glass8_rulings_2_and_3_and_the_caveat():
     assert ".chcaveat{" not in css
 
 
-def test_u32_calendar_one_row_per_event():
-    # G8-7 (Ruling 1): rows that are the same event — same ticker + program +
-    # event kind + same period start — fold to ONE calendar row; the first
-    # source's wording is the date text; a count pill reads 'N sources'; the
-    # pane lists every source (quote, page, own status) and the actions act
-    # on the source picked; the header and rail count events, not sources
+def test_u32_calendar_folds_only_identical_current_events():
+    # A2 F1: only rows with identical current values and full interval fold;
+    # similar starts with different date wording remain independently visible.
     js = (UI / "app.js").read_text()
     css = (UI / "styles.css").read_text()
-    for word in ("rep.fold = g",
-                 "(e.row.ticker || '') + '|' + prog + '|'",
+    for word in ("rep.fold = g", "date_end: e.end", "indication: shownVal(vals, e.row, 'indication')",
                  "el('span', 'srcpill', r.fold.length + ' sources')",
                  "'Read from ' + sel.fold.length + ' sources'",
                  "calSrcSel"):
@@ -2247,7 +2240,7 @@ def test_u32_calendar_one_row_per_event():
     assert "actions: sel.fold.length > 1" in js
     for word in (".srcpill{", ".srcitem{", ".srcitem.on{"):
         assert word in css, word
-    # behavior: four same-event rows fold to one entry, first source first
+    # Four rows share an event/start but make different current date claims.
     import json
     import subprocess
     rows = [
@@ -2281,11 +2274,8 @@ def test_u32_calendar_one_row_per_event():
         _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
         "var got = calendarRows();",
-        "if (got.length !== 4) { console.error('n=' + got.length); process.exit(2); }",
-        "if (got[0].fold.length !== 4) { console.error('fold=' + got[0].fold.length); process.exit(3); }",
-        "if (got[0].row.id !== 'a1') { console.error('first=' + got[0].row.id); process.exit(4); }",
-        "if (got[0].t.values.date_text !== 'Q1 2027') { console.error('wording=' + got[0].t.values.date_text); process.exit(5); }",
-        "if (got[1].fold.length !== 1 || got[2].fold.length !== 1 || got[3].fold.length !== 1) process.exit(6);",
+        "if (got.length !== 7) { console.error('n=' + got.length); process.exit(2); }",
+        "if (got.some(function (e) { return e.fold.length !== 1; })) process.exit(3);",
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
@@ -2320,10 +2310,10 @@ def test_u32_back_from_a_secondary_source_reselects_the_fold():
         _grab_fn(js, "calendarRows"),
         _grab_fn(js, "calFoldHit"),
         "var all = calendarRows();",
-        # a secondary source lands on the fold with that source picked
+        # A same-start row with conflicting date wording is no longer folded.
         "var h = calFoldHit(all, 'a4');",
-        "if (!h || h.rep !== 'a1' || h.src !== 'a4') { console.error(JSON.stringify(h)); process.exit(2); }",
-        # the representative itself maps to itself
+        "if (!h || h.rep !== 'a4' || h.src !== 'a4') { console.error(JSON.stringify(h)); process.exit(2); }",
+        # the other row remains independently addressable
         "h = calFoldHit(all, 'a1');",
         "if (!h || h.rep !== 'a1' || h.src !== 'a1') { console.error(JSON.stringify(h)); process.exit(3); }",
         # a singleton row maps to itself; an unknown id maps to nothing
@@ -2380,6 +2370,46 @@ def test_u34_g9_1_calendar_uses_the_servers_corrected_rule():
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
     assert got.returncode == 0, got.stdout + got.stderr
     assert json.loads(got.stdout.strip().splitlines()[-1]) == ["keep", "pass", "nofix"]
+
+
+def test_needs_attention_includes_pending_recheck():
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    script = "\n".join([
+        _grab_fn(js, "needsAttention"),
+        "var pending = needsAttention({group:'corrected', needs_recheck:true, recheck:null, status:'matched'});",
+        "var completed = needsAttention({group:'corrected', needs_recheck:false, recheck:{result:'pass'}, status:'matched'});",
+        "console.log(JSON.stringify([pending, completed]));",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+    assert json.loads(got.stdout.strip().splitlines()[-1]) == [True, False]
+
+
+def test_judgment_checks_show_current_results_and_label_original_history():
+    import subprocess
+    js = (UI / "app.js").read_text()
+    script = "\n".join([
+        "function el(tag, cls, value) { return {tag:tag, cls:cls, textContent:value || '', children:[], style:{}, append:function(){ this.children.push.apply(this.children, arguments); }}; }",
+        "function checkDot(result) { return el('span', null, result); }",
+        "function esc(value) { return el('span', null, value); }",
+        "function checkResultWord(result) { return result; }",
+        "function seeTheCheck(check) { return el('details', null, 'details ' + check.label); }",
+        "function flatten(node) { return (node.textContent || '') + (node.children || []).map(flatten).join(' '); }",
+        _grab_fn(js, "effectiveChecks"),
+        _grab_fn(js, "checksSection"),
+        "var raw = [{result:'fail', label:'Original value failure', reason:'Old value.'}];",
+        "var current = [{result:'pass', label:'Fixed value pass', reason:'Re-check on new value.'}];",
+        "var done = flatten(checksSection({checks:raw}, {fixes:[{}], effective_checks:current, check_history:raw, recheck:{result:'pass'}}));",
+        "var histAt = done.indexOf('Original checks · history (before edit)');",
+        "if (histAt < 0 || done.indexOf('Fixed value pass') < 0 || done.indexOf('Original value failure') < histAt) process.exit(2);",
+        "var pending = flatten(checksSection({checks:raw}, {fixes:[{}], needs_recheck:true, effective_checks:[], check_history:raw}));",
+        "if (pending.indexOf('No checks ran on the current value yet; re-check pending.') < 0 || pending.indexOf('Original checks · history (before edit)') < 0) process.exit(3);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
 
 
 def test_u34_g9_2_mistakes_read_the_state_list():
@@ -2701,8 +2731,8 @@ def test_u35_af2b_calendar_lists_rows_with_no_parsed_day():
     import subprocess
     js = (UI / "app.js").read_text()
     assert "nodate: !d" in js
-    assert "'No day given · ' + nodates.length" in js
-    assert "var total = rows.length + nodates.length" in js
+    assert "'Contingent · ' + nodates.length" in js
+    assert "var total = rows.length + past.length + nodates.length + later.length" in js
     rows = [
         {"id": "k1", "ticker": "PTGX", "program": "PN-1", "event_type": "milestone",
          "date": "2027-01-01", "date_text": "Q1 2027"},
@@ -2723,10 +2753,10 @@ def test_u35_af2b_calendar_lists_rows_with_no_parsed_day():
         _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
         "var got = calendarRows();",
-        "if (got.length !== 3) { console.error('n=' + got.length); process.exit(2); }",
+        "if (got.length !== 4) { console.error('n=' + got.length); process.exit(2); }",
         "var und = got.filter(function (e) { return e.nodate; });",
-        "if (und.length !== 2) { console.error('und=' + und.length); process.exit(3); }",
-        "if (und[0].fold.length !== 1 || und[0].t.values.date_text !== 'in the coming months') process.exit(4);",
+        "if (und.length !== 3) { console.error('und=' + und.length); process.exit(3); }",
+        "if (!und.some(function (e) { return e.row.id === 'x1' && !e.t.values.date_text; })) process.exit(4);",
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
@@ -2734,14 +2764,13 @@ def test_u35_af2b_calendar_lists_rows_with_no_parsed_day():
 
 
 def test_u35_af3_fold_key_uses_the_title_when_program_is_empty():
-    # Red Team round 11 A-F3: two program-less conferences on the same start
-    # day (UBS, Jefferies) folded into one row. The key now folds a
-    # program-less row on its normalised title, so same-day blanks with
-    # different titles stay apart
+    # Same-day rows with different titles or full intervals remain separate;
+    # only candidates with the same current values and interval can fold.
     import json
     import subprocess
     js = (UI / "app.js").read_text()
-    assert "normWords(title)" in js.split("function calendarRows")[1].split("return order.map")[0]
+    calendar_source = js.split("function calendarRows")[1].split("return order.map")[0]
+    assert "date_end: e.end" in calendar_source and "indication:" in calendar_source
     rows = [
         {"id": "c1", "ticker": "VKTX", "program": "", "event_type": "conference",
          "date": "2026-11-16", "date_end": "2026-11-17", "date_text": "November 16-17",
@@ -2749,7 +2778,7 @@ def test_u35_af3_fold_key_uses_the_title_when_program_is_empty():
         {"id": "c2", "ticker": "VKTX", "program": "", "event_type": "conference",
          "date": "2026-11-16", "date_end": "2026-11-19", "date_text": "November 16-19",
          "title": "Jefferies Global Healthcare Conference London, UK"},
-        # the same conference said again, still no program -> one event
+        # Same title but a conflicting interval is not silently folded.
         {"id": "c3", "ticker": "VKTX", "program": "", "event_type": "conference",
          "date": "2026-11-16", "date_end": "2026-11-16", "date_text": "Nov 16",
          "title": "UBS Global Biopharma Conference London, UK"},
@@ -2764,16 +2793,50 @@ def test_u35_af3_fold_key_uses_the_title_when_program_is_empty():
         _grab_fn(js, "shownVal"),
         _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
-        _grab_fn(js, "normWords"),
         "var got = calendarRows();",
-        # UBS x2 fold (normalised titles match); Jefferies stands alone
-        "if (got.length !== 2) { console.error('n=' + got.length); process.exit(2); }",
-        "var folds = got.map(function (e) { return e.fold.length; }).sort();",
-        "if (folds[0] !== 1 || folds[1] !== 2) { console.error(folds.join(',')); process.exit(3); }",
+        "if (got.length !== 3) { console.error('n=' + got.length); process.exit(2); }",
+        "if (got.some(function (e) { return e.fold.length !== 1; })) process.exit(3);",
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
     assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_calendar_partitions_before_folding_and_keeps_period_conflict_visible():
+    import json
+    import subprocess
+    js = (UI / "app.js").read_text()
+    rows = [
+        {"id": "e1", "ticker": "PTGX", "program": "PN-1", "indication": "IgAN",
+         "event_type": "milestone", "date": "2026-07-01", "date_end": "2026-09-30",
+         "date_text": "Q3 2026", "title": "Results"},
+        {"id": "e2", "ticker": "PTGX", "program": "PN-1", "indication": "IgAN",
+         "event_type": "milestone", "date": "2026-07-01", "date_end": "2026-12-31",
+         "date_text": "H2 2026", "title": "Results"},
+    ]
+    targets = {r["id"]: {"group": "kept", "status": "matched", "values": r.copy()} for r in rows}
+    partition = {"past": [{"id": "e1"}], "calendar": [{"id": "e2"}], "later": [], "contingent": []}
+    script = "\n".join([
+        "var detail = { run: { rows: " + json.dumps(rows) + ", calendar_partition: " + json.dumps(partition) +
+        " }, state: { targets: " + json.dumps(targets) + " } };",
+        "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
+        _grab_fn(js, "shownVal"),
+        _grab_fn(js, "effectiveChecks"),
+        _grab_fn(js, "calendarRows"),
+        "var got = calendarRows();",
+        "if (got.length !== 2) { console.error('n=' + got.length); process.exit(2); }",
+        "if (got[0].row.id !== 'e1' || got[0].bucket !== 'past') process.exit(3);",
+        "if (got[1].row.id !== 'e2' || got[1].bucket !== 'calendar') process.exit(4);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_calendar_empty_buckets_still_render_latest_past_history():
+    js = (UI / "app.js").read_text()
+    render = _grab_fn(js, "renderCalendar")
+    assert "!later.length && !lastEvents.length" in render
 
 
 def test_u35_af6_matched_badge_names_the_unchecked_check():
@@ -2925,7 +2988,7 @@ def test_u35_codex_p2s_presence_effective_checks_reader_label():
     import subprocess
     js = (UI / "app.js").read_text()
     for word in ("Object.prototype.hasOwnProperty.call(t.values, 'date')",
-                 "shownVal(e.t.values || {}, e.row, 'program')",
+                 "program: shownVal(vals, e.row, 'program')",
                  "function effectiveChecks(row, t)",
                  "effectiveChecks(row, t).filter(function (c) { return c.result === 'fail'; })",
                  "effectiveChecks(e.row, e.t).some(function (c) { return c.result !== 'pass'; })",

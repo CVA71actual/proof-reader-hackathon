@@ -97,12 +97,34 @@ def test_new_run_makes_the_folder_and_reads_the_captured_pages(runs_dir):
     RUN_SCHEMA.validate(run)
     m = run["run"]
     assert m["status"] == "done" and m["sample"] is False and m["number"] == 3
-    assert m["choices"] == {**BOTH, "reader_tools": False}
+    assert m["choices"] == {**BOTH, "time_window_months": 6, "reader_tools": False}
     assert m["finished_at"] and m["turn_count"] == 2 and m["spend_usd"] == pytest.approx(0.02)
     assert {s["id"] for s in run["sources"]} == {"src-ptgx-8k-2026-08-05-ex991", "src-ions-ars-2026"}
     assert run["rows"] and run["tables"], "events from PTGX page 3, a table from IONS page 95"
     assert (d / "pages" / "p3.png").is_file() and (d / "pages" / "p95.words.json").is_file()
     assert len(reader.prompts) == 2
+
+
+def test_person_decision_rebuilds_saved_reports_from_the_served_state(runs_dir):
+    from report.build import build
+
+    client, _ = make(runs_dir)
+    meta = start(client, companies=["PTGX"])
+    run_dir = runs_dir / meta["id"]
+    build(meta["id"], run_dir=run_dir, generated_at="2026-10-31T12:00:00Z")
+    before = client.get(f"/runs/{meta['id']}/report/biotech-coverage-catalyst-calendar-run3.pdf")
+    assert before.status_code == 200
+    response = client.post(f"/api/runs/{meta['id']}/decisions", json={"target": "e1", "action": "keep"})
+    assert response.status_code == 200, response.text
+    assert response.json()["report_refresh"] == "rebuilt from the new state"
+    saved = run_json(runs_dir, meta["id"])
+    assert not saved.get("report_stale")
+    after = client.get(f"/runs/{meta['id']}/report/biotech-coverage-catalyst-calendar-run3.pdf")
+    assert after.status_code == 200
+    from pypdf import PdfReader
+    from io import BytesIO
+    text = "\n".join(p.extract_text() or "" for p in PdfReader(BytesIO(after.content)).pages)
+    assert "Kept by you" in text
 
 
 def test_the_run_is_served_and_listed_with_its_status(runs_dir):
@@ -139,16 +161,17 @@ def test_bad_choices_are_refused_and_nothing_is_made(runs_dir, bad):
     assert sorted(p.name for p in runs_dir.iterdir()) == ["sample"] and not reader.prompts
 
 
-def test_event_types_choose_what_the_reader_is_asked_for(runs_dir):
+def test_legacy_event_type_selection_does_not_narrow_reading(runs_dir):
     client, reader = make(runs_dir)
     start(client, event_types=["filing", "launch"])
-    assert "one of: launch, filing>" in reader.prompts[0]
+    assert "do not omit a proposal because of its date or category" in reader.prompts[0]
+    assert "one of:" not in reader.prompts[0]
 
 
-def test_no_event_type_chosen_skips_the_event_page(runs_dir):
+def test_empty_event_selection_still_reads_the_page(runs_dir):
     client, reader = make(runs_dir)
     meta = start(client, event_types=[])
-    assert not reader.prompts and run_json(runs_dir, meta["id"])["run"]["status_reason"].startswith("Nothing to read")
+    assert reader.prompts and run_json(runs_dir, meta["id"])["rows"]
 
 
 # ---------------------------------------------------------------- the note cannot remove a check
@@ -537,6 +560,7 @@ def test_resume_takes_nothing_but_a_limit_and_a_run_with_no_limit_has_none_to_ra
 
 def with_today(monkeypatch, y, m, d):
     monkeypatch.setattr(jobs, "today", lambda: date(y, m, d))
+    monkeypatch.setattr(jobs, "now_utc", lambda: date(y, m, d).isoformat() + "T12:00:00+00:00")
 
 
 def test_add_months_keeps_to_the_end_of_a_short_month():
@@ -544,7 +568,7 @@ def test_add_months_keeps_to_the_end_of_a_short_month():
     assert jobs.add_months(date(2026, 10, 28), 12) == date(2027, 10, 28)
 
 
-def test_a_row_later_than_the_window_is_left_out_by_code_and_is_not_a_mistake(runs_dir, monkeypatch):
+def test_future_events_survive_legacy_window_choices(runs_dir, monkeypatch):
     with_today(monkeypatch, 2026, 10, 28)
     client, _ = make(runs_dir)
     meta = start(client, time_window_months=6)         # to 2027-04-28: Q1 2027 in, 2H 2027 (2027-07-01) out
@@ -552,42 +576,64 @@ def test_a_row_later_than_the_window_is_left_out_by_code_and_is_not_a_mistake(ru
     RUN_SCHEMA.validate(run)
     by_date = {r["date"]: r for r in run["rows"]}
     late, early = by_date["2027-07-01"], by_date["2027-01-01"]
-    assert late["group"] == "removed" and early["group"] != "removed"
-    assert late["reason"] == ("Outside the time window: the date 2027-07-01 is later than 6 months from today "
-                              "(2027-04-28).")
-    assert late["trail"][-1]["step"] == "Left out" and late["trail"][-1]["tag"] == "Code"
-    [x] = run["exclusions"]
-    assert (x["target"], x["rule"], x["by"]) == (late["id"], "outside_time_window", "code")
-    state = client.get(f"/api/runs/{meta['id']}").json()["state"]
-    assert state["excluded"]["code"] == 1 and sum(state["mistakes"].values()) == 0
-    assert late["id"] not in {e["id"] for e in calendar(client, meta["id"])}
+    assert late["group"] != "removed" and early["group"] != "removed"
+    assert run["exclusions"] == []
+    assert late["id"] in {e["id"] for e in calendar(client, meta["id"])}
 
 
-def test_a_row_dated_before_today_is_left_out(runs_dir, monkeypatch):
+def test_a_period_ending_before_the_run_date_is_a_code_exclusion(runs_dir, monkeypatch):
     with_today(monkeypatch, 2027, 4, 1)                # Q1 2027 ENDS 2027-03-31: before today
     client, _ = make(runs_dir)
     run = run_json(runs_dir, start(client, time_window_months=6)["id"])
     by_date = {r["date"]: r for r in run["rows"]}
-    assert by_date["2027-01-01"]["group"] == "removed" and by_date["2027-07-01"]["group"] != "removed"
-    assert "the period ends 2027-03-31, before today (2027-04-01)" in by_date["2027-01-01"]["reason"]
+    assert by_date["2027-01-01"]["group"] == "removed"
+    assert run["exclusions"] and run["exclusions"][0]["rule"] == "event_in_past"
 
 
-def test_no_window_leaves_nothing_out_and_an_undated_row_is_never_touched(runs_dir, monkeypatch):
+def test_fixed_window_keeps_undated_rows_and_excludes_only_past_periods(runs_dir, monkeypatch):
     with_today(monkeypatch, 2030, 1, 1)
     client, _ = make(runs_dir)
-    assert run_json(runs_dir, start(client, time_window_months=None)["id"])["exclusions"] == []
+    assert run_json(runs_dir, start(client, time_window_months=None)["id"])["run"]["choices"]["time_window_months"] == 6
 
     def undated(prompt, n):
         entry = load_entry(read_events.PIN)
         ev = read_events.build_fake_events(read_events.load_words(), entry)[0]
-        return json.dumps({"events": [{**ev, "date": None, "date_end": None}]})
+        return json.dumps({"events": [{**ev, "date": None, "date_end": None, "date_text": None}]})
 
     client2, _ = make(runs_dir, FakeReader(answer=undated))
     run = run_json(runs_dir, start(client2, time_window_months=1)["id"])
     undated = run["rows"][0]
     assert undated["group"] != "removed" and undated["id"] not in {x["target"] for x in run["exclusions"]}
-    # the only exclusion is the dated 'not read' row the coverage check added for the other event
-    assert [r["found_by"] for r in run["rows"] if r["id"] in {x["target"] for x in run["exclusions"]}] == ["coverage"]
+    assert all(x["target"] != undated["id"] and x["rule"] == "event_in_past" for x in run["exclusions"])
+
+
+def test_past_rule_uses_period_end_and_is_strictly_before_run_date():
+    job = object.__new__(jobs.Job)
+    job.meta = {"started_at": "2026-10-13T12:00:00+00:00"}
+    job.run = {"exclusions": []}
+    rows = [
+        {"id": "h2", "date": "2026-07-01", "date_end": "2026-12-31", "group": "kept", "trail": []},
+        {"id": "sep", "date": "2026-09-01", "date_end": "2026-09-30", "group": "kept", "trail": [],
+         "checks": [{"name": "date_match", "result": "pass"}]},
+    ]
+    job.apply_window(rows, "2026-10-13T12:00:00+00:00")
+    assert rows[0]["group"] == "kept"
+    assert rows[1]["group"] == "removed"
+    assert [x["target"] for x in job.run["exclusions"]] == ["sep"]
+
+
+def test_past_rule_never_excludes_a_failed_or_unchecked_date():
+    for checks in ([{"name": "date_match", "result": "fail"}], []):
+        row = {"id": "candidate", "date": "2026-09-01", "date_end": None, "group": "unverified",
+               "trail": [], "checks": checks}
+        assert jobs.past_reason(row, date(2026, 10, 13)) is None
+        job = object.__new__(jobs.Job)
+        job.meta = {"started_at": "2026-10-13T12:00:00+00:00"}
+        job.run = {"exclusions": []}
+        job.apply_window([row], "2026-10-13T12:00:00+00:00")
+        assert row["group"] == "unverified"
+        assert row.get("past_exclusion_proposal")
+        assert not job.run["exclusions"]
 
 
 def test_the_window_is_checked_in_the_choices(runs_dir):

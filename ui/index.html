@@ -130,19 +130,12 @@
     <div class="sh-s">Choices only — nothing here calls a model until the run starts, and the checks never change.</div>
     <h4>Companies</h4>
     <div class="sh-grid" id="nr-cos"></div>
-    <h4>Event types</h4>
-    <div class="sh-grid" id="nr-types"></div>
-    <h4>Time window</h4>
-    <div class="btnrow" id="nr-win">
-      <button class="fc" data-win="3">Next 3 months</button>
-      <button class="fc" data-win="6">Next 6 months</button>
-      <button class="fc on" data-win="12">Next 12 months</button>
-    </div>
+    <p class="hint">Read broadly across the captured sources. Dates and categories do not restrict discovery.</p>
     <h4>Spending limit <span class="opt">(USD — leave empty for no limit)</span></h4>
     <input class="fld" id="nr-limit" inputmode="decimal" placeholder="2.00" style="width:130px">
     <h4>Note for the agent <span class="opt">(optional)</span></h4>
-    <input class="fld" id="nr-note" maxlength="200" placeholder="e.g. focus on obesity readouts">
-    <div class="hint">Steers the focus only — a note can never turn off a check.</div>
+    <input class="fld" id="nr-note" maxlength="200" placeholder="Additional research context">
+    <div class="hint">Adds context without narrowing discovery or turning off checks.</div>
     <h4>Reader tools <span class="opt">(optional)</span></h4>
     <label><input type="checkbox" id="nr-tools"> Let the first reader call the checks while it reads</label>
     <div class="hint">The reader may ask the checks about its own proposals; the checks still run on every row afterwards.</div>

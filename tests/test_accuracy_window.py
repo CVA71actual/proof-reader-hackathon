@@ -52,7 +52,7 @@ def scored(**kw):
 
 def test_the_window_comes_from_the_run_start_and_months():
     run = {"run": {"started_at": "2026-10-29T04:46:17+00:00", "choices": {"time_window_months": 6}}}
-    assert run_window(run) == WINDOW
+    assert run_window(run) is None
     assert run_window({"run": {"started_at": "2026-10-29T04:46:17+00:00", "choices": {"time_window_months": None}}}) is None
     assert run_window({"run": {"started_at": None, "choices": {"time_window_months": 6}}}) is None
     assert add_months(date(2026, 8, 31), 6) == date(2027, 2, 28)

@@ -103,7 +103,12 @@ def build_pdf(view: dict) -> bytes:
     story.append(_p(view["title"], styles["title"]))
     story.append(_p(f"Run {view['run_number']}: {view['run_label']}", styles["body"]))
     story.append(_p(f"Run date: {view['run_date']}", styles["body"]))
-    story.append(_p("Companies covered: " + " · ".join(view["companies"]), styles["body"]))
+    story.append(_p(f"Run status: {view['run_status']}", styles["body"]))
+    story.append(_p("Companies read: " + (" · ".join(view["companies_read"]) or "none recorded"), styles["body"]))
+    story.append(_p("Companies unread: " + (" · ".join(view["companies_unread"]) or "none recorded"), styles["body"]))
+    page_unread = str(view["pages_unread"]) if view["pages_unread"] is not None else "not recorded"
+    story.append(_p(f"Pages read: {view['pages_read']} · unread: {page_unread}", styles["body"]))
+    story.append(_p("Stopping reason: " + view["stopping_reason"], styles["body"]))
     if view["sample_stamp"]:
         story.append(_p(view["sample_stamp"], styles["stamp"]))
     story.append(_p(f"{view['generated_at']}", styles["small"]))
@@ -118,11 +123,12 @@ def build_pdf(view: dict) -> bytes:
 
     # Calendar
     story.append(_p("Calendar", styles["h1"]))
+    story.append(_p(f"Window: {view['calendar_window']}", styles["small"]))
     story.append(_p(
         "Kept and corrected rows only, ordered by date. Periods are shown as stated.",
         styles["small"],
     ))
-    if not view["calendar"]:
+    if not view["calendar"] and not view.get("past") and not view.get("contingent") and not view.get("later"):
         story.append(_p("No kept or corrected rows.", styles["body"]))
     else:
         data = [[
@@ -157,6 +163,26 @@ def build_pdf(view: dict) -> bytes:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ]))
         story.append(table)
+    for key, label in (("past", "Past"), ("contingent", "Contingent"), ("later", "Later")):
+        if view.get(key):
+            story.append(_p(f"{label} · {len(view[key])}", styles["h1"]))
+            for row in view[key]:
+                story.append(_p(f"{row['date_display']} · {row['ticker']} · {row['program']} · {row['event']} · "
+                        f"{row['id']} · {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
+                                f"indication: {row['indication'] or 'not stated'} · action: {row['action']} · "
+                                f"{row['reason']}", styles["body"]))
+    for row in view["calendar"] + view.get("past", []) + view.get("contingent", []) + view.get("later", []):
+        checks = "; ".join(f"{c['name']}: {c['result']}" + (f" ({c['limitation']})" if c["limitation"] else "")
+                            for c in row["check_limitations"])
+        if not checks and row.get("check_status_text"):
+            checks = row["check_status_text"]
+        history = "; ".join(f"{c['name']}: {c['result']}" + (f" ({c['limitation']})" if c["limitation"] else "")
+                              for c in row.get("check_history", []))
+        history_text = f" · original checks (history, before edit): {history}" if history else ""
+        story.append(_p(f"Evidence {row['id']}: {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
+                        f"indication {row['indication'] or 'not stated'} · action {row['action']} · "
+                        f"quote: {row['quote'] or 'not recorded'} · current-value checks: {checks or 'not recorded'}"
+                        f"{history_text}", styles["small"]))
 
     # Corrections
     story.append(_p("Corrections", styles["h1"]))
@@ -166,9 +192,22 @@ def build_pdf(view: dict) -> bytes:
         for c in view["corrections"]:
             check = f" · check: {c['check']}" if c.get("check") else ""
             story.append(_p(
-                f"{c['id']}: {c['before_after']} (caught by {c['caught_by']}{check})",
+                f"{c['id']} · {c.get('ticker', '')} · {c.get('event', '')}: {c['before_after']} "
+                f"(caught by {c['caught_by']}{check}); "
+                f"latest re-check: {c.get('latest_recheck', 'not recorded')}"
+                + (f"; override reason: {c['override_reason']}" if c.get("override_reason") else ""),
                 styles["body"],
             ))
+
+    story.append(_p("Other edits · no mistake demonstrated", styles["h1"]))
+    if not view.get("edits"):
+        story.append(_p("None.", styles["body"]))
+    else:
+        for edit in view["edits"]:
+            story.append(_p(f"{edit['id']} · {edit.get('ticker', '')} · {edit.get('event', '')}: "
+                            f"{edit['before_after']} ({edit['edit_status']}) · re-check: {edit['latest_recheck']}"
+                            + (f"; override reason: {edit['override_reason']}" if edit.get("override_reason") else ""),
+                            styles["body"]))
 
     # Excluded
     story.append(_p("Excluded", styles["h1"]))
@@ -184,8 +223,15 @@ def build_pdf(view: dict) -> bytes:
         story.append(_p("None.", styles["body"]))
     else:
         for r in view["open_rows"]:
+            checks = "; ".join(f"{c['name']}: {c['result']}" for c in r.get("check_limitations", []))
+            checks = checks or r.get("check_status_text") or "not recorded"
+            history = "; ".join(f"{c['name']}: {c['result']}" for c in r.get("check_history", []))
+            history_text = f" · original checks (history, before edit): {history}" if history else ""
             story.append(_p(
-                f"{r['group_label']} · {r['ticker']} · {r['event']}: {r['reason']}",
+                f"{r['group_label']} · {r['ticker']} · {r['event']}: {r['reason']}"
+                f" · current-value checks: {checks}{history_text}"
+                + (f" · latest re-check: {r['latest_recheck']}" if r.get("latest_recheck") else "")
+                + (f" · override reason: {r['override_reason']}" if r.get("override_reason") else ""),
                 styles["body"],
             ))
 

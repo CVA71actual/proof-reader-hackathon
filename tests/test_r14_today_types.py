@@ -124,9 +124,20 @@ def test_each_word_gives_its_type_and_a_wrong_type_still_fails(word, kind):
     assert type_match(wrong, quote).result == "fail"
 
 
-def test_a_sentence_with_none_of_the_words_is_a_milestone():
-    assert event_type_for("The company expects growth in 2027.") == "milestone"
-    assert event_type_for(None) == "milestone"
+def test_a_sentence_with_none_of_the_words_is_unknown():
+    assert event_type_for("The company expects growth in 2027.") == "unknown"
+    assert event_type_for(None) == "unknown"
+
+
+def test_code_assigns_the_type_from_quote_and_retains_an_arbitrary_reader_hint():
+    words = page(QUOTE)
+    ev = {"ticker": "ACME", "company": "Acme", "event_type": "data_readout_thing", "title": "Study",
+          "date_text": "today", "date": None, "date_end": None, "quote": "Topline data are expected in Q4 2027.",
+          "program": "AC-1", "indication": None, "box": None, "word_ids": []}
+    row = build_entry.build_row(1, ev, READING, SOURCE, words, "2026-10-13T00:00:00+00:00")
+    assert row["event_type"] == "trial_results"
+    assert row["type_hint"] == "data_readout_thing"
+    assert any("Assigned trial results from the quoted words" in t["text"] for t in row["trail"])
 
 
 def test_the_reader_prompts_print_the_same_table():
@@ -134,13 +145,9 @@ def test_the_reader_prompts_print_the_same_table():
     guide = event_checks.type_guide()
     assert read_events.EVENT_TYPES is event_checks.EVENT_TYPES
     for prompt in (read_events.build_image_prompt(entry), read_events.build_prompt(page("a b"), entry)):
-        assert guide in prompt
-    for kind, words in EVENT_WORDS.items():
-        assert kind in guide
-    for w in ("submit", "NDA", "BLA", "MAA", "IND", "PDUFA", "CHMP opinion", "commercial availability", "investor day",
-              "webcast", "symposium", "presentation of data", "topline", "readout"):
-        assert w in guide
-    assert "milestone: anything else" in guide
+        assert '"type_hint"' in prompt
+        assert '"event_type"' not in prompt
+        assert "type_guide" not in prompt
 
 
 def test_the_prompt_lists_only_the_types_asked_for():

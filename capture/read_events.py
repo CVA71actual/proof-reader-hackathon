@@ -41,8 +41,9 @@ You are reading one page of a company's SEC filing: {company} (ticker {ticker}),
 Coordinates are PDF points. The origin is the top-left corner of the page and y grows downward.
 The page is {width} points wide and {height} points tall.
 
-List every upcoming catalyst event the page names: something the company expects to happen, with the date or
-period the page gives for it. Answer with JSON only, in exactly this shape:
+Read the page broadly and propose the events and supporting context it describes, including undated or
+conditional plans, historical developments, and changed or withdrawn guidance. Preserve the timing as written;
+do not omit a proposal because of its date or category. Answer with JSON only, in exactly this shape:
 {{
   "events": [
     {{
@@ -50,12 +51,12 @@ period the page gives for it. Answer with JSON only, in exactly this shape:
       "company": "{company}",
       "program": "<the drug or program name as printed, or null>",
       "indication": "<the disease or condition the program is for, as printed, or null>",
-      "event_type": "<one of: {types}>",
+      "type_hint": "<optional short description of the event type in your own words>",
       "title": "<a short title for the event>",
-      "date_text": "<the date or period exactly as printed>",
+      "date_text": "<the date or period exactly as printed, or an empty string when no timing is given>",
       "date": "<YYYY-MM-DD or null>",
       "date_end": "<YYYY-MM-DD or null>",
-      "quote": "<the printed sentence that names the event and its date, word for word>",
+      "quote": "<the printed words supporting the event and any timing, word for word>",
       "word_ids": ["<id of the first word of the quote>", "...", "<id of the last word of the quote>"],
       "box": [x0, y0, x1, y1]
     }}
@@ -71,13 +72,12 @@ Rules:
 - "date" and "date_end": for an exact day, "date" is that day and "date_end" is null. For a quarter, half, month
   or year, "date" is its first day and "date_end" its last day. For anything vaguer ("mid-2027", "later this
   year"), both are null.
-- "event_type" goes by the words of the quote; a quote with words of more than one type takes the first listed:
-{guide}
+- Give a free-text type_hint if useful. Code assigns the controlled event_type after reading from the quote; categories never limit what you read.
 - "word_ids" are the ids of every word of the quote, in order.
 - "box" is your proposal for where the quote is printed: the smallest box, in PDF points, that encloses all the
   words of the quote (if the quote runs over several lines, the box encloses those lines). If you cannot place
   it, use null.
-- Leave out events that have already happened. If the page names none, answer {{"events": []}}.
+- Keep historical events as context for code and human review. If the page names no events, answer {{"events": []}}.
 - Output the JSON object only, with no other text.
 
 Words:
@@ -88,8 +88,9 @@ INSTRUCTIONS_IMAGE = """\
 You are reading one page of a company's SEC filing: {company} (ticker {ticker}), {form} exhibit {exhibit}, filed
 {filing_date}. The page is attached as an image. Read it from the image: you are given no list of its words.
 
-List every upcoming catalyst event the page names: something the company expects to happen, with the date or
-period the page gives for it. Answer with JSON only, in exactly this shape:
+Read the page broadly and propose the events and supporting context it describes, including undated or
+conditional plans, historical developments, and changed or withdrawn guidance. Preserve the timing as written;
+do not omit a proposal because of its date or category. Answer with JSON only, in exactly this shape:
 {{
   "events": [
     {{
@@ -97,12 +98,12 @@ period the page gives for it. Answer with JSON only, in exactly this shape:
       "company": "{company}",
       "program": "<the drug or program name as printed, or null>",
       "indication": "<the disease or condition the program is for, as printed, or null>",
-      "event_type": "<one of: {types}>",
+      "type_hint": "<optional short description of the event type in your own words>",
       "title": "<a short title for the event>",
-      "date_text": "<the date or period exactly as printed>",
+      "date_text": "<the date or period exactly as printed, or an empty string when no timing is given>",
       "date": "<YYYY-MM-DD or null>",
       "date_end": "<YYYY-MM-DD or null>",
-      "quote": "<the printed sentence that names the event and its date, word for word>",
+      "quote": "<the printed words supporting the event and any timing, word for word>",
       "box": [x0, y0, x1, y1]
     }}
   ]
@@ -117,13 +118,12 @@ Rules:
 - "date" and "date_end": for an exact day, "date" is that day and "date_end" is null. For a quarter, half, month
   or year, "date" is its first day and "date_end" its last day. For anything vaguer ("mid-2027", "later this
   year"), both are null.
-- "event_type" goes by the words of the quote; a quote with words of more than one type takes the first listed:
-{guide}
+- Give a free-text type_hint if useful. Code assigns the controlled event_type after reading from the quote; categories never limit what you read.
 - "box" is your proposal for where the quote is printed: the smallest box that encloses all the words of the
   quote (if the quote runs over several lines, the box encloses those lines), on a grid from 0 to 1000 over the
   image: x counts from the left edge and y from the top edge, and 1000 is the full width or height. If you cannot
   place it, use null.
-- Leave out events that have already happened. If the page names none, answer {{"events": []}}.
+- Keep historical events as context for code and human review. If the page names no events, answer {{"events": []}}.
 - Output the JSON object only, with no other text.
 """
 
@@ -133,7 +133,7 @@ def build_image_prompt(entry: dict, event_types: tuple[str, ...] = EVENT_TYPES, 
     The attached image is the page; boxes come back on a 0-1000 grid (grid_to_points turns them into PDF points)."""
     return read_table.append_note(INSTRUCTIONS_IMAGE.format(
         company=entry["company"], ticker=entry["ticker"], form=entry["form"], exhibit=entry["exhibit"],
-        filing_date=entry["filing_date"], types=", ".join(event_types), guide=type_guide(event_types)), note)
+        filing_date=entry["filing_date"], types=", ".join(EVENT_TYPES), guide=type_guide(EVENT_TYPES)), note)
 
 
 def grid_to_points(box, width_pt: float, height_pt: float) -> list[float] | None:
@@ -157,7 +157,7 @@ def build_prompt(words_doc: dict, entry: dict, event_types: tuple[str, ...] = EV
     head = read_table.add_note(INSTRUCTIONS.format(
         company=entry["company"], ticker=entry["ticker"], form=entry["form"], exhibit=entry["exhibit"],
         filing_date=entry["filing_date"], width=_num(words_doc["page_width"]),
-        height=_num(words_doc["page_height"]), types=", ".join(event_types), guide=type_guide(event_types),
+        height=_num(words_doc["page_height"]), types=", ".join(EVENT_TYPES), guide=type_guide(EVENT_TYPES),
     ), note)
     lines = [
         f"{w['id']}|{w['text']}|{_num(w['x0'])}|{_num(w['y0'])}|{_num(w['x1'])}|{_num(w['y1'])}"

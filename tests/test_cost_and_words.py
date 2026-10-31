@@ -115,7 +115,8 @@ def test_ptgx_cost_comes_from_the_saved_usage():
     assert sum(s["tokens"]["prompt"] for s in steps) == usage["prompt_tokens"]
     assert sum(s["tokens"]["completion"] for s in steps) == usage["completion_tokens"]
     assert all(s["tokens"]["call_rows"] == len(run["rows"]) for s in steps)
-    assert all(r["trail"][0]["tokens"]["prompt"] == usage["prompt_tokens"] for r in run["rows"])
+    assert all(next(t for t in r["trail"] if t["step"] == "Instructions sent")["tokens"]["prompt"] ==
+               usage["prompt_tokens"] for r in run["rows"])
     whole = prices.cost_usd("Muse Spark", usage["prompt_tokens"], usage["completion_tokens"])
     assert run["run"]["spend_usd"] == pytest.approx(whole, abs=1e-6)
 

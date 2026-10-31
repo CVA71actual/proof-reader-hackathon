@@ -44,7 +44,9 @@
    "status": "read",
    "rows_sent": 2,
    "rows_replaced": 0
-  }
+  },
+  "pages_total": 114,
+  "pages_read": 114
  },
  "sources": [
   {

@@ -16,7 +16,7 @@ def test_a_typographic_apostrophe_in_the_date_text_is_found_in_the_quote():
 
 def _row(group):
     return {"quote": "Drug A starts a Phase 3 in Q3 2027.", "program": "Drug A", "indication": None,
-            "event_type": "milestone", "date": "2027-07-01", "date_end": "2027-09-30", "status": "matched",
+            "event_type": "unknown", "date": "2027-07-01", "date_end": "2027-09-30", "status": "matched",
             "group": group, "checks": [{"result": "pass"}], "reason": "matched", "trail": []}
 
 

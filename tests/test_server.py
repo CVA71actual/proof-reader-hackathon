@@ -79,6 +79,36 @@ def test_list_runs(client):
     assert runs["demo"]["counts"]["cells"]["kept"] == 69
 
 
+def test_list_runs_keeps_other_runs_available_when_state_refuses_one(client, monkeypatch):
+    import server.app as app_module
+
+    real = app_module.current_state
+
+    def refuse_sample(run, decisions):
+        if run.get("run", {}).get("id") == "sample":
+            raise ValueError("Run has duplicate target IDs: e6. No decisions or reports can safely use it.")
+        return real(run, decisions)
+
+    monkeypatch.setattr(app_module, "current_state", refuse_sample)
+    response = client.get("/api/runs")
+    assert response.status_code == 200
+    runs = {item["id"]: item for item in response.json()}
+    assert "duplicate target IDs: e6" in runs["sample"]["refused"]
+    assert "refused" not in runs["demo"]
+    assert runs["demo"]["counts"]["cells"]["kept"] == 69
+
+
+def test_accuracy_endpoint_refuses_scoring_marked_stale(client, runs_dir):
+    path = runs_dir / "sample" / "run.json"
+    run = json.loads(path.read_text())
+    run["accuracy_stale"] = True
+    run["accuracy_stale_reason"] = "IDs repaired; rescore."
+    path.write_text(json.dumps(run))
+    response = client.get("/runs/sample/accuracy.json")
+    assert response.status_code == 409
+    assert "IDs repaired" in response.text
+
+
 def test_get_run_with_state(client):
     body = client.get("/api/runs/sample").json()
     assert body["run"]["id"] == "sample"
@@ -758,3 +788,22 @@ def test_other_names_and_unbuilt_reports_are_a_plain_404(tmp_path):
     r = c2.get(f"/runs/sample/report/{pdf2}")
     assert r.status_code == 404 and r.json()["detail"].endswith(".")
     assert c2.head(f"/runs/sample/report/{pdf2}").status_code == 404
+
+
+def test_unresolved_correction_is_not_promoted_by_report(client, runs_dir):
+    """PDF/Word calendar must not promote a fix whose citation could not be checked."""
+    from report.data import build_view, load_run_dir
+
+    response = fix(client, "e10", "title", "Full-year 2025 results in the annual report",
+                   "Full-year 2025 results")
+    assert response.status_code == 200
+    assert response.json()["state"]["group"] == "corrected"
+    run, decisions = load_run_dir(runs_dir / "sample")
+    view = build_view(run, decisions, generated_at="2026-10-31T17:00:00Z")
+    assert "e10" not in {row["id"] for row in view["calendar"]}
+
+    # An explicit Keep is still honored; it does not turn a failed check into a pass.
+    assert post(client, "e10", "keep").status_code == 200
+    run, decisions = load_run_dir(runs_dir / "sample")
+    view = build_view(run, decisions, generated_at="2026-10-31T17:00:00Z")
+    assert "e10" in {row["id"] for row in view["past"]}

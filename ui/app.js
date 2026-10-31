@@ -18,7 +18,7 @@
   var RULE_WORDS = {
     third_party_calendar_only: 'House rule: a third-party calendar is never a source on its own.',
     person_removed: 'Removed by you.',
-    past_event: 'The event had already happened when the page was read.',
+    event_in_past: 'The period ended before this run began.',
     source_rule: 'House rule: the source is not one the run accepts.',
     outside_time_window: 'Outside the time window'
   };
@@ -229,7 +229,7 @@
   function needsAttention(t) {
     if (t.group === 'open' || t.group === 'unverified') return true;
     if (t.group !== 'corrected') return false;
-    return (t.recheck && t.recheck.result === 'could_not_run') || t.status === 'undecided';
+    return !!t.needs_recheck || (t.recheck && t.recheck.result === 'could_not_run') || t.status === 'undecided';
   }
   function rowTarget(row) { return detail.state.targets[row.id] || {}; }
   function rowOf(id) {
@@ -494,6 +494,17 @@
   // or waits on a re-check stays off until the person keeps it.
   function calendarRows() {
     var out = [];
+    // Apply the server's shared interval partition before folding. This keeps
+    // rows with different placement (or timing) separate on the glass.
+    var partition = detail.run.calendar_partition || null;
+    var bucketById = {};
+    if (partition) {
+      ['calendar', 'past', 'later', 'contingent'].forEach(function (bucket) {
+        (partition[bucket] || []).forEach(function (entry) { bucketById[entry.id] = bucket; });
+      });
+    }
+    var window = partition ? null : (typeof calWindow === 'function'
+      ? calWindow() : { anchor: '0000-00-00', end: '9999-12-31' });
     detail.run.rows.forEach(function (r) {
       var t = rowTarget(r);
       if (t.group !== 'kept' && t.group !== 'corrected') return;
@@ -503,27 +514,39 @@
       // by a fix — the raw row's date must not resurrect it
       var d = t.values && Object.prototype.hasOwnProperty.call(t.values, 'date')
         ? t.values.date : r.date;
+      var end = t.values && Object.prototype.hasOwnProperty.call(t.values, 'date_end')
+        ? t.values.date_end : r.date_end;
       var dt = t.values && Object.prototype.hasOwnProperty.call(t.values, 'date_text')
         ? t.values.date_text : r.date_text;
       // A-F2(b): a kept or corrected row whose date text names no parsed day
       // is not dropped — it lists in the calendar's "No day given" section
-      if (!d && !dt) return;
-      out.push({ row: r, t: t, date: d || null, nodate: !d,
-                 period: !!(t.values && t.values.date_end),
-                 end: (t.values && t.values.date_end) || r.date_end || null });
+      // Undated supported events remain visible for review and output.
+      var entry = { row: r, t: t, date: d || null, nodate: !d,
+                    period: !!end, end: end || null, dateText: dt || null };
+      if (partition) entry.bucket = bucketById[r.id] || null;
+      else entry.bucket = !entry.date ? 'contingent' : (entry.end || entry.date) < window.anchor ? 'past'
+        : entry.date > window.end ? 'later' : 'calendar';
+      out.push(entry);
     });
     var groups = {}, order = [];
     out.forEach(function (e) {
-      // undated rows stand alone — nothing to fold them against
-      if (e.nodate) { e.fold = [e]; order.push([e]); return; }
-      // A-F3: a row with no program folds on its normalised title instead —
-      // UBS and Jefferies, both program-less conferences on the same day,
-      // are two events, not one
-      var prog = shownVal(e.t.values || {}, e.row, 'program') || '';
-      var title = shownVal(e.t.values || {}, e.row, 'title') || '';
-      var key = prog
-        ? (e.row.ticker || '') + '|' + prog + '|' + (e.row.event_type || '') + '|' + e.date
-        : (e.row.ticker || '') + '||' + (e.row.event_type || '') + '|' + e.date + '|' + normWords(title);
+      // Fold only rows with identical current values and full interval, and
+      // never fold across server placement, indication, or decision state.
+      var vals = e.t.values || {};
+      var identity = {
+        bucket: e.bucket,
+        ticker: shownVal(vals, e.row, 'ticker') || '',
+        company: shownVal(vals, e.row, 'company') || '',
+        program: shownVal(vals, e.row, 'program') || '',
+        indication: shownVal(vals, e.row, 'indication') || '',
+        event_type: shownVal(vals, e.row, 'event_type') || '',
+        title: shownVal(vals, e.row, 'title') || '',
+        date_text: e.dateText,
+        date: e.date,
+        date_end: e.end,
+        quote: shownVal(vals, e.row, 'quote') || ''
+      };
+      var key = JSON.stringify(identity);
       if (!groups[key]) { groups[key] = []; order.push(groups[key]); }
       groups[key].push(e);
     });
@@ -716,7 +739,6 @@
     })(0);
   }
 
-  // ---------------------------------------------------------------- audit
   function renderAudit() {
     if (route.filter) audit.filter = route.filter;
     if (route.rowId && rowOf(route.rowId)) { audit.selected = route.rowId; audit.cleared = false; }
@@ -1292,15 +1314,17 @@
 
   function checksSection(row, t) {
     var sec = el('div', 'sec');
-    sec.append(el('h4', null, 'Checks · by Code'));
-    var pendingNote = t.decided_by_person && t.needs_recheck;
-    if (pendingNote) {
-      var pn = el('div', 'hint');
-      pn.style.color = 'var(--amber)';
-      pn.textContent = 'These results apply to the old value until the re-check finishes.';
-      sec.append(pn);
-    }
-    (row.checks || []).forEach(function (c) {
+    var hasFix = (t.fixes || []).length > 0;
+    var current = effectiveChecks(row, t);
+    var history = t.check_history || (t.recheck ? (row.checks || []) : []);
+
+    function appendChecks(label, checks, emptyText) {
+      sec.append(el('h4', null, label));
+      if (!checks.length) {
+        sec.append(el('div', null, emptyText));
+        return;
+      }
+      checks.forEach(function (c) {
       var line = el('div', 'chk');
       line.append(checkDot(c.result));
       var cn = el('span', 'cn');
@@ -1316,8 +1340,16 @@
         sec.append(r);
       }
       sec.append(seeTheCheck(c));
-    });
-    if (!(row.checks || []).length) sec.append(el('div', null, 'No checks ran for this row.'));
+      });
+    }
+
+    appendChecks(hasFix ? 'Checks on current value · by Code' : 'Checks · by Code', current,
+      t.needs_recheck ? 'No checks ran on the current value yet; re-check pending.'
+        : (t.recheck && t.recheck.result === 'could_not_run'
+          ? 'The re-check could not run; no checks are recorded for the current value.'
+          : 'No checks ran for this row.'));
+    if (history.length) appendChecks('Original checks · history (before edit)', history,
+      'No original checks were recorded.');
     return sec;
   }
 
@@ -1646,36 +1678,7 @@
           sealedHost.append(d);
         });
       }
-      // Job 16 window numbers, per model with scored events (only when the export
-      // carries them): 'Muse Spark — in the run’s window 2 of 5 key events ·
-      // outside the window 2 · unplaced 1'  (G6-11b: one bucket per line)
-      var windowLines = function (doc) {
-        var out = [];
-        function bucketName(name) {
-          var first = (doc && doc.readers && doc.readers.first) || [];
-          var parts = String(name).split(',').map(function (s) { return s.trim(); });
-          return parts.length >= 2 && parts.every(function (p) { return first.indexOf(p) >= 0; })
-            ? 'Both readers' : name;
-        }
-        var models = doc && doc.models;
-        if (models && typeof models === 'object') {
-          Object.keys(models).forEach(function (name) {
-            var ev = (models[name] || {}).events;
-            if (!ev || ev.M_total === null || ev.M_total === undefined) return;
-            var inW = ev.M !== null && ev.M !== undefined ? ev.M : '?';
-            var bits = ['in the run’s window ' + inW + ' of ' + ev.M_total + ' key events'];
-            if (ev.outside_window) bits.push('outside the window ' + (ev.outside_window.count || 0));
-            if (ev.unplaced) bits.push('unplaced ' + (ev.unplaced.count || 0));
-            out.push(bucketName(name) + ' — ' + bits.join(' · '));
-          });
-        }
-        return out;
-      };
-      windowLines(acc).forEach(function (l) {
-        var d = el('div', 'accline');
-        d.append(el('span', 'what', l));
-        sealedHost.append(d);
-      });
+      sealedHost.append(el('div', 'hint', 'Accuracy counts all dated and undated key events. The six-month window organizes the calendar only.'));
       var planted = accPlantedLine(acc);
       clear(plantedHost);
       if (planted) plantedHost.append(el('div', 'hint', planted));
@@ -2015,7 +2018,7 @@
   // (?w=) so browser Back restores it.
   function calWindowMonths() {
     var m = (detail.run.run || {}).choices && (detail.run.run || {}).choices.time_window_months;
-    return (m === 3 || m === 6 || m === 12) ? m : 12;
+    return (m === 3 || m === 6 || m === 12) ? m : 6;
   }
   function addMonths(ymd, n) {
     var y = parseInt(ymd.slice(0, 10).slice(0, 4), 10), mo = parseInt(ymd.slice(5, 7), 10) - 1 + n;
@@ -2023,10 +2026,14 @@
     return y + '-' + String(mo + 1).padStart(2, '0') + '-' + ymd.slice(8, 10);
   }
   function calWindow() {
-    var win = route && route.w ? route.w : calWindowMonths();
-    if (win !== 3 && win !== 6 && win !== 12) win = calWindowMonths();
+    var win = 6;
     var anchor = ((detail.run.run || {}).started_at || '').slice(0, 10) || '0000-00-00';
-    return { win: win, anchor: anchor, end: addMonths(anchor, win) };
+    var y = Number(anchor.slice(0, 4)), m = Number(anchor.slice(5, 7)) - 1 + win;
+    y += Math.floor(m / 12); m = ((m % 12) + 12) % 12;
+    var lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    var day = Math.min(Number(anchor.slice(8, 10)), lastDay);
+    var end = new Date(Date.UTC(y, m, day)).toISOString().slice(0, 10);
+    return { win: win, anchor: anchor, end: end };
   }
 
   // G8-7: a source row id — e.g. Back to calendar from that source's page —
@@ -2051,9 +2058,24 @@
       else calSel = route.rowId;
     }
     var w = calWindow();
-    var rows = all.filter(function (r) { return r.date && r.date <= w.end; });
-    var after = all.filter(function (r) { return r.date && r.date > w.end; }).length;
-    var nodates = all.filter(function (r) { return !r.date; });
+    // The server supplies the same lower/upper interval partition consumed by
+    // report/data.py, so an overlapping period and a human-kept old row land
+    // in the same section in both outputs.
+    var rows = all.filter(function (r) { return r.bucket === 'calendar'; });
+    var past = all.filter(function (r) { return r.bucket === 'past'; });
+    var later = all.filter(function (r) { return r.bucket === 'later'; });
+    var nodates = all.filter(function (r) { return r.bucket === 'contingent'; });
+    var pastIds = {};
+    (detail.run.exclusions || []).forEach(function (x) { if (x.rule === 'event_in_past') pastIds[x.target] = true; });
+    var lastEvents = (detail.run.rows || []).filter(function (r) { return pastIds[r.id]; })
+      .map(function (r) { return { row: r, t: rowTarget(r), date: r.date || null,
+        nodate: !r.date, period: !!r.date_end, end: r.date_end || null, fold: [] }; });
+    var lastByTicker = {};
+    lastEvents.forEach(function (r) {
+      if (!lastByTicker[r.row.ticker] || (r.end || r.date) > (lastByTicker[r.row.ticker].end || lastByTicker[r.row.ticker].date))
+        lastByTicker[r.row.ticker] = r;
+    });
+    lastEvents = Object.keys(lastByTicker).map(function (k) { return lastByTicker[k]; });
 
     var host = clear(document.getElementById('cal-mid'));
     var det = clear(document.getElementById('cal-det'));
@@ -2063,23 +2085,15 @@
     head.append(el('h2', null, 'Catalyst Calendar'));
     var subrow = el('div', 'cal-subrow');
     // A-F2(b): the count includes the rows with no parsed day
-    var total = rows.length + nodates.length;
+    var total = rows.length + past.length + nodates.length + later.length;
     subrow.append(el('div', 'sub', 'Kept events, by date · ' + total + ' row' +
-      (total === 1 ? '' : 's') + ' · next ' + w.win + ' months'));
-    var pills = el('div', 'calwin');
-    [3, 6, 12].forEach(function (n) {
-      var p = btn('calpill' + (n === w.win ? ' on' : ''), 'Next ' + n + ' months', function () {
-        navigate({ runId: currentRunId(), screen: 'calendar', rowId: calSel, w: n });
-      });
-      pills.append(p);
-    });
-    subrow.append(pills);
+      (total === 1 ? '' : 's') + ' · ' + w.anchor + ' – ' + w.end));
     head.append(subrow);
     var rl = el('div', 'runlabel' + (meta.sample ? ' sample' : ''), meta.label || '');
     head.append(rl);
     host.append(head);
 
-    if (!rows.length && !nodates.length) {
+    if (!rows.length && !past.length && !nodates.length && !later.length && !lastEvents.length) {
       host.append(el('div', 'empty', 'Nothing kept yet — the calendar fills as rows are kept or corrected.'));
       det.append(el('div', 'empty', 'Pick an event to see its details.'));
       return;
@@ -2152,17 +2166,31 @@
     // A-F2(b): kept rows whose date text names no day sit in a final section,
     // the date text as written with a hollow dot — never dropped
     if (nodates.length) {
-      wrap.append(el('div', 'mo', 'No day given · ' + nodates.length));
+      wrap.append(el('div', 'mo', 'Contingent · ' + nodates.length));
       nodates.forEach(function (r) { wrap.append(calRow(r, '', true)); });
     }
-    var undated = calendarUndated();
-    if (undated) {
-      wrap.append(el('div', 'calfnote', undated + ' kept row' + (undated === 1 ? ' has' : 's have') +
-        ' no date to place — not on the calendar.'));
+    if (past.length) {
+      wrap.append(el('div', 'mo', 'Past · ' + past.length));
+      past.forEach(function (r) {
+        var written = (r.t.values && r.t.values.date_text) || r.row.date_text || r.date;
+        var reason = r.t.reason || r.row.reason || (r.t.decided_by_person ? 'Kept by you; the event period ended before this run began.' : '');
+        if (reason) r.row.reason = reason;
+        wrap.append(calRow(r, written, !!r.period));
+      });
     }
-    if (after > 0) {
-      wrap.append(el('div', 'calfnote', after + ' kept row' + (after === 1 ? ' falls' : 's fall') +
-        ' after this window.'));
+    if (later.length) {
+      wrap.append(el('div', 'mo', 'Later · ' + later.length));
+      later.forEach(function (r) {
+        var written = (r.t.values && r.t.values.date_text) || r.row.date_text || r.date;
+        wrap.append(calRow(r, written, !!r.period));
+      });
+    }
+    if (lastEvents.length) {
+      lastEvents.forEach(function (r) {
+        wrap.append(el('div', 'mo', 'Latest past event · ' + (r.row.ticker || 'ticker not stated')));
+        var written = (r.row.date_text || r.row.date || 'Date not stated');
+        wrap.append(calRow(r, written, !!r.period));
+      });
     }
     host.append(wrap);
 
@@ -2170,7 +2198,7 @@
     if (on) revealRow(on);
 
     // A-F2(b): the undated rows are pickable too
-    var sel = all.filter(function (r) { return r.row.id === calSel; })[0] || null;
+    var sel = all.concat(lastEvents).filter(function (r) { return r.row.id === calSel; })[0] || null;
     if (!sel) {
       det.append(el('div', 'empty', 'Pick an event to see its details.'));
       return;
@@ -3217,8 +3245,11 @@
   // 'after' set — the saved row.checks can be stale (a saved run is never
   // rebuilt); only when no re-check ran do the saved checks speak
   function effectiveChecks(row, t) {
+    if (Object.prototype.hasOwnProperty.call(t || {}, 'effective_checks')) return t.effective_checks || [];
+    if (t && t.needs_recheck) return [];
     var after = (t.recheck || {}).after || {};
     if (after.checks && after.checks.length) return after.checks;
+    if (t.recheck) return (t.recheck.checks || []);
     return row.checks || [];
   }
   function fmtField(field, value) {
@@ -3603,6 +3634,11 @@
 
     var wrap = el('div', 'calwrap');
     wrap.append(el('div', 'sec2-t', 'Saved report files'));
+    var reportsStale = !!detail.run.report_stale;
+    if (reportsStale) {
+      wrap.append(el('div', 'hint', detail.run.report_stale_reason ||
+        'This run changed after the saved report. The report is unavailable until it is rebuilt.'));
+    }
     var listHost = el('div');
     reportFileNames(meta).forEach(function (f) {
       var row = el('div', 'exrow');
@@ -3628,11 +3664,11 @@
           right.append(a);
         } else {
           // G5-2b: no dead label — the honest sentence until the file is served
-          right.append(el('span', 'exmeta', 'No report is saved for this run yet.'));
+          right.append(el('span', 'exmeta', reportsStale ? 'Saved report is out of date.' : 'No report is saved for this run yet.'));
         }
       }).catch(function () {
         clear(right);
-        right.append(el('span', 'exmeta', 'No report is saved for this run yet.'));
+        right.append(el('span', 'exmeta', reportsStale ? 'Saved report is out of date.' : 'No report is saved for this run yet.'));
       });
     });
     wrap.append(listHost);
@@ -3691,19 +3727,7 @@
     allInput.addEventListener('change', function () {
       document.querySelectorAll('.nr-co').forEach(function (c) { c.checked = allInput.checked; });
     });
-    var types = clear(document.getElementById('nr-types'));
-    NEW_RUN_TYPES.forEach(function (t) {
-      var l = el('label', 'tk2');
-      var i = el('input');
-      i.type = 'checkbox'; i.className = 'nr-type'; i.value = t[0]; i.checked = true;
-      l.append(i, document.createTextNode(' ' + t[1]));
-      types.append(l);
-    });
-    document.getElementById('nr-win').addEventListener('click', function (e) {
-      var b = e.target.closest('[data-win]');
-      if (!b) return;
-      document.querySelectorAll('#nr-win [data-win]').forEach(function (x) { x.classList.toggle('on', x === b); });
-    });
+
   }
   function nrError(msg) {
     var e = document.getElementById('nr-error');
@@ -3724,9 +3748,7 @@
     var companies = [];
     document.querySelectorAll('.nr-co:checked').forEach(function (c) { companies.push(c.value); });
     if (!companies.length) { nrError('Choose at least one company.'); return; }
-    var types = [];
-    document.querySelectorAll('.nr-type:checked').forEach(function (c) { types.push(c.value); });
-    var winBtn = document.querySelector('#nr-win [data-win].on');
+    var types = NEW_RUN_TYPES.map(function (t) { return t[0]; });
     var limitRaw = document.getElementById('nr-limit').value.trim();
     var limit = null;
     if (limitRaw !== '') {
@@ -3738,7 +3760,7 @@
     var note = document.getElementById('nr-note').value.trim() || null;
     nrError('');
     A.newRun({ companies: companies, event_types: types,
-               time_window_months: winBtn ? Number(winBtn.dataset.win) : null,
+               time_window_months: null,
                spending_limit_usd: limit, note_for_agent: note,
                reader_tools: document.getElementById('nr-tools').checked }).then(function (res) {
       if (!res.ok) { nrError((res.body && res.body.detail) || ('HTTP ' + res.status)); return; }

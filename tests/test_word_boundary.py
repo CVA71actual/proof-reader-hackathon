@@ -11,7 +11,7 @@ THE_WORD = ["data.", "(data)", "data,", "the data"]
 @pytest.mark.parametrize("w", NOT_THE_WORD)
 def test_glued_forms_are_not_the_word_data(w):
     quote = f"The company expects {w} in Q4 2027."
-    assert event_type_for(quote) == "milestone"
+    assert event_type_for(quote) == "unknown"
     assert type_match("trial_results", quote).result == "not_needed"
     assert date_match("Q4 2027", "2027-10-01", quote, "2027-12-31", event_type="trial_results").result == "could_not_run"
 

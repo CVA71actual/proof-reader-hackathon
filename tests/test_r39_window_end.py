@@ -46,15 +46,25 @@ def test_undated_row_is_never_touched():
 
 
 def make_run():
-    def r(i, text, day, group, status):
-        return {"id": i, "date_text": text, "date": day, "date_end": None, "group": group, "status": status,
-                "reason": None, "trail": []}
-    rows = [r("e1", "H2 2026", "2026-07-01", "removed", "matched"),
-            r("e2", "H1 2026", "2026-01-01", "removed", "matched"),
-            r("e3", "Q4 2026", "2026-10-01", "removed", "failed"),
-            r("e4", "Q4 2026", "2026-10-01", "removed", "matched")]       # a person decided this one
-    old = "Outside the time window: the date {} is before today (2026-10-29)."
-    ex = [{"id": f"x{n}", "target": x["id"], "rule": "outside_time_window", "by": "code",
+    def r(i, text, day, end, quote, group, status):
+        checks = [{"name": "date_match", "label": "Date read as written", "result": "pass",
+                   "reason": "supported", "compared": {}}]
+        if i == "e3":
+            checks.append({"name": "quote_match", "label": "Quote found on page", "result": "fail",
+                           "reason": "not found", "compared": {}})
+        return {"id": i, "date_text": text, "date": day, "date_end": end, "quote": quote,
+                "event_type": "trial_results", "title": "topline results", "group": group, "status": status,
+                "reason": None, "trail": [], "checks": checks}
+    rows = [r("e1", "H2 2026", "2026-07-01", "2026-12-31",
+               "The Company expects topline results in the second half of calendar year 2026.", "removed", "matched"),
+            r("e2", "H1 2026", "2026-01-01", "2026-06-30",
+               "The Company expects topline results in the first half of calendar year 2026.", "removed", "matched"),
+            r("e3", "Q4 2026", "2026-10-01", "2026-12-31",
+               "The Company expects topline results in Q4 2026.", "removed", "failed"),
+            r("e4", "Q4 2026", "2026-10-01", "2026-12-31",
+               "The Company expects topline results in Q4 2026.", "removed", "matched")]  # a person decided this one
+    old = "Already past: the event date {} was before this run began (2026-10-29)."
+    ex = [{"id": f"x{n}", "target": x["id"], "rule": "event_in_past", "by": "code",
            "reason": old.format(x["date"])} for n, x in enumerate(rows, 1)]
     return {"run": {"choices": {"time_window_months": 6}, "started_at": "2026-10-29T10:00:00+00:00"},
             "rows": rows, "tables": [], "mistakes": [], "exclusions": ex}
@@ -78,5 +88,5 @@ def test_rewindow_puts_back_the_right_rows_and_leaves_person_decisions_alone(tmp
     assert [x["target"] for x in saved["exclusions"]] == ["e2", "e4"]
     step = by["e1"]["trail"][-1]
     assert (step["step"], step["tag"], step["text"]) == ("Put back", "Code",
-                                                          "the time window now tests the period's end")
-    assert by["e2"]["trail"] == [] and by["e4"]["trail"] == []
+                                                          "the past-event rule now tests the period's end against the run date")
+    assert by["e2"]["trail"][-1]["step"] == "Date re-checked" and by["e4"]["trail"] == []

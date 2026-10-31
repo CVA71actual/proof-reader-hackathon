@@ -61,6 +61,7 @@ import re
 
 from accuracy.types import primary_type, type_for_field
 from runs.prices import cost_per_kept_row_usd
+from runs.ids import require_unique_target_ids
 
 
 def _plain_field(field) -> str:
@@ -151,6 +152,7 @@ def _base_targets(run: dict) -> dict:
             "group": row["group"],
             "status": row["status"],
             "reason": row.get("reason"),
+            "saved_checks": copy.deepcopy(row.get("checks") or []),
             "values": values,
             "disagreement": _real_disagreement(row.get("disagreement")),
         }
@@ -163,6 +165,7 @@ def _base_targets(run: dict) -> dict:
                     "group": _CELL_GROUP.get(cell["status"], "unverified"),
                     "status": cell["status"],
                     "reason": None,
+                    "saved_checks": copy.deepcopy(cell.get("checks") or []),
                     "values": {"value": cell.get("value")},
                     "disagreement": _real_disagreement(cell.get("disagreement")),
                 }
@@ -231,6 +234,17 @@ def _apply(base: dict, stack: list[dict]) -> dict:
     last_fix = s["fixes"][-1] if s["fixes"] else None
     s["recheck"] = last_fix["recheck"] if last_fix else None
     s["needs_recheck"] = bool(last_fix) and last_fix["recheck"] is None
+    # Saved checks describe the original value. Once a fix exists, only the
+    # latest re-check's after-set describes the current value; pending or
+    # unavailable checks stay empty rather than borrowing old failures.
+    if last_fix:
+        rc = last_fix["recheck"] or {}
+        after = rc.get("after") or {}
+        s["effective_checks"] = copy.deepcopy(after.get("checks") or rc.get("checks") or [])
+        s["check_history"] = copy.deepcopy(base.get("saved_checks") or [])
+    else:
+        s["effective_checks"] = copy.deepcopy(base.get("saved_checks") or [])
+        s["check_history"] = []
     s["decisions_in_effect"] = len(stack)
     s["decided_by_person"] = bool(stack)
     s["last_action"] = stack[-1]["action"] if stack else None
@@ -307,13 +321,15 @@ def _waiting_fix(stack: list[dict]) -> int | None:
 
 
 def _needs_attention(s: dict) -> bool:
-    """Open or unverified; or corrected by a fix whose re-check could not run, or that left the readers'
-    disagreement open. A later keep or remove is the person's answer, so it no longer needs attention."""
+    """Open or unverified; or corrected with a pending/could-not-run re-check, or an open disagreement.
+    A later keep or remove is the person's answer, so it no longer needs attention."""
     if s["group"] in UNRESOLVED:
         return True
     if s["group"] != "corrected":
         return False
-    return (s["recheck"] or {}).get("result") == "could_not_run" or s["status"] == "undecided"
+    return (s.get("needs_recheck", False)
+            or (s["recheck"] or {}).get("result") == "could_not_run"
+            or s["status"] == "undecided")
 
 
 def _exclusions(run: dict, states: dict) -> list[dict]:
@@ -340,12 +356,13 @@ def current_state(run: dict, decisions: list) -> dict:
                 recorded_in ("run" or "decisions")
     excluded    {code, person}: rows left out under a rule, by who left them out
     exclusions  one entry per excluded row: target, rule, reason, by
-    unresolved  rows now "open" or "unverified", plus rows now "corrected" whose fix's re-check could not
-                run or that are still "undecided" (the one "Needs attention" number); a later keep or
+    unresolved  rows now "open" or "unverified", plus rows now "corrected" whose fix is awaiting a re-check,
+                whose re-check could not run, or that are still "undecided" (the one "Needs attention" number); a later keep or
                 remove takes a row out
     cost_per_kept_row_usd  run.spend_usd divided by the rows now in "kept" or "corrected"; null when the spend
                 was not recorded or no row is kept
     """
+    require_unique_target_ids(run)
     targets = _base_targets(run)
     stacks: dict[str, list[dict]] = {t: [] for t in targets}
     ignored = []

@@ -98,7 +98,7 @@ def test_recheck_dates_excludes_a_past_period_and_leaves_a_decided_row_alone():
     run = _run_with(_row())
     rd.recheck_dates(run, Path("."), set(), "t")
     assert rd.exclude_again(run, set(), "t")["out"] == ["e1"]
-    assert run["rows"][0]["group"] == "removed" and run["exclusions"][0]["rule"] == "outside_time_window"
+    assert run["rows"][0]["group"] == "removed" and run["exclusions"][0]["rule"] == "event_in_past"
     run = _run_with(_row())
     assert rd.exclude_again(run, {"e1"}, "t")["out"] == []
     assert rd.recheck_dates(run, Path("."), {"e1"}, "t")["person"] == 1 and run["rows"][0]["group"] == "kept"

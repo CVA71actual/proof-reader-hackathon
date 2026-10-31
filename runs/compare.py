@@ -92,9 +92,11 @@ def differences(row: dict, ev: dict) -> list[dict]:
     """[{field, first_reader, second_reader}] for each compared field the readers read differently."""
     out = []
     for f in FIELDS:
-        a, b = _norm(row.get(f)), _norm(ev.get(f))
+        a = _norm(row.get(f))
+        value = event_checks.event_type_for(ev.get("quote")) if f == "event_type" else ev.get(f)
+        b = _norm(value)
         if a != b:
-            out.append({"field": f, "first_reader": row.get(f), "second_reader": ev.get(f)})
+            out.append({"field": f, "first_reader": row.get(f), "second_reader": value})
     return out
 
 
@@ -111,8 +113,11 @@ def _when(ev: dict) -> str:
 
 
 def _model_step(ev: dict, share: tuple, at: str) -> dict:
+    hint = ev.get("type_hint") or ev.get("event_type")
+    hint = hint.replace("_", " ") if isinstance(hint, str) else str(hint) if hint is not None else "none"
     return {"step": "Second reading", "tag": "Model", "who": SECOND, "at": at,
-            "text": (f"{ev.get('ticker') or ''} {ev.get('program') or ''} {build_entry.plain_type(ev.get('event_type'))} on "
+            "text": (f"{ev.get('ticker') or ''} {ev.get('program') or ''} type hint "
+                     f"{hint} on "
                      f"{_when(ev)}, printed as “{ev.get('date_text')}”: “{ev.get('quote')}”").replace("  ", " "),
             **prices.model_cost_fields(SECOND, share[0], share[1], call_rows=share[2])}
 
@@ -166,7 +171,7 @@ def apply_events(rows: list[dict], second_events: list[dict], second_reading: di
                          f"{_say(d['first_reader'], d['field'])}, {SECOND} read {_say(d['second_reader'], d['field'])}"
                          for d in diffs)
         row["disagreement"] = {**first, **({"also": diffs[1:]} if len(diffs) > 1 else {})}
-        if row.get("group") != "removed":     # a time-window exclusion by code holds: a disagreement does not undo it
+        if row.get("group") != "removed":     # a code exclusion holds: a disagreement does not undo it
             row["status"] = "failed" if any(c["result"] == "fail" for c in row["checks"]) else "undecided"
             row["group"] = "open"
         row["reason"] = (f"{row['reason']} " if row["status"] == "failed" else "") + (
@@ -205,7 +210,8 @@ def _uncheckable_row(index: int, ev: dict, source: dict | None, reading: dict, s
     a second-reader row, undecided and open, with no check run on it and the reason said plainly."""
     return {
         "id": f"e{index}", "ticker": ev.get("ticker") or "", "company": ev.get("company") or "",
-        "event_type": (ev.get("event_type") or "unknown"), "title": ev.get("title") or "",
+        "event_type": event_checks.event_type_for(ev.get("quote")),
+        "type_hint": build_entry._str(ev.get("type_hint") or ev.get("event_type")), "title": ev.get("title") or "",
         "date_text": ev.get("date_text"), "date": ev.get("date"), "date_end": ev.get("date_end"),
         "quote": ev.get("quote"), "program": ev.get("program"), "indication": ev.get("indication"),
         "source_id": (source or {}).get("id"), "page_number": None, "box": None, "proposed_by": SECOND,

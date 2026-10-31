@@ -1,4 +1,4 @@
-"""Re-run the time-window exclusion and "Date read as written" on every saved run, from the stored rows. $0.
+"""Re-run already-past exclusion and "Date read as written" on every saved run, from the stored rows. $0.
 
     python -m runs.recheck_dates <run-id>|--all [--runs-dir runs] [--write]
 
@@ -8,10 +8,8 @@ date text, dates and quote, the source's filing date, the words of the cited pag
 1. "Date read as written" (checks.event_checks.date_match, which reads dates through parse_date_phrase) runs again on
    every row; the row's date_match check, its status and, if the status changed, its group are updated, with a trail
    step "Date re-checked" (Code).
-2. The time window (Job 39 rule, checks.event_checks.in_window through server.jobs.window_reason) runs again: a code
-   exclusion (rule outside_time_window) the rule no longer makes is lifted ("Put back": the row goes back to the group
-   the readers left it in), and a row the rule now leaves out is excluded. Today is the day the run was made (read from
-   an exclusion's own sentence, else the run's start day), not the day this is run.
+2. The past-event rule runs again: a past code exclusion is lifted when the period no longer ends before the run date;
+   an already-past row is excluded. Future rows beyond the six-month calendar stay available in Later.
 
 A row a person has decided on is never touched. Per run it prints Excluded / Needs attention / Checked and kept before
 and after. Dry run unless --write (do not --write inside the repo's runs/: the saved runs are the record).
@@ -29,12 +27,12 @@ from checks import event_checks
 from checks.common import CheckResult
 from runs.build_entry import START_GROUP, row_reason
 from runs.state import current_state
-from server.jobs import add_months, window_reason
+from server.jobs import past_candidate_reason, past_reason
 
-RULE = "outside_time_window"
+RULE = "event_in_past"
 STEP = {"step": "Put back", "tag": "Code", "who": "runs.rewindow",
-        "text": "the time window now tests the period's end"}
-_TODAY = re.compile(r"before today \((\d{4}-\d{2}-\d{2})\)")
+        "text": "the past-event rule now tests the period's end against the run date"}
+_TODAY = re.compile(r"before this run began \((\d{4}-\d{2}-\d{2})\)")
 
 
 def run_day(run: dict, exclusion: dict) -> date | None:
@@ -62,7 +60,7 @@ def rewindow(run: dict, decided: set[str], at: str) -> dict:
             keep.append(x)
             continue
         now = run_day(run, x)
-        if now is None or window_reason(row, now, add_months(now, months), months) is not None:
+        if now is None or past_reason(row, now) is not None:
             keep.append(x)
             continue
         if row["id"] in decided:
@@ -147,13 +145,22 @@ def exclude_again(run: dict, decided: set[str], at: str) -> dict:
     now = _today_of(run)
     if months is None or now is None:
         return out
-    last = add_months(now, months)
     for row in run.get("rows", []):
         if row.get("group") == "removed" or row["id"] in decided:
             continue
-        reason = window_reason(row, now, last, months)
+        reason = past_reason(row, now)
         if reason is None:
+            candidate = past_candidate_reason(row, now)
+            date_check = next((c for c in row.get("checks", []) if c.get("name") == "date_match"), None)
+            if candidate and (not date_check or date_check.get("result") != "pass"):
+                proposal = (f"{candidate} Proposed exclusion not applied because Date read as written is "
+                            f"{(date_check or {}).get('result') or 'unavailable'}.")
+                if row.get("past_exclusion_proposal") != proposal:
+                    row["past_exclusion_proposal"] = proposal
+                    row.setdefault("trail", []).append({"step": "Past exclusion not applied", "tag": "Code",
+                        "who": "runs.recheck_dates", "text": proposal, "at": at})
             continue
+        row.pop("past_exclusion_proposal", None)
         old = row.get("reason") or ""
         note = old[old.find("Source note:"):] if "Source note:" in old else ""
         row["group"], row["reason"] = "removed", f"{reason} {note}".strip()

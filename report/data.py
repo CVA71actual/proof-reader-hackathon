@@ -8,6 +8,9 @@ from datetime import date, datetime
 from pathlib import Path
 
 from runs.state import current_state
+from runs.calendar import on_calendar, run_interval_partition
+from runs.state import _needs_attention
+from checks import event_checks
 
 TITLE = "Biotech Coverage Catalyst Calendar"
 FOOTER = "Built with Meta Muse models · built by code from the saved results"
@@ -35,6 +38,13 @@ BANNED_WORDS = ("verified", "proved")  # "correct" checked as a whole word separ
 
 def load_run_dir(run_dir: Path) -> tuple[dict, list[dict]]:
     run = json.loads((run_dir / "run.json").read_text())
+    job_path = run_dir / "job.json"
+    if job_path.is_file():
+        job = json.loads(job_path.read_text())
+        meta = run.setdefault("run", {})
+        meta.setdefault("pages_read", len(run.get("sources", [])))
+        if meta.get("status") == "done" and isinstance(job.get("skipped"), dict):
+            meta.setdefault("pages_total", len(run.get("sources", [])) + len(job["skipped"]))
     dec_path = run_dir / "decisions.jsonl"
     decisions = []
     if dec_path.exists() and dec_path.stat().st_size:
@@ -137,6 +147,24 @@ def _caught_by_label(who: str) -> str:
     return {"code": "code", "second_reader": "second reader", "person": "person"}.get(who, who)
 
 
+def _check_rows(checks: list[dict]) -> list[dict]:
+    return [{"name": c.get("label") or c.get("name") or "Check",
+             "result": c.get("result") or "unknown", "limitation": c.get("reason") or ""}
+            for c in checks]
+
+
+def _check_status_text(state: dict) -> str | None:
+    if state.get("needs_recheck"):
+        return "Re-check pending; no checks are recorded for the current value."
+    if (state.get("recheck") or {}).get("result") == "could_not_run":
+        if state.get("effective_checks"):
+            return "Re-check incomplete; the checks below ran on the current value, and the row remains unresolved."
+        return "Re-check could not run; no checks are recorded for the current value."
+    if state.get("fixes") and not state.get("effective_checks"):
+        return "No checks are recorded for the current value."
+    return None
+
+
 def built_on_words(when: str) -> str:
     """'Built on 29 October 2026 at 17:46 (local time)' from an ISO time (a trailing Z means UTC)."""
     try:
@@ -171,14 +199,35 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
     companies = list(meta.get("choices", {}).get("companies") or [])
     if not companies:
         companies = sorted({r.get("ticker") for r in run.get("rows", []) if r.get("ticker")})
+    read_source_ids = [s.get("id", "").lower() for s in run.get("sources", [])]
+    companies_read = [ticker for ticker in companies
+                      if any(sid.startswith("src-" + ticker.lower() + "-") for sid in read_source_ids)]
+    companies_unread = [ticker for ticker in companies if ticker not in companies_read]
+    pages_total = meta.get("pages_total")
+    pages_read = meta.get("pages_read") if isinstance(meta.get("pages_read"), int) else len(run.get("sources", []))
+    pages_unread = max(0, pages_total - pages_read) if isinstance(pages_total, int) else None
+    status = meta.get("status") or ("done" if meta.get("finished_at") else "unknown")
+    status_label = {
+        "done": "Done",
+        "paused_turn_limit": "Paused at the turn limit",
+        "needs_input": "Paused; needs input",
+        "failed": "Stopped after an error",
+        "running": "Still running",
+        "queued": "Queued",
+    }.get(status, status)
 
+    interval_rows, window_anchor, window_end = run_interval_partition(run, state)
+    bucket_for_id = {entry["id"]: bucket for bucket, entries in interval_rows.items() for entry in entries}
     calendar = []
     for rid, st in state["targets"].items():
-        if st["kind"] != "row" or st["group"] not in ("kept", "corrected"):
+        if st["kind"] != "row" or not on_calendar(st):
             continue
         row = rows_raw[rid]
         values = st["values"]
         src = sources.get(row.get("source_id"))
+        effective_checks = st.get("effective_checks") or []
+        check_history = st.get("check_history") or []
+        check_status_text = _check_status_text(st)
         calendar.append({
             "id": rid,
             "date_display": _date_display(values),
@@ -191,8 +240,36 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
             "group": st["group"],
             "group_label": GROUP_LABEL[st["group"]],
             "person_tag": _person_tag(st),
+            "bucket": bucket_for_id.get(rid, "calendar"),
+            "indication": _value(values, row, "indication") or "",
+            "action": _value(values, row, "event_type") or "unknown",
+            "source_document": (src or {}).get("title") or (src or {}).get("publisher") or row.get("source_id") or "—",
+            "source_id": row.get("source_id") or "—",
+            "page_number": row.get("page_number"),
+            "quote": _value(values, row, "quote") or "",
+            "check_limitations": _check_rows(effective_checks),
+            "check_history": _check_rows(check_history),
+            "check_status_text": check_status_text,
+            "reason": st.get("reason") or row.get("reason") or "",
         })
     calendar.sort(key=lambda r: (r["sort_key"], r["ticker"], r["id"]))
+    started = (meta.get("started_at") or "")[:10]
+    try:
+        window_start = date.fromisoformat(started)
+        # The calendar and saved report always use the same six-month horizon.
+        months = 6
+        window_end = event_checks.add_months_to(window_start, months)
+        window_text = f"{window_start.isoformat()} – {window_end.isoformat()}"
+    except (TypeError, ValueError):
+        window_start = window_end = None
+        window_text = "Six months from the run date"
+    past = [r for r in calendar if r["bucket"] == "past"]
+    later = [r for r in calendar if r["bucket"] == "later"]
+    contingent = [r for r in calendar if r["bucket"] == "contingent"]
+    calendar = [r for r in calendar if r["bucket"] == "calendar"]
+    for row in contingent:
+        if row["date_display"] == "—":
+            row["date_display"] = "Date not stated"
 
     corrections = []
     for m in run.get("mistakes", []):
@@ -200,9 +277,6 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         st = state["targets"].get(rid)
         if not st or st["kind"] != "row":
             continue
-        if st["group"] != "corrected" and rid not in {c.get("id") for c in corrections}:
-            # still list the recorded mistake even if a later decision moved the row
-            pass
         row = rows_raw.get(rid, {})
         check_name = None
         for c in row.get("checks") or []:
@@ -211,39 +285,55 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
                 break
         corrections.append({
             "id": rid,
+            "ticker": (st.get("values") or {}).get("ticker") or row.get("ticker") or "",
+            "event": _event_label(row, st.get("values") or {}),
             "what": m.get("what_changed") or "",
             "caught_by": _caught_by_label(m.get("caught_by") or ""),
             "check": check_name,
             "before_after": m.get("what_changed") or "",
+            "latest_recheck": "not applicable",
+            "override_reason": None,
         })
-    # Person fixes still in effect (before → after from the fix record)
+    edits = []
+    # A changed value is a correction only when the saved before/after re-check
+    # demonstrates a mistake. Keep ordinary and unassessed edits in a separate log.
     for rid, st in state["targets"].items():
-        if st["kind"] != "row" or st["group"] != "corrected":
+        if st["kind"] != "row":
             continue
         for fx in st.get("fixes") or []:
             line = f"{fx['field']}: {fx['from']} → {fx['to']}"
             said = f"{fx['field']} changed from {fx['from']} to {fx['to']}"
-            if any(c["id"] == rid and (line in (c.get("what") or "") or said in (c.get("what") or ""))
-                   for c in corrections):
-                continue
             check = None
             rc = fx.get("recheck") or {}
-            for c in rc.get("checks") or []:
+            for c in (rc.get("before") or {}).get("checks") or []:
                 if c.get("result") == "fail":
                     check = c.get("label") or c.get("name")
                     break
-            if not check:
-                for c in (rc.get("before") or {}).get("checks") or []:
-                    if c.get("result") == "fail":
-                        check = c.get("label") or c.get("name")
-                        break
-            corrections.append({
+            entry = {
                 "id": rid,
+                "ticker": (st.get("values") or {}).get("ticker") or rows_raw.get(rid, {}).get("ticker") or "",
+                "event": _event_label(rows_raw.get(rid, {}), st.get("values") or {}),
                 "what": line,
-                "caught_by": "person",
+                "caught_by": _caught_by_label("second_reader" if fx.get("second_reader_value") else "person"),
                 "check": check,
                 "before_after": line,
-            })
+                "latest_recheck": rc.get("result") or "not run",
+                "override_reason": (st.get("reason") or "Kept by you") if st.get("decided_by_person") else None,
+            }
+            if fx.get("mistake"):
+                if not any(c["id"] == rid and (line in (c.get("what") or "") or said in (c.get("what") or ""))
+                           for c in corrections):
+                    corrections.append(entry)
+            else:
+                if fx.get("edit_without_error"):
+                    entry["edit_status"] = "The old value passed its checks; no mistake was demonstrated."
+                elif fx.get("before_undemonstrated"):
+                    entry["edit_status"] = "The old value could not be assessed; no mistake was demonstrated."
+                elif not rc or rc.get("result") == "could_not_run":
+                    entry["edit_status"] = "This change was not demonstrated to be a mistake."
+                else:
+                    entry["edit_status"] = "The checks did not demonstrate a mistake."
+                edits.append(entry)
 
     exclusions = []
     for x in state["exclusions"]:
@@ -258,7 +348,7 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
 
     open_rows = []
     for rid, st in state["targets"].items():
-        if st["kind"] != "row" or st["group"] not in ("open", "unverified"):
+        if st["kind"] != "row" or not _needs_attention(st):
             continue
         row = rows_raw[rid]
         open_rows.append({
@@ -268,6 +358,11 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
             "ticker": st["values"].get("ticker") or row.get("ticker") or "",
             "event": _event_label(row, st["values"]),
             "reason": st.get("reason") or row.get("reason") or "No reason recorded.",
+            "latest_recheck": (st.get("recheck") or {}).get("result"),
+            "override_reason": st.get("reason") if st.get("decided_by_person") else None,
+            "check_limitations": _check_rows(st.get("effective_checks") or []),
+            "check_history": _check_rows(st.get("check_history") or []),
+            "check_status_text": _check_status_text(st),
         })
     open_rows.sort(key=lambda r: (r["group"], r["ticker"], r["id"]))
 
@@ -298,6 +393,12 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         "sample": bool(meta.get("sample")),
         "sample_stamp": SAMPLE_STAMP if meta.get("sample") else None,
         "run_date": date_in_words(meta.get("finished_at") or meta.get("started_at") or ""),
+        "run_status": status_label,
+        "stopping_reason": meta.get("status_reason") or "No stopping reason recorded.",
+        "companies_read": companies_read,
+        "companies_unread": companies_unread,
+        "pages_read": pages_read,
+        "pages_unread": pages_unread,
         "companies": companies,
         "generated_at": built_on_words(generated_at),
         "counts": {g: counts[g] for g in GROUP_LABEL},
@@ -310,7 +411,12 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
             f"{mistakes['second_reader']} · by a person {mistakes['person']} · Excluded {excluded_n}"
         ),
         "calendar": calendar,
+        "calendar_window": window_text if window_start is None else f"{window_anchor} – {window_end.isoformat()}",
+        "past": past,
+        "later": later,
+        "contingent": contingent,
         "corrections": corrections,
+        "edits": edits,
         "exclusions": exclusions,
         "open_rows": open_rows,
         "sources": source_rows,

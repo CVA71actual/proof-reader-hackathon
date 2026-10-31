@@ -51,7 +51,9 @@
    "status": "read",
    "rows_sent": 35,
    "rows_replaced": 3
-  }
+  },
+  "pages_total": 313,
+  "pages_read": 105
  },
  "sources": [
   {

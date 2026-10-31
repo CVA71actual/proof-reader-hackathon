@@ -2,10 +2,10 @@
  "export_version": 1,
  "run": "ptgx-r5",
  "sample": false,
- "date": "2026-10-29",
- "made_at": "2026-10-29T04:13:38+00:00",
- "product_tip": "0b1016e",
- "product_dirty": false,
+ "date": "2026-10-31",
+ "made_at": "2026-10-31T17:24:34+00:00",
+ "product_tip": "b2c25a1",
+ "product_dirty": true,
  "key": {
   "path": "accuracy/keys/ptgx_8k_2026-08-05_ex991_p3.key.json",
   "sealed": false,
@@ -34,15 +34,34 @@
    "events": {
     "found": 2,
     "M": 2,
+    "M_total": 2,
     "wrong_date": 0,
     "wrong_type": 0,
     "unsupported": 0,
     "missed": 0,
     "invented": 0,
-    "unscored": 0
+    "unscored": 0,
+    "invented_in_window": 0,
+    "excluded_by_window": 0,
+    "outside_window": {
+     "count": 0,
+     "proposed_excluded": 0,
+     "proposed_not_excluded": 0,
+     "never_proposed": 0
+    },
+    "unplaced": {
+     "count": 0,
+     "proposed_excluded": 0,
+     "proposed_not_excluded": 0,
+     "never_proposed": 0
+    },
+    "window": null
    },
    "planted": null,
-   "mistakes_by_type": {}
+   "mistakes_by_type": {},
+   "models": [
+    "Muse Spark"
+   ]
   }
  },
  "planted": null,
@@ -68,6 +87,26 @@
    "person": 0
   }
  },
- "run_sha256": "9dbe08bb3ec6e145cd52bce2f0ce810fdda2629562bed91d51d1342d92887b60",
- "content_sha256": "b257714ed86a943cda93557baca77d61ec53a0e7b33509014a0ef6c4a00edce3"
+ "run_sha256": "e4725d641048379b73cefdd9b881be36fc0aefd273528311520b5a26ea323f02",
+ "window": {
+  "window": null,
+  "M_in_window": 2,
+  "M": 2,
+  "outside_window": {
+   "count": 0,
+   "proposed_excluded": 0,
+   "proposed_not_excluded": 0,
+   "never_proposed": 0,
+   "items": []
+  },
+  "unplaced": {
+   "count": 0,
+   "proposed_excluded": 0,
+   "proposed_not_excluded": 0,
+   "never_proposed": 0,
+   "items": []
+  },
+  "excluded_by_window": []
+ },
+ "content_sha256": "c6cc4f2a8959fee6ee27d0d8b9dc45dae846c48cbdc5c3f8024d29d700f2c97d"
 }

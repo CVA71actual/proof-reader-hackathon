@@ -63,7 +63,12 @@ def build_docx(view: dict) -> bytes:
 
     _line(doc, f"Run {view['run_number']}: {view['run_label']}")
     _line(doc, f"Run date: {view['run_date']}")
-    _line(doc, "Companies covered: " + " · ".join(view["companies"]))
+    _line(doc, f"Run status: {view['run_status']}")
+    _line(doc, "Companies read: " + (" · ".join(view["companies_read"]) or "none recorded"))
+    _line(doc, "Companies unread: " + (" · ".join(view["companies_unread"]) or "none recorded"))
+    page_unread = str(view["pages_unread"]) if view["pages_unread"] is not None else "not recorded"
+    _line(doc, f"Pages read: {view['pages_read']} · unread: {page_unread}")
+    _line(doc, "Stopping reason: " + view["stopping_reason"])
     if view["sample_stamp"]:
         _line(doc, view["sample_stamp"], italic=True, size=10)
     _line(doc, f"{view['generated_at']}", size=8)
@@ -75,8 +80,9 @@ def build_docx(view: dict) -> bytes:
     _line(doc, f"Unresolved (needs attention): {view['unresolved']}")
 
     _heading(doc, "Calendar")
+    _line(doc, f"Window: {view['calendar_window']}", size=8)
     _line(doc, "Kept and corrected rows only, ordered by date. Periods are shown as stated.", size=8)
-    if not view["calendar"]:
+    if not view["calendar"] and not view.get("past") and not view.get("contingent") and not view.get("later"):
         _line(doc, "No kept or corrected rows.")
     else:
         table = doc.add_table(rows=1, cols=6)
@@ -100,6 +106,25 @@ def build_docx(view: dict) -> bytes:
                 for p in cells[i].paragraphs:
                     for r in p.runs:
                         _set_run_font(r, size=8)
+    for key, label in (("past", "Past"), ("contingent", "Contingent"), ("later", "Later")):
+        if view.get(key):
+            _heading(doc, f"{label} · {len(view[key])}")
+            for row in view[key]:
+                _line(doc, f"{row['date_display']} · {row['ticker']} · {row['program']} · {row['event']} · "
+                      f"{row['id']} · {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
+                      f"indication: {row['indication'] or 'not stated'} · action: {row['action']} · {row['reason']}", size=8)
+    for row in view["calendar"] + view.get("past", []) + view.get("contingent", []) + view.get("later", []):
+        checks = "; ".join(f"{c['name']}: {c['result']}" + (f" ({c['limitation']})" if c["limitation"] else "")
+                            for c in row["check_limitations"])
+        if not checks and row.get("check_status_text"):
+            checks = row["check_status_text"]
+        history = "; ".join(f"{c['name']}: {c['result']}" + (f" ({c['limitation']})" if c["limitation"] else "")
+                              for c in row.get("check_history", []))
+        history_text = f" · original checks (history, before edit): {history}" if history else ""
+        _line(doc, f"Evidence {row['id']}: {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
+              f"indication {row['indication'] or 'not stated'} · action {row['action']} · "
+              f"quote: {row['quote'] or 'not recorded'} · current-value checks: {checks or 'not recorded'}"
+              f"{history_text}", size=8)
 
     _heading(doc, "Corrections")
     if not view["corrections"]:
@@ -107,7 +132,19 @@ def build_docx(view: dict) -> bytes:
     else:
         for c in view["corrections"]:
             check = f" · check: {c['check']}" if c.get("check") else ""
-            _line(doc, f"{c['id']}: {c['before_after']} (caught by {c['caught_by']}{check})")
+            _line(doc, f"{c['id']} · {c.get('ticker', '')} · {c.get('event', '')}: {c['before_after']} "
+                  f"(caught by {c['caught_by']}{check}); "
+                  f"latest re-check: {c.get('latest_recheck', 'not recorded')}"
+                  + (f"; override reason: {c['override_reason']}" if c.get("override_reason") else ""))
+
+    _heading(doc, "Other edits · no mistake demonstrated")
+    if not view.get("edits"):
+        _line(doc, "None.")
+    else:
+        for edit in view["edits"]:
+            _line(doc, f"{edit['id']} · {edit.get('ticker', '')} · {edit.get('event', '')}: "
+                  f"{edit['before_after']} ({edit['edit_status']}) · re-check: {edit['latest_recheck']}"
+                  + (f"; override reason: {edit['override_reason']}" if edit.get("override_reason") else ""))
 
     _heading(doc, "Excluded")
     if not view["exclusions"]:
@@ -121,7 +158,14 @@ def build_docx(view: dict) -> bytes:
         _line(doc, "None.")
     else:
         for r in view["open_rows"]:
-            _line(doc, f"{r['group_label']} · {r['ticker']} · {r['event']}: {r['reason']}")
+            checks = "; ".join(f"{c['name']}: {c['result']}" for c in r.get("check_limitations", []))
+            checks = checks or r.get("check_status_text") or "not recorded"
+            history = "; ".join(f"{c['name']}: {c['result']}" for c in r.get("check_history", []))
+            history_text = f" · original checks (history, before edit): {history}" if history else ""
+            _line(doc, f"{r['group_label']} · {r['ticker']} · {r['event']}: {r['reason']}"
+                  f" · current-value checks: {checks}{history_text}"
+                  + (f" · latest re-check: {r['latest_recheck']}" if r.get("latest_recheck") else "")
+                  + (f" · override reason: {r['override_reason']}" if r.get("override_reason") else ""))
 
     _heading(doc, "Sources")
     for s in view["sources"]:

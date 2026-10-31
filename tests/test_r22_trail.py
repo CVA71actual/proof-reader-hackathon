@@ -71,7 +71,7 @@ def test_a_second_reader_row_trail_has_the_same_shape(runs_dir):
         ("Second reading", "Model"),
         ("Compared the two readings", "Code")]
     compared = second[-1]["text"]
-    assert "event type" in compared and "regulatory decision" in compared
+    assert "same date, event type" in compared
     assert_plain(run, "second reader")
 
 

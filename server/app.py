@@ -43,7 +43,8 @@ from capture.sam import SamReader
 from capture.second_reader import SecondReader
 from capture.wonder import WonderReader
 from runs import prices
-from runs.calendar import calendar_entries
+from runs.calendar import calendar_entries, run_interval_partition
+from runs.ids import require_unique_target_ids
 from runs.recheck import recheck_cell, recheck_row
 from report.data import report_filenames
 from runs.state import PERSON_ACTIONS, current_state
@@ -93,7 +94,13 @@ class RunStore:
     def run(self, run_id: str) -> dict:
         """run.json, after every page file it names has been checked against its recorded hash."""
         d = self.run_dir(run_id)
+        if (d / "id_repairs.pending.json").exists():
+            raise HTTPException(409, "This run has an interrupted ID repair and is not served until repair completes.")
         run = json.loads((d / "run.json").read_text())
+        try:
+            require_unique_target_ids(run)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
         verify_page_files(d, run)
         return run
 
@@ -257,7 +264,11 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
             meta = run.get("run", {})
             with DECISIONS_LOCK:
                 decisions = store.decisions(run_id)
-            state = current_state(run, decisions)
+            try:
+                state = current_state(run, decisions)
+            except ValueError as refused:
+                out.append({"id": run_id, "refused": str(refused)})
+                continue
             out.append({"id": run_id, "number": meta.get("number"), "label": meta.get("label"),
                         "sample": meta.get("sample"), "started_at": meta.get("started_at"),
                         "finished_at": meta.get("finished_at"), "status": meta.get("status"),
@@ -313,7 +324,10 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         run = store.run(run_id)
         with DECISIONS_LOCK:
             decisions = store.decisions(run_id)
-        return {**run, "state": current_state(run, decisions)}
+        state = current_state(run, decisions)
+        partition, window_start, window_end = run_interval_partition(run, state)
+        return {**run, "state": state, "calendar_partition": partition,
+                "calendar_window": {"start": window_start, "end": window_end}}
 
     @app.get("/api/runs/{run_id}/decisions")
     def get_decisions(run_id: str) -> list:
@@ -396,7 +410,10 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     def accuracy_file(run_id: str) -> Response:
         """The run's saved scoring (accuracy/export.py). Served only if the run's page files match their hashes and the
         file's own hashes hold: it is not altered since it was written, and it was scored from this run.json."""
-        store.run(run_id)
+        run = store.run(run_id)
+        if run.get("accuracy_stale"):
+            raise HTTPException(409, run.get("accuracy_stale_reason") or
+                                "This run's accuracy scoring is stale and must be regenerated.")
         data, problem = accuracy_export.read_if_intact(store.run_dir(run_id))
         if problem:
             raise HTTPException(409, problem)
@@ -430,7 +447,8 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         if not isinstance(number, int) or name not in report_filenames(number):
             raise HTTPException(404, "No such report file.")
         if run.get("report_stale"):
-            raise HTTPException(404, "This run's report is out of date after a re-check and has not been rebuilt.")
+            raise HTTPException(404, run.get("report_stale_reason") or
+                                "This run's report is out of date after a state change and has not been rebuilt.")
         f = store.run_dir(run_id) / "report" / name
         if not f.is_file():
             raise HTTPException(404, "This run has no saved report file with that name.")
@@ -474,9 +492,22 @@ def _decide(store: RunStore, run_id: str, run: dict, line: dict) -> dict:
         # The state rule must take the re-check; if it would not, write nothing.
         if any(x["index"] >= len(decisions) for x in state["ignored"]):
             raise HTTPException(500, "The re-check could not be attached to the fix; nothing was written.")
+    report_refresh = "no saved reports"
+    report_dir = store.run_dir(run_id) / "report"
+    has_reports = report_dir.is_dir() and any(p.is_file() and p.suffix in {".pdf", ".docx"}
+                                               for p in report_dir.iterdir())
+    if has_reports:
+        run_path = store.run_dir(run_id) / "run.json"
+        latest = json.loads(run_path.read_text())
+        latest["report_stale"] = True
+        latest["report_stale_reason"] = "A person changed this run's state; its saved report is being rebuilt."
+        run_path.write_text(json.dumps(latest, indent=1, ensure_ascii=False) + "\n")
     store.append(run_id, written)
+    if has_reports:
+        from runs.recheck_dates import keep_reports_honest
+        report_refresh = keep_reports_honest(store.run_dir(run_id), line["at"])
     return {"target": line["target"], "state": state["targets"][line["target"]], "written": written,
-            **_summary(state)}
+            "report_refresh": report_refresh, **_summary(state)}
 
 
 def _schema_reason(err, line: dict) -> str:

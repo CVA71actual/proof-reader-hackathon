@@ -35,7 +35,8 @@ Every path inside `run.json` (page images, words files) is relative to the run's
 ## What is in run.json
 
 - `run`: id, number, label, sample, start and finish times, the person's choices, spend (`null` = not recorded;
-  see "Cost on the record").
+  see "Cost on the record"), status and reason, plus `pages_total` / `pages_read` when the run records its selected
+  source-page count. Reports do not infer unread pages for older partial runs that lack that count.
 - `sources[]`: where things came from. `kind` is filing, company_release, third_party_calendar or other. Each page
   has an image, its size in PDF points, and a words file (every word with its box), each with its sha256
   (`image_sha256`, `words_sha256`) so a changed byte in the run folder is noticed. The tests check the committed
@@ -53,7 +54,16 @@ Every path inside `run.json` (page images, words files) is relative to the run's
 - `tables[]`: a table read from one page. Each value (`cell`) has an id, a `box` `[x0, y0, x1, y1]` in PDF points
   (origin top-left, y grows downward; `null` if the reader proposed no place), a `status` and its `checks`.
   `instructions` holds the exact text sent to the model and its SHA-256.
-- `rows[]`: dated company events. Each has a `status`, a `group`, a plain `reason`, its `checks` and a `trail`.
+- `rows[]`: dated company events. Every row and table value has a unique decision target ID; the job allocates row IDs
+  from its persisted `next_row_number`, so pruning a row cannot re-use its ID. Duplicate saved targets refuse state,
+  decisions and report generation until an explicit mapping repairs the run. Each event has a `status`, a `group`, a
+  plain `reason`, its `checks` and a `trail`.
+  For a legacy duplicate, `python -m runs.repair_ids <run>` validates but does not write its explicit `id_repairs`
+  mapping. Target and exclusion/mistake reference entries name zero-based JSON paths and old/new IDs; each decision
+  line targeting an ambiguous ID needs its own mapping. Inspect the dry-run output, then pass `--write` to persist.
+  A reference can map only to a repaired target from that same old ID. The applied mapping remains in `run.json`;
+  saved reports and accuracy scoring are marked stale. If interrupted between file writes, a pending journal keeps
+  the run refused; rerun with `--write` to complete the repair.
   `date_text` is the date as printed. `date` is the exact day, or the first day of the period when `date_end` is set.
   `date_end` (optional, ISO or null) is the last day of the period when the source names one ("Q3 2027",
   "2H 2027", "mid-2027"): "Q3 2027" is `date` 2027-07-01, `date_end` 2027-09-30. `program` (optional) is the drug or
@@ -68,6 +78,8 @@ Every path inside `run.json` (page images, words files) is relative to the run's
 - `exclusions[]`: rows left out under a rule, not because they were wrong: `id`, `target`, `rule`
   (`third_party_calendar_only`, `event_in_past`, `person_removed`, `outside_time_window`: a run started with a time window: a row whose period ends before today or starts after today plus the window; an exact day is both its start and its end. Reason, for a period: "the period ends 2026-06-30, before today (2026-10-29)"), `reason`, `by` (`code` or `person`). A row
   removed by the house rule is an exclusion, never a mistake.
+  `event_in_past` is applied only after `date_match` passes; an unsupported old date stays reviewable with the proposed
+  exclusion rationale in the row and trail.
   A person may keep a row the house rule left out (decided by CVA, 2026-10-27). The row then shows
   "Kept by you" and still shows that its only source is a third-party calendar; the audit log never hides that.
 
@@ -515,8 +527,8 @@ It also returns:
 - `excluded` {code, person} and `exclusions` (target, rule, reason, by): run.json exclusions whose row is still
   removed and untouched by the person, plus every row whose latest decision in effect is the person's remove
   (rule `person_removed`). A person who keeps a row the code left out takes it out of the exclusions.
-- `unresolved`: rows now in `open` or `unverified`, plus rows now `corrected` whose fix's re-check could not run or
-  that are still `undecided`, the one "Needs attention" number. A later keep or remove takes the row out (its
+- `unresolved`: rows now in `open` or `unverified`, plus rows now `corrected` whose fix is awaiting a re-check,
+  whose re-check could not run or that are still `undecided`, the one "Needs attention" number. A later keep or remove takes the row out (its
   unrun check stays visible in `recheck`); undo of that keep or remove puts it back.
 - `cost_per_kept_row_usd`: `run.spend_usd` divided by the rows now in `kept` or `corrected`; `null` when the spend
   was not recorded or no row is kept.

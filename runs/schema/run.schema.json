@@ -15,7 +15,21 @@
     "mistakes": {"type": "array", "items": {"$ref": "#/$defs/mistake"},
                  "description": "Genuine errors only: a proposed value that was wrong and got changed, or a row removed because its content was wrong."},
     "exclusions": {"type": "array", "items": {"$ref": "#/$defs/exclusion"},
-                   "description": "Rows left out under a rule (house rule, past event, a person's choice). Not mistakes."}
+                   "description": "Rows left out under a rule (house rule, past event, a person's choice). Not mistakes."},
+    "report_stale": {"type": "boolean", "description": "True when a saved report cannot be served because its source state changed and rebuild failed."},
+    "report_stale_reason": {"type": "string", "description": "Why saved reports remain unavailable until rebuilt."},
+    "accuracy_stale": {"type": "boolean", "description": "True when saved accuracy scoring no longer describes this run."},
+    "accuracy_stale_reason": {"type": "string", "description": "Why saved accuracy scoring must be regenerated."},
+    "id_repairs": {
+      "description": "Explicit, zero-based mapping used only by python -m runs.repair_ids; no IDs are inferred. On successful --write, applied is true and the mapping remains as an audit record.",
+      "type": "object",
+      "properties": {
+        "applied": {"const": true},
+        "targets": {"type": "array", "items": {"type": "object", "required": ["path", "from", "to"], "properties": {"path": {"type": "array", "items": {"type": ["string", "integer"]}}, "from": {"type": "string"}, "to": {"type": "string"}}}},
+        "references": {"type": "array", "items": {"type": "object", "required": ["path", "from", "to"], "properties": {"path": {"type": "array", "items": {"type": ["string", "integer"]}}, "from": {"type": "string"}, "to": {"type": "string"}}}},
+        "decisions": {"type": "array", "items": {"type": "object", "required": ["line", "from", "to"], "properties": {"line": {"type": "integer", "minimum": 0}, "from": {"type": "string"}, "to": {"type": "string"}}}}
+      }
+    }
   },
   "$defs": {
     "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
@@ -79,6 +93,8 @@
                                         "rereads": {"type": "integer"}, "failed_answers": {"type": "integer"}}},
         "turns_total": {"type": "integer", "minimum": 0, "description": "Every model call in the run."},
         "resumes": {"type": "integer", "minimum": 0},
+        "pages_total": {"type": "integer", "minimum": 0, "description": "Pages selected from the source index for this run, when recorded."},
+        "pages_read": {"type": "integer", "minimum": 0, "description": "Selected pages successfully read into this run, when recorded."},
         "skipped_pages": {"type": "array", "description": "Optional. Pages the job left undone and why: a page whose files no longer match the index, or one that stopped the run twice (server/jobs.py). What was read of them before stays.",
                           "items": {"type": "object", "additionalProperties": false, "required": ["source_id", "ticker", "reason"],
                                     "properties": {"source_id": {"type": "string"}, "ticker": {"type": "string"},
@@ -302,6 +318,7 @@
         "ticker": {"type": "string"},
         "company": {"type": "string"},
         "event_type": {"type": "string", "pattern": "^[a-z_]+$"},
+        "type_hint": {"type": ["string", "null"]},
         "title": {"type": "string"},
         "date_text": {"type": ["string", "null"]},
         "date": {"oneOf": [{"$ref": "#/$defs/iso_date"}, {"type": "null"}],
@@ -328,6 +345,7 @@
         "status": {"enum": ["matched", "proposed", "failed", "unreadable", "undecided"]},
         "group": {"enum": ["kept", "corrected", "removed", "unverified", "open"]},
         "reason": {"type": "string"},
+        "past_exclusion_proposal": {"type": "string", "description": "Optional rationale for a past-date exclusion that code did not apply because Date read as written did not pass."},
         "sample": {"type": "boolean"},
         "checks": {"type": "array", "items": {"$ref": "#/$defs/check"}},
         "trail": {

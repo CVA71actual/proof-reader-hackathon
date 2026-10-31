@@ -615,11 +615,13 @@ def _has_word(text: str, word: str) -> bool:
 
 
 def event_type_for(text: str | None) -> str:
-    """The event type the words of `text` stand for: the first of TYPE_PRIORITY with a word in it, else 'milestone'."""
+    """Assign a controlled event type from quoted words; use unknown when no fixed anchor fits."""
     for t in TYPE_PRIORITY:
         if any(_has_word(text or "", w) for w in EVENT_WORDS[t]):
             return t
-    return "milestone"
+    if any(_has_word(text or "", w) for w in EVENT_WORDS["milestone"]):
+        return "milestone"
+    return "unknown"
 
 
 _ACRONYMS = ("nda", "bla", "maa", "ind", "pdufa", "crl", "chmp")

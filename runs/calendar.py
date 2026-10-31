@@ -10,6 +10,10 @@ period start are listed after the dated ones, never dropped.
 
 from __future__ import annotations
 
+from datetime import date
+
+from checks.event_checks import add_months_to, period_last_day
+
 CALENDAR_GROUPS = ("kept", "corrected")
 
 
@@ -41,3 +45,50 @@ def calendar_entries(run: dict, state: dict) -> list[dict]:
         })
     out.sort(key=lambda e: (e["date"] is None, e["date"] or "", e["id"]))
     return out
+
+
+def partition_intervals(entries: list[dict], anchor: str, end: str) -> dict[str, list[dict]]:
+    """Partition eligible calendar rows once for both the API/UI and saved reports.
+
+    Intersecting periods stay in-window. Historical rows are retained in Past,
+    including human-kept rows, and undated rows remain Contingent.
+    """
+    lower, upper = date.fromisoformat(anchor), date.fromisoformat(end)
+    out = {key: [] for key in ("calendar", "past", "later", "contingent")}
+    for row in entries:
+        try:
+            start = date.fromisoformat(row.get("date") or "")
+        except (TypeError, ValueError):
+            start = None
+        if start is None:
+            out["contingent"].append(row)
+            continue
+        try:
+            finish_value = row.get("date_end")
+            if not finish_value:
+                period_end = period_last_day(row)
+                finish_value = period_end.isoformat() if period_end else row.get("date")
+            finish = date.fromisoformat(finish_value or "")
+        except (TypeError, ValueError):
+            finish = start
+        if finish < start:
+            finish = start
+        if finish < lower:
+            out["past"].append(row)
+        elif start > upper:
+            out["later"].append(row)
+        else:
+            out["calendar"].append(row)
+    return out
+
+
+def run_interval_partition(run: dict, state: dict) -> tuple[dict[str, list[dict]], str, str]:
+    """The six-month, run-anchored partition used by the screen and reports."""
+    anchor = (run.get("run") or {}).get("started_at", "")[:10]
+    try:
+        start = date.fromisoformat(anchor)
+    except (TypeError, ValueError):
+        start = date.today()
+        anchor = start.isoformat()
+    end = add_months_to(start, 6).isoformat()
+    return partition_intervals(calendar_entries(run, state), anchor, end), anchor, end

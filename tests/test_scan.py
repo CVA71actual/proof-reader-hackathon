@@ -385,11 +385,11 @@ def test_a_sam_model_with_no_price_stops_a_run_with_a_spending_limit(runs_dir):
     assert m["status"] == "needs_input" and "some-unpriced-segmenter" in m["status_reason"]
 
 
-def test_a_scanned_page_is_skipped_when_no_event_type_is_chosen(runs_dir):
+def test_an_empty_legacy_event_type_list_does_not_limit_a_scan(runs_dir):
     first, fake = region_reader([[], []]), FakeSam(TWO_BOXES)
     _, rid = start(runs_dir, first, fake, event_types=[])
-    assert not fake.calls and not first.prompts
-    assert run_of(runs_dir, rid)["run"]["status_reason"].startswith("Nothing to read")
+    assert fake.calls and first.prompts
+    assert run_of(runs_dir, rid)["run"]["status"] == "done"
 
 
 def test_the_default_server_with_a_fake_reader_has_no_sam(runs_dir):
@@ -440,7 +440,8 @@ def test_the_committed_scan_run_says_what_happened_and_never_calls_a_scan_matche
         got = {c["name"]: c["result"] for c in row["checks"]}
         assert got["quote_match"] == "could_not_run" and got["selector_match"] == "could_not_run"
         assert row["status"] == "proposed" and row["group"] == "unverified"
-        assert [t["step"] for t in row["trail"][:3]] == ["Instructions sent", "Scanned page", "SAM 3.1 found r1"]
+    assert [t["step"] for t in row["trail"][:4]] == ["Sent the page to Muse Spark", "Instructions sent",
+                                                      "Scanned page", "SAM 3.1 found r1"]
     reads = json.loads((FIXTURES / f"{PIN}.scan_reading.json").read_text())["reads"]
     assert len(reads) == 1 and reads[0]["usage"]["prompt_tokens"] > 0 and reads[0]["model"].startswith("muse-spark")
     import os

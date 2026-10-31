@@ -177,15 +177,15 @@ def test_events_are_matched_by_overlapping_quote_and_a_shared_name():
 def test_every_compared_field_is_a_difference_when_it_differs():
     base = {**ROW}
     assert compare.differences(ROW, base) == []
-    for field, new in (("date", "2027-02-01"), ("date_end", "2027-04-30"), ("event_type", "trial_results"),
+    for field, new in (("date", "2027-02-01"), ("date_end", "2027-04-30"),
                        ("program", "PN-9999"), ("indication", "Polycythemia vera")):
         diffs = compare.differences(ROW, {**base, field: new})
         assert [(d["field"], d["second_reader"]) for d in diffs] == [(field, new)]
-    assert compare.differences(ROW, {**base, "event_type": " Milestone "}) == [], "case and spacing are ignored"
+    assert compare.differences(ROW, {**base, "event_type": "trial_results"}) == [], "code assigns type from quote"
+    assert compare.differences(ROW, {**base, "event_type": " Milestone "}) == [], "model type hint is not the controlled type"
     longer = {**base, "quote": base["quote"] + " Further text."}
     assert compare.differences(ROW, longer) == [], "a quote that runs longer is not a disagreement"
-    assert [d["field"] for d in compare.differences(ROW, {**base, "date": "x", "event_type": "y"})] == [
-        "date", "event_type"]
+    assert [d["field"] for d in compare.differences(ROW, {**base, "date": "x", "event_type": "y"})] == ["date"]
 
 
 def test_the_table_comparison_marks_only_the_values_that_differ():
@@ -306,16 +306,15 @@ def test_a_disagreement_on_the_date_makes_the_row_undecided_and_goes_to_a_person
     assert state["targets"][row["id"]]["group"] == "open" and state["unresolved"] == 1
 
 
-def test_a_disagreement_on_the_event_type_goes_to_judgment_needed(runs_dir):
+def test_model_type_hints_do_not_change_the_controlled_event_type(runs_dir):
     events = fake_events()
     other = copy.deepcopy(events)
     other[0]["event_type"] = "trial_results"
     _, rid = start(runs_dir, FakeReader(), FakeSecond(answer=events_answer(other)))
     run = run_of(runs_dir, rid)
-    row = next(r for r in run["rows"] if r.get("disagreement"))
-    assert row["disagreement"] == {"field": "event_type", "first_reader": "milestone",
-                                   "second_reader": "trial_results"}
-    assert (row["status"], row["group"]) == ("undecided", "open")
+    assert not any(r.get("disagreement") for r in run["rows"])
+    assert run["rows"][0]["event_type"] == "milestone"
+    assert run["rows"][0]["type_hint"] == "milestone"
 
 
 def test_a_disagreement_on_the_program_or_indication_is_a_disagreement_too(runs_dir):

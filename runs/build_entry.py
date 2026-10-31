@@ -215,7 +215,8 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         "id": f"e{i}",
         "ticker": _str(event.get("ticker")) or "",
         "company": _str(event.get("company")) or "",
-        "event_type": (_str(event.get("event_type")) or "unknown").lower(),
+        "event_type": event_checks.event_type_for(quote),
+        "type_hint": _str(event.get("type_hint") or event.get("event_type")),
         "title": _str(event.get("title")) or "",
         "date_text": tidy_date_text(printed, quote),
         "date": _str(event.get("date")),
@@ -244,13 +245,14 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
                               f"{plain_type(row['event_type'])} on {when(row)}: “{quote}”", "at": at})
     else:
         trail.append({"step": "Second reading" if second_reader else "Proposed", "tag": "Model", "who": model_name,
-                      "text": f"{row['ticker']} {row['program'] or ''} {plain_type(row['event_type'])} on "
+                      "text": f"{row['ticker']} {row['program'] or ''} type hint {(row['type_hint'] or 'none').replace('_', ' ')} on "
                               f"{when({**row, 'date_text': printed})}, printed as “{printed}”: “{quote}”"
                               .replace("  ", " "), "at": at,
                       **prices.model_cost_fields(model_name, share[0], share[1], call_rows=share[2])})
         trail.append({"step": "Took the reading into the row", "tag": "Code", "who": BUILDER, "at": at,
-                      "text": "Copied the reader's answer for this row into the row as a proposal, with its box from "
-                              "the reader or from the words it named. Nothing is checked yet."})
+                      "text": "Copied the reader's proposal and box into the row. Nothing is checked yet."})
+    trail.append({"step": "Assigned event type", "tag": "Code", "who": BUILDER, "at": at,
+                  "text": f"Assigned {plain_type(row['event_type'])} from the quoted words; retained the reader's type hint separately."})
     trail += tool_steps or []     # the reader's own calls of the checks while it read (capture/reader_tools.py)
     if row["date_text"] != printed:
         trail.append({"step": "Tidied", "tag": "Code", "who": BUILDER,

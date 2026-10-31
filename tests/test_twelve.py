@@ -242,15 +242,15 @@ def test_the_label_is_made_from_the_choices_and_the_number_is_the_next_in_the_se
     b = run_of(runs_dir, start(c, companies=["BBB"], time_window_months=1))["run"]
     d = run_of(runs_dir, start(c, companies=["AAA"]))["run"]
     assert (a["label"], a["number"]) == ("2 companies · 6 months", 1)
-    assert (b["label"], b["number"]) == ("BBB · 1 month", 2)
-    assert (d["label"], d["number"]) == ("AAA", 3)
+    assert (b["label"], b["number"]) == ("BBB · 6 months", 2)
+    assert (d["label"], d["number"]) == ("AAA · 6 months", 3)
     assert jobs.label_for(9, {"companies": list("ABCDEFGHIJKL"), "time_window_months": 3}) == "12 companies · 3 months"
 
 
 def test_all_means_every_company_in_the_index_and_is_recorded_as_the_list_it_stands_for(runs_dir, index):
     c, _ = client(runs_dir, index)
     run = run_of(runs_dir, start(c, companies=["all"]))
-    assert run["run"]["choices"]["companies"] == ["AAA", "BBB"] and run["run"]["label"] == "2 companies"
+    assert run["run"]["choices"]["companies"] == ["AAA", "BBB"] and run["run"]["label"] == "2 companies · 6 months"
     assert len(run["sources"]) == 3
 
 
@@ -303,14 +303,14 @@ def test_the_spending_limit_holds_across_the_pages_of_many_companies(runs_dir, i
     assert m["status_reason"].startswith("Stopped at the spending limit")
 
 
-def test_the_time_window_leaves_out_rows_by_code_on_every_company_page(runs_dir, index, monkeypatch):
+def test_future_rows_are_retained_for_the_later_section(runs_dir, index, monkeypatch):
     import datetime
     monkeypatch.setattr(jobs, "today", lambda: datetime.date(2026, 10, 28))
+    monkeypatch.setattr(jobs, "now_utc", lambda: "2026-10-28T12:00:00+00:00")
     c, _ = client(runs_dir, index, second=None, wonder=None)
     run = run_of(runs_dir, start(c, time_window_months=6))      # to 2027-04-28: 2H 2027 is out, Q1 2027 is in
-    out = [r for r in run["rows"] if r["group"] == "removed"]
-    assert {r["ticker"] for r in out} == {"AAA", "BBB"} and len(out) == 2
-    assert all(x["rule"] == "outside_time_window" and x["by"] == "code" for x in run["exclusions"])
+    assert not any(r["group"] == "removed" for r in run["rows"])
+    assert run["exclusions"] == []
 
 
 def test_the_calendar_holds_only_kept_or_corrected_rows_of_the_run(runs_dir, index):
@@ -520,7 +520,7 @@ def test_all_leaves_out_a_company_with_no_page_and_does_not_stop_at_it(runs_dir,
     f.write_text(json.dumps(index_with_empty_company()))
     c, first = client(runs_dir, sources.load_index(f), second=None, wonder=None)
     run = run_of(runs_dir, start(c, companies=["all"]))
-    assert run["run"]["choices"]["companies"] == ["AAA", "BBB"] and run["run"]["label"] == "2 companies"
+    assert run["run"]["choices"]["companies"] == ["AAA", "BBB"] and run["run"]["label"] == "2 companies · 6 months"
     assert run["run"]["status"] == "done" and len(first.prompts) == 3
 
 

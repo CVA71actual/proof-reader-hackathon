@@ -230,7 +230,9 @@ def test_a_picture_page_row_the_window_removes_keeps_the_source_note(tmp_path):
     index_path = tmp_path / "idx.json"
     index_path.write_text(json.dumps({"index_version": 1, "companies": {"SLD": {"pages": [record]}}}))
     index = sources.load_index(index_path)
-    text = "Phase 2b initiation in psoriasis: Q1 '27"
+    # Keep the past-date exclusion case date-supported; a conflicting year is
+    # now retained as an unresolved candidate by the Batch A timing gate.
+    text = "Phase 2b initiation in psoriasis on January 1, 2020"
     boxes = {"text block": [(80, 200, 1100, 500)], "title": [(80, 100, 600, 160)]}
 
     def transcribe(prompt, n):
