@@ -45,6 +45,8 @@ UNPRICED = ("The OpenRouter fallback returned no token counts, so its spend cann
             "more fallback calls were made.")
 NO_KEY = ("No second-reader key was found (BASETEN_API_KEY, or OPENROUTER_API_KEY for the fallback), so there was "
           "no second read.")
+CLI_REFUSED = "The paid OpenRouter fallback was not called: pass --allow-paid-fallback to use it."
+CLI_NO_FALLBACK = "No paid fallback is configured (OPENROUTER_API_KEY is not set), so no fallback call was made."
 
 SECOND_READING_PATH = FIXTURES / f"{read_events.PIN}.events.second.json"
 SECOND_WORDS_READING_PATH = FIXTURES / f"{read_events.PIN}.events.second_words.json"
@@ -156,9 +158,16 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--words", action="store_true", help="read from the page's words instead of its image")
+    ap.add_argument("--allow-paid-fallback", action="store_true",
+                    help="allow the paid OpenRouter fallback if the primary call fails")
     args = ap.parse_args(argv)
     args.out = args.out or (SECOND_WORDS_READING_PATH if args.words else SECOND_READING_PATH)
     reader = SecondReader()
+    # Not the Job's gate: the CLI makes one call per run and keeps no spend ledger or $20 cap. The flag alone
+    # decides whether a failed primary call may be followed by one paid OpenRouter call.
+    reader.before_fallback = lambda reply: args.allow_paid_fallback
+    if not args.allow_paid_fallback:
+        reader.openrouter_allowed, reader.openrouter_blocked = False, CLI_REFUSED
     problem = reader.ready()
     if problem:
         print(problem)
@@ -179,11 +188,20 @@ def main(argv: list[str] | None = None) -> int:
             image = png.read_bytes()
         prompt, got = read_events.build_image_prompt(entry), "image"
     reply = reader.call(prompt, image=image)
+    primary_failed = bool(reply.error) and (reply.extra or {}).get("route") == "baseten"
+    fallback_configured = bool(reader._key("OPENROUTER_API_KEY"))
+    refused = primary_failed and fallback_configured and not args.allow_paid_fallback
+    if refused:   # record the gate's refusal in the saved file, not only on stdout
+        reply.extra = {**(reply.extra or {}), "fallback_skipped": True, "fallback_refused_reason": CLI_REFUSED}
     parsed, parse_problem = (None, None) if reply.error else read_events.parse_events(reply.raw)
     rec = reading_record(reply, prompt, parsed, parse_problem, entry, got)
     args.out.write_text(json.dumps(rec, indent=1, ensure_ascii=False) + "\n")
     if reply.error:
         print(f"The second read did not succeed ({reply.error}); the failure is saved -> {args.out}")
+        if refused:
+            print(CLI_REFUSED)
+        elif primary_failed and not fallback_configured:
+            print(CLI_NO_FALLBACK)
         return 1
     if parsed is None:
         print(f"Saved an unreadable answer from {rec['model']} ({parse_problem}) -> {args.out}")
