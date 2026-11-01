@@ -13,6 +13,73 @@
   var GROUP_ORDER = ['kept', 'corrected', 'removed', 'unverified', 'open'];
   var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };
   var ACTION_WORDS = { keep: 'kept', fix: 'fixed', remove: 'removed' };
+  // GROUP-AXIS-001: the server's review projection owns the review words when it
+  // sends them — a superseded (stale) Keep reads as history, never as current
+  // acceptance. Presence, not truthiness: an empty label falls back.
+  function reviewBucket(t) {
+    return t.review_bucket || (t.accepted ? 'accepted' : 'proposed');
+  }
+  // addendum: nothing on screen says kept for a row the projection does not
+  // count as accepted (a superseded Keep is history); a server without the
+  // projection keeps the old group rule
+  function keptCurrent(t) {
+    if (!t || !t.decided_by_person || t.group !== 'kept') return false;
+    return t.accepted === undefined || t.accepted === null || t.accepted === true;
+  }
+  // the row carries the server's review projection (review_label/bucket)
+  function projected(t) {
+    return !!t && typeof t.review_label === 'string';
+  }
+  // the '· decided by you' marker. With the projection the row badge is the
+  // review label, and every label that carries a person's decision already
+  // names them ('Accepted by you', 'Corrected, awaiting your review', …) — the
+  // marker would only repeat it; it shows only for a decision label whose
+  // review label does not say so. Without the projection: the old group rule.
+  function decidedMark(t) {
+    if (projected(t)) {
+      return typeof t.decision_label === 'string' && !!t.decision_label &&
+             !/\byou(r)?\b/i.test(t.review_label);
+    }
+    return !!(t.decided_by_person && t.group !== 'removed' && t.group !== 'corrected');
+  }
+  // the review axis count when the server sends it (else null: no projection)
+  function reviewAcceptedCount(st) {
+    var c = st && st.counts && st.counts.review;
+    return c && typeof c.accepted === 'number' ? c.accepted : null;
+  }
+  // GROUP-AXIS-001: the group a row is listed, headed and counted under.
+  // With the projection, review_bucket decides: only an accepted row is
+  // 'Checked and kept'; an excluded row is 'Checked and removed'; a proposed
+  // row the checks had kept (undecided, or a superseded Keep) is listed under
+  // the projection's own words 'Proposed — needs review'; any other proposed
+  // row keeps its check result (corrected / unverified / still open).
+  // Without the projection: the server's group, as before.
+  function viewGroup(t) {
+    if (!t || typeof t.review_bucket !== 'string') return t ? t.group : undefined;
+    if (t.review_bucket === 'accepted') return 'kept';
+    if (t.review_bucket === 'excluded') return 'removed';
+    return t.group === 'kept' || t.group === 'removed' ? 'proposed' : t.group;
+  }
+  var REVIEW_GROUP_ORDER = ['kept', 'proposed', 'corrected', 'removed', 'unverified', 'open'];
+  function groupOrder() {
+    return reviewAcceptedCount(detail.state) !== null ? REVIEW_GROUP_ORDER : GROUP_ORDER;
+  }
+  function groupName(g) {
+    return g === 'proposed' ? 'Proposed — needs review' : GROUP_NAMES[g];
+  }
+  // one count per listed group: with the projection, the rows behind the
+  // heading (so facet == list == heading == summary line); else the server's
+  function groupCount(g) {
+    if (reviewAcceptedCount(detail.state) === null) return detail.state.counts.rows[g];
+    return rowsByGroup(g).length;
+  }
+  // a row a person fixed that still needs a person (re-check could not run;
+  // with the projection, any Fix not yet accepted). A superseded Keep is not
+  // a fix: it needs review like any proposal.
+  function fixStillOpen(t) {
+    if (!t || !t.decided_by_person || !needsAttention(t)) return false;
+    return projected(t) ? t.last_action === 'fix' : true;
+  }
   var FIX_FIELDS = ['date_text', 'date', 'date_end', 'event_type', 'title', 'quote', 'company', 'ticker',
                     'program', 'indication'];
   var RULE_WORDS = {
@@ -132,7 +199,10 @@
   // A-F6: a matched row whose date check or type check was 'not needed' did
   // not have that confirmed — "matched" alone would overstate it
   function rowBadge(row, t) {
-    if (t.decided_by_person) return decidedBadge(t.group);
+    // the projection's review_label is the row's badge when present: accepted
+    // green, excluded red, anything else the amber attention style
+    if (projected(t)) return el('span', 'st st-' + reviewClass(t), t.review_label);
+    if (t.decided_by_person) return decidedBadge(t);
     if (t.status !== 'matched') return statusBadge(t.status);
     var unchecked = [];
     (row.checks || []).forEach(function (c) {
@@ -145,10 +215,35 @@
     b.title = 'This check did not apply to the row — the checks below say why.';
     return b;
   }
-  function decidedBadge(group) {
-    return el('span', 'st st-' + group, DECIDED_BADGE[group] || group);
+  // the decided wording: the projection's decision_label wins when sent, so a
+  // stale Keep never reads 'Kept by you'
+  // F7: with the projection, decision_label or else review_label — never the
+  // group words (a code removal is not 'Removed by you')
+  // Without the projection each surface keeps main's own fallback for a group
+  // with no decided word (e.g. 'open'): the badge the group id, the still-open
+  // line 'Fixed by you', the decided pane 'Decided by you'.
+  function decidedWord(t, otherwise) {
+    if (projected(t)) return t.decision_label || t.review_label;
+    return DECIDED_BADGE[t.group] || otherwise;
+  }
+  // the badge colour by review bucket when sent: accepted green, excluded red,
+  // anything else the amber attention style (a superseded Keep is not green)
+  function reviewClass(t) {
+    var bucket = reviewBucket(t);
+    return bucket === 'accepted' ? 'kept' : bucket === 'excluded' ? 'removed' : 'corrected open';
+  }
+  function decidedBadge(t) {
+    return el('span', 'st st-' + (projected(t) ? reviewClass(t) : t.group), decidedWord(t, t.group));
   }
   function checkDot(result) { return el('span', 'dot ' + result); }
+  // DATE-LITERAL-001: under the server's label 'Date wording present in quote'
+  // a passing date check is a finding (the words are in the quote), not a
+  // confirmation of the date — neutral amber, never the green pass. Presence
+  // of that label decides; the old label keeps the old pass style.
+  function dateFinding(c) {
+    return !!c && (c.name === 'date_match' || c.id === 'date_match') &&
+           c.result === 'pass' && c.label === 'Date wording present in quote';
+  }
   function checkResultWord(result) { return CHECK_WORDS[result] || result; }
 
   // ---------------------------------------------------------------- theme
@@ -239,12 +334,12 @@
     return detail.run.rows.filter(function (r) { return r.id === id; })[0] || null;
   }
   function rowsByGroup(g) {
-    return detail.run.rows.filter(function (r) { return rowTarget(r).group === g; });
+    return detail.run.rows.filter(function (r) { return viewGroup(rowTarget(r)) === g; });
   }
   function visibleAuditRows() {
     var f = audit.filter;
     return detail.run.rows.filter(function (r) {
-      var g = rowTarget(r).group;
+      var g = viewGroup(rowTarget(r));
       if (f === 'ALL') return true;
       if (f === 'ATTN') return needsAttention(rowTarget(r));
       // G1-17: the counter filters — the rows behind each count
@@ -621,18 +716,6 @@
     if (p[0] === 'h') return p[1] + (p[2] === 'First' ? '-06' : '-12');
     return p[1] + '-12';
   }
-  function calendarUndated() {
-    var n = 0;
-    detail.run.rows.forEach(function (r) {
-      var t = rowTarget(r);
-      if (t.group !== 'kept' && t.group !== 'corrected') return;
-      var d = (t.values && t.values.date) || r.date;
-      var dt = (t.values && t.values.date_text) || r.date_text;
-      // A-F2(b): only rows with neither a parsed day nor date text are unplaceable
-      if (!d && !dt) n++;
-    });
-    return n;
-  }
 
   function switchRun(runId, nav) {
     A.run(runId).then(function (body) {
@@ -806,9 +889,11 @@
   function renderAuditFacets() {
     var host = clear(document.getElementById('audit-facets'));
     var st = detail.state;
-    var defs = [['ALL', 'All']].concat(GROUP_ORDER.map(function (g) { return [g, GROUP_NAMES[g]]; }));
+    var defs = [['ALL', 'All']].concat(groupOrder().map(function (g) { return [g, groupName(g)]; }));
     defs.forEach(function (d) {
-      var n = d[0] === 'ALL' ? detail.run.rows.length : st.counts.rows[d[0]];
+      // GROUP-AXIS-001: each facet counts the rows its filter lists — the kept
+      // facet only accepted rows (fallback: the server's group counts)
+      var n = d[0] === 'ALL' ? detail.run.rows.length : groupCount(d[0]);
       var b = btn('fc' + (audit.filter === d[0] ? ' on' : ''), '');
       b.append(document.createTextNode(d[1] + ' '), el('b', null, String(n)));
       b.addEventListener('click', function () {
@@ -843,20 +928,20 @@
     if (grouped) {
       // one heading per group: sort by group order, stable within a group
       var order = {}, idx = {};
-      GROUP_ORDER.forEach(function (g, i) { order[g] = i; });
+      groupOrder().forEach(function (g, i) { order[g] = i; });
       detail.run.rows.forEach(function (r, i) { idx[r.id] = i; });
       vis = vis.slice().sort(function (a, b) {
-        var d = order[rowTarget(a).group] - order[rowTarget(b).group];
+        var d = order[viewGroup(rowTarget(a))] - order[viewGroup(rowTarget(b))];
         return d !== 0 ? d : idx[a.id] - idx[b.id];
       });
     }
     var lastG = null;
     vis.forEach(function (row) {
       var t = rowTarget(row);
-      if (grouped && t.group !== lastG) {
-        lastG = t.group;
+      if (grouped && viewGroup(t) !== lastG) {
+        lastG = viewGroup(t);
         var n = rowsByGroup(lastG).length;
-        host.append(el('div', 'grp', GROUP_NAMES[lastG] + ' · ' + n));
+        host.append(el('div', 'grp', groupName(lastG) + ' · ' + n));
       }
       host.append(auditRow(row, t));
     });
@@ -873,7 +958,11 @@
     l1.append(el('span', 'dt', t.values && t.values.date_text || row.date_text || ''));
     var l2 = el('div', 'l2');
     var x = t.decided_by_person ? null : exclusionFor(row.id);
-    if (x && x.by === 'code') {
+    if (projected(t)) {
+      // GROUP-AXIS-001: the review projection owns the badge when sent
+      // ('Excluded', 'Corrected, awaiting your review', …)
+      l2.append(rowBadge(row, t));
+    } else if (x && x.by === 'code') {
       // G1-8 / G1-S1: a row removed by code says so — never a matched/proposed badge
       l2.append(el('span', 'st st-removed', 'Removed by code'));
     } else {
@@ -899,7 +988,7 @@
                      t.last_action === 'keep' && codeExclusionHistory(row.id);
     if (keptAnyway) {
       l2.append(el('span', 'fixline', '· code had removed it'));
-    } else if (t.decided_by_person && t.group !== 'removed' && t.group !== 'corrected') {
+    } else if (decidedMark(t)) {
       l2.append(el('span', null, '· decided by you'));
     }
     if (t.group === 'corrected') {
@@ -1063,8 +1152,9 @@
     var src = sourceOf(row);
 
     // A-F7: a row a person kept while a check failed or the readers disagree
-    // leads with that — before anything else in the pane
-    if (t.decided_by_person && t.group === 'kept') {
+    // leads with that — before anything else in the pane (a superseded Keep
+    // is history, never 'Kept by you')
+    if (keptCurrent(t)) {
       var af7fails = effectiveChecks(row, t).filter(function (c) { return c.result === 'fail'; });
       var af7dis = t.disagreement && t.disagreement.second_reader !== null &&
                    t.disagreement.second_reader !== undefined;
@@ -1085,7 +1175,7 @@
     }
 
     var sec1 = el('div', 'sec');
-    if (t.decided_by_person) sec1.append(decidedBadge(t.group));
+    if (t.decided_by_person) sec1.append(decidedBadge(t));
     var ttl = el('div', 'ttl', row.title || '(no title)');
     ttl.style.marginTop = t.decided_by_person ? '8px' : '0';
     sec1.append(ttl);
@@ -1357,11 +1447,13 @@
       }
       checks.forEach(function (c) {
       var line = el('div', 'chk');
-      line.append(checkDot(c.result));
+      var finding = dateFinding(c);
+      line.append(finding ? el('span', 'dot finding unresolved') : checkDot(c.result));
       var cn = el('span', 'cn');
       cn.append(esc(c.label), el('span', 'wtag', 'Code'));
       line.append(cn);
-      var cr = el('span', 'cr', checkResultWord(c.result));
+      // the label is the finding; no 'passed' beside it
+      var cr = el('span', 'cr', finding ? '' : checkResultWord(c.result));
       line.append(cr);
       sec.append(line);
       if (c.reason) {
@@ -1411,8 +1503,12 @@
     if (c.near_match) box.append(el('span', 'lf', ' · page wording '), esc(c.near_match));
     d.append(box);
     var res = el('div', 'recline');
-    res.append('Result: ', el('b', null, checkResultWord(c.result)));
-    if (c.reason) res.append(' — ' + c.reason);
+    if (dateFinding(c)) {
+      if (c.reason) res.append(c.reason);
+    } else {
+      res.append('Result: ', el('b', null, checkResultWord(c.result)));
+      if (c.reason) res.append(' — ' + c.reason);
+    }
     d.append(res);
     // G1-1: the code that ran, folded — no file paths or function names on screen.
     // Job 21 serves it at /api/checks/source; until then (or when the run names no
@@ -1896,7 +1992,7 @@
     l1.append(el('span', 'tt', row.title || ''));
     l1.append(el('span', 'dt', (t.values && t.values.date_text) || row.date_text || ''));
     var l2 = el('div', 'l2');
-    l2.append(t.decided_by_person ? decidedBadge(t.group) : statusBadge(t.status));
+    l2.append(t.decided_by_person ? decidedBadge(t) : statusBadge(t.status));
     l2.append(el('span', 'mdl', 'by ' + (row.proposed_by || 'Model')));
     b.append(l1, l2);
     b.addEventListener('click', function () {
@@ -2252,7 +2348,7 @@
       wrap.append(el('div', 'mo', 'Past · ' + past.length));
       past.forEach(function (r) {
         var written = (r.t.values && r.t.values.date_text) || r.row.date_text || r.date;
-        var reason = r.t.reason || r.row.reason || (r.t.decided_by_person ? 'Kept by you; the event period ended before this run began.' : '');
+        var reason = r.t.reason || r.row.reason || (keptCurrent(r.t) ? 'Kept by you; the event period ended before this run began.' : '');
         if (reason) r.row.reason = reason;
         wrap.append(calRow(r, written, !!r.period));
       });
@@ -2299,7 +2395,7 @@
         var q = (e.t.values && e.t.values.quote) || e.row.quote;
         if (q) it.append(el('div', 'srcq', '“' + q + '”'));
         var st = el('div', 'src1');
-        st.append(e.t.decided_by_person ? decidedBadge(e.t.group) : statusBadge(e.t.status));
+        st.append(e.t.decided_by_person ? decidedBadge(e.t) : statusBadge(e.t.status));
         it.append(st);
         it.addEventListener('click', function () { calSrcSel = e.row.id; renderCalendar(); });
         list.append(it);
@@ -2354,7 +2450,7 @@
     if (t.contingent) c2.append(el('span', 'keepwarn', 'Contingent · explicit dependency'));
     // A-F7: a row a person kept while a check failed or the readers disagree
     // is not settled — a small warm marker says so next to the title
-    if (t.decided_by_person && t.group === 'kept') {
+    if (keptCurrent(t)) {
       if (t.claim_assessments && t.claim_assessments.visible_passage &&
           t.claim_assessments.visible_passage.result === 'not_checked') {
         c2.append(el('span', 'keepwarn', 'kept by you · visible words not checked'));
@@ -2377,7 +2473,7 @@
     }
     b.append(c2);
     b.append(el('span', 'ty', eventWord(row.event_type)));
-    if (t.decided_by_person) b.append(decidedBadge(t.group));
+    if (t.decided_by_person) b.append(decidedBadge(t));
     b.addEventListener('click', function () {
       calSel = row.id;
       navigate({ runId: currentRunId(), screen: 'calendar', rowId: row.id, w: calWindow().win });
@@ -2389,8 +2485,11 @@
   function renderJudgment() {
     var unresolved = unresolvedRows();
     var decided = decidedRows();
+    // GROUP-AXIS-001: the review projection's count is the authority when the
+    // server sends it; the client-side list is the fallback on older servers
+    var reviewCounts = detail.state.counts && detail.state.counts.review;
     document.getElementById('judgment-sub').textContent =
-      'Waiting for your decision · ' + unresolved.length;
+      'Waiting for your decision · ' + (reviewCounts ? reviewCounts.proposed : unresolved.length);
 
     var host = clear(document.getElementById('judgment-rows'));
     if (!unresolved.length && !decided.length) {
@@ -2438,8 +2537,8 @@
     l1.append(el('span', 'tt', row.title || ''));
     l1.append(el('span', 'dt', (t.values && t.values.date_text) || row.date_text || ''));
     var l2 = el('div', 'l2');
-    if (t.decided_by_person && needsAttention(t)) {
-      l2.append(el('span', 'st st-corrected open', (DECIDED_BADGE[t.group] || 'Fixed by you') + ' · still open'));
+    if (fixStillOpen(t)) {
+      l2.append(el('span', 'st st-corrected open', decidedWord(t, 'Fixed by you') + ' · still open'));
     } else {
       l2.append(rowBadge(row, t));
     }
@@ -2738,12 +2837,12 @@
     if (sayBusyWith(row)) cancelSay();
     // a row the person corrected earlier but that still needs a person: show the
     // fix and its re-check outcome, then ask for the call again (Red Team round 7)
-    var correctedOpen = t.decided_by_person && needsAttention(t);
+    var correctedOpen = fixStillOpen(t);
     if (correctedOpen) {
       var hd = el('div', 'sec');
       hd.append(el('div', 'ttl', row.title || '(no title)'));
       var banner = el('div', 'ba');
-      banner.append(el('b', null, (DECIDED_BADGE[t.group] || 'Fixed by you') + ' · still open'));
+      banner.append(el('b', null, decidedWord(t, 'Fixed by you') + ' · still open'));
       if (t.reason) {
         var br1 = el('div');
         br1.style.cssText = 'margin-top:6px;color:var(--sub);font-size:12.5px';
@@ -2844,8 +2943,11 @@
     }
     host.append(hd);
     var sec = el('div', 'sec');
-    var box = el('div', 'ba green');
-    var badge = DECIDED_BADGE[t.group] || 'Decided by you';
+    // green only for an accepted row when the projection is sent; an
+    // excluded row reads red (fallback: green, as before)
+    var box = el('div', projected(t) && reviewBucket(t) !== 'accepted'
+      ? (reviewBucket(t) === 'excluded' ? 'ba red' : 'ba') : 'ba green');
+    var badge = decidedWord(t, 'Decided by you');
     box.append(el('b', null, badge));
     // G1-10: one line — a reason that repeats the badge adds nothing
     if (t.reason && t.reason.replace(/\.$/, '') !== badge) {
@@ -3800,9 +3902,17 @@
     if (st.cost_per_kept_row_usd !== null && st.cost_per_kept_row_usd !== undefined) {
       kv('Cost per kept row', usd2(st.cost_per_kept_row_usd));
     }
-    GROUP_ORDER.forEach(function (g) {
-      kv(GROUP_NAMES[g], String(st.counts.rows[g]));
-    });
+    // the same groups and counts as the audit log's facets — with the
+    // projection the lines add up to every row (proposed rows on their own line)
+    if (reviewAcceptedCount(st) === null) {
+      GROUP_ORDER.forEach(function (g) {
+        kv(GROUP_NAMES[g], String(st.counts.rows[g]));
+      });
+    } else {
+      groupOrder().forEach(function (g) {
+        kv(groupName(g), String(groupCount(g)));
+      });
+    }
     kv('Needs attention', String(st.unresolved));
     kv('Mistakes caught by code', String(st.mistakes.code));
     kv('Mistakes caught by the second reader', String(st.mistakes.second_reader));

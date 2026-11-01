@@ -141,7 +141,7 @@ def _export_text(fetch_js: str, stale: bool) -> str:
         "function reportFileNames() { return [{ file: 'r.pdf', kind: 'PDF' }, { file: 'r.docx', kind: 'Word' }]; }",
         "function reportUrl(n) { return '/runs/x/report/' + n; }",
         "global.fetch = " + fetch_js + ";",
-        _fns("renderExport"),
+        _fns("reviewAcceptedCount", "renderExport"),
         "renderExport();",
         "setTimeout(function () { console.log(textOf(NODES['exp-mid'])); }, 0);",
     )

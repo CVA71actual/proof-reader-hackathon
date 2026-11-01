@@ -442,8 +442,8 @@ def _judgment_screen(row_id):
     import json
     import subprocess
     js = (UI / "app.js").read_text()
-    names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "rowBadge", "checkDot", "checkResultWord",
-             "needsAttention", "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
+    names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket", "rowBadge", "checkDot", "checkResultWord",
+             "projected", "reviewClass", "fixStillOpen", "needsAttention", "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
              "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
              "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith",
              "revealRow", "sourceOf", "nearMissCheck", "listReasonLine")
@@ -1588,7 +1588,7 @@ def test_u24_g1r1_the_code_that_ran_is_the_real_source_not_json():
     import subprocess
 
     js = (UI / "app.js").read_text()
-    fns = "\n".join(_grab_fn(js, n) for n in ("seeTheCheck",))
+    fns = "\n".join(_grab_fn(js, n) for n in ("seeTheCheck", "dateFinding"))
     script = f"""
 var CHECK_WORDS = {{ pass: 'passed', fail: 'failed', could_not_run: 'could not run',
                    not_needed: 'not needed' }};
@@ -1940,8 +1940,8 @@ def test_u28_corrected_rows_say_who_caught_it():
     js = (UI / "app.js").read_text()
     assert "Caught by the second reader" in js and "calWords" in js
     fns = "\n".join(_grab_fn(js, n) for n in
-                    ("el", "esc", "btn", "statusBadge", "decidedBadge", "dayInWords",
-                     "exclusionFor", "mistakeFor", "auditRow"))
+                    ("el", "esc", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket", "dayInWords",
+                     "projected", "reviewClass", "decidedMark", "exclusionFor", "mistakeFor", "auditRow"))
     script = f"""
 var FIELD_WORDS = {{ date_text: 'Date as written', date: 'Date', event_type: 'Event type' }};
 var STATUS_WORDS = {{ matched: 'matched', proposed: 'proposed' }};
@@ -2414,7 +2414,7 @@ def test_u32_calendar_folds_only_identical_current_events():
         assert word in js, word
     # the source list shows each one's own status (matched / kept by you / …)
     list_src = js.split("'Read from ' + sel.fold.length + ' sources'")[1].split("det.append(list)")[0]
-    assert "decidedBadge(e.t.group) : statusBadge(e.t.status)" in list_src
+    assert "decidedBadge(e.t) : statusBadge(e.t.status)" in list_src
     # folded rows act through the picked source
     assert "actions: sel.fold.length > 1" in js
     for word in (".srcpill{", ".srcitem{", ".srcitem.on{"):
@@ -2585,6 +2585,7 @@ def test_judgment_checks_show_current_results_and_label_original_history():
         "function seeTheCheck(check) { return el('details', null, 'details ' + check.label); }",
         "function flatten(node) { return (node.textContent || '') + (node.children || []).map(flatten).join(' '); }",
         _grab_fn(js, "effectiveChecks"),
+        _grab_fn(js, "dateFinding"),
         _grab_fn(js, "checksSection"),
         "var raw = [{result:'fail', label:'Original value failure', reason:'Old value.'}];",
         "var current = [{result:'pass', label:'Fixed value pass', reason:'Re-check on new value.'}];",
@@ -3059,13 +3060,16 @@ def test_u35_af6_matched_badge_names_the_unchecked_check():
     # the audit and judgment lists use rowBadge; decided rows never read as code
     script = "\n".join([
         _grab_fn(js, "rowBadge"),
+        _grab_fn(js, "reviewBucket"),
+        _grab_fn(js, "projected"),
+        _grab_fn(js, "reviewClass"),
         "var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };",
         "var STATUS_WORDS = { matched: 'matched', failed: 'failed', proposed: 'proposed',"
         + " unreadable: 'unreadable', undecided: 'undecided' };",
         "function el(tag, cls, text) { return { tag: tag, className: cls, textContent: text || '',"
         + " title: '' }; }",
         "function statusBadge(s) { return el('span', 'st st-' + s, STATUS_WORDS[s]); }",
-        "function decidedBadge(g) { return el('span', 'st st-' + g, DECIDED_BADGE[g]); }",
+        "function decidedBadge(t) { return el('span', 'st st-' + t.group, DECIDED_BADGE[t.group]); }",
         "var both = { checks: [{ name: 'date_match', result: 'not_needed' },"
         + "                     { name: 'type_match', result: 'not_needed' },"
         + "                     { name: 'quote_found', result: 'pass' }],"
@@ -3089,6 +3093,94 @@ def test_u35_af6_matched_badge_names_the_unchecked_check():
     assert got.returncode == 0, got.stdout + got.stderr
 
 
+def test_review_labels_wiring_pins():
+    # GROUP-AXIS-001 (order against codex/pivot-001): the projection's fields
+    # are the authority when sent — review_label owns the row badge,
+    # decision_label/review_label the decided words, review_bucket the listed
+    # group and the badge colour, counts.review the Waiting-for-you number.
+    # Presence, not truthiness: without the projection every fallback is main's.
+    js = (UI / "app.js").read_text()
+    for word in ("function reviewBucket(t)", "function projected(t)", "function viewGroup(t)",
+                 "function reviewClass(t)", "function decidedWord(t, otherwise)", "function fixStillOpen(t)",
+                 "function groupCount(g)", "function keptCurrent(t)", "function decidedMark(t)",
+                 "function reviewAcceptedCount(st)", "function dateFinding(c)",
+                 "if (projected(t)) return t.decision_label || t.review_label;",
+                 "reviewCounts ? reviewCounts.proposed : unresolved.length",
+                 "keptCurrent(r.t) ? 'Kept by you; the event period ended"):
+        assert word in js, word
+    # every decided surface goes through decidedBadge(t) / decidedWord(t, …)
+    assert "decidedBadge(t.group)" not in js and "decidedBadge(e.t.group)" not in js
+    assert "t.decided_by_person && t.group === 'kept'" not in js
+    # F1: the list filter and its headings read the listed group, never the raw group
+    assert "rowTarget(r).group === g" not in js
+    assert "var g = viewGroup(rowTarget(r));" in _grab_fn(js, "visibleAuditRows")
+    # F6: calendarUndated had no caller — removed, not rewired
+    assert "calendarUndated" not in js
+
+
+def test_review_labels_badge_and_decided_words():
+    # The badge shows the projection's review_label with the bucket's colour;
+    # a superseded Keep reads as history — never 'Kept by you', never green.
+    # Labels are the exact strings from codex/pivot-001 runs/review.py.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    script = "\n".join([
+        _grab_fn(js, n) for n in ("reviewBucket", "projected", "reviewClass", "rowBadge", "decidedWord",
+                                  "decidedBadge", "keptCurrent", "decidedMark", "reviewAcceptedCount",
+                                  "needsAttention", "fixStillOpen")
+    ] + [
+        "var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };",
+        "var STATUS_WORDS = { matched: 'matched', failed: 'failed', proposed: 'proposed',"
+        + " unreadable: 'unreadable', undecided: 'undecided' };",
+        "function el(tag, cls, text) { return { tag: tag, className: cls, textContent: text || '', title: '' }; }",
+        "function statusBadge(s) { return el('span', 'st st-' + s, STATUS_WORDS[s]); }",
+        "function fail(n, m) { console.error(n + ': ' + m); process.exit(n); }",
+        "var acc = { group: 'kept', decided_by_person: true, last_action: 'keep', accepted: true, needs_attention: false,",
+        "  review_bucket: 'accepted', review_label: 'Accepted by you', decision_label: 'Kept by you' };",
+        "var b = rowBadge({}, acc);",
+        "if (b.textContent !== 'Accepted by you' || b.className !== 'st st-kept') fail(2, b.textContent + b.className);",
+        "if (decidedWord(acc, 'x') !== 'Kept by you') fail(3, decidedWord(acc, 'x'));",
+        "var stale = { group: 'kept', decided_by_person: true, last_action: 'keep', accepted: false, needs_attention: true,",
+        "  review_bucket: 'proposed', review_label: 'Previous Keep — needs your review',",
+        "  decision_label: 'Previous Keep — needs your review' };",
+        "var sb = rowBadge({}, stale), sd = decidedBadge(stale);",
+        "if (sb.className !== 'st st-corrected open' || sd.className !== 'st st-corrected open')"
+        + " fail(4, sb.className + '/' + sd.className);",
+        "if (/Kept by you/.test(sb.textContent + sd.textContent)) fail(5, 'stale reads as kept');",
+        "if (keptCurrent(stale) !== false) fail(6, 'stale reads as current');",
+        "if (fixStillOpen(stale) !== false) fail(7, 'stale reads as a fix');",
+        # F5: no doubled 'decided by you' when the label already names the person
+        "if (decidedMark(stale) || decidedMark(acc)) fail(8, 'doubled decided by you');",
+        "var fix = { group: 'corrected', decided_by_person: true, last_action: 'fix', accepted: false,",
+        "  needs_attention: true, review_bucket: 'proposed', review_label: 'Corrected, awaiting your review',",
+        "  decision_label: 'Fixed by you — not yet accepted' };",
+        "if (decidedMark(fix)) fail(9, 'doubled on a fix');",
+        "if (fixStillOpen(fix) !== true) fail(10, 'fix not open');",
+        # F7: projection present, decision_label null — review_label, never group words
+        "var f7 = { group: 'removed', decided_by_person: true, last_action: 'undo', accepted: false,",
+        "  needs_attention: false, review_bucket: 'excluded', review_label: 'Excluded', decision_label: null };",
+        "if (decidedWord(f7, 'x') !== 'Excluded') fail(11, decidedWord(f7, 'x'));",
+        "if (decidedBadge(f7).className !== 'st st-removed') fail(12, decidedBadge(f7).className);",
+        # no projection (main-shaped): main's words, main's per-surface fallbacks
+        "var kept = { checks: [], status: 'failed', decided_by_person: true, group: 'kept' };",
+        "if (rowBadge({}, kept).textContent !== 'Kept by you') fail(13, 'kept');",
+        "var open = { group: 'open', decided_by_person: true, needs_attention: true };",
+        "if (decidedBadge(open).textContent !== 'open' || decidedBadge(open).className !== 'st st-open')"
+        + " fail(14, 'open badge');",
+        "if (decidedWord(open, 'Fixed by you') !== 'Fixed by you') fail(15, 'open still-open word');",
+        "if (fixStillOpen(open) !== true) fail(16, 'main rule');",
+        "if (keptCurrent({ group: 'kept', decided_by_person: true }) !== true) fail(17, 'old kept');",
+        "if (decidedMark({ group: 'kept', decided_by_person: true }) !== true) fail(18, 'old mark');",
+        "if (decidedMark({ group: 'corrected', decided_by_person: true }) !== false) fail(19, 'old corrected mark');",
+        "if (reviewAcceptedCount({ counts: { review: { accepted: 3 } } }) !== 3) fail(20, 'count');",
+        "if (reviewAcceptedCount({ counts: {} }) !== null) fail(21, 'no count');",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
 def test_u35_af7_person_kept_unresolved_row_is_marked():
     # Red Team round 11 A-F7: a keep does not settle a disagreement or clear a
     # failed check — the calendar row wears a small warm marker next to the
@@ -3103,9 +3195,233 @@ def test_u35_af7_person_kept_unresolved_row_is_marked():
         assert word in (js + css), word
     # the marker only rides on person-kept rows
     cal = _grab_fn(js, "calRow")
-    assert "t.decided_by_person && t.group === 'kept'" in cal
+    assert "keptCurrent(t)" in cal
     pane = _grab_fn(js, "detailsPane")
     assert pane.index("Kept by you, but the check") < pane.index("var sec1")
+
+# The real app.js rendered under a stub DOM (node), one payload shape per call:
+# 'main' (no projection) and 'proj' (the codex/pivot-001 projection fields).
+# Rows: accepted Keep, superseded Keep, undecided group-kept row, Fix-only,
+# code-excluded, past Fix, no-date undecided, no-date Fix whose re-check could
+# not run (the Claude review's eight), plus a person's fix whose re-check
+# failed (group 'open', Red Team at 497aada) and a person-touched row that
+# code removed (F7).
+_REVIEW_RENDER_JS = r"""// GROUP-AXIS-001 render probe: the real app.js under a stub DOM, one payload
+// shape per call ('main' = no projection, 'proj' = codex/pivot-001 fields).
+const fs = require('fs');
+const [, , appPath, shape] = process.argv;
+function make(tag) {
+  return { tag, className: '', textContent: '', children: [], style: {}, hidden: false, value: '', dataset: {},
+    classList: { toggle() {}, add() {}, remove() {}, contains() { return false; } },
+    append(...a) { for (const c of a) this.children.push(typeof c === 'string' ? { textContent: c, children: [] } : c); },
+    appendChild(c) { this.children.push(c); return c; }, prepend(...a) { this.children.unshift(...a); },
+    addEventListener() {}, removeEventListener() {}, setAttribute(k, v) { this[k] = v; }, getAttribute() { return null; },
+    querySelector() { return null; }, querySelectorAll() { return []; }, focus() {}, scrollIntoView() {}, remove() {},
+    getBoundingClientRect() { return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }; },
+    set innerHTML(v) { this.children = []; this._html = v; }, get innerHTML() { return this._html || ''; },
+    firstChild: null };
+}
+const nodes = {};
+global.document = { createElement: make, createTextNode: t => ({ textContent: String(t), children: [] }),
+  getElementById: id => (nodes[id] = nodes[id] || make('div')), querySelector: () => null, querySelectorAll: () => [],
+  addEventListener() {}, body: make('body'), documentElement: make('html'), title: '' };
+global.window = { addEventListener() {}, location: { hash: '' }, matchMedia: () => ({ matches: false, addEventListener() {} }),
+  setTimeout, history: { replaceState() {}, pushState() {} }, getComputedStyle: () => ({}) };
+global.location = window.location; global.history = window.history;
+global.localStorage = { getItem() { return null; }, setItem() {} };
+global.fetch = () => new Promise(() => {});
+global.requestAnimationFrame = () => 0;
+let src = fs.readFileSync(appPath, 'utf8');
+src = src.replace(/route = parseHash\(\);\s*boot\(\);\s*\}\)\(\);\s*$/,
+  'global.__H = { get detail(){return detail;}, set detail(v){detail=v;}, ev: function(s){ return eval(s); } };\n})();');
+if (!/global\.__H/.test(src)) throw new Error('no boot hook');
+eval(src);
+const H = global.__H;
+const proj = shape === 'proj';
+// the date check: the pivot's label on the projected payload, main's label otherwise
+const dateCheck = { name: 'date_match', label: proj ? 'Date wording present in quote' : 'Date read as written', result: 'pass' };
+function row(id, title, extra) {
+  return Object.assign({ id, title, ticker: 'ACME', proposed_by: 'Muse Spark',
+    checks: [{ name: 'quote_found', label: 'Quote found', result: 'pass' }, dateCheck],
+    date_text: 'Q3 2027', date: null, event_type: 'filing', quote: 'q', source_id: 's1', page_number: 1 }, extra || {});
+}
+const rows = [row('r-acc', 'ACCEPTED'), row('r-stale', 'STALE-KEEP'), row('r-und', 'UNDECIDED-KEPT-GROUP'),
+  row('r-fix', 'FIX-ONLY'), row('r-exc', 'CODE-EXCLUDED'), row('r-past', 'PAST-FIXED', { date_text: '2020', date: '2020-01-01' }),
+  row('r-nod', 'NODATE-UNDECIDED', { date_text: '', date: null }), row('r-cnr', 'NODATE-FIX-COULDNOTRUN', { date_text: '', date: null }),
+  row('r-open', 'FIX-RECHECK-FAILED'), row('r-f7', 'TOUCHED-CODE-REMOVED')];
+const base = { status: 'matched', needs_recheck: false, recheck: null, fixes: [], values: { date_text: 'Q3 2027' }, reason: null, disagreement: null };
+// [main-shaped target, projection fields from codex/pivot-001 runs/review.py]
+const P = {
+  'r-acc': [{ group: 'kept', decided_by_person: true, last_action: 'keep', needs_attention: false },
+    { accepted: true, on_calendar: true, review_label: 'Accepted by you', decision_label: 'Kept by you', review_bucket: 'accepted', needs_attention: false }],
+  'r-stale': [{ group: 'kept', decided_by_person: true, last_action: 'keep', needs_attention: false },
+    { accepted: false, on_calendar: false, review_label: 'Previous Keep — needs your review', decision_label: 'Previous Keep — needs your review', review_bucket: 'proposed', needs_attention: true, reason: 'The proposal or evidence changed after this Keep; review is required.' }],
+  'r-und': [{ group: 'kept', decided_by_person: false, needs_attention: false },
+    { accepted: false, on_calendar: false, review_label: 'Proposed — needs review', decision_label: null, review_bucket: 'proposed', needs_attention: true }],
+  'r-fix': [{ group: 'corrected', decided_by_person: true, last_action: 'fix', needs_attention: false, fixes: [{ field: 'date_text', from: 'Q2 2027', to: 'Q3 2027', mistake: true, recheck: { result: 'pass' } }], recheck: { result: 'pass' } },
+    { accepted: false, on_calendar: false, review_label: 'Corrected, awaiting your review', decision_label: 'Fixed by you — not yet accepted', review_bucket: 'proposed', needs_attention: true }],
+  'r-exc': [{ group: 'removed', decided_by_person: false, needs_attention: false },
+    { accepted: false, on_calendar: false, review_label: 'Excluded', decision_label: null, review_bucket: 'excluded', needs_attention: false }],
+  'r-nod': [{ group: 'kept', decided_by_person: false, needs_attention: false, values: {} },
+    { accepted: false, on_calendar: false, review_label: 'Proposed — needs review', decision_label: null, review_bucket: 'proposed', needs_attention: true }],
+  'r-cnr': [{ group: 'corrected', decided_by_person: true, last_action: 'fix', needs_attention: true, values: {}, fixes: [{ field: 'title', from: 'a', to: 'b', mistake: false, recheck: { result: 'could_not_run' } }], recheck: { result: 'could_not_run' } },
+    { accepted: false, on_calendar: false, review_label: 'Corrected, awaiting your review', decision_label: 'Fixed by you — not yet accepted', review_bucket: 'proposed', needs_attention: true }],
+  'r-past': [{ group: 'corrected', decided_by_person: true, last_action: 'fix', needs_attention: false, values: { date_text: '2020', date: '2020-01-01' } },
+    { accepted: false, on_calendar: false, review_label: 'Corrected, awaiting your review', decision_label: 'Fixed by you — not yet accepted', review_bucket: 'proposed', needs_attention: true }],
+  // Red Team at 497aada: a person's fix whose re-check failed sits in group 'open'
+  'r-open': [{ group: 'open', decided_by_person: true, last_action: 'fix', needs_attention: true, status: 'failed', reason: 'The re-check failed.', fixes: [{ field: 'date_text', from: 'Q2 2027', to: 'Q3 2027', mistake: false, recheck: { result: 'fail' } }], recheck: { result: 'fail' } },
+    { accepted: false, on_calendar: false, review_label: 'Corrected, awaiting your review', decision_label: 'Fixed by you — not yet accepted', review_bucket: 'proposed', needs_attention: true }],
+  // F7: a person touched it, code removed it, nothing accepted or removed by the person
+  'r-f7': [{ group: 'removed', decided_by_person: true, last_action: 'undo', needs_attention: false },
+    { accepted: false, on_calendar: false, review_label: 'Excluded', decision_label: null, review_bucket: 'excluded', needs_attention: false }],
+};
+const MAINCAL = { 'r-acc': true, 'r-stale': true, 'r-und': true, 'r-fix': true, 'r-exc': false, 'r-past': true, 'r-nod': true, 'r-cnr': false, 'r-open': false, 'r-f7': false };
+const targets = {};
+for (const r of rows) {
+  const k = r.id;
+  targets[k] = Object.assign({}, base, { on_calendar: MAINCAL[k], effective_checks: r.checks }, P[k][0], proj ? P[k][1] : {});
+}
+const groups = { kept: 0, corrected: 0, removed: 0, unverified: 0, open: 0 };
+for (const k in targets) groups[targets[k].group]++;
+const counts = { rows: groups, cells: {}, fixes_pending: 0, edits_without_error: 0, excluded_by_person: 0 };
+const buckets = { accepted: 0, proposed: 0, excluded: 0 };
+for (const k in targets) if (proj) buckets[targets[k].review_bucket]++;
+if (proj) counts.review = buckets;
+const unresolvedMain = Object.keys(targets).filter(k => targets[k].needs_attention).length;
+const state = { targets, counts, mistakes: { code: 0, second_reader: 0, person: 1 }, mistake_list: [], excluded: { code: 2, person: 0 },
+  exclusions: [{ target: 'r-exc', by: 'code', rule: 'event_in_past', reason: 'past' }, { target: 'r-f7', by: 'code', rule: 'event_in_past', reason: 'past' }],
+  unresolved: proj ? buckets.proposed : unresolvedMain, ignored: [], kept_rows: proj ? buckets.accepted : groups.kept, cost_per_kept_row_usd: null };
+H.detail = { id: 'run1', run: { rows, calendar_window: { start: '2026-10-01' }, run: { id: 'run1', label: 'probe', started: '2026-10-01T00:00:00Z' },
+  sources: [{ id: 's1', kind: 'pdf', title: 'S', publisher: 'P' }], mistakes: [], tables: [] }, state };
+function textOf(n, out) { out = out || []; if (!n) return out; if (n.textContent) out.push(n.textContent); (n.children || []).forEach(c => textOf(c, out)); return out; }
+function cls(n, out) { out = out || []; if (!n) return out; if (n.className && /\b(st|dot)\b/.test(n.className)) out.push(n.className + ' :: ' + n.textContent); (n.children || []).forEach(c => cls(c, out)); return out; }
+// the date check line in a pane: [dot class, result word]
+function dateLine(n, out) {
+  out = out || []; if (!n) return out;
+  if (n.className === 'chk' && n.children.length >= 3 && textOf(n.children[1]).join('').indexOf('Date ') === 0)
+    out.push([n.children[0].className, n.children[2].textContent]);
+  (n.children || []).forEach(c => dateLine(c, out)); return out;
+}
+H.ev("route = { screen: 'audit', runId: 'run1', rowId: null, dialog: null }");
+const out = {};
+function run(name, fn, nodeId) {
+  try { const r = fn(); const n = nodeId ? nodes[nodeId] : r; out[name] = { text: textOf(n), badges: cls(n), date: dateLine(n) }; }
+  catch (e) { out[name] = 'ERR ' + e.message.split('\n')[0]; }
+  finally { if (nodeId) delete nodes[nodeId]; }
+}
+run('facets', () => H.ev('renderAuditFacets()'), 'audit-facets');
+run('auditRows_ALL', () => { H.ev("audit.filter='ALL'; audit.selected='r-acc'"); H.ev('renderAuditRows()'); }, 'audit-rows');
+for (const g of ['kept', 'proposed', 'corrected', 'removed', 'open'])
+  run('auditRows_' + g, () => { H.ev("audit.filter='" + g + "'"); H.ev('renderAuditRows()'); }, 'audit-rows');
+H.ev("audit.filter='ALL'");
+run('judgment_sub', () => H.ev('renderJudgment()'), 'judgment-sub');
+run('judgment_rows', () => H.ev('renderJudgment()'), 'judgment-rows');
+run('calendar', () => { H.ev('renderCalendar()'); }, 'cal-mid');
+run('export', () => H.ev('renderExport()'), 'exp-det');
+for (const r of rows) {
+  run('pane_' + r.id, () => { const host = make('div'); H.ev('detailsPane')(host, H.ev('rowOf')(r.id), { actions: true, back: 'audit' }); return host; });
+  run('jpane_' + r.id, () => { const host = make('div'); const t = H.ev('rowTarget')(r);
+    (t.decided_by_person && !H.ev('needsAttention')(t) ? H.ev('judgmentDecidedPane') : H.ev('judgmentPendingPane'))(host, r, t); return host; });
+}
+console.log(JSON.stringify(out, null, 1));
+"""
+
+# sha256 of the main-shaped render by main's own app.js (746385f; ui/ is
+# unchanged on main since): without the projection the render is main's.
+_MAIN_SHAPED_RENDER_SHA256 = "b717638e8ab733f9dccb9a47e6431d38eb99c52512de81dac3b4d375c540cacb"
+
+
+def _review_render(tmp_path, shape):
+    import json
+    import subprocess
+
+    script = tmp_path / "render.js"
+    script.write_text(_REVIEW_RENDER_JS)
+    got = subprocess.run(["node", str(script), str(UI / "app.js"), shape],
+                         text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stderr
+    return got.stdout, json.loads(got.stdout)
+
+
+def test_review_projection_rendered_counts_lists_and_badges(tmp_path):
+    _, out = _review_render(tmp_path, "proj")
+    for name, v in out.items():
+        assert not isinstance(v, str), (name, v)
+    rows = 10
+
+    def facet(text, name):
+        return int(text[text.index(name + " ") + 1])
+
+    facets = out["facets"]["text"]
+    summary = out["export"]["text"]
+    assert summary[0] == "Summary — the same counts as the audit log"
+    total = 0
+    for name in ("Checked and kept", "Proposed — needs review", "Corrected", "Checked and removed",
+                 "Unverified", "Still open"):
+        n = facet(facets, name)
+        # F2: each summary line is its facet's number
+        assert summary[summary.index(name) + 1] == str(n), name
+        total += n
+    assert total == rows                                   # F2: every row is on a line
+    # F1: the kept facet == its filtered list == its heading == the accepted row
+    kept_n = facet(facets, "Checked and kept")
+    assert kept_n == 1
+    kept_list = out["auditRows_kept"]["text"]
+    assert kept_list.count("ACME") == kept_n and "ACCEPTED" in kept_list
+    assert "Checked and kept · %d" % kept_n in out["auditRows_ALL"]["text"]
+    for key, name in (("proposed", "Proposed — needs review"), ("corrected", "Corrected"),
+                      ("removed", "Checked and removed"), ("open", "Still open")):
+        n = facet(facets, name)
+        assert out["auditRows_" + key]["text"].count("ACME") == n, key
+        assert "%s · %d" % (name, n) in out["auditRows_ALL"]["text"], key
+    # nothing says kept/accepted unless accepted is true; code removals are
+    # never 'Removed by you' (F7); nothing non-accepted is green
+    for rid in ("r-stale", "r-und", "r-fix", "r-exc", "r-past", "r-nod", "r-cnr", "r-open", "r-f7"):
+        for surface in ("pane_", "jpane_"):
+            text = " ".join(out[surface + rid]["text"])
+            for word in ("Kept by you", "Accepted by you", "Removed by you"):
+                assert word not in text, (surface, rid, word)
+            assert not any(b.startswith("st st-kept ") for b in out[surface + rid]["badges"]), (surface, rid)
+    alltext = " ".join(" ".join(v["text"]) for v in out.values())
+    assert "decided by you" not in alltext                 # F5: no doubled marker
+    # F3/F4: the superseded Keep is amber and never a fix
+    stale = out["jpane_r-stale"]["text"]
+    assert "Undo" not in stale and "Fix again…" not in stale
+    assert not any("Keep accepts the fixed value" in t or "· still open" in t for t in stale)
+    for surface in ("pane_r-stale", "jpane_r-stale", "auditRows_ALL", "judgment_rows"):
+        assert "st st-corrected open :: Previous Keep — needs your review" in out[surface]["badges"], surface
+    # a Fix not yet accepted keeps the fix pane (Undo offered)
+    assert "Undo" in out["jpane_r-fix"]["text"]
+    assert "st st-removed :: Excluded" in out["pane_r-f7"]["badges"]
+    assert "st st-kept :: Kept by you" in out["pane_r-acc"]["badges"]
+    assert "st st-kept :: Accepted by you" in out["auditRows_ALL"]["badges"]
+    assert out["judgment_sub"]["text"] == ["Waiting for your decision · 7"]
+    # DATE-LITERAL-001: a passing date check under the pivot's label is a
+    # neutral finding — amber dot, no pass/green class, no 'passed'
+    for rid in ("r-acc", "r-stale", "r-fix"):
+        lines = out["pane_" + rid]["date"]
+        assert lines, rid
+        for dot, word in lines:
+            assert "pass" not in dot.split() and "unresolved" in dot.split(), (rid, dot)
+            assert word != "passed", rid
+
+
+def test_review_projection_fallback_is_main_byte_for_byte(tmp_path):
+    import hashlib
+
+    raw, out = _review_render(tmp_path, "main")
+    # readable pins first, so a regression names itself
+    facets = out["facets"]["text"]
+    assert facets[facets.index("Checked and kept ") + 1] == "4"
+    assert "Proposed — needs review " not in facets
+    assert "Kept by you" in out["pane_r-stale"]["text"]
+    listed = " ".join(out["judgment_rows"]["text"])
+    # Red Team at 497aada: a person's fix whose re-check failed (group 'open')
+    assert "Fixed by you · still open" in listed and "Decided by you · still open" not in listed
+    assert "st st-open :: open" in out["pane_r-open"]["badges"]
+    assert out["pane_r-acc"]["date"] == [["dot pass", "passed"]]   # main's date label: main's style
+    # and the whole render, byte for byte, is main's
+    assert hashlib.sha256(raw.encode()).hexdigest() == _MAIN_SHAPED_RENDER_SHA256
 
 
 def test_u35_af8_fold_representative_is_the_unsettled_source():
@@ -3580,7 +3896,7 @@ def _render_card_and_summary(meta: dict, accepted: int = 0) -> dict:
     consts = "\n".join(_grab_var(js, n) for n in ("GROUP_NAMES", "GROUP_ORDER", "JOB_STATUS_WORDS", "JOB_ACTIVE",
                                                    "JOB_PAUSABLE", "JOB_LIMIT_STOP"))
     fns = "\n".join(_grab_fn(js, n) for n in ("money", "cents", "costPerKeptRowWords", "unpricedMark", "jobReason",
-                                               "updateRunCardJob", "renderExport"))
+                                               "updateRunCardJob", "renderExport", "reviewAcceptedCount"))
     script = f"""
 function make() {{
   return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, hidden: false, value: '',
