@@ -920,8 +920,8 @@ class Job:
                 self.meta["spend_usd"] = disk
 
     def _before_fallback(self, silent_reply) -> bool:
-        """The second reader's Baseten call got no answer and OpenRouter is next. Count the silent turn now (unpriced
-        under a limit), then put the fallback call through the one gate (_stopped_before_a_call). False: the fallback is not made."""
+        """Count the failed primary attempt, then ask the ordinary gate before OpenRouter.
+        A possibly billed attempt stays unknown with or without a limit. False means no fallback."""
         with RUN_LOCK:
             self.refresh_spend()
             self._count_turn(silent_reply)
@@ -944,6 +944,10 @@ class Job:
     def _count_turn(self, reply) -> None:
         self.meta["turn_count"] += 1
         self.meta["turns_total"] += 1
+        classification = (reply.extra or {}).get("billing_classification_reason")
+        if classification:
+            self.job["log"].append({"at": now_utc(), "note": classification,
+                                    "model": price_name(reply.model)})
         if reply.images is not None:      # a model priced per image (SAM 3.1)
             cost = prices.image_cost_usd(price_name(reply.model), reply.images)
         else:
@@ -961,9 +965,10 @@ class Job:
                 self.job["openrouter_spend_usd"] = round(self.job.get("openrouter_spend_usd", 0.0) + cost,
                                                          prices.ROUND_TO)
         counted = False
-        if cost is None and ((reply.error and reply.timed_out and (reply.extra or {}).get("may_have_been_billed", True))
+        if cost is None and ((reply.error and (reply.extra or {}).get("may_have_been_billed", reply.timed_out))
                              or not reply.error):
-            # a call that got no answer cost an unknown amount, unless every failure was connect-only (nothing was sent);
+            # A failed attempt explicitly marked possibly billed has unknown cost;
+            # an explicit known-unbilled classification (e.g. connect-only) does not.
             # Job 51h: a possibly-billed failure is counted whether or not the run has a spending limit;
             # Job 51k: so is a successful reply whose cost cannot be priced (no usage, or a returned model with no price)
             self.job["unpriced_calls"] += 1
@@ -1477,6 +1482,11 @@ class Job:
                 reply = self.second.call(prompt, image=scan.crop_png(png, crop, w))
                 self.count_turn(reply)
                 if reply.error:
+                    if (reply.extra or {}).get("fallback_skipped"):
+                        # The admission gate already paused the run. A refusal
+                        # is not a page failure and must not lead to skip_page.
+                        self.save()
+                        return None
                     self.stop("failed", f"The image reader: {reply.error} Resume to try again.")
                     return None
                 st["reads"][region["id"]] = {"region_id": region["id"], "crop": crop, "model": reply.model,
@@ -1572,6 +1582,12 @@ class Job:
                 parsed, why = None, reply.error
                 break
             if reply.error:
+                if (reply.extra or {}).get("fallback_skipped"):
+                    # The admission gate has already paused the job. Keep its
+                    # reason and the first reading, not a generic failed state.
+                    self.note_second(sid, "unreadable", reply.error, price_name(reply.model), got)
+                    self.save()
+                    return False
                 self.stop("failed", f"The second reader: {reply.error} Resume to try again.")
                 return False
             parsed, why = parse(reply.raw)
