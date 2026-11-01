@@ -1,0 +1,58 @@
+{
+  "id": "filing_vs_approval",
+  "pivot_example": "filing-vs-approval contrast",
+  "source": {
+    "run": "runs/sample",
+    "source_id": "smp-release-e",
+    "synthetic_sample_source": true,
+    "words_file": "pages/smp-release-e-p1.words.json",
+    "page_number": 1
+  },
+  "passage": "Samplebio Six expects to file its application on August 2, 2027.",
+  "passage_range": [
+    22,
+    32
+  ],
+  "expected_proposals": [
+    {
+      "action": "file the application",
+      "type_words": [
+        "file",
+        "application"
+      ],
+      "subject": {
+        "program": null,
+        "company": "Samplebio Six",
+        "company_origin": "printed"
+      },
+      "timing_as_printed": "August 2, 2027",
+      "conditions_stated": [
+        "expects to file"
+      ],
+      "conditions_proposed_inferred": [
+        "a planned submission \u2014 not a completed filing, not an approval or decision"
+      ],
+      "expected_review_outcome": "proposed",
+      "review_reason": "A planned filing is a legitimate catalyst proposal \u2014 but it is a filing, not an approval. Turning it into an FDA approval or a regulatory decision misstates the action.",
+      "item_range": [
+        22,
+        32
+      ],
+      "evidence_spans": [
+        {
+          "kind": "sentence",
+          "quote": "Samplebio Six expects to file its application on August 2, 2027.",
+          "word_range": [
+            22,
+            32
+          ]
+        }
+      ]
+    }
+  ],
+  "unsupported_pairings": [
+    "FDA approval on August 2, 2027 \u2014 a different action the page does not state",
+    "regulatory decision on August 2, 2027 \u2014 the stored run's row typed this sentence 'regulatory_decision'; the printed action is the company's own filing",
+    "June 30, 2027 \u2014 the FDA target action date belongs to a different, already-submitted application"
+  ]
+}

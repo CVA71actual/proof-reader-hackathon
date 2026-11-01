@@ -1,0 +1,94 @@
+{
+  "id": "cross_program_timing_isolation",
+  "pivot_example": "cross-program timing isolation (not the connected-sentence case)",
+  "source": {
+    "run": "runs/ptgx-r4a",
+    "source_id": "src-ptgx-8k-2026-08-05-ex991",
+    "synthetic_sample_source": false,
+    "words_file": "pages/p3.words.json",
+    "page_number": 3
+  },
+  "passage": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027. \u00b7 PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
+  "passage_range": [
+    1,
+    40
+  ],
+  "expected_proposals": [
+    {
+      "action": "Phase 1 initiation",
+      "type_words": [
+        "Phase 1",
+        "initiation"
+      ],
+      "subject": {
+        "program": "PN-458o",
+        "company": "Protagonist Therapeutics",
+        "company_origin": "run_assignment"
+      },
+      "timing_as_printed": "the second half of 2027",
+      "conditions_stated": [
+        "anticipated",
+        "IND-enabling studies are ongoing"
+      ],
+      "conditions_proposed_inferred": [
+        "expected but not scheduled"
+      ],
+      "expected_review_outcome": "proposed",
+      "review_reason": "First bullet item, its own program and timing.",
+      "item_range": [
+        1,
+        20
+      ],
+      "evidence_spans": [
+        {
+          "kind": "item",
+          "quote": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
+          "word_range": [
+            1,
+            20
+          ]
+        }
+      ]
+    },
+    {
+      "action": "Phase 1 initiation",
+      "type_words": [
+        "Phase 1",
+        "initiation"
+      ],
+      "subject": {
+        "program": "PN-8047",
+        "company": "Protagonist Therapeutics",
+        "company_origin": "run_assignment"
+      },
+      "timing_as_printed": "Q1 2027",
+      "conditions_stated": [
+        "anticipated",
+        "IND-enabling studies are ongoing"
+      ],
+      "conditions_proposed_inferred": [
+        "expected but not scheduled"
+      ],
+      "expected_review_outcome": "proposed",
+      "review_reason": "Second bullet item, its own program and timing.",
+      "item_range": [
+        22,
+        40
+      ],
+      "evidence_spans": [
+        {
+          "kind": "item",
+          "quote": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
+          "word_range": [
+            22,
+            40
+          ]
+        }
+      ]
+    }
+  ],
+  "unsupported_pairings": [
+    "PN-8047 in the second half of 2027 or PN-458o in Q1 2027 \u2014 cross-program timing swaps",
+    "a single composite 'Phase 1 initiations in 2027' event \u2014 one proposal per program"
+  ]
+}

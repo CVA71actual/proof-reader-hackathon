@@ -1,0 +1,91 @@
+{
+  "id": "unrelated_nearby_date",
+  "pivot_example": "unrelated nearby date",
+  "source": {
+    "run": "runs/sample",
+    "source_id": "smp-filing-b",
+    "synthetic_sample_source": true,
+    "words_file": "pages/smp-filing-b-p1.words.json",
+    "page_number": 1
+  },
+  "passage": "The FDA has set a target action date of June 30, 2027. Our partner Samplebio Three will host its investor day on September 15, 2027.",
+  "passage_range": [
+    14,
+    38
+  ],
+  "expected_proposals": [
+    {
+      "action": "FDA target action date for the application under review",
+      "type_words": [
+        "target action date"
+      ],
+      "subject": {
+        "program": null,
+        "company": "Samplebio Two",
+        "company_origin": "printed"
+      },
+      "timing_as_printed": "June 30, 2027",
+      "conditions_stated": [
+        "target"
+      ],
+      "conditions_proposed_inferred": [
+        "a target date is a plan, not a rendered decision"
+      ],
+      "expected_review_outcome": "proposed",
+      "review_reason": "The agency's stated target date for the assigned company's application.",
+      "item_range": [
+        14,
+        25
+      ],
+      "evidence_spans": [
+        {
+          "kind": "sentence",
+          "quote": "The FDA has set a target action date of June 30, 2027.",
+          "word_range": [
+            14,
+            25
+          ]
+        }
+      ]
+    },
+    {
+      "action": "host an investor day",
+      "type_words": [
+        "investor day"
+      ],
+      "subject": {
+        "program": null,
+        "company": "Samplebio Three",
+        "company_origin": "printed"
+      },
+      "timing_as_printed": "September 15, 2027",
+      "conditions_stated": [
+        "Our partner"
+      ],
+      "conditions_proposed_inferred": [
+        "the partner's own event; its relevance to the assigned company's calendar is for a person to decide"
+      ],
+      "expected_review_outcome": "needs attention",
+      "review_reason": "A partner's event, not the assigned company's \u2014 kept visible with its actor recorded so a person can weigh relevance.",
+      "item_range": [
+        26,
+        38
+      ],
+      "evidence_spans": [
+        {
+          "kind": "sentence",
+          "quote": "Our partner Samplebio Three will host its investor day on September 15, 2027.",
+          "word_range": [
+            26,
+            38
+          ]
+        }
+      ]
+    }
+  ],
+  "unsupported_pairings": [
+    "September 15, 2027 attached to the FDA target action date or to Samplebio Two's application",
+    "June 30, 2027 attached to the investor day",
+    "Samplebio Two named as host \u2014 the host is the partner Samplebio Three"
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "id": "connected_sentences_action_timing",
+  "pivot_example": "action + timing in connected sentences",
+  "note": "The stored corpus \u2014 the synthetic runs/sample (and runs/demo) pages and the real runs/ptgx-r4a page \u2014 contains no sentence pair that splits an action from its timing, so this case's passage is synthetic and labelled; it is plumbing-valid only.",
+  "source": {
+    "run": null,
+    "source_id": "synthetic",
+    "synthetic_sample_source": true,
+    "words_file": null,
+    "page_number": null
+  },
+  "passage": "Samplebio One plans to present updated 52-week data from the STAR-1 trial. That presentation is expected in Q3 2027.",
+  "passage_range": null,
+  "expected_proposals": [
+    {
+      "action": "present updated 52-week data",
+      "type_words": [
+        "present",
+        "data"
+      ],
+      "subject": {
+        "program": "STAR-1",
+        "company": "Samplebio One",
+        "company_origin": "synthetic"
+      },
+      "timing_as_printed": "Q3 2027",
+      "conditions_stated": [
+        "plans to",
+        "expected"
+      ],
+      "conditions_proposed_inferred": [
+        "announced intent, not a completed event"
+      ],
+      "expected_review_outcome": "proposed",
+      "review_reason": "The action sentence and the timing sentence are connected: 'That presentation' resolves to the 52-week data presentation in sentence one, so one proposal joins them \u2014 action from the first sentence, timing from the second. A reader treating each sentence alone either drops the event or invents an undated second one.",
+      "item_range": null,
+      "evidence_spans": [
+        {
+          "kind": "action_sentence",
+          "quote": "Samplebio One plans to present updated 52-week data from the STAR-1 trial.",
+          "word_range": null
+        },
+        {
+          "kind": "timing_sentence",
+          "quote": "That presentation is expected in Q3 2027.",
+          "word_range": null
+        }
+      ]
+    }
+  ],
+  "unsupported_pairings": [
+    "an undated 'plans to present' proposal plus a separate orphaned 'Q3 2027' event \u2014 the timing belongs to the first sentence's action",
+    "any timing for the STAR-1 topline readout itself \u2014 this passage dates the presentation, not the readout"
+  ]
+}

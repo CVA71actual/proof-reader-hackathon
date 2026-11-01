@@ -1,0 +1,23 @@
+{
+  "id": "balance_sheet_nearby_date",
+  "pivot_example": "unrelated nearby date \u2014 balance-sheet snapshot dates",
+  "source": {
+    "run": "runs/ptgx-r4a",
+    "source_id": "src-ptgx-8k-2026-08-05-ex991",
+    "synthetic_sample_source": false,
+    "words_file": "pages/p3.words.json",
+    "page_number": 3
+  },
+  "passage": "Cash, cash equivalents and marketable securities as of June 30, 2026, were $849.5 million as compared to $646.0 million as of December 31, 2025.",
+  "passage_range": [
+    73,
+    96
+  ],
+  "expected_proposals": [],
+  "unsupported_pairings": [
+    "June 30, 2026 or December 31, 2025 proposed as an event date \u2014 they are balance-sheet snapshot dates inside a past financial statement",
+    "a cash-balance 'event' \u2014 a financial figure at a date is not a calendar catalyst"
+  ],
+  "expected_review_outcome": "no proposal",
+  "review_reason": "Two printed dates sit inside a statement of past financial position; neither is an event. This is the real-page counterpart of the reporting-period-end rule: nearby dates that belong to a snapshot, not to any development."
+}

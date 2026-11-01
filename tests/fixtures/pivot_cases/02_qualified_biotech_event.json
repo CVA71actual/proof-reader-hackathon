@@ -1,0 +1,84 @@
+{
+  "id": "qualified_biotech_event",
+  "pivot_example": "qualified biotech event",
+  "source": {
+    "run": "runs/ptgx-r4a",
+    "source_id": "src-ptgx-8k-2026-08-05-ex991",
+    "synthetic_sample_source": false,
+    "words_file": "pages/p3.words.json",
+    "page_number": 3
+  },
+  "passage": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
+  "passage_range": [
+    22,
+    40
+  ],
+  "expected_proposals": [
+    {
+      "action": "Phase 1 initiation",
+      "type_words": [
+        "Phase 1",
+        "initiation"
+      ],
+      "subject": {
+        "program": "PN-8047",
+        "company": "Protagonist Therapeutics",
+        "company_origin": "run_assignment"
+      },
+      "timing_as_printed": "Q1 2027",
+      "conditions_stated": [
+        "anticipated",
+        "IND-enabling studies are ongoing"
+      ],
+      "conditions_proposed_inferred": [
+        "'anticipated' means expected but not scheduled \u2014 an interpretation of the printed word",
+        "initiation would follow completion of the IND-enabling work \u2014 an interpretation of 'ongoing', not a source qualification"
+      ],
+      "expected_review_outcome": "proposed",
+      "review_reason": "A real company pipeline item with named program, stated phase and printed timing. The proposal keeps 'anticipated' and the ongoing IND-enabling status as printed; the dependency reading is proposed interpretation, not text every reader must extract.",
+      "item_range": [
+        22,
+        40
+      ],
+      "evidence_spans": [
+        {
+          "kind": "actor",
+          "quote": "PN-8047 (oral small molecule hepcidin functional mimetic):",
+          "word_range": [
+            22,
+            28
+          ]
+        },
+        {
+          "kind": "condition_stated",
+          "quote": "IND-enabling studies are ongoing,",
+          "word_range": [
+            29,
+            32
+          ]
+        },
+        {
+          "kind": "action",
+          "quote": "with Phase 1 initiation",
+          "word_range": [
+            33,
+            36
+          ]
+        },
+        {
+          "kind": "timing",
+          "quote": "anticipated in Q1 2027.",
+          "word_range": [
+            37,
+            40
+          ]
+        }
+      ]
+    }
+  ],
+  "unsupported_pairings": [
+    "the second half of 2027 \u2014 that timing belongs to PN-458o in the adjacent bullet",
+    "Phase 1 initiated / started \u2014 'anticipated' is a qualified plan, not an accomplished fact",
+    "the dependency condition presented as source-stated \u2014 it is proposed interpretation"
+  ]
+}

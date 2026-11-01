@@ -1,0 +1,54 @@
+{
+  "id": "exact_date_results_release",
+  "pivot_example": "easy earnings event \u2014 closest stored analogue",
+  "source": {
+    "run": "runs/sample",
+    "source_id": "smp-release-e",
+    "synthetic_sample_source": true,
+    "words_file": "pages/smp-release-e-p1.words.json",
+    "page_number": 1
+  },
+  "passage": "Samplebio Six will report final results on July 19, 2027.",
+  "passage_range": [
+    12,
+    21
+  ],
+  "expected_proposals": [
+    {
+      "action": "report results",
+      "type_words": [
+        "report",
+        "final results"
+      ],
+      "subject": {
+        "program": null,
+        "company": "Samplebio Six",
+        "company_origin": "printed"
+      },
+      "timing_as_printed": "July 19, 2027",
+      "expected_review_outcome": "proposed",
+      "review_reason": "An announced release on one exact printed day, one actor, no condition \u2014 the simplest event this calendar exists for. 'final results' does not establish financial earnings and no stored page carries an announced earnings release or call, so the easy-earnings shape is represented by its closest stored analogue only.",
+      "conditions_stated": [],
+      "conditions_proposed_inferred": [],
+      "item_range": [
+        12,
+        21
+      ],
+      "evidence_spans": [
+        {
+          "kind": "sentence",
+          "quote": "Samplebio Six will report final results on July 19, 2027.",
+          "word_range": [
+            12,
+            21
+          ]
+        }
+      ]
+    }
+  ],
+  "unsupported_pairings": [
+    "July 9, 2027 \u2014 the page prints the 19th; the stored run's own row read 'July 9' and was marked failed",
+    "an earnings/financial-results label \u2014 'final results' alone does not establish financial earnings",
+    "August 2, 2027 \u2014 that date belongs to the filing sentence"
+  ]
+}
