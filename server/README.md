@@ -91,6 +91,14 @@ A decision by anyone but the person (`"by": "model"`), or a `recheck` sent by a 
 
 ## Run controls (R6)
 
+`GET /api/companies`: the selectable companies of the sources index a new run will read —
+`{"companies": [...], "listed_without_pages": [...]}`. `companies` is exactly what `"companies": ["all"]`
+resolves to (one rule, `jobs.selectable_companies`: every company with a page to read; a scan-only
+company is not one). `listed_without_pages` names the companies the index lists with no page (never one
+that has pages); the dialog shows them as plain names with "No pages read yet", not selectable. A broken
+index answers 409 with its plain sentence in `detail`, which the dialog shows in its red line. The New
+Run dialog renders this list; no company name is hard-coded in the UI.
+
 `POST /api/runs/new` starts a run from the New run panel's choices. Body (all five keys, same names as
 `run.json` `run.choices`):
 

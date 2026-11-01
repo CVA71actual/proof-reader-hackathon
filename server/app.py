@@ -285,6 +285,17 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         """The run the app opens on when the address names none (`python -m runs.demo --run X`); null: the UI's own pick."""
         return {"default_run": default_run if default_run in store.ids() else None}
 
+    @app.get("/api/companies")
+    def get_companies() -> dict:
+        """The selectable companies of the sources index a new run will read. The New
+        Run dialog renders this list, so no company name is hard-coded in the UI."""
+        try:
+            idx = index or sources.load_index()
+        except sources.SourcesError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        selectable, listed_without_pages = jobs.selectable_companies(idx)   # the same rule as ["all"]
+        return {"companies": sorted(selectable), "listed_without_pages": sorted(listed_without_pages)}
+
     @app.get("/api/runs")
     def list_runs() -> list[dict]:
         out = []

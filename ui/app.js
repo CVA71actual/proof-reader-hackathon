@@ -41,8 +41,6 @@
     done: 'done', failed: 'failed' };
   var JOB_ACTIVE = ['queued', 'running'];
   var JOB_PAUSABLE = ['paused_turn_limit', 'needs_input', 'failed'];
-  var NEW_RUN_COMPANIES = ['IONS', 'PTGX', 'ABVX', 'ROIV', 'ZLAB', 'CLDX',
-                           'VKTX', 'TSHA', 'MNPR', 'ENTA', 'RYTM', 'RVMD'];
   var NEW_RUN_TYPES = [['trial_results', 'Trial results'], ['regulatory_decision', 'Regulatory decision'],
                        ['launch', 'Launch'], ['conference', 'Conference'], ['filing', 'Filing'],
                        ['milestone', 'Milestone']];
@@ -179,6 +177,13 @@
   function api() {
     return {
       runs: function () { return getJSON('/api/runs'); },
+      companies: function () {
+        // the New run dialog shows the server's own sentence when the list cannot be read
+        return fetch('/api/companies').then(function (r) {
+          return r.json().catch(function () { return {}; })
+            .then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+        });
+      },
       settings: function () { return getJSON('/api/settings').catch(function () { return {}; }); },
       run: function (id) { return getJSON('/api/runs/' + encodeURIComponent(id)); },
       decisions: function (id) { return getJSON('/api/runs/' + encodeURIComponent(id) + '/decisions'); },
@@ -3810,27 +3815,67 @@
 
   // ---------------------------------------------------------------- new run (U8)
   var newrunWrap = document.getElementById('newrun-wrap');
-  var nrBuilt = false;
-  function buildNewRun() {
-    if (nrBuilt) return;
-    nrBuilt = true;
+  // Kimi 52: the selectable companies come from the server — the same rule a run's
+  // [all] uses — never a hard-coded list. nrState: 'loading' until the fetch lands,
+  // then 'ready' (nrCompanies set) or 'failed' (nrLoadError holds the plain sentence).
+  var nrCompanies = null;
+  var nrState = 'loading';
+  var nrLoadError = '';
+  var nrLoadSeq = 0;
+  var NR_EMPTY = 'No company has a page to read yet.';
+  function renderNewRunCompanies(companies, unreadable) {
     var cos = clear(document.getElementById('nr-cos'));
-    var all = el('label', 'tk2');
-    var allInput = el('input');
-    allInput.type = 'checkbox'; allInput.id = 'nr-all'; allInput.checked = true;
-    all.append(allInput, document.createTextNode(' All ' + NEW_RUN_COMPANIES.length));
-    cos.append(all);
-    NEW_RUN_COMPANIES.forEach(function (t) {
-      var l = el('label', 'tk2');
-      var i = el('input');
-      i.type = 'checkbox'; i.className = 'nr-co'; i.value = t; i.checked = true;
-      l.append(i, document.createTextNode(' ' + t));
-      cos.append(l);
+    if (!companies.length) {
+      cos.append(el('div', 'hint', NR_EMPTY));
+    } else {
+      var all = el('label', 'tk2');
+      var allInput = el('input');
+      allInput.type = 'checkbox'; allInput.id = 'nr-all'; allInput.checked = true;
+      all.append(allInput, document.createTextNode(' All ' + companies.length));
+      cos.append(all);
+      companies.forEach(function (t) {
+        var l = el('label', 'tk2');
+        var i = el('input');
+        i.type = 'checkbox'; i.className = 'nr-co'; i.value = t; i.checked = true;
+        l.append(i, document.createTextNode(' ' + t));
+        cos.append(l);
+      });
+      allInput.addEventListener('change', function () {
+        document.querySelectorAll('.nr-co').forEach(function (c) { c.checked = allInput.checked; });
+      });
+    }
+    // companies the server names but holds no page for: plain names, nothing to tick
+    (unreadable || []).forEach(function (t) {
+      cos.append(el('span', 'hint nr-nopage', t + ' — No pages read yet'));
     });
-    allInput.addEventListener('change', function () {
-      document.querySelectorAll('.nr-co').forEach(function (c) { c.checked = allInput.checked; });
+  }
+  function loadNewRunCompanies() {
+    var seq = ++nrLoadSeq;
+    nrCompanies = null; nrState = 'loading'; nrLoadError = '';
+    // the old list never stays on screen while the new one loads
+    clear(document.getElementById('nr-cos')).append(el('div', 'hint', 'Loading…'));
+    function failed(msg) {
+      if (seq !== nrLoadSeq) return;
+      nrState = 'failed'; nrLoadError = msg;
+      clear(document.getElementById('nr-cos'));
+      // inline red line, no toast (the order's rule for dialog errors)
+      nrError(msg);
+    }
+    return A.companies().then(function (res) {
+      if (seq !== nrLoadSeq) return;
+      if (!res.ok) {
+        // the server answered: show its own sentence (a broken index is a 409 with one)
+        failed('The company list could not be loaded. ' +
+               ((res.body && typeof res.body.detail === 'string' && res.body.detail) || ('The server answered ' + res.status + '.')));
+        return;
+      }
+      nrCompanies = res.body.companies || [];
+      nrState = 'ready';
+      nrError('');
+      renderNewRunCompanies(nrCompanies, res.body.listed_without_pages || []);
+    }).catch(function () {
+      failed('The company list could not be loaded. The server is not reachable.');
     });
-
   }
   function nrError(msg) {
     var e = document.getElementById('nr-error');
@@ -3838,9 +3883,9 @@
     e.hidden = !msg;
   }
   document.getElementById('newrun').addEventListener('click', function () {
-    buildNewRun();
     nrError('');
     newrunWrap.hidden = false;
+    loadNewRunCompanies();
   });
   document.getElementById('nr-cancel').addEventListener('click', function () { newrunWrap.hidden = true; });
   // G4-6: one wording in both limit boxes, and the red line clears as soon as
@@ -3848,6 +3893,10 @@
   document.getElementById('nr-limit').addEventListener('input', function () { nrError(''); });
   newrunWrap.addEventListener('click', function (e) { if (e.target === newrunWrap) newrunWrap.hidden = true; });
   document.getElementById('nr-go').addEventListener('click', function () {
+    // the list comes from the server: nothing selectable until it lands
+    if (nrState === 'failed') { nrError(nrLoadError + ' Close this and open New run again to try again.'); return; }
+    if (nrState !== 'ready') { nrError('The company list is still loading.'); return; }
+    if (!nrCompanies.length) { nrError(NR_EMPTY); return; }
     var companies = [];
     document.querySelectorAll('.nr-co:checked').forEach(function (c) { companies.push(c.value); });
     if (!companies.length) { nrError('Choose at least one company.'); return; }

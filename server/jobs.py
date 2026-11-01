@@ -290,6 +290,17 @@ def _finite_limit(v) -> bool:
         return False
 
 
+def selectable_companies(index: sources.Index) -> tuple[list[str], list[str]]:
+    """The one rule for what ["all"] stands for, shared by validate_choices and GET /api/companies.
+
+    selectable: every company with a page to read, in index order (a company whose only page is the
+    scanned variant is not one of them). listed_without_pages: the companies the index names but holds
+    no page for, never a company that has pages."""
+    selectable = [t for t in index.tickers if any(p["kind"] != "scan_events" for p in index.pages(t))]
+    listed_without_pages = [c for c in index.empty if c not in index.tickers]
+    return selectable, listed_without_pages
+
+
 def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
     """The New run panel's choices, or a ValueError with one plain sentence. `companies` may be ["all"]: every company in
     the sources index (the scanned variant of a page is not one of them), recorded as the list it stands for."""
@@ -304,7 +315,7 @@ def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
         raise ValueError("Choose at least one company.")
     if companies == ["all"]:
         # every company with a page to read; one the index lists with no page (ABVX in the captured index) is left out
-        companies = [t for t in index.tickers if any(p["kind"] != "scan_events" for p in index.pages(t))]
+        companies = selectable_companies(index)[0]
         if not companies:
             raise ValueError("The sources index holds no page to read.")
     empty = [c for c in companies if c in index.empty and c not in index.tickers]

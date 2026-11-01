@@ -210,9 +210,11 @@ def test_u7_what_changed_is_wired():
 def test_u8_new_run_panel_is_wired():
     js = (UI / "app.js").read_text()
     html = (UI / "index.html").read_text()
-    # the panel: twelve companies, plain event words, window, limit, note caption
-    for tk in ("IONS", "PTGX", "ABVX", "ROIV", "ZLAB", "CLDX", "VKTX", "TSHA", "MNPR", "ENTA", "RYTM", "RVMD"):
-        assert tk in js, tk
+    # Kimi 52: the company list is server-owned (the index the run will use) —
+    # no ticker is hard-coded in the panel anymore
+    for tk in ("ABVX", "ROIV", "ZLAB", "CLDX", "TSHA", "MNPR", "ENTA", "RYTM", "RVMD"):
+        assert tk not in js, tk
+    assert "renderNewRunCompanies" in js and "loadNewRunCompanies" in js
     assert "Adds context without narrowing discovery or turning off checks." in html
     for word in ("Next 3 months", "Next 6 months", "Next 12 months"):
         assert word not in html, word
@@ -1037,6 +1039,156 @@ def test_u24_g1r5_picker_button_supersedes_the_card_picker():
     html = (UI / "index.html").read_text()
     assert "runcardPick" not in js
     assert 'id="runcard-choose"' not in html
+
+
+def test_new_run_company_list_is_server_owned_pins():
+    # Kimi 52 (orders/KIMI_NEWRUN_COMPANY_LIST.md): the New Run dialog's company
+    # list is read from the server — the sources index the run will use — never
+    # hard-coded in the UI; [all] stays; dialog errors stay inline (red line)
+    js = (UI / "app.js").read_text()
+    for word in ("return fetch('/api/companies')",
+                 "function renderNewRunCompanies(companies, unreadable)",
+                 "function loadNewRunCompanies()",
+                 "' All ' + companies.length",
+                 "res.body.companies || []",
+                 "failed('The company list could not be loaded. The server is not reachable.')",
+                 "var NR_EMPTY = 'No company has a page to read yet.';",
+                 # Claude review MEDIUM-2: after a failed load Go repeats why, never "still loading";
+                 # reopening the dialog is the retry (the open handler calls loadNewRunCompanies)
+                 "if (nrState === 'failed') { nrError(nrLoadError + ' Close this and open New run again to try again.'); return; }",
+                 "if (nrState !== 'ready') { nrError('The company list is still loading.'); return; }",
+                 "if (!nrCompanies.length) { nrError(NR_EMPTY); return; }"):
+        assert word in js, word
+    # LOW-6: no internal term on screen in the dialog's own sentences
+    dialog = js[js.index("// ---------------------------------------------------------------- new run (U8)"):]
+    dialog = dialog[:dialog.index("// the job bar")]
+    for line in dialog.splitlines():
+        if "'" in line and not line.strip().startswith("//"):
+            assert "sources index" not in line, line
+    # the hard-coded list is gone for good
+    assert "NEW_RUN_COMPANIES" not in js
+    # the load-failure path is an inline red line, never a toast: the function
+    # body (up to the next top-level function) never calls toast(
+    body = js[js.index("function loadNewRunCompanies"):]
+    body = body[:body.index("\n  function ")]
+    assert "toast(" not in body
+
+
+def test_new_run_renders_the_server_company_list():
+    # the rendered list is exactly what the server returned: [all] first with
+    # the count, then one checked checkbox per company
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = _grab_fn(js, "renderNewRunCompanies")
+    script = "\n".join([
+        "var NR_EMPTY = 'No company has a page to read yet.';",
+        "var nodes = {};",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], value: '', checked: false,",
+        "  addEventListener: function () {},",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "global.document = {",
+        "  createElement: function () { return make(); },",
+        "  createTextNode: function (t) { return { nodeType: 3, textContent: t }; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; },",
+        "  querySelectorAll: function () { return []; }",
+        "};",
+        "function clear(n) { n.children = []; return n; }",
+        "function el(tag, cls, text) { var n = make(); n.tag = tag; n.className = cls || '';",
+        "  if (text) n.textContent = text; return n; }",
+        fns,
+        "renderNewRunCompanies(['IONS', 'PTGX', 'ABVX'], []);",
+        "var cos = nodes['nr-cos'];",
+        "if (cos.children.length !== 4) { console.error('children=' + cos.children.length); process.exit(2); }",
+        "var allLabel = cos.children[0];",
+        "if (allLabel.children[1].textContent !== ' All 3') { console.error('all=' + allLabel.children[1].textContent); process.exit(3); }",
+        "if (allLabel.children[0].id !== 'nr-all' || allLabel.children[0].checked !== true) process.exit(4);",
+        "var names = cos.children.slice(1).map(function (l) { return l.children[1].textContent.trim(); });",
+        "if (names.join(',') !== 'IONS,PTGX,ABVX') { console.error('names=' + names); process.exit(5); }",
+        "var boxes = cos.children.slice(1).map(function (l) { return l.children[0]; });",
+        "if (!boxes.every(function (b) { return b.checked === true && b.className === 'nr-co'; })) process.exit(6);",
+        # a different server list renders as-is — nothing hard-coded
+        "renderNewRunCompanies(['ZYXI']);",
+        "if (nodes['nr-cos'].children.length !== 2) process.exit(7);",
+        # LOW-4: a company listed without pages is a plain name with the plain sentence, no checkbox
+        "renderNewRunCompanies(['IONS'], ['CRTX']);",
+        "var kids = nodes['nr-cos'].children;",
+        "if (kids.length !== 3) { console.error('kids=' + kids.length); process.exit(8); }",
+        "var np = kids[2];",
+        "if (np.tag !== 'span' || np.textContent !== 'CRTX — No pages read yet' || np.children.length) process.exit(9);",
+        "if (np.className.indexOf('tk2') !== -1) process.exit(10);",
+        # an empty list says so in plain words, with no 'All 0' box
+        "renderNewRunCompanies([], []);",
+        "kids = nodes['nr-cos'].children;",
+        "if (kids.length !== 1 || kids[0].textContent !== 'No company has a page to read yet.') process.exit(11);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_new_run_company_load_failure_is_an_inline_error_not_a_toast():
+    # the dialog's error surface is the red line. On open the old list is cleared and
+    # "Loading…" shows; an unreachable server and a broken index (409 with the server's
+    # sentence) each show the red line and render no list; a successful load renders the
+    # list and clears the red line.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = _grab_fn(js, "nrError") + "\n" + _grab_fn(js, "loadNewRunCompanies")
+    script = "\n".join([
+        "var nodes = {};",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], hidden: false,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "global.document = { getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        "function clear(n) { n.children = []; return n; }",
+        "function el(tag, cls, text) { var n = make(); n.tag = tag; n.className = cls || ''; if (text) n.textContent = text; return n; }",
+        "var nrCompanies = null, nrState = 'loading', nrLoadError = '', nrLoadSeq = 0;",
+        "var rendered = null;",
+        "function renderNewRunCompanies(c, u) { rendered = [c, u]; nodes['nr-cos'].children = [el('label', 'tk2', 'x')]; }",
+        "var resolveFirst;",
+        "var A = { companies: function () { return new Promise(function (r) { resolveFirst = r; }); } };",
+        fns,
+        # an old list sits in the box from the last open
+        "nodes['nr-cos'] = make(); nodes['nr-cos'].children = [el('label', 'tk2', 'OLD')];",
+        "var p = loadNewRunCompanies();",
+        "var kids = nodes['nr-cos'].children;",
+        "if (kids.length !== 1 || kids[0].textContent !== 'Loading…') { console.error('not loading'); process.exit(2); }",
+        "if (nrState !== 'loading') process.exit(3);",
+        "resolveFirst({ ok: false, status: 409, body: { detail: 'The index is broken.' } });",
+        "p.then(function () {",
+        "  var e = nodes['nr-error'];",
+        "  if (e.hidden || e.textContent !== 'The company list could not be loaded. The index is broken.') { console.error(e.textContent); process.exit(4); }",
+        "  if (rendered !== null || nodes['nr-cos'].children.length) { console.error('list on failure'); process.exit(5); }",
+        "  if (nrState !== 'failed' || nrLoadError !== e.textContent) process.exit(6);",
+        "  A = { companies: function () { return Promise.reject(new Error('down')); } };",
+        "  return loadNewRunCompanies();",
+        "}).then(function () {",
+        "  var e = nodes['nr-error'];",
+        "  if (e.hidden || e.textContent !== 'The company list could not be loaded. The server is not reachable.') { console.error(e.textContent); process.exit(7); }",
+        "  A = { companies: function () { return Promise.resolve({ ok: true, status: 200, body: { companies: ['IONS'], listed_without_pages: ['CRTX'] } }); } };",
+        "  return loadNewRunCompanies();",
+        "}).then(function () {",
+        "  if (!rendered || rendered[0].join(',') !== 'IONS' || rendered[1].join(',') !== 'CRTX') { console.error('rendered=' + rendered); process.exit(8); }",
+        "  var e = nodes['nr-error'];",
+        "  if (!e.hidden || e.textContent !== '') { console.error('red line not cleared'); process.exit(9); }",
+        "  if (nrState !== 'ready') process.exit(10);",
+        # a late answer from an older open never overwrites the newer list
+        "  var late; A = { companies: function () { return new Promise(function (r) { late = r; }); } };",
+        "  var older = loadNewRunCompanies();",
+        "  A = { companies: function () { return Promise.resolve({ ok: true, status: 200, body: { companies: ['NEW'] } }); } };",
+        "  return loadNewRunCompanies().then(function () {",
+        "    late({ ok: true, status: 200, body: { companies: ['STALE'] } });",
+        "    return older;",
+        "  });",
+        "}).then(function () {",
+        "  if (rendered[0].join(',') !== 'NEW') { console.error('stale=' + rendered[0]); process.exit(11); }",
+        "  console.log('ok');",
+        "});",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
 
 def test_u24_g1r7_citation_box_bottom_edge_sits_lower():
     # Re-glass 1 finding 9 (nit): the citation box was drawn exactly on the

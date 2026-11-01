@@ -47,6 +47,51 @@ def client(runs_dir):
     return TestClient(create_app(runs_dir=runs_dir, ui_dir=runs_dir / "no-ui"))
 
 
+def test_api_companies_lists_the_index_a_new_run_will_use(client):
+    # Kimi 52: the New Run dialog reads its company list from the server — the
+    # sources index the run will use. The built-in index holds a readable page
+    # for IONS and PTGX; PTGX-SCAN is scan-only, exactly the set ["all"]
+    # resolves to. No name is hard-coded in the UI.
+    r = client.get("/api/companies")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["companies"] == ["IONS", "PTGX"]
+    assert body["listed_without_pages"] == []
+
+
+def test_api_companies_is_the_all_rule_on_a_fixture_index(runs_dir):
+    # Claude review MEDIUM-1 on #151: the dialog's list and the run's ["all"] are one rule
+    # (jobs.selectable_companies). Fixture: ABVX has a page, SCAN is scan-only, CRTX is listed
+    # with no page, and RVMD is listed as empty but also has a page.
+    from runs.sources import Index
+    from server import jobs
+    page = {"kind": "events", "source_id": "s-a", "record": {}}
+    idx = Index(by_ticker={"ABVX": [page],
+                           "SCAN": [{"kind": "scan_events", "source_id": "s-s", "record": {}}],
+                           "RVMD": [dict(page, source_id="s-r")]},
+                empty=["CRTX", "RVMD"])
+    c = TestClient(create_app(runs_dir=runs_dir, ui_dir=runs_dir / "no-ui", index=idx))
+    body = c.get("/api/companies").json()
+    resolved = jobs.validate_choices({"companies": ["all"]}, idx)["companies"]
+    assert body["companies"] == sorted(resolved) == ["ABVX", "RVMD"]
+    assert "SCAN" not in body["companies"] and "SCAN" not in resolved
+    assert body["listed_without_pages"] == ["CRTX"]          # RVMD has a page, so it is not listed here
+    assert jobs.selectable_companies(idx) == (["ABVX", "RVMD"], ["CRTX"])
+
+
+def test_api_companies_broken_index_is_a_409_with_its_sentence(runs_dir, tmp_path, monkeypatch):
+    # Claude review MEDIUM-2 on #151: a broken index is the server answering, not the server
+    # being unreachable; the route returns the index's own plain sentence, like the other routes
+    from runs import sources
+    bad = tmp_path / "sources_index.json"
+    bad.write_text("{not json")
+    monkeypatch.setattr(sources, "INDEX_PATH", bad)
+    c = TestClient(create_app(runs_dir=runs_dir, ui_dir=runs_dir / "no-ui"))
+    r = c.get("/api/companies")
+    assert r.status_code == 409
+    assert r.json()["detail"] == "The sources index sources_index.json is not valid JSON."
+
+
 def lines(runs_dir):
     return (runs_dir / "sample" / "decisions.jsonl").read_text().splitlines()
 
