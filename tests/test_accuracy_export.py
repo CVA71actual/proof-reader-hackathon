@@ -342,8 +342,7 @@ def test_a_saved_pass_that_now_fails_scores_unsupported_not_found(tmp_path):
     assert base["counts"]["found"] == 2 and base["counts"]["unsupported"] == 0
 
     def break_check(rows):
-        c = rows[0]["checks"][0]
-        c["result"], c["reason"] = "fail", "The check now fails."
+        rows[0]["box"] = [0, 0, 2, 2]  # the bound selector re-check now fails on the stored page
         rows[0]["status"], rows[0]["group"] = "matched", "kept"          # the saved status is stale
     sc = _scored(_copy(tmp_path / "b"), break_check)
     assert (sc["counts"]["found"], sc["counts"]["unsupported"]) == (1, 1)
@@ -356,10 +355,70 @@ def test_a_saved_fail_that_now_passes_scores_found(tmp_path):
     assert sc["counts"]["found"] == 2
 
 
+def _replace_page_words_with_slivers(run_dir, words_name):
+    words_path = run_dir / words_name
+    words = json.loads(words_path.read_text())
+    for word in words["words"]:
+        if not word.get("break"):
+            word["y1"] = word["y0"] + 0.1
+    raw = (json.dumps(words) + "\n").encode()
+    words_path.write_bytes(raw)
+    run_path = run_dir / "run.json"
+    run = json.loads(run_path.read_text())
+    page = next(page for source in run["sources"] for page in source["pages"]
+                if page.get("words") == words_name)
+    page["words_sha256"] = export.sha256_bytes(raw)
+    run_path.write_text(json.dumps(run) + "\n")
+    return run, page
+
+
+def test_accuracy_uses_bound_current_state_after_page_words_change(sample, tmp_path):
+    from accuracy.run import score_run
+    from server.app import create_app
+
+    # The text remains available to validate the key, but its sub-point geometry
+    # cannot support the saved positive selector checks.
+    run, page = _replace_page_words_with_slivers(sample, "pages/smp-release-a-p1.words.json")
+    source = next(source for source in run["sources"] if source["id"] == "smp-release-a")
+    key = {"key_version": 1, "sealed": False, "complete": True, "source_sha256": source["sha256"],
+           "page_number": 1, "cells": [], "events": [{"ticker": "SMPL1", "program": "STAR-1",
+           "event_type": "trial_results", "date_text": "March 12, 2027",
+           "quote": "Topline results from the Phase 3 STAR-1 trial are expected on March 12, 2027."}]}
+    scored = score_run(key, sample)
+    events = scored["models"]["Muse Spark"]["events"]
+    assert events["found"] == 0
+    scored_row = next(item for bucket in ("wrong_date", "wrong_type", "unsupported", "invented")
+                      for item in scored["events"][bucket] if item.get("id") == "e1")
+    assert scored_row["status"] == "proposed"
+
+    client = TestClient(create_app(runs_dir=sample.parent, ui_dir=tmp_path / "none", reader=object()))
+    view = client.get("/api/runs/sample").json()["state"]
+    assert (view["targets"]["e1"]["status"], view["targets"]["e1"]["group"]) == ("proposed", "unverified")
+
+    # The same rule applies to table cells: Accuracy and GET both see zero
+    # current matches after a hash-updated words artifact loses usable geometry.
+    table_runs = tmp_path / "table-runs"
+    table_runs.mkdir()
+    table_copy = table_runs / "sample"
+    shutil.copytree(RUNS / "sample", table_copy)
+    table_run, table_page = _replace_page_words_with_slivers(table_copy, "pages/p95.words.json")
+    cells = [cell for table in table_run["tables"] if table["page_number"] == 95
+             for row in table["rows"] for cell in row["cells"]]
+    assert cells
+    table_key = load_key(IONS_KEY)
+    table_key["words_sha256"] = table_page["words_sha256"]
+    table_report = score_run(table_key, table_copy, None, None, None)
+    values = table_report["models"]["Muse Spark"]["values"]
+    assert values["found"] == 0
+    table_client = TestClient(create_app(runs_dir=table_runs, ui_dir=tmp_path / "none2", reader=object()))
+    table_view = table_client.get("/api/runs/sample").json()["state"]
+    assert table_view["counts"]["cells"]["kept"] == 0
+    assert all(table_view["targets"][cell["id"]]["status"] != "matched" for cell in cells)
+
+
 def test_a_keep_does_not_change_the_score(tmp_path):
     def hold(rows):
-        c = rows[0]["checks"][0]
-        c["result"], c["reason"] = "fail", "The check now fails."
+        rows[0]["box"] = [0, 0, 2, 2]  # current evidence, not an unbound saved result, supplies the failure
     plain = _scored(_copy(tmp_path / "a"), hold)
     run = json.loads((_copy(tmp_path / "x") / "run.json").read_text())
     keep = {"by": "person", "target": run["rows"][0]["id"], "action": "keep", "note": None, "at": "t"}

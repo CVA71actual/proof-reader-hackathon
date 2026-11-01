@@ -151,11 +151,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.words:
         prompt, image, got = read_events.build_prompt(words_doc, entry), None, "words"
     else:
-        from runs.build_run import render_page
+        from runs.build_run import render_page_bytes
+        from runs.sources import builtin_index, pinned_source_snapshot
         import tempfile
+
+        page_record = builtin_index().pages("PTGX")[0]["record"]
+        pdf_bytes, _, _, _ = pinned_source_snapshot(page_record)
         with tempfile.TemporaryDirectory() as tmp:
             png = Path(tmp) / "page.png"
-            render_page(FIXTURES / entry["page_file"], png)
+            render_page_bytes(pdf_bytes, png)
             image = png.read_bytes()
         prompt, got = read_events.build_image_prompt(entry), "image"
     reply = reader.call(prompt, image=image)

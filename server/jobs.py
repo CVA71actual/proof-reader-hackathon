@@ -70,6 +70,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import hashlib
 import math
 import os
 import re
@@ -89,7 +90,19 @@ from capture.capture_source import load_entry
 from checks import event_checks
 from runs import picture, build_entry, build_run, compare, coverage, escalate, prices, scan, sources
 from runs.ids import reserve_row_numbers, require_unique_target_ids
+from runs import page_outcomes
 from runs.state import _real_disagreement, as_of_note, derive_status, run_reference_date
+
+
+def build_table_for_page(reading: dict, words_doc: dict, source: dict, consumed_artifact: dict,
+                         table_id: str) -> dict:
+    """Build a table using the visual capability recorded for its captured page."""
+    page = source["pages"][0]
+    return build_run.build_table(
+        reading, words_doc, table_id=table_id, source_id=source["id"],
+        page_number=page["page_number"], source=source, consumed_artifact=consumed_artifact,
+        visual_evidence=page.get("visual_evidence"),
+        derived_words_present=bool(page.get("derived_words")))
 
 DEFAULT_TURN_LIMIT = 40
 MAX_PAGE_FAILURES = 2      # a page that stops the run this many times is skipped, and the run goes on with the rest
@@ -192,7 +205,7 @@ def window_reason(row: dict, now: date, last: date, months: int) -> str | None:
             f"month{'s' if months != 1 else ''} from today ({last}).")
 
 
-def past_reason(row: dict, run_date: date) -> str | None:
+def past_reason(row: dict, run_date: date, source: dict | None = None) -> str | None:
     """Code exclusion only when the event's full period ended strictly before the run date."""
     # A parsed value is only a proposal until the date check supports it. In
     # particular, a failed or uncheckable date must remain reviewable.
@@ -201,6 +214,10 @@ def past_reason(row: dict, run_date: date) -> str | None:
                        or c.get("label") == "Date read as written"), None)
     if not date_check or date_check.get("result") != "pass":
         return None
+    if source is not None:
+        from runs.claim_assessment import check_current
+        if not check_current(date_check, row, source):
+            return None
     return past_candidate_reason(row, run_date)
 
 
@@ -872,7 +889,10 @@ class Job:
         pages = self.dir / "pages"
         if not pages.is_dir():
             return
-        named = {Path(p[k]).name for s in self.run["sources"] for p in s["pages"] for k in ("image", "words")}
+        named = {Path(p[k]).name for s in self.run["sources"] for p in s["pages"]
+                 for k in ("image", "words") if p.get(k)}
+        named.update(Path(p["derived_words"]["file"]).name for s in self.run["sources"] for p in s["pages"]
+                     if (p.get("derived_words") or {}).get("file"))
         for f in pages.iterdir():
             if f.is_file() and f.name not in named:
                 f.unlink()
@@ -884,6 +904,7 @@ class Job:
         if sid in skipped:
             return
         skipped[sid] = {"ticker": ticker, "reason": reason}
+        page_outcomes.update(self.meta, sid, skipped=True, reason=reason)
         self.meta.setdefault("skipped_pages", []).append({"source_id": sid, "ticker": ticker, "reason": reason})
         self.job["log"].append({"at": now_utc(), "note": f"{ticker} page {sid} skipped: {reason}"})
         self.save()
@@ -1092,8 +1113,7 @@ class Job:
             return
         self.meta["status"], self.meta["status_reason"] = "running", "Reading the captured sources."
         selected_pages = [page for ticker in self.choices["companies"] for page in self.index.pages(ticker)]
-        self.meta["pages_total"] = len(selected_pages)
-        self.meta["pages_read"] = len(self.run.get("sources", []))
+        page_outcomes.initialize(self.meta, selected_pages, self.run, self.job)
         self.save()
         problem = self.reader.ready()
         if problem:
@@ -1125,7 +1145,7 @@ class Job:
         self.current_page = None
         if self.stopped_after_the_last_call():
             return
-        read = len(self.run["sources"])
+        read = self.meta["pages_read"]
         skipped = len(self.job.get("skipped", {}))
         self.meta["finished_at"] = now_utc()
         self.meta["status"] = "done"
@@ -1138,6 +1158,7 @@ class Job:
 
     def read_page(self, page: dict) -> bool:
         """Read one captured page and add its source and rows (or tables). False when nothing was added."""
+        sid = page["source_id"]
         kind = page["kind"]
         if kind == "scan_events":
             return self.read_scan_page(page)
@@ -1145,28 +1166,32 @@ class Job:
         if kind == "events":
             types = read_events.EVENT_TYPES
             if not types:
+                page_outcomes.update(self.meta, sid, skipped=True,
+                                     reason="No event type was chosen for the page.")
                 self.job["log"].append({"at": now_utc(), "note": f"{entry['ticker']} page skipped: no event type "
                                                                  f"was chosen."})
                 return False
         try:
-            source, words_doc = sources.capture_page(entry, self.dir)      # captured on first use, hashes checked
+            source, words_doc, consumed_artifact = sources.capture_page_evidence(entry, self.dir)
         except sources.SourcesError as e:
             # a page whose files are missing or no longer match the index will not mend on a retry: skip it, go on
             self.skip_page(page, str(e))
             return False
+        page_outcomes.update(self.meta, sid, captured=True)
         picture_state = None
         if kind == "events" and picture.is_picture_page(words_doc):
-            rebuilt = self.rebuild_picture(source, words_doc)
+            rebuilt = self.rebuild_picture(source, words_doc, consumed_artifact)
             if rebuilt is None:
                 return False                      # the run stopped (a limit, a failed call); a resume goes on from here
-            words_doc, picture_state = rebuilt
+            words_doc, picture_state, consumed_artifact = rebuilt
         if kind == "events":
             prompt = read_events.build_prompt(words_doc, entry, types, self.choices["note_for_agent"])
             who, parse = "capture.read_events", read_events.parse_events
         else:
             prompt = read_table.build_prompt(words_doc, self.choices["note_for_agent"])
             who, parse = "capture.read_table", read_table.parse_table
-        page_facts = {"words_sha256": entry["words_sha256"], "page_sha256": entry["page_sha256"], "pin": entry["id"]}
+        page_facts = {"words_sha256": consumed_artifact["sha256"], "words_used": consumed_artifact,
+                      "page_sha256": entry["page_sha256"], "pin": entry["id"]}
 
         attempts = self.job["attempts"].setdefault(source["id"], [])
         reply, parsed, no_answer = None, None, None
@@ -1181,7 +1206,7 @@ class Job:
             if tool_box is not None:
                 if tool_box.model_calls >= reader_tools.MAX_MODEL_CALLS:
                     break                  # the page's model calls are spent: held, not given a fresh set
-                reply, prompt = self.converse(prompt, tool_box)
+                reply, prompt = self.converse(prompt, tool_box, sid)
                 if reply is None:
                     return False
                 if reply.timed_out:
@@ -1190,6 +1215,7 @@ class Job:
             else:
                 if self.stopped_before_a_call():
                     return False
+                page_outcomes.update(self.meta, sid, attempted=True)
                 reply = self.reader.call(prompt)
                 self.count_turn(reply)
                 if reply.timed_out:
@@ -1212,6 +1238,8 @@ class Job:
             row_number = reserve_row_numbers(self.run, self.job, 1)
             self.run["rows"].append(self.refused_row(entry, source, prompt, who, attempts, at, row_number,
                                                      calls_cap=None if no_answer else cap, no_answer=no_answer))
+            page_outcomes.update(self.meta, sid, unreadable=True,
+                                 reason=no_answer or (attempts[-1].get("problem") if attempts else "No readable answer."))
         elif kind == "events":
             extra = {**(reply.extra or {}), **page_facts, "usage": {"prompt_tokens": reply.prompt_tokens,
                                                                     "completion_tokens": reply.completion_tokens}}
@@ -1227,7 +1255,8 @@ class Job:
                                                           + tool_box.unrecorded_steps(at, build_entry.MUSE_SPARK)
                                                           if tool_box is not None else None),
                                               tool_type=(tool_box.type_found(ev.get("quote"))
-                                                         if tool_box is not None else None))
+                                                         if tool_box is not None else None),
+                                              consumed_artifact=consumed_artifact)
                         for i, ev in enumerate(parsed)]
             coverage_rows = coverage.possible_event_rows(words_doc, new_rows, source,
                                                          first_index=self.job["next_row_number"], at=at,
@@ -1236,22 +1265,22 @@ class Job:
             self.job["next_row_number"] += len(coverage_rows)
             new_rows += coverage_rows
             self.add_picture_trail(new_rows, picture_state, at)
-            self.apply_window(new_rows, at)
+            self.apply_window(new_rows, at, source=source)
             self.run["rows"] += new_rows
             self.mark_fake(reading)
         else:
             reading = read_table._reading_record(model=reply.model, prompt=prompt, raw=reply.raw, table=parsed,
                                                  problem=None, extra={**(reply.extra or {}), **page_facts})
-            self.run["tables"].append(build_run.build_table(
-                reading, words_doc, table_id=f"t{len(self.run['tables']) + 1}", source_id=source["id"],
-                page_number=source["pages"][0]["page_number"]))
+            self.run["tables"].append(build_table_for_page(
+                reading, words_doc, source, consumed_artifact, table_id=f"t{len(self.run['tables']) + 1}"))
             self.mark_fake(reading)
         self.run["sources"].append(source)
-        self.meta["pages_read"] = len(self.run["sources"])
+        if parsed is not None:
+            page_outcomes.update(self.meta, sid, read=True)
         self.save()
         return True
 
-    def converse(self, prompt: str, box: "reader_tools.ToolBox"):
+    def converse(self, prompt: str, box: "reader_tools.ToolBox", source_id: str | None = None):
         """One read of an events page as a short loop (capture/reader_tools.py): the model may call the checks about its
         own proposals, then hands over the final events. Returns (a Reply for the final answer with the loop's summed
         tokens, the text sent first), or (None, prompt) when the run stopped. Every model call is counted as a turn and
@@ -1263,6 +1292,8 @@ class Job:
             if self.stopped_before_a_call():
                 return None, prompt
             last = box.model_calls >= reader_tools.MAX_MODEL_CALLS - 1        # the last call may not ask for tools
+            if source_id:
+                page_outcomes.update(self.meta, source_id, attempted=True)
             reply = self.reader.chat(messages, reader_tools.TOOLS if native and not last else None,
                                      json_mode=not native)
             self.count_turn(reply)
@@ -1328,17 +1359,20 @@ class Job:
         evs = data.get("events") if isinstance(data, dict) else None
         return [e.get("quote") for e in evs if isinstance(e, dict)] if isinstance(evs, list) else []
 
-    def apply_window(self, rows: list[dict], at: str) -> None:
+    def apply_window(self, rows: list[dict], at: str, *, source: dict | None = None) -> None:
         """Mark only events whose full period ended before this run as code exclusions.
 
         Future proposals remain available; the calendar presents those beyond its six-month window in Later.
         """
         run_date = run_reference_date({"run": self.meta})
         exclusions = self.run.setdefault("exclusions", [])
+        sources_by_id = {s.get("id"): s for s in self.run.get("sources", [])}
+        if source is not None:
+            sources_by_id[source.get("id")] = source
         for row in rows:
             if row.get("group") == "removed" or not row.get("date"):
                 continue
-            reason = past_reason(row, run_date)
+            reason = past_reason(row, run_date, sources_by_id.get(row.get("source_id"), {}))
             if reason is None:
                 candidate = past_candidate_reason(row, run_date)
                 date_check = next((c for c in row.get("checks", []) if c.get("name") == "date_match"), None)
@@ -1395,10 +1429,10 @@ class Job:
 
     # ------------------------------------------------------------ a picture page: SAM 3.1 regions + the image reader
 
-    def rebuild_picture(self, source: dict, words_doc: dict):
+    def rebuild_picture(self, source: dict, words_doc: dict, consumed_artifact: dict):
         """A page whose text layer is hidden (runs/picture.py): SAM 3.1 finds regions (one counted, priced turn per
-        concept), the image reader transcribes each region's crop (one turn each), and the words file in the run's folder
-        is rebuilt from the transcriptions. Returns (new words_doc, state), or (words_doc, None) when it cannot be done
+        concept), the image reader transcribes each region's crop (one turn each), and a typed derived words artifact
+        is written beside (never over) the captured words. Returns (new words_doc, state), or (words_doc, None) when it cannot be done
         (no SAM 3.1 or no image reader, no region, nothing transcribed: the page is read from its own words, as before,
         and the log says so), or None when the run stopped. What each call returned is kept in job.json."""
         sid = source["id"]
@@ -1410,10 +1444,11 @@ class Job:
             why = self.second_problem()
         if why:
             self.job["log"].append({"at": now_utc(), "note": f"{sid} is a picture page; its words were not rebuilt: {why}"})
-            return words_doc, None
+            return words_doc, None, consumed_artifact
         w, h = float(page0["width_pt"]), float(page0["height_pt"])
-        png = (self.dir / page0["image"]).read_bytes()
+        png, image_identity = sources.load_page_image_evidence(self.dir, page0)
         st = self.job.setdefault("picture", {}).setdefault(sid, {"by_concept": {}, "calls": [], "reads": {}})
+        st["image_sha256"] = image_identity["sha256"]
         if "words_doc" not in st:
             for concept in picture.CONCEPTS + (sam_module.FALLBACK,):
                 if concept in st["by_concept"]:
@@ -1459,14 +1494,22 @@ class Job:
             page0["note"] = picture.ALL_EMPTY_NOTE
             self.job["log"].append({"at": now_utc(), "note": f"{sid} is a picture page; SAM 3.1 and the image reader "
                                                               f"gave no words, so it is read from its own words."})
-            return words_doc, st            # the state goes on: every attempted call still gets its trail step
+            return words_doc, st, consumed_artifact   # the state goes on: every attempted call still gets its trail step
         rebuilt = st["words_doc"]
-        words_path = self.dir / page0["words"]
-        words_path.write_text(json.dumps(rebuilt, indent=1, ensure_ascii=False) + "\n")
-        page0.update({"words_sha256": build_run.file_sha256(words_path), "kind": picture.KIND,
-                      "words_from": picture.WORDS_FROM, "note": picture.source_note(st["kept_regions"]),
-                      "regions": st["kept_regions"]})
-        return rebuilt, st
+        derived_rel = str(Path(page0["words"]).with_suffix(".transcription.json"))
+        derived_path = self.dir / derived_rel
+        derived_bytes = (json.dumps(rebuilt, indent=1, ensure_ascii=False) + "\n").encode("utf-8")
+        derived_path.write_bytes(derived_bytes)
+        page0.update({"kind": picture.KIND, "words_from": picture.WORDS_FROM,
+                      "note": picture.source_note(st["kept_regions"]), "regions": st["kept_regions"],
+                      "derived_words": {"kind": "model_transcription", "file": derived_rel,
+                                        "sha256": hashlib.sha256(derived_bytes).hexdigest(),
+                                        "based_on_image_sha256": image_identity["sha256"],
+                                        "geometry": "approximate",
+                                        "models": sorted({x["model"] for x in st["reads"].values()})}})
+        page0["visual_evidence"] = sources.visual_evidence(page0, rebuilt)
+        return rebuilt, st, {"file": derived_rel, "sha256": hashlib.sha256(derived_bytes).hexdigest(),
+                             "kind": "derived"}
 
     def add_picture_trail(self, rows: list[dict], st: dict | None, at: str, costs: bool = True) -> None:
         """Put the picture-page steps first in every row's trail. `costs` False: the page's calls were already counted on
@@ -1501,8 +1544,8 @@ class Job:
             self.save(problem)
             return True
         page0 = source["pages"][0]
-        words_doc = json.loads((self.dir / page0["words"]).read_text())
-        image = (self.dir / page0["image"]).read_bytes()      # the page as the second reader sees it
+        words_doc, consumed_artifact = sources.load_page_evidence(self.dir, page0)
+        image, image_identity = sources.load_page_image_evidence(self.dir, page0)  # exact image sent to reader
         note = self.choices["note_for_agent"]
         entry = page["record"]
         if page["kind"] == "events":
@@ -1547,8 +1590,10 @@ class Job:
                       else f"The second reader's answer could not be read ({why}); nothing was compared.")
             return True
         at = now_utc()
-        extra = {**(reply.extra or {}), "input": got, "words_sha256": entry["words_sha256"],
-                 "page_sha256": entry["page_sha256"], "pin": entry["id"],
+        extra = {**(reply.extra or {}), "input": got,
+                 "words_sha256": consumed_artifact["sha256"] if got == "image_and_words" else None,
+                 "words_used": consumed_artifact if got == "image_and_words" else None,
+                 "image_sha256": image_identity["sha256"], "page_sha256": entry["page_sha256"], "pin": entry["id"],
                  "usage": {"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens}}
         if page["kind"] == "events" and got == "image":     # boxes came back on the 0-1000 grid over the image
             for ev in parsed:
@@ -1559,7 +1604,7 @@ class Job:
             rows = [r for r in self.run["rows"] if r["source_id"] == sid]
             next_row = reserve_row_numbers(self.run, self.job, 0)
             _, new_rows = compare.apply_events(rows, parsed, reading, source, words_doc, at,
-                                               next_index=next_row)
+                                               next_index=next_row, consumed_artifact=consumed_artifact)
             self.job["next_row_number"] += len(new_rows)
             self.add_picture_trail(new_rows, self.job.get("picture", {}).get(sid), at, costs=False)
             self.apply_window(new_rows, at)
@@ -1587,6 +1632,8 @@ class Job:
         entry = load_entry(read_events.PIN)
         types = read_events.EVENT_TYPES
         if not types:
+            page_outcomes.update(self.meta, page["source_id"], skipped=True,
+                                 reason="No event type was chosen for the scanned page.")
             self.job["log"].append({"at": now_utc(), "note": f"{entry['ticker']} scanned page skipped: no event type "
                                                               f"was chosen."})
             return False
@@ -1595,10 +1642,13 @@ class Job:
                       else self.sam.ready())
             self.stop("needs_input", reason)
             return False
-        png = scan.scanned_png(entry)
-        words = json.loads((build_run.FIXTURES / entry["words_file"]).read_text())
+        captured_source, _captured_words, _captured_identity = sources.capture_page_evidence(page["record"], self.dir)
+        png, image_identity = sources.load_page_image_evidence(self.dir, captured_source["pages"][0])
+        words = {"words": [], "page_width": captured_source["pages"][0]["width_pt"],
+                 "page_height": captured_source["pages"][0]["height_pt"]}
         w, h = float(words["page_width"]), float(words["page_height"])
         st = self.job.setdefault("scan", {}).setdefault(scan.SOURCE_ID, {"by_concept": {}, "calls": [], "reads": {}})
+        st["image_sha256"] = image_identity["sha256"]
         for concept in sam_module.CONCEPTS + (sam_module.FALLBACK,):
             if concept in st["by_concept"]:
                 continue
@@ -1607,6 +1657,7 @@ class Job:
             if self.stopped_before_a_call(self.sam):
                 return False
             reply = self.sam.segment(png, concept)
+            page_outcomes.update(self.meta, page["source_id"], attempted=True)
             self.count_turn(reply)
             if reply.error:
                 self.stop("failed", f"SAM 3.1: {reply.error} Resume to try again.")
@@ -1625,26 +1676,29 @@ class Job:
             if self.stopped_before_a_call(self.reader):
                 return False
             reply = self.reader.call(prompt, image=scan.crop_png(png, crop, w))
+            page_outcomes.update(self.meta, page["source_id"], attempted=True)
             self.count_turn(reply)
             if reply.error:
                 self.stop("failed", f"{reply.error} Resume to try again.")
                 return False
-            events, _ = read_events.parse_events(reply.raw)
+            events, problem = read_events.parse_events(reply.raw)
             st["reads"][region["id"]] = {"region_id": region["id"], "crop": crop, "prompt_text": prompt,
-                                         "model": reply.model, "events": events,
+                                         "model": reply.model, "events": events, "parse_ok": events is not None,
+                                         "parse_problem": problem,
                                          "usage": {"prompt_tokens": reply.prompt_tokens,
                                                    "completion_tokens": reply.completion_tokens}}
             self.save()
-        source = scan.scanned_source(entry, self.dir, png, w, h, regions, stem=page["record"]["file_stem"])
+        source = scan.mark_scanned_source(captured_source, regions)
         by_id = {r["id"]: r for r in regions}
         reads = [{**r, "region": by_id[r["region_id"]]} for r in st["reads"].values() if r["region_id"] in by_id]
         first = reserve_row_numbers(self.run, self.job, 0)
-        rows = scan.assemble_rows(reads, source, st["calls"], now_utc(), first_index=first)
+        rows = scan.assemble_rows(reads, source, st["calls"], now_utc(), self.dir, first_index=first)
         self.job["next_row_number"] += len(rows)
         self.apply_window(rows, now_utc())
         self.run["rows"] += rows
         self.run["sources"].append(source)
-        self.meta["pages_read"] = len(self.run["sources"])
+        page_outcomes.update(self.meta, page["source_id"],
+                             **page_outcomes.interpretation(reads, bool(st["calls"] or reads)))
         self.save()
         return True
 
@@ -1681,8 +1735,8 @@ class Job:
             self.save(problem)
             return True
         page0 = source["pages"][0]
-        words_doc = json.loads((self.dir / page0["words"]).read_text())
-        image = (self.dir / page0["image"]).read_bytes()
+        words_doc, consumed_artifact = sources.load_page_evidence(self.dir, page0)
+        image, image_identity = sources.load_page_image_evidence(self.dir, page0)
         entry = page["record"]
         types = read_events.EVENT_TYPES
         for row in rows:
@@ -1734,7 +1788,7 @@ class Job:
                 return False
             events, _ = read_events.parse_events(reply.raw)
             events = events or []
-            extra = {**(reply.extra or {}), "input": "image",
+            extra = {**(reply.extra or {}), "input": "image", "image_sha256": image_identity["sha256"],
                      "usage": {"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens}}
             reading = read_events._record(model=reply.model, prompt=text, raw=reply.raw, events=events, problem=None,
                                           entry=entry, extra=extra)
@@ -1751,7 +1805,8 @@ class Job:
             chosen = escalate.pick(row, events)       # the band may hold other events: take this row's
             event = escalate.to_page_points(chosen, y_range, words_doc) if chosen else None
             share = (reply.prompt_tokens, reply.completion_tokens, 1)
-            outcome = escalate.apply(row, event, reading, source, words_doc, now_utc(), trig, self.run, share, text)
+            outcome = escalate.apply(row, event, reading, source, words_doc, now_utc(), trig, self.run, share, text,
+                                     consumed_artifact=consumed_artifact)
             self.job["escalated_rows"][row["id"]] = outcome
             self.note_escalation("read")
             self.save()
@@ -1801,7 +1856,7 @@ class Job:
             done[key] = "not_run"
             return True
         page0 = source["pages"][0]
-        words_doc = json.loads((self.dir / page0["words"]).read_text())
+        words_doc, consumed_artifact = sources.load_page_evidence(self.dir, page0)
         entry = page["record"]
         prompt = read_events.build_send_back_prompt(words_doc, entry, rows)
         if self.stopped_before_a_call(reader):
@@ -1818,11 +1873,14 @@ class Job:
         answers = {a["id"]: a for a in (read_events.parse_send_back(reply.raw) or [])}
         usage = {"prompt_tokens": reply.prompt_tokens, "completion_tokens": reply.completion_tokens}
         reading = read_events._record(model=reply.model, prompt=prompt, raw=reply.raw, events=[], problem=None,
-                                      entry=entry, extra={**(reply.extra or {}), "usage": usage})
+                                      entry=entry, extra={**(reply.extra or {}), "words_sha256": consumed_artifact["sha256"],
+                                                          "words_used": consumed_artifact,
+                                                          "usage": usage})
         share = (reply.prompt_tokens, reply.completion_tokens, len(rows))
         at = now_utc()
         for row in rows:
-            self.apply_send_back(row, answers.get(row["id"]), reading, source, words_doc, share, prompt, at)
+            self.apply_send_back(row, answers.get(row["id"]), reading, source, words_doc, share, prompt, at,
+                                 consumed_artifact)
         done[key] = "done"
         self.save()
         return True
@@ -1836,7 +1894,7 @@ class Job:
         return any(squash(s["text"]) == want for s in coverage_sentences(words_doc["words"]))
 
     def apply_send_back(self, row: dict, answer: dict | None, reading: dict, source: dict, words_doc: dict,
-                        share: tuple, prompt: str, at: str) -> None:
+                        share: tuple, prompt: str, at: str, consumed_artifact: dict | None = None) -> None:
         who = "server.jobs"
         pt = reading["usage"]["prompt_tokens"]
         row["trail"].append({"step": "Sent back for the date", "tag": "Code", "who": who, "at": at,
@@ -1859,7 +1917,8 @@ class Job:
                                          "indication")}
         event.update(quote=quote, date_text=date_text, box=None)
         proposal = build_entry.build_row(0, event, reading, source, words_doc, at, share=share,
-                                         model_name=price_name(reading["model"]))
+                                         model_name=price_name(reading["model"]),
+                                         consumed_artifact=consumed_artifact)
         model_step = next((t for t in proposal["trail"] if t["tag"] == "Model"), None)
         if model_step:
             row["trail"].append({**model_step, "step": "Sentence for the date"})
@@ -1880,8 +1939,8 @@ class Job:
         if held:       # an existing two-sided disagreement is preserved: only a person's fix settles it
             row["status"], row["group"], _ = derive_status(row)
         if row.get("found_by") == "second_reader":      # nobody else read it: it stays an open row of the second reader
-            failed = any(c["result"] == "fail" for c in row["checks"])
             row["status"] = event_checks.row_status(row["checks"], second_reader_agrees=False)
+            failed = row["status"] == event_checks.FAILED
             row["group"] = "open"
             row["reason"] = (f"{proposal['reason']} " if failed else "") + compare.ONLY_REASON
         row["trail"].append({"step": "Send-back result", "tag": "Code", "who": who, "at": at,

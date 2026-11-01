@@ -65,7 +65,7 @@ def test_the_whole_page_is_the_region_only_when_nothing_finer_matched():
 def test_a_crop_is_the_region_plus_padding_inside_the_page():
     region = {"id": "r1", "concept": "title", "box": [2, 100, 300, 140]}
     assert scan.crop_box(region, 612, 792) == [0.0, 96.0, 304.0, 144.0]
-    png = scan.scanned_png(load_entry(PIN))                       # the page at 2 px per point
+    png, _image_identity = scan.scanned_png(load_entry(PIN))       # the page at 2 px per point
     import pymupdf
     crop = pymupdf.Pixmap(scan.crop_png(png, [0.0, 96.0, 304.0, 144.0], 612.0))
     assert (crop.width, crop.height) == (608, 96)
@@ -172,14 +172,25 @@ def test_a_picture_page_is_rebuilt_read_and_checked(tmp_path, picture_index):
     assert [c for c, _ in fake_sam.calls] == list(picture.CONCEPTS), "one request per concept, no whole-page fallback"
     page = run_json["sources"][0]["pages"][0]
     assert page["kind"] == "picture" and page["words_from"] == "sam+image reader"
+    assert page["visual_evidence"]["origin"] == "approximate" and not page["visual_evidence"]["overlays_supported"]
     assert page["note"] == "words read from the picture by two Meta models; not the page's own text layer"
-    words = json.loads((run_dir / page["words"]).read_text())
+    captured = json.loads((run_dir / page["words"]).read_text())
+    words, consumed = __import__("runs.sources", fromlist=["load_page_words"]).load_page_words(run_dir, page)
+    derived = page["derived_words"]
+    assert len(captured["words"]) == 150 and all(w["y1"] - w["y0"] < 2 for w in captured["words"])
+    assert sources._sha(run_dir / page["words"]) == page["words_sha256"]  # the captured hidden layer remains untouched
     assert words["words_from"] == "sam+image reader" and len([w for w in words["words"] if not w.get("break")]) == len(TEXT.split()) * 2
-    assert page["words_sha256"] == __import__("runs.build_run", fromlist=["x"]).file_sha256(run_dir / page["words"])
+    assert consumed == {"file": derived["file"], "sha256": derived["sha256"], "kind": "derived"}
+    assert derived["based_on_image_sha256"] == page["image_sha256"]
+    assert derived["sha256"] == __import__("runs.build_run", fromlist=["x"]).file_sha256(run_dir / derived["file"])
     assert "t1" not in first.prompts[0] and "Phase" in first.prompts[0], "the reader is shown the rebuilt words"
     row = run_json["rows"][0]
     checks = {c["name"]: c["result"] for c in row["checks"]}
     assert checks["quote_match"] == "pass", row["checks"][0]["reason"]
+    assert checks["selector_match"] == "pass" and row["status"] == "matched"
+    assert "region SAM 3.1 found" in row["checks"][1]["reason"] and "word" not in row["checks"][1]["reason"].lower()
+    from runs.claim_assessment import visible_passage_assessment
+    assert visible_passage_assessment(run_json, row)["result"] == "not_checked"
     assert [s["step"] for s in row["trail"][:5]] == [
         "Sent the page to Muse Spark", "SAM 3.1 found 2 regions", "Transcribed region 1", "Transcribed region 2",
         "Words rebuilt from the picture"]
@@ -215,7 +226,12 @@ def test_when_sam_finds_nothing_code_makes_the_whole_page_one_region_and_the_not
     row = run_json["rows"][0]
     assert row["trail"][1]["step"] == "SAM 3.1 found 0 regions" and "code made one region" in row["trail"][1]["text"]
     assert "SAM 3.1 found no region" in row["reason"]
-    assert json.loads((run_dir / page["words"]).read_text())["words_from"] == "sam+image reader"
+    selector = next(check for check in row["checks"] if check["name"] == "selector_match")
+    assert selector["result"] == "could_not_run"
+    assert "SAM 3.1 found no region" in selector["reason"]
+    assert row["status"] == "proposed"
+    words, _consumed = __import__("runs.sources", fromlist=["load_page_words"]).load_page_words(run_dir, page)
+    assert words["words_from"] == "sam+image reader"
 
 
 def test_without_sam_the_page_is_read_from_its_own_words_and_the_log_says_so(tmp_path, picture_index):

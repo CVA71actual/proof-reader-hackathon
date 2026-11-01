@@ -60,7 +60,8 @@ def reading(words_doc, entry):
 
 @pytest.fixture(scope="module")
 def run():
-    return json.loads((RUN_DIR / "run.json").read_text())
+    from runs.check_load import load_bound_run
+    return load_bound_run(RUN_DIR)
 
 
 def by_program(run, program):
@@ -198,6 +199,7 @@ def test_the_pn8047_row(run):
         assert (row["date"], row["date_end"]) == ("2027-01-01", "2027-03-31")
         assert row["group"] == "kept"
         assert {c["result"] for c in row["checks"]} == {"pass"}
+        assert "Checks passed:" in row["reason"] and "Every check passed" not in row["reason"]
         assert "keeps the period as stated" in row["reason"]
 
 
@@ -323,7 +325,9 @@ def test_the_server_lists_and_shows_the_run(client, run):
     body = client.get("/api/runs/ptgx-r4a").json()
     assert body["rows"] == run["rows"] and body["sources"][0]["rendered_from"]["format"] == "html"
     row = by_program(run, "PN-8047")
-    assert body["state"]["targets"][row["id"]]["group"] == row["group"]
+    state = body["state"]["targets"][row["id"]]
+    assert (state["status"], state["group"]) == ("matched", "kept")
+    assert state["claim_assessments"]["visible_passage"]["result"] == "not_checked"
 
 
 def test_the_server_serves_page_3(client, run):
@@ -345,6 +349,7 @@ def test_keep_then_undo_on_the_real_row(client, runs_dir, run):
     assert len(lines) == 1 and json.loads(lines[0])["action"] == "keep"
     r = post(client, rid, "undo")
     assert r.status_code == 200 and r.json()["state"]["decided_by_person"] is False
+    assert (r.json()["state"]["status"], r.json()["state"]["group"]) == ("matched", "kept")
     assert len((runs_dir / "ptgx-r4a" / "decisions.jsonl").read_text().splitlines()) == 2
 
 
@@ -372,4 +377,5 @@ def test_remove_on_the_real_row(client, run):
 def test_state_rule_with_no_decisions_leaves_the_run_as_it_was(run):
     st = current_state(run, [])
     for row in run["rows"]:
-        assert st["targets"][row["id"]]["group"] == row["group"]
+        target = st["targets"][row["id"]]
+        assert target["group"] == row["group"]

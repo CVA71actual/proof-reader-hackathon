@@ -233,10 +233,10 @@ def test_a_turn_budget_of_zero_makes_no_call(tmp_path):
 # ---------------------------------------------------------------- the export
 
 
-def test_a_period_is_not_printed_as_its_first_day(tmp_path):
+def test_a_period_is_not_printed_as_its_first_day(tmp_path, check37_evidence_baseline):
     """A row with a period end and no date text is a period. The export must show the end as well as
     the start. Printing the start alone makes the quarter look like a single day."""
-    run_dir = _saved(tmp_path, [_row(date_text=None, title="Window")])
+    run_dir = check37_evidence_baseline.round8(_saved, tmp_path, [_row(date_text=None, title="Window")], FIXED)
     view = build_view(*load_run_dir(run_dir), generated_at=FIXED)
     shown = view["calendar"][0]["date_display"]
     assert "2027-01-01" in shown and "2027-03-31" in shown and shown != "2027-01-01"

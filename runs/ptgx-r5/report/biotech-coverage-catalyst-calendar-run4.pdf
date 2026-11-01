@@ -1,5 +1,5 @@
 %PDF-1.4
-%“Œ‹ž ReportLab Generated PDF document (opensource)
+%“Œ‹ž ReportLab Generated PDF document http://www.reportlab.com
 1 0 obj
 <<
 /F1 2 0 R /F2 3 0 R /F3 5 0 R
@@ -47,7 +47,7 @@ endobj
 endobj
 8 0 obj
 <<
-/Author (built by code from the saved results) /CreationDate (D:20000101000000+00'00') /Creator (\(unspecified\)) /Keywords () /ModDate (D:20000101000000+00'00') /Producer (ReportLab PDF Library - \(opensource\)) 
+/Author (built by code from the saved results) /CreationDate (D:20000101000000+00'00') /Creator (\(unspecified\)) /Keywords () /ModDate (D:20000101000000+00'00') /Producer (ReportLab PDF Library - www.reportlab.com) 
   /Subject (\(unspecified\)) /Title (Biotech Coverage Catalyst Calendar) /Trapped /False
 >>
 endobj
@@ -58,7 +58,7 @@ endobj
 endobj
 10 0 obj
 <<
-/Length 6625
+/Length 4453
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -100,253 +100,171 @@ q
 1 0 0 1 60 637.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Companies read: PTGX) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Page outcomes: captured 1 \267 attempted 1 \267 read 1 \267 unreadable 0 \267 skipped 0 \267 unread 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 619.6 cm
+1 0 0 1 60 621.6 cm
 q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Companies unread: none recorded) Tj T* ET
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX page outcomes: captured 1 \267 attempted 1 \267 read 1 \267 unreadable 0 \267 skipped 0 \267 unread 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 601.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Pages read: 1 \267 unread: not recorded) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 583.6 cm
+1 0 0 1 60 603.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Stopping reason: No stopping reason recorded.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 567.6 cm
+1 0 0 1 60 587.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Built on 31 October 2026 at 18:00 \(local time\)) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Built on 31 October 2026 at 19:21 \(local time\)) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 557.6 cm
+1 0 0 1 60 577.6 cm
 Q
 q
-1 0 0 1 60 527.6 cm
+1 0 0 1 60 547.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Summary) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 509.6 cm
+1 0 0 1 60 529.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and kept: 2) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and kept: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 491.6 cm
+1 0 0 1 60 511.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Corrected: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 473.6 cm
+1 0 0 1 60 493.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and removed: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 455.6 cm
+1 0 0 1 60 475.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unverified: 0) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unverified: 2) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 437.6 cm
+1 0 0 1 60 457.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 419.6 cm
+1 0 0 1 60 439.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Mistakes caught by code 0 \267 by the second reader 0 \267 by a person 0 \267 Excluded 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 401.6 cm
+1 0 0 1 60 421.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unresolved \(needs attention\): 0) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unresolved \(needs attention\): 2) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 371.6 cm
+1 0 0 1 60 391.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Calendar) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 355.6 cm
+1 0 0 1 60 375.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Window: 2026-10-28 \226 2027-04-28) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 339.6 cm
+1 0 0 1 60 359.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Kept and corrected rows only, ordered by date. Periods are shown as stated.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 54 285.6 cm
-q
-.933333 .933333 .933333 rg
-n 0 52 504 -16 re f*
-0 0 0 rg
-BT /F2 10 Tf 12 TL ET
-q
-1 0 0 1 3 39 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Date / period) Tj T* ET
-Q
-Q
-q
-1 0 0 1 78.6 39 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Ticker) Tj T* ET
-Q
-Q
-q
-1 0 0 1 118.2 39 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Program) Tj T* ET
-Q
-Q
-q
-1 0 0 1 175.8 39 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Event) Tj T* ET
-Q
-Q
-q
-1 0 0 1 283.8 39 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Source) Tj T* ET
-Q
-Q
-q
-1 0 0 1 427.8 39 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Status) Tj T* ET
-Q
-Q
-BT /F1 10 Tf 12 TL ET
-q
-1 0 0 1 3 23 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Q1 2027) Tj T* ET
-Q
-Q
-q
-1 0 0 1 78.6 23 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX) Tj T* ET
-Q
-Q
-q
-1 0 0 1 118.2 23 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PN-8047) Tj T* ET
-Q
-Q
-q
-1 0 0 1 175.8 23 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Phase 1 initiation) Tj T* ET
-Q
-Q
-q
-1 0 0 1 283.8 3 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (Protagonist Therapeutics, Inc. \(filed) Tj T* (with the SEC\) \267 page rendered by code) Tj T* (from the filed HTML) Tj T* ET
-Q
-Q
-q
-1 0 0 1 427.8 23 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (matched) Tj T* ET
-Q
-Q
-q
-1 J
-1 j
-.8 .8 .8 RG
-.25 w
-n 0 52 m 504 52 l S
-n 0 0 m 504 0 l S
-n 0 0 m 0 52 l S
-n 504 0 m 504 52 l S
-n 0 36 m 504 36 l S
-n 75.6 0 m 75.6 52 l S
-n 115.2 0 m 115.2 52 l S
-n 172.8 0 m 172.8 52 l S
-n 280.8 0 m 280.8 52 l S
-n 424.8 0 m 424.8 52 l S
-Q
-Q
-Q
-q
-1 0 0 1 60 255.6 cm
+1 0 0 1 60 341.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Later \267 1) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (No kept or corrected rows.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 213.6 cm
+1 0 0 1 60 311.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (the second half of 2027 \267 PTGX \267 PN-458o \267 Phase 1 initiation \267 e1 \267 PTGX 8-K exhibit 99.1 \(second quarter 2026 financial) Tj T* (results press release\), filed 2026-08-05 \(src-ptgx-8k-2026-08-05-ex991\) \267 page 3 \267 indication: not stated \267 action: milestone \267) Tj T* (Every check passed. The page names a period \(the second half of 2027\), not a day, so the row keeps the period as stated.) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Corrections) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 147.6 cm
+1 0 0 1 60 293.6 cm
 q
-.2 .2 .2 rg
-BT 1 0 0 1 0 52 Tm /F1 8 Tf 10 TL (Evidence e2: PTGX 8-K exhibit 99.1 \(second quarter 2026 financial results press release\), filed 2026-08-05) Tj T* (\(src-ptgx-8k-2026-08-05-ex991\) \267 page 3 \267 indication not stated \267 action milestone \267 quote: PN-8047 \(oral small molecule hepcidin functional) Tj T* -0.054095 Tw (mimetic\): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027. \267 checks: Quote found on page: pass \(The quote) Tj T* 0 Tw (is printed on the page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the quote's) Tj T* (lines.\); Date read as written: pass \(The period in the row is the period printed in the quote.\); Source is more than a calendar: pass \(The) Tj T* (source is not a third-party calendar.\); Event type matches the quote: pass \(The quote's words \(initiation\) fit milestone.\)) Tj T* ET
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 81.6 cm
+1 0 0 1 60 263.6 cm
 q
-.2 .2 .2 rg
-BT 1 0 0 1 0 52 Tm /F1 8 Tf 10 TL (Evidence e1: PTGX 8-K exhibit 99.1 \(second quarter 2026 financial results press release\), filed 2026-08-05) Tj T* (\(src-ptgx-8k-2026-08-05-ex991\) \267 page 3 \267 indication not stated \267 action milestone \267 quote: PN-458o \(dual GLP/GIP agonist peptide\):) Tj T* (IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027. \267 checks: Quote found on page: pass \(The) Tj T* (quote is printed on the page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the) Tj T* (quote's lines.\); Date read as written: pass \(The period in the row is the period printed in the quote.\); Source is more than a calendar: pass) Tj T* (\(The source is not a third-party calendar.\); Event type matches the quote: pass \(The quote's words \(initiation\) fit milestone.\)) Tj T* ET
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Other edits \267 no mistake demonstrated) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 245.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 215.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Excluded) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 197.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 167.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Still open and unverified) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 65.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 87 Tm /F1 9 Tf 12 TL (Unverified \267 PTGX \267 Protagonist Therapeutics, Inc. \267 PN-458o \267 indication not stated \267 Phase 1 initiation \267 the second half of) Tj T* (2027 \267 source PTGX 8-K exhibit 99.1 \(second quarter 2026 financial results press release\), filed 2026-08-05) Tj T* (\(src-ptgx-8k-2026-08-05-ex991\) page 3 \267 quote: PN-458o \(dual GLP/GIP agonist peptide\): IND-enabling studies are) Tj T* (ongoing with Phase 1 initiation anticipated in the second half of 2027.: Checks passed: Quote found on page, Citation) Tj T* -0.107286 Tw (located, Date read as written, Source is more than a calendar, Event type matches the quote. The page names a period \(the) Tj T* 0 Tw (second half of 2027\), not a day, so the row keeps the period as stated. \267 timing: dated \267 current-value checks: Quote found) Tj T* (on page: pass; Citation located: pass; Date read as written: pass; Source is more than a calendar: pass; Event type) Tj T* (matches the quote: pass; Claimed words visible on the rendered page: not_checked) Tj T* ET
 Q
 Q
  
@@ -354,7 +272,7 @@ endstream
 endobj
 11 0 obj
 <<
-/Length 1671
+/Length 2191
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -365,77 +283,42 @@ BT 1 0 0 1 54 32.4 Tm (Built with Meta Muse models \267 built by code from the s
 BT 1 0 0 1 536.594 32.4 Tm (page 2) Tj T* ET
 Q
 q
-1 0 0 1 60 719.6 cm
+1 0 0 1 60 639.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Corrections) Tj T* ET
+BT 1 0 0 1 0 87 Tm /F1 9 Tf 12 TL (Unverified \267 PTGX \267 Protagonist Therapeutics, Inc. \267 PN-8047 \267 indication not stated \267 Phase 1 initiation \267 Q1 2027 \267 source) Tj T* (PTGX 8-K exhibit 99.1 \(second quarter 2026 financial results press release\), filed 2026-08-05) Tj T* (\(src-ptgx-8k-2026-08-05-ex991\) page 3 \267 quote: PN-8047 \(oral small molecule hepcidin functional mimetic\): IND-enabling) Tj T* (studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.: Checks passed: Quote found on page, Citation located,) Tj T* (Date read as written, Source is more than a calendar, Event type matches the quote. The page names a period \(Q1 2027\),) Tj T* -0.034909 Tw (not a day, so the row keeps the period as stated. \267 timing: dated \267 current-value checks: Quote found on page: pass; Citation) Tj T* 0 Tw (located: pass; Date read as written: pass; Source is more than a calendar: pass; Event type matches the quote: pass;) Tj T* (Claimed words visible on the rendered page: not_checked) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 701.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 671.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Excluded) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 653.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 623.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Still open and unverified) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 605.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 575.6 cm
+1 0 0 1 60 609.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Sources) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 557.6 cm
+1 0 0 1 60 591.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Protagonist Therapeutics, Inc. \(filed with the SEC\) \267 filing \267 2026-08-05) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 542.6 cm
+1 0 0 1 60 576.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1377121/000110465926091099/tm2622272d1_ex99-1.htm) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 527.6 cm
+1 0 0 1 60 561.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 4ba68e37da0c15348d3eb9c3164a8f477ca81fa42d570fd648961e69cb5a1c50) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 491.6 cm
+1 0 0 1 60 525.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (ecfd2d79a6e812707d22a9f9a5b86ab1ff7dcc4e8bd9aa2d4c0c7636a7280d57 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
@@ -447,27 +330,27 @@ endobj
 xref
 0 12
 0000000000 65535 f 
-0000000061 00000 n 
-0000000112 00000 n 
-0000000219 00000 n 
-0000000331 00000 n 
-0000000525 00000 n 
-0000000630 00000 n 
-0000000824 00000 n 
-0000000892 00000 n 
-0000001216 00000 n 
-0000001281 00000 n 
-0000007958 00000 n 
+0000000073 00000 n 
+0000000124 00000 n 
+0000000231 00000 n 
+0000000343 00000 n 
+0000000537 00000 n 
+0000000642 00000 n 
+0000000836 00000 n 
+0000000904 00000 n 
+0000001231 00000 n 
+0000001296 00000 n 
+0000005801 00000 n 
 trailer
 <<
 /ID 
 [<0615925bee3cd89939c0a65e0a4c8188><0615925bee3cd89939c0a65e0a4c8188>]
-% ReportLab generated PDF document -- digest (opensource)
+% ReportLab generated PDF document -- digest (http://www.reportlab.com)
 
 /Info 8 0 R
 /Root 7 0 R
 /Size 12
 >>
 startxref
-9681
+8044
 %%EOF

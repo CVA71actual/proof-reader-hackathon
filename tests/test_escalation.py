@@ -523,24 +523,40 @@ def test_escalation_replaces_the_proposal_but_leaves_a_real_disagreement_held(ru
 def test_a_fix_of_another_field_does_not_clear_the_hold_but_a_fix_of_the_disputed_field_does(runs_dir, words_doc):
     _, rid, run, row, _ = _held_row(runs_dir, words_doc)
     d = row["disagreement"]
-    pass_rc = {"result": "pass", "reason": None, "checks": [], "before": {"result": "fail"}, "after": {"result": "pass"}}
 
-    def fix(field, frm, to):
-        return [{"by": "person", "target": row["id"], "action": "fix", "fix": {"field": field, "from": frm, "to": to},
+    def fix(field, frm, to, basis_run=run, basis_row=row):
+        source = next(s for s in basis_run["sources"] if s["id"] == basis_row["source_id"])
+        fixed = {**basis_row, field: to}
+        before = {**basis_row, field: frm}
+        from runs.recheck import recheck_row
+        fields = {x.get("field") for x in [basis_row.get("disagreement") or {},
+                                               *((basis_row.get("disagreement") or {}).get("also") or [])]}
+        from runs import sources
+        page = next(p for p in source["pages"] if p["page_number"] == basis_row["page_number"])
+        evidence, consumed = sources.load_page_evidence(runs_dir / rid, page)
+        recheck = recheck_row("t", fixed, source, evidence, settles=field in fields,
+                              field=field, before=before, consumed_artifact=consumed)["recheck"]
+        return [{"by": "person", "target": basis_row["id"], "action": "fix", "fix": {"field": field, "from": frm, "to": to},
                  "at": "t"},
-                {"by": "code", "target": row["id"], "action": "recheck", "recheck": pass_rc, "at": "t"}]
+                {"by": "code", "target": basis_row["id"], "action": "recheck", "recheck": recheck, "at": "t"}]
 
     other = current_state(run, fix("title", row["title"], "A new title"))["targets"][row["id"]]
     assert other["status"] == "undecided"                                # base held: date fix cannot settle it
-    settled = current_state(run, fix("date", row["date"], "2027-01-02"))["targets"][row["id"]]
+    # Restore the first reader's out-of-period day. The bound re-check after the person's choice
+    # must test the new date against the quoted Q1 period.
+    row["date"] = "2027-02-01"
+    settled = current_state(run, fix("date", row["date"], "2027-01-01"))["targets"][row["id"]]
     assert settled["status"] == "matched" and settled["group"] == "corrected"
     # the same row with the readers disputing the program instead: a date fix leaves it held
     prog = copy.deepcopy(run)
     r2 = next(r for r in prog["rows"] if r["id"] == row["id"])
     r2["disagreement"] = {"field": "program", "first_reader": "A", "second_reader": "B"}
-    held = current_state(prog, fix("date", row["date"], "2027-01-02"))["targets"][row["id"]]
+    prog_row = next(r for r in prog["rows"] if r["id"] == row["id"])
+    held = current_state(prog, fix("date", "2027-02-01", "2027-01-01", prog, prog_row))["targets"][row["id"]]
     assert held["status"] == "undecided" and held["group"] == "corrected"
-    assert current_state(prog, fix("program", row["program"], "B"))["targets"][row["id"]]["status"] == "matched"
+    prog_row["date"] = "2027-01-01"
+    fixed = current_state(prog, fix("program", row["program"], "B", prog, prog_row))
+    assert fixed["targets"][row["id"]]["status"] == "matched"  # the bound program fix settles the program disagreement
 
 
 def test_a_date_send_back_keeps_an_existing_disagreement_held(runs_dir, words_doc):
@@ -568,32 +584,44 @@ def _two_field_run(runs_dir, words_doc):
     _, rid, run, row, _ = _held_row(runs_dir, words_doc)
     run = copy.deepcopy(run)
     r = next(x for x in run["rows"] if x["id"] == row["id"])
+    r["date"] = "2027-02-01"
     r["status"], r["group"] = "matched", "kept"                      # saved as settled; the disagreement still holds
     r["disagreement"] = {"field": "date", "first_reader": "2027-02-01", "second_reader": "2027-01-01",
                          "also": [{"field": "program", "first_reader": "A", "second_reader": "B"}]}
     return run, r
 
 
-def _fix_pair(r, field, to):
-    pass_rc = {"result": "pass", "reason": None, "checks": [], "before": {"result": "fail"}, "after": {"result": "pass"}}
+def _fix_pair(r, field, to, run, words_doc, runs_dir, rid):
+    source = next(s for s in run["sources"] if s["id"] == r["source_id"])
+    fixed = {**r, field: to}
+    from runs.recheck import recheck_row
+    from runs import sources
+    page = next(p for p in source["pages"] if p["page_number"] == r["page_number"])
+    evidence, consumed = sources.load_page_evidence(runs_dir / rid, page)
+    recheck = recheck_row("t", fixed, source, evidence, settles=True, field=field,
+                          before=r, consumed_artifact=consumed)["recheck"]
     return [{"by": "person", "target": r["id"], "action": "fix", "fix": {"field": field, "from": r.get(field), "to": to},
              "at": "t"},
-            {"by": "code", "target": r["id"], "action": "recheck", "recheck": pass_rc, "at": "t"}]
+            {"by": "code", "target": r["id"], "action": "recheck", "recheck": recheck, "at": "t"}]
 
 
 @pytest.mark.parametrize("first,second", [("program", "date"), ("date", "program")])
 def test_a_two_field_disagreement_clears_only_when_both_fields_are_fixed(runs_dir, words_doc, first, second):
     from runs.calendar import calendar_entries
     run, r = _two_field_run(runs_dir, words_doc)
-    new = {"date": "2027-01-02", "program": "B"}
+    new = {"date": "2027-01-01", "program": "B"}
     t = current_state(run, [])["targets"][r["id"]]
     assert (t["status"], t["group"]) == ("undecided", "open")
-    d1 = _fix_pair(r, first, new[first])
+    d1 = _fix_pair(r, first, new[first], run, words_doc, runs_dir, run["run"]["id"])
     st = current_state(run, d1)
     t = st["targets"][r["id"]]
-    assert t["status"] == "undecided" and f"still disputed: {second}" in t["reason"].lower()
+    if first == "program":
+        assert (t["status"], t["group"]) == ("failed", "open")
+    else:
+        assert t["status"] == "undecided" and f"still disputed: {second}" in t["reason"].lower()
     assert st["unresolved"] >= 1 and r["id"] not in [e["id"] for e in calendar_entries(run, st)]
-    st = current_state(run, d1 + _fix_pair({**r, first: new[first]}, second, new[second]))
+    st = current_state(run, d1 + _fix_pair({**r, first: new[first]}, second, new[second], run, words_doc,
+                                           runs_dir, run["run"]["id"]))
     t = st["targets"][r["id"]]
     assert (t["status"], t["group"]) == ("matched", "corrected")
     assert r["id"] in [e["id"] for e in calendar_entries(run, st)]
@@ -605,7 +633,9 @@ def test_a_keep_clears_a_two_field_hold_and_a_single_field_hold_is_unchanged(run
     keep = [{"by": "person", "target": r["id"], "action": "keep", "note": None, "at": "t"}]
     assert current_state(run, keep)["targets"][r["id"]]["group"] == "kept"
     del r["disagreement"]["also"]
-    one = current_state(run, _fix_pair(r, "date", "2027-01-02"))["targets"][r["id"]]
+    r["date"] = "2027-02-01"
+    one = current_state(run, _fix_pair(r, "date", "2027-01-01", run, words_doc,
+                                       runs_dir, run["run"]["id"]))["targets"][r["id"]]
     assert (one["status"], one["group"]) == ("matched", "corrected")
 
 

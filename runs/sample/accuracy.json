@@ -3,8 +3,8 @@
  "run": "sample",
  "sample": true,
  "date": "2026-11-01",
- "made_at": "2026-11-01T00:12:28+00:00",
- "product_tip": "bf271b5",
+ "made_at": "2026-11-01T17:36:55+00:00",
+ "product_tip": "f9ea42b",
  "product_dirty": false,
  "key": {
   "path": "accuracy/keys/ions_ars_2026_p95.key.json",
@@ -103,9 +103,9 @@
    "person": 1
   }
  },
- "run_sha256": "89eb679eb39db70253173370ee9b145863f65f5081904ae7a8493fd398cd6b93",
- "decisions_sha256": "560f7463d63855457f6eeb83c73a8e1b7f0da23422889c37ad1a917f9fe4431a",
+ "run_sha256": "5dd43e04503f45d52baed0bc448f255b2f006291265d4f1787fd3efc5573927d",
+ "decisions_sha256": "a2ed5a3c65df1d218406f55dc125570cd763d5bbcbb0cd93a26bf24f24004632",
  "words": "pages/p95.words.json",
  "words_sha256": "1a31fbcfab3ed798116709f7ce1bd962be2a599c20e7c29f1f1d4ed6c9a187c5",
- "content_sha256": "70a4e9f6f83d44e2a64f8ed0c9ae8b670d211238e9f485b8e9c9679da28bb72f"
+ "content_sha256": "9682328ead39f996806c2e1caca412b54d4bc28887dfcd8bbc7a35d2581830f8"
 }

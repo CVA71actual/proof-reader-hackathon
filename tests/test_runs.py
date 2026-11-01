@@ -1,6 +1,7 @@
 """R1: the run.json contract, the saved demo run, the sample run, and the state rule."""
 
 import copy
+from dataclasses import replace
 import importlib
 import json
 import re
@@ -10,7 +11,8 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from checks import event_checks
-from runs import build_run, build_sample
+from runs import build_run, build_sample, recheck as recheck_module, sources
+from runs.claim_assessment import bind_checks
 from runs.state import GROUPS, current_state
 
 REPO = Path(__file__).resolve().parent.parent
@@ -23,7 +25,8 @@ RAN = {"pass", "fail"}
 
 
 def load(name):
-    return json.loads((RUNS / name / "run.json").read_text())
+    from runs.check_load import load_bound_run
+    return load_bound_run(RUNS / name)
 
 
 @pytest.fixture(scope="module")
@@ -37,9 +40,11 @@ def sample():
 
 
 @pytest.fixture(scope="module")
-def sample_decisions():
+def sample_decisions(sample):
     lines = (RUNS / "sample" / "decisions.jsonl").read_text().splitlines()
-    return [json.loads(x) for x in lines if x.strip()]
+    decisions = [json.loads(x) for x in lines if x.strip()]
+    from runs.check_load import bind_decisions_on_load
+    return bind_decisions_on_load(sample, decisions, RUNS / "sample")
 
 
 def all_checks(run):
@@ -266,6 +271,14 @@ def test_sample_build_is_current(sample, tmp_path):
     assert committed == "".join(json.dumps(d) + "\n" for d in decisions)
 
 
+def test_sample_unreadable_row_without_box_uses_the_no_place_reason(sample):
+    row = next(row for row in sample["rows"] if row["id"] == "e9")
+    selector = next(check for check in row["checks"] if check["name"] == "selector_match")
+    assert row["box"] is None
+    assert selector["result"] == "could_not_run"
+    assert selector["reason"] == "The reader did not propose a place on the page for this value."
+
+
 def test_sample_is_labelled_sample_everywhere(sample):
     assert "Sample" in sample["run"]["label"]
     assert sample["run"]["sample"] is True
@@ -466,14 +479,44 @@ def test_only_fixes_in_effect_are_person_mistakes_and_undo_lowers_them(sample):
     assert st["mistakes"]["person"] == 1 and len(st["ignored"]) == 1
 
 
-def recheck(target, result, at="2026-10-27T16:05:00+00:00", by="code", before="fail"):
-    """A code re-check line. `before`: the result of the same checks on the value before the fix."""
-    checks = [{"name": "date_match", "result": result}]
+def recheck(target, result, at="2026-10-27T16:05:00+00:00", by="code", before="fail", updates=None):
+    """A state-test re-check whose before/after check outputs are bound to their exact candidate and page."""
+    run = load("sample")
+    row = copy.deepcopy(next(r for r in run["rows"] if r["id"] == target))
+    source = next(s for s in run["sources"] if s["id"] == row["source_id"])
+    page = next(p for p in source["pages"] if p["page_number"] == row["page_number"])
+    words, artifact = sources.load_page_evidence(RUNS / "sample", page)
+    after = copy.deepcopy(row)
+    if target == "e7":
+        after[E7_FIX["field"]] = E7_FIX["to"]
+    elif target == "e8":
+        after.update(event_type="regulatory_submission")
+    after.update(updates or {})
+
+    field = "date" if target == "e7" else "event_type"
+
+    def bound(candidate, overall, chosen=False):
+        checks = recheck_module.row_checks(candidate, source, words, chosen=chosen,
+                                           consumed_artifact=artifact)
+        applicable = [c for c in checks if c.result != "not_needed"]
+        if overall == "pass":
+            outcomes = {c.check: "pass" for c in applicable}
+        else:
+            outcomes = {c.check: "pass" for c in applicable}
+            if applicable:
+                outcomes[applicable[0].check] = "fail" if overall == "fail" else "could_not_run"
+        checks = [replace(c, result=outcomes.get(c.check, c.result),
+                          reason="Synthetic, current check result for the state rule test.") for c in checks]
+        return [x.to_dict() for x in bind_checks(checks, candidate, source, consumed_artifact=artifact)]
+
+    old_checks = bound(row, before)
+    after_checks = bound(after, result, chosen=field == "date")
+    checks = after_checks
     return {"at": at, "target": target, "action": "recheck", "note": None, "fix": None, "by": by,
             "recheck": {"result": result, "reason": f"The checks were run again and the result is {result}.",
                         "checks": checks,
-                        "before": {"result": before, "checks": [{"name": "date_match", "result": before}]},
-                        "after": {"result": result, "checks": checks}}}
+                        "before": {"result": before, "checks": old_checks},
+                        "after": {"result": result, "checks": after_checks}}}
 
 
 E7_FIX = {"field": "date", "from": "2027-07-09", "to": "2027-07-19"}
@@ -491,7 +534,9 @@ def test_a_fix_whose_recheck_passed_counts_as_a_person_mistake(sample):
     st = current_state(sample, [dec("e7", "fix", fix=E7_FIX), recheck("e7", "pass")])
     t = st["targets"]["e7"]
     assert t["needs_recheck"] is False and t["recheck"]["result"] == "pass"
-    assert t["recheck"]["checks"] == [{"name": "date_match", "result": "pass"}]
+    assert {c["check"] for c in t["recheck"]["checks"]} == {
+        "quote_match", "selector_match", "date_match", "source_rule", "type_match"}
+    assert all(c.get("assessment") for c in t["recheck"]["checks"])
     assert t["group"] == "corrected" and t["status"] == "matched"
     assert st["mistakes"]["person"] == 2 and st["counts"]["fixes_pending"] == 0
     assert st["ignored"] == []
@@ -543,7 +588,8 @@ def test_a_recheck_applies_to_the_latest_fix_only(sample):
     assert t["needs_recheck"] is True and t["recheck"] is None
     assert st["mistakes"]["person"] == 2 and st["counts"]["fixes_pending"] == 1
     st = current_state(sample, [dec("e7", "fix", fix=E7_FIX), recheck("e7", "pass"),
-                                dec("e7", "fix", fix=fix2), recheck("e7", "pass", at="2026-10-27T16:06:00+00:00")])
+                                dec("e7", "fix", fix=fix2), recheck("e7", "pass", at="2026-10-27T16:06:00+00:00",
+                                                                      updates={"quote": fix2["to"]})])
     assert st["mistakes"]["person"] == 3 and st["counts"]["fixes_pending"] == 0
 
 
@@ -560,6 +606,29 @@ def test_rechecks_that_cannot_apply_are_ignored(sample):
     assert [i["index"] for i in st["ignored"]] == [0, 1, 2, 5]
     assert all(i["reason"] for i in st["ignored"])
     assert st["targets"]["e7"]["recheck"]["result"] == "pass"
+
+
+def test_recheck_with_duplicate_event_check_is_refused(sample):
+    line = recheck("e7", "pass")
+    complete = line["recheck"]["after"]["checks"]
+    incomplete = complete[:-1] + [complete[0]]
+    line["recheck"]["checks"] = incomplete
+    line["recheck"]["after"]["checks"] = incomplete
+
+    st = current_state(sample, [dec("e7", "fix", fix=E7_FIX), line])
+
+    assert st["targets"]["e7"]["needs_recheck"] is True
+    assert st["targets"]["e7"]["recheck"] is None
+    assert st["ignored"][-1]["reason"] == (
+        "The saved re-check is unbound or stale; it remains history."
+    )
+
+
+def test_date_migration_skips_only_human_decisions_still_in_effect(sample):
+    from runs.recheck_dates import person_decisions_in_effect
+
+    assert person_decisions_in_effect(sample, [dec("e7", "keep")]) == {"e7"}
+    assert person_decisions_in_effect(sample, [dec("e7", "keep"), dec("e7", "undo")]) == set()
 
 
 def test_decision_schema_allows_a_code_recheck_only(sample):
@@ -771,21 +840,74 @@ def test_quote_match_cases(words):
 
 
 def test_row_status_rules():
-    P = {"result": "pass"}
-    assert event_checks.row_status([P, {"result": "not_needed"}]) == "matched"
-    assert event_checks.row_status([{"result": "not_needed"}]) == "proposed"
-    assert event_checks.row_status([P, {"result": "could_not_run"}]) == "proposed"
-    assert event_checks.row_status([P, {"result": "fail"}], second_reader_agrees=False) == "failed"
-    assert event_checks.row_status([P], second_reader_agrees=False) == "undecided"
-    assert event_checks.row_status([P], readable=False) == "unreadable"
+    complete = [{"name": name, "result": "pass"} for name in event_checks.REQUIRED_EVENT_CHECKS]
+    complete[-1]["result"] = "not_needed"
+    assert event_checks.row_status(complete) == "matched"
+    assert event_checks.row_status(complete[:-1]) == event_checks.PROPOSED
+    assert event_checks.row_status(complete[:-1] + [complete[0]]) == event_checks.PROPOSED
+    assert event_checks.row_status([{"name": "source_rule", "result": "pass"}]) == event_checks.PROPOSED
+    malformed = [dict(item) for item in complete]
+    malformed[0].pop("result")
+    assert event_checks.row_status(malformed) == event_checks.PROPOSED
+    malformed = [dict(item) for item in complete]
+    malformed[0]["name"] = []
+    assert event_checks.row_status(malformed) == event_checks.PROPOSED
+    partial_failure = complete[:-1] + [{"name": complete[0]["name"], "result": "fail"}]
+    assert event_checks.row_status(partial_failure) == event_checks.FAILED
+    complete[-1]["result"] = "could_not_run"
+    assert event_checks.row_status(complete) == "proposed"
+    complete[-1]["result"] = "fail"
+    assert event_checks.row_status(complete, second_reader_agrees=False) == "failed"
+    complete[-1]["result"] = "pass"
+    assert event_checks.row_status(complete, second_reader_agrees=False) == "undecided"
+    assert event_checks.row_status(complete, readable=False) == "unreadable"
+
+
+def test_event_check_completeness_rejects_unhashable_result():
+    checks = [{"name": name, "result": "pass"} for name in event_checks.REQUIRED_EVENT_CHECKS]
+    checks[0]["result"] = []
+    assert event_checks.row_status(checks) == event_checks.PROPOSED
+
+
+def test_row_status_refuses_each_incomplete_required_event_check():
+    complete = [{"name": name, "result": "pass"} for name in event_checks.REQUIRED_EVENT_CHECKS]
+    assert event_checks.row_status(complete) == event_checks.MATCHED
+    for missing in event_checks.REQUIRED_EVENT_CHECKS:
+        incomplete = [check for check in complete if check["name"] != missing]
+        assert event_checks.row_status(incomplete) == event_checks.PROPOSED, missing
+
+
+def test_a_positive_failure_stays_a_failure_in_an_incomplete_event_set():
+    from runs.escalate import budgeted, candidates
+    from runs.state import derive_status
+
+    incomplete = [{"name": event_checks.TYPE_ID, "label": event_checks.TYPE_LABEL, "result": "fail",
+                   "reason": "Only one check was saved."}]
+    row = {"id": "e1", "status": event_checks.MATCHED, "group": "kept", "checks": incomplete}
+    assert derive_status(row)[:2] == (event_checks.FAILED, "open")
+    assert [item["id"] for item in candidates([row])] == ["e1"]
+    assert [item["id"] for item in budgeted([row])] == ["e1"]
+
+    complete = [{"name": name, "label": label, "result": "pass", "reason": "fixture"}
+                for name, label in ((event_checks.QUOTE_ID, event_checks.QUOTE_LABEL),
+                                    (event_checks.SELECTOR_ID, "Citation located"),
+                                    (event_checks.DATE_ID, event_checks.DATE_LABEL),
+                                    (event_checks.SOURCE_ID, event_checks.SOURCE_LABEL),
+                                    (event_checks.TYPE_ID, event_checks.TYPE_LABEL))]
+    complete[-1]["result"] = "fail"
+    row["checks"] = complete
+    row["status"], row["group"] = event_checks.FAILED, "open"
+    assert [item["id"] for item in candidates([row])] == ["e1"]
+    assert [item["id"] for item in budgeted([row])] == ["e1"]
 
 
 def test_a_pass_on_a_field_no_check_compares_is_not_a_person_mistake(sample):
     # Codex PR4 #1: a title is compared by no check, so even a passing re-check does not show a mistake.
     fix2 = {"field": "title", "from": "Final results", "to": "Final trial results"}
     st = current_state(sample, [dec("e7", "fix", fix=E7_FIX), recheck("e7", "pass"),
-                                dec("e7", "fix", fix=fix2), recheck("e7", "pass", at="2026-10-27T16:06:00+00:00")])
-    assert st["mistakes"]["person"] == 2 and st["counts"]["fixes_pending"] == 0
+                                dec("e7", "fix", fix=fix2), recheck("e7", "pass", at="2026-10-27T16:06:00+00:00",
+                                                                      updates={"title": fix2["to"]})])
+    assert st["mistakes"]["person"] == 2 and st["counts"]["fixes_pending"] == 1
     assert [f["checked"] for f in st["targets"]["e7"]["fixes"]] == [True, False]
 
 

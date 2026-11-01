@@ -21,6 +21,7 @@ from pathlib import Path
 from accuracy import export
 from runs import build_run
 from runs.calendar import calendar_entries
+from runs.check_load import bind_decisions_on_load, load_bound_run
 from runs.state import current_state
 from runs.twelve import summary
 
@@ -30,9 +31,10 @@ PORT = 8777
 
 
 def _load(run_dir: Path) -> tuple[dict, dict]:
-    run = json.loads((run_dir / "run.json").read_text())
+    run = load_bound_run(run_dir)
     f = run_dir / "decisions.jsonl"
     decisions = [json.loads(x) for x in f.read_text().splitlines() if x.strip()] if f.is_file() else []
+    decisions = bind_decisions_on_load(run, decisions, run_dir)
     return run, current_state(run, decisions)
 
 

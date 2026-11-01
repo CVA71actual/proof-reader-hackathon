@@ -42,7 +42,8 @@ def ptgx_words_doc():
 
 @pytest.fixture(scope="module")
 def ptgx_run():
-    return json.loads((RUNS / "ptgx-r4a" / "run.json").read_text())
+    from runs.check_load import load_bound_run
+    return load_bound_run(RUNS / "ptgx-r4a")
 
 
 @pytest.fixture(scope="module")

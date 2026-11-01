@@ -172,26 +172,28 @@ def test_the_built_in_pages_are_captured_exactly_as_the_hard_coded_builders_did(
     idx = sources.load_index()
     ptgx_rec = idx.pages("PTGX")[0]["record"]
     a, b = tmp_path / "a", tmp_path / "b"
-    src, words = sources.capture_page(ptgx_rec, a)
-    old_src, old_words = build_entry.ptgx_source(load_entry(PIN), b)
+    src, words, consumed = sources.capture_page(ptgx_rec, a)
+    old_src, old_words, old_consumed = build_entry.ptgx_source(load_entry(PIN), b)
     assert src == old_src and words == old_words
+    assert consumed == old_consumed == {"file": "pages/p3.words.json", "sha256": src["pages"][0]["words_sha256"], "kind": "captured"}
     assert (a / "pages" / "p3.png").read_bytes() == (b / "pages" / "p3.png").read_bytes()
     ions_rec = idx.pages("IONS")[0]["record"]
     manifest = {k: v for k, v in json.loads((FIXTURES / "MANIFEST.json").read_text()).items() if k != "entries"}
-    src2, words2 = sources.capture_page(ions_rec, a)
-    old2, oldw2 = build_run.ions_source(manifest, b)
+    src2, words2, _consumed2 = sources.capture_page(ions_rec, a)
+    old2, oldw2, _old_consumed2 = build_run.ions_source(manifest, b)
     assert src2 == old2 and words2 == oldw2
 
 
 def test_a_page_is_captured_into_the_runs_folder_with_hashes_under_its_own_name(index, tmp_path):
     rec = index.pages("AAA")[0]["record"]
-    src, words = sources.capture_page(rec, tmp_path)
+    src, words, consumed = sources.capture_page(rec, tmp_path)
     page = src["pages"][0]
     assert page["image"] == "pages/aaa-pr-p3.png" and page["words"] == "pages/aaa-pr-p3.words.json"
     assert page["image_sha256"] == hashlib.sha256((tmp_path / page["image"]).read_bytes()).hexdigest()
     assert page["words_sha256"] == hashlib.sha256((tmp_path / page["words"]).read_bytes()).hexdigest()
     assert src["id"] == "src-aaa-pr-p3" and src["published_date"] == rec["filing_date"]
     assert src["rendered_from"]["format"] == "html" and words["words"]
+    assert consumed["file"] == page["words"] and consumed["sha256"] == page["words_sha256"]
 
 
 def test_a_page_or_words_file_that_differs_from_the_index_hash_is_refused_with_the_reason(index, tmp_path):
@@ -462,14 +464,14 @@ def test_the_file_the_second_page_writes_is_not_the_first_pages_file(tmp_path):
     """What the refusal prevents: with one stem the second capture changes the first source's recorded image hash."""
     recs = sources.parse_index(two_records("one", "two"))
     first, second = (recs.pages(t)[0]["record"] for t in ("AAA", "BBB"))
-    a, _ = sources.capture_page(first, tmp_path)
-    b, _ = sources.capture_page(second, tmp_path)
+    a, _, _ = sources.capture_page(first, tmp_path)
+    b, _, _ = sources.capture_page(second, tmp_path)
     assert a["pages"][0]["image"] != b["pages"][0]["image"]
     for src in (a, b):
         page = src["pages"][0]
         assert hashlib.sha256((tmp_path / page["image"]).read_bytes()).hexdigest() == page["image_sha256"]
     clash = {**second, "file_stem": "one"}                  # the same two pages written under one stem
-    c, _ = sources.capture_page(clash, tmp_path)
+    c, _, _ = sources.capture_page(clash, tmp_path)
     assert c["pages"][0]["image"] == a["pages"][0]["image"], "the collision the loader now refuses"
 
 

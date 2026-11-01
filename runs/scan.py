@@ -28,7 +28,7 @@ from pathlib import Path
 from capture import read_events, sam
 from capture.capture_source import FIXTURES, load_entry
 from checks.coverage import sentence_covered
-from runs import build_entry, build_run, prices
+from runs import build_entry, build_run, prices, page_outcomes
 
 SOURCE_ID = "src-ptgx-8k-2026-08-05-ex991-scanned"
 WHO = "runs.scan"
@@ -45,12 +45,17 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def scanned_png(entry: dict) -> bytes:
-    """The pinned page rendered to an image alone: the PDF's text layer is not in it, so it is a scan."""
+def scanned_png(entry: dict) -> tuple[bytes, dict]:
+    """Render the verified pinned PDF bytes and return the identity of the exact PNG sent to SAM/readers."""
+    from runs.sources import builtin_index, pinned_source_snapshot
+
+    record = builtin_index().pages("PTGX-SCAN")[0]["record"]
+    pdf_bytes, _, _, _ = pinned_source_snapshot(record)
     with tempfile.TemporaryDirectory() as tmp:
         png = Path(tmp) / "scan.png"
-        build_run.render_page(FIXTURES / entry["page_file"], png)
-        return png.read_bytes()
+        build_run.render_page_bytes(pdf_bytes, png)
+        raw = png.read_bytes()
+        return raw, {"sha256": sha256(raw), "kind": "image"}
 
 
 # ---------------------------------------------------------------- regions
@@ -129,36 +134,23 @@ def to_page_points(event: dict, crop: list[float]) -> dict:
 # ---------------------------------------------------------------- the source and the rows
 
 
-def scanned_source(entry: dict, run_dir: Path, png: bytes, page_w: float, page_h: float, regions: list[dict],
-                   stem: str | None = None) -> dict:
-    """Write the page image and an empty words file into the run folder; the source names the regions SAM 3.1 found.
-    `stem`: the files' name (the index gives the scanned page its own, so it never overwrites the same page read
-    from its text layer); default p<page number>."""
-    page_no = entry["page_number"]
-    stem = stem or f"p{page_no}"
-    image_rel, words_rel = f"pages/{stem}.png", f"pages/{stem}.words.json"
-    (run_dir / "pages").mkdir(parents=True, exist_ok=True)
-    (run_dir / image_rel).write_bytes(png)
-    (run_dir / words_rel).write_text('{"page_width": %s, "page_height": %s, "words": []}\n' % (page_w, page_h))
-    return {
-        "id": SOURCE_ID, "publisher": f"{entry['company']} (filed with the SEC)", "kind": "filing",
-        "title": (f"{entry['ticker']} 8-K exhibit {entry['exhibit']} ({entry['exhibit_title'].lower()}), filed "
-                  f"{entry['filing_date']}, as a scanned page (the image only)"),
-        "url": entry["source_url"], "published_date": entry["filing_date"], "captured_at": entry["captured_at"],
-        "sha256": entry["rendered_pdf_sha256"],
-        "rendered_from": {"format": entry["source_format"], "sha256": entry["source_sha256"],
-                          "renderer": entry["renderer"]},
-        "pages": [{"page_number": page_no, "image": image_rel, "width_pt": page_w, "height_pt": page_h,
-                   "words": words_rel, "image_sha256": build_run.file_sha256(run_dir / image_rel),
-                   "words_sha256": build_run.file_sha256(run_dir / words_rel), "scanned": True, "regions": regions}],
-    }
+def mark_scanned_source(source: dict, regions: list[dict]) -> dict:
+    """Attach the SAM interpretation to the already verified, captured source page."""
+    page = source["pages"][0]
+    page.update(scanned=True, regions=regions,
+                visual_evidence={"origin": "approximate", "overlays_supported": False,
+                                 "reason": "SAM regions locate approximate areas; they do not verify visible words or a citation box."})
+    source["title"] += ", as a scanned page (the image only)"
+    return source
 
 
-def assemble_rows(reads: list[dict], source: dict, sam_calls: list[dict], at: str, first_index: int = 1) -> list[dict]:
+def assemble_rows(reads: list[dict], source: dict, sam_calls: list[dict], at: str, run_dir: Path,
+                  first_index: int = 1) -> list[dict]:
     """The rows from the region readings. `reads`: [{region, crop, prompt_text, raw, model, usage, events}] with
     `events` the parsed answer (None if it could not be read). `sam_calls`: [{concept, images, cost_usd}] for the trail."""
     page = source["pages"][0]
-    words_doc = {"words": [], "page_width": page["width_pt"], "page_height": page["height_pt"]}
+    from runs.sources import load_page_evidence
+    words_doc, consumed_artifact = load_page_evidence(run_dir, page)
     sam_cost = sum(c["cost_usd"] or 0 for c in sam_calls)
     images = sum(c["images"] or 0 for c in sam_calls)
     rows: list[dict] = []
@@ -176,7 +168,8 @@ def assemble_rows(reads: list[dict], source: dict, sam_calls: list[dict], at: st
                                                                                               [ev.get("quote")])
                    for r in rows if r["quote"] and ev.get("quote")):
                 continue          # the same sentence read again from an overlapping region
-            row = build_entry.build_row(first_index + len(rows), ev, reading, source, words_doc, at, share=share)
+            row = build_entry.build_row(first_index + len(rows), ev, reading, source, words_doc, at, share=share,
+                                        consumed_artifact=consumed_artifact)
             rows.append(row)
             pending.append((row, read["region"]))
     for row, region in pending:
@@ -201,21 +194,30 @@ def assemble_rows(reads: list[dict], source: dict, sam_calls: list[dict], at: st
 # ---------------------------------------------------------------- the pure build from saved answers
 
 
-def assemble(entry: dict, run_dir: Path, png: bytes, sam_record: dict, read_record: dict, *, finished_at: str | None = None,
+def assemble(entry: dict, run_dir: Path, sam_record: dict, read_record: dict, *, finished_at: str | None = None,
              number: int = 5) -> dict:
     """The run for the scanned PTGX page, from the saved SAM answer and the saved region readings. No model is called."""
     page_w = float(read_record["page_width"])
     page_h = float(read_record["page_height"])
     by_concept = {c: [sam.to_points(b, page_w, page_h) for b in v["boxes"]] for c, v in sam_record["concepts"].items()}
     regions = merge_regions(by_concept)
-    source = scanned_source(entry, run_dir, png, page_w, page_h, regions)
+    from runs.sources import builtin_index, capture_page_evidence, load_page_image_evidence
+    record = builtin_index().pages("PTGX-SCAN")[0]["record"]
+    source, _words, _consumed = capture_page_evidence(record, run_dir)
+    mark_scanned_source(source, regions)
+    _png, image_identity = load_page_image_evidence(run_dir, source["pages"][0])
+    if read_record.get("image_sha256") != image_identity["sha256"]:
+        raise ValueError("The saved scan reading was made from a different captured page image.")
     by_id = {r["id"]: r for r in regions}
     reads = [{**r, "region": by_id[r["region_id"]]} for r in read_record["reads"]]
     calls = [{"concept": c, "images": v["images"], "cost_usd": prices.image_cost_usd(sam.NAME, v["images"])}
              for c, v in sam_record["concepts"].items()]
     at = read_record["created_at"]
-    rows = assemble_rows(reads, source, calls, at)
+    rows = assemble_rows(reads, source, calls, at, run_dir)
     from runs.build_run import SCHEMA_VERSION, now_utc
+    outcome = page_outcomes.interpretation(reads, bool(calls or reads))
+    outcome.update(source_id=source["id"], ticker=entry["ticker"], company=entry["company"],
+                   page_number=entry["page_number"])
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -223,7 +225,8 @@ def assemble(entry: dict, run_dir: Path, png: bytes, sam_record: dict, read_reco
                 "started_at": at, "finished_at": finished_at or now_utc(),
                 "choices": {"companies": [entry["ticker"]], "event_types": list(read_events.EVENT_TYPES),
                             "time_window_months": None, "spending_limit_usd": None, "note_for_agent": None},
-                "spend_usd": prices.run_spend_usd(rows)},
+                "spend_usd": prices.run_spend_usd(rows), "page_outcomes": [outcome],
+                "pages_read": int(outcome["read"]), "pages_unread": int(outcome["unreadable"])},
         "sources": [source], "tables": [], "rows": rows, "mistakes": [], "exclusions": [],
     }
 
@@ -235,7 +238,10 @@ RUN_ID = "ptgx-scan"
 
 
 def _regions_from_saved(entry: dict, sam_record: dict) -> tuple[list[dict], float, float]:
-    words = __import__("json").loads((FIXTURES / entry["words_file"]).read_text())
+    from runs.sources import builtin_index, pinned_source_snapshot
+
+    record = builtin_index().pages("PTGX-SCAN")[0]["record"]
+    words = pinned_source_snapshot(record)[2]
     w, h = float(words["page_width"]), float(words["page_height"])
     return merge_regions({c: [sam.to_points(b, w, h) for b in v["boxes"]] for c, v in sam_record["concepts"].items()}), w, h
 
@@ -257,7 +263,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     entry = load_entry(read_events.PIN)
     sam_record = json.loads(sam.SAM_PATH.read_text())
-    png = scanned_png(entry)
+    png, image_identity = scanned_png(entry)
     if args.live:
         reader = LiveReader()
         problem = reader.ready()
@@ -280,12 +286,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{region['id']} ({region['concept']}): {None if events is None else len(events)} events, tokens "
                   f"{reply.prompt_tokens} in / {reply.completion_tokens} out")
         READ_PATH.write_text(json.dumps({"created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                                         "page_width": w, "page_height": h, "image_sha256": sha256(png),
+                                         "page_width": w, "page_height": h, "image_sha256": image_identity["sha256"],
                                          "reads": reads}, indent=1, ensure_ascii=False) + "\n")
         print(f"saved -> {READ_PATH}")
         return 0
     read_record = json.loads(READ_PATH.read_text())
-    run = assemble(entry, args.out_dir, png, sam_record, read_record)
+    run = assemble(entry, args.out_dir, sam_record, read_record)
     write_run(run, args.out_dir)
     decisions = args.out_dir / "decisions.jsonl"
     if not decisions.exists():

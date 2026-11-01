@@ -25,7 +25,7 @@ import re
 from datetime import date
 
 from checks.common import COULD_NOT_RUN, FAIL, NOT_NEEDED, PASS, UNRESOLVED, CheckResult, join_words, normalize
-from checks.selector_match import PICTURE_REASON, _valid_box, is_picture_at
+from checks.selector_match import CHECK_ID as SELECTOR_ID, PICTURE_REASON, _valid_box, is_picture_at
 
 QUOTE_ID, QUOTE_LABEL = "quote_match", "Quote found on page"
 DATE_ID, DATE_LABEL = "date_match", "Date read as written"
@@ -998,17 +998,38 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
     """
     dt = _norm_quote(date_text)     # the same marks as the quote: a typographic apostrophe in both reads alike
     looked_for = (f"{date_iso} to {date_end}" if date_end else date_iso) or dt
+    phrase_kind, phrase_start, phrase_end = parse_date_phrase(dt, filed)
+    if is_today_word(dt):
+        # "today" is anchored to the release dateline, not the filing date.
+        if isinstance(today, str):
+            today = date.fromisoformat(today[:10])
+        phrase_start = phrase_end = today
+    def stored_day(value):
+        try:
+            return date.fromisoformat(value) if isinstance(value, str) else None
+        except ValueError:
+            return None
+
+    timing_start = phrase_start or stored_day(date_iso)
+    timing_end = phrase_end or stored_day(date_end) or timing_start
+    timing_start_text = timing_start.isoformat() if timing_start else None
+    timing_end_text = timing_end.isoformat() if timing_end else None
+    timing_precision = ("period" if timing_start and timing_end and timing_start != timing_end else
+                        "day" if timing_start and timing_end else "unresolved")
 
     def result(res: str, reason: str, found=None) -> CheckResult:
-        return CheckResult(DATE_ID, DATE_LABEL, res, reason, {"value": looked_for, "found": found})
+        # Persist the check's parsed date facts once. Consumers use this typed
+        # value instead of trying to recover dates from the explanatory prose.
+        timing = {"wording": date_text, "start": timing_start_text, "end": timing_end_text,
+                  "precision": timing_precision}
+        return CheckResult(DATE_ID, DATE_LABEL, res, reason,
+                           {"value": looked_for, "found": found, "timing": timing})
 
     if not dt:
         return result(COULD_NOT_RUN, "The reader gave no date text for this row.")
     if is_today_word(dt):
         if dt not in _norm_quote(quote):
             return result(FAIL, "The date text is not part of the quote.", found=None)
-        if isinstance(today, str):
-            today = date.fromisoformat(today[:10])
         if today is None:
             return result(COULD_NOT_RUN, f"“{dt}” means the day of the release, and no release date is known.")
         if date_end is not None:
@@ -1124,7 +1145,7 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
                                          f"date; it cannot tell which belongs to the event.", found=dt)
         return result(NOT_NEEDED, "The quote names no exact day and no period, so there is nothing to compare.",
                       found=dt)
-    if parse_date_phrase(dt, filed)[0] == "none" and not re.search(rf"\b(?:{_MONTH_WORDS})\b|\d{{4}}|\bq[1-4]\b|\btoday\b", dt, re.I):
+    if phrase_kind == "none" and not re.search(rf"\b(?:{_MONTH_WORDS})\b|\d{{4}}|\bq[1-4]\b|\btoday\b", dt, re.I):
         return result(COULD_NOT_RUN, f"“{dt}” is not a date or period this check can read, so it cannot compare "
                                      f"it with the row's date.", found=dt)
     return result(FAIL, "The row gives a date but the quote names no day and no period.", found=dt)
@@ -1224,16 +1245,40 @@ def source_rule(source_kind: str, other_source_kinds: list[str] | None = None) -
 
 # ---------------------------------------------------------------- status
 
+REQUIRED_EVENT_CHECKS = frozenset({QUOTE_ID, SELECTOR_ID, DATE_ID, SOURCE_ID, TYPE_ID})
+
+
+def complete_event_checks(results: list[CheckResult | dict]) -> bool:
+    """Whether this is the complete, uniquely named set of event checks with valid results."""
+    if not isinstance(results, list):
+        return False
+    names = [r.check if isinstance(r, CheckResult) else (r.get("name") or r.get("check"))
+             if isinstance(r, dict) else None for r in results]
+    valid_names = [name for name in names if isinstance(name, str)]
+    named = set(valid_names)
+    if len(valid_names) != len(names) or len(names) != len(REQUIRED_EVENT_CHECKS) or named != REQUIRED_EVENT_CHECKS:
+        return False
+    res = [r.result if isinstance(r, CheckResult) else r.get("result") for r in results]
+    allowed = {PASS, FAIL, NOT_NEEDED, COULD_NOT_RUN, UNRESOLVED}
+    return all(isinstance(result, str) and result in allowed for result in res)
+
 
 def row_status(results: list[CheckResult | dict], *, readable: bool = True,
                second_reader_agrees: bool | None = None) -> str:
+    """Derive status from evidence, retaining unreadable and disagreement outcomes
+    even when another check is incomplete. Incomplete checks cannot establish a pass.
+    """
+    res = [r.result if isinstance(r, CheckResult) else r.get("result") for r in results]
     if not readable:
         return UNREADABLE
-    res = [r.result if isinstance(r, CheckResult) else r["result"] for r in results]
     if FAIL in res:
         return FAILED
     if second_reader_agrees is False:
         return UNDECIDED
-    if res and all(r in (PASS, NOT_NEEDED) for r in res) and PASS in res:
+    if not complete_event_checks(results):
+        return PROPOSED
+    if UNRESOLVED in res:
+        return PROPOSED
+    if all(r in (PASS, NOT_NEEDED) for r in res) and PASS in res:
         return MATCHED
     return PROPOSED

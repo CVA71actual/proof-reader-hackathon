@@ -149,6 +149,9 @@ def grid_to_points(box, width_pt: float, height_pt: float) -> list[float] | None
 
 
 def load_words(path: Path = WORDS_PATH) -> dict:
+    if path == WORDS_PATH:
+        from runs.sources import pinned_words
+        return pinned_words("PTGX")
     return json.loads(path.read_text())
 
 
@@ -200,12 +203,6 @@ def parse_events(raw: str | None) -> tuple[list | None, str | None]:
 # ---------------------------------------------------------------- record
 
 
-def _file_sha(path: Path) -> str | None:
-    import hashlib
-
-    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
-
-
 def _record(*, model, prompt, raw, events, problem, entry, extra=None) -> dict:
     rec = {
         "model": model,
@@ -213,7 +210,8 @@ def _record(*, model, prompt, raw, events, problem, entry, extra=None) -> dict:
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "pin": PIN,
         "page_sha256": entry.get("page_sha256"),
-        "words_sha256": _file_sha(WORDS_PATH),
+        # load_words() checks this exact pinned artifact before parsing it; do not reopen it to stamp a digest.
+        "words_sha256": entry.get("words_sha256"),
         "prompt_sha256": sha256_text(prompt),
         "prompt_text": prompt,
         "raw_response": raw,

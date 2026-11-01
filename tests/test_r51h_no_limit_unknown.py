@@ -38,4 +38,3 @@ def test_no_limit_possibly_billed_timeout_pauses_and_resumes_only_with_acceptanc
     assert job["second"]["src-ptgx-8k-2026-08-05-ex991"]["status"] == "unreadable"
     assert run["run"]["status"] == "done"
     RUN_SCHEMA.validate(run)
-

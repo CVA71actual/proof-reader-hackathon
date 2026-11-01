@@ -1,5 +1,5 @@
 %PDF-1.4
-%“Œ‹ž ReportLab Generated PDF document (opensource)
+%“Œ‹ž ReportLab Generated PDF document http://www.reportlab.com
 1 0 obj
 <<
 /F1 2 0 R /F2 3 0 R /F3 4 0 R
@@ -37,7 +37,7 @@ endobj
 endobj
 7 0 obj
 <<
-/Author (built by code from the saved results) /CreationDate (D:20000101000000+00'00') /Creator (\(unspecified\)) /Keywords () /ModDate (D:20000101000000+00'00') /Producer (ReportLab PDF Library - \(opensource\)) 
+/Author (built by code from the saved results) /CreationDate (D:20000101000000+00'00') /Creator (\(unspecified\)) /Keywords () /ModDate (D:20000101000000+00'00') /Producer (ReportLab PDF Library - www.reportlab.com) 
   /Subject (\(unspecified\)) /Title (Biotech Coverage Catalyst Calendar) /Trapped /False
 >>
 endobj
@@ -48,7 +48,7 @@ endobj
 endobj
 9 0 obj
 <<
-/Length 3753
+/Length 4000
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -90,189 +90,196 @@ q
 1 0 0 1 60 637.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Companies read: IONS) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Page outcomes: captured 1 \267 attempted 1 \267 read 1 \267 unreadable 0 \267 skipped 0 \267 unread 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 619.6 cm
+1 0 0 1 60 621.6 cm
 q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Companies unread: none recorded) Tj T* ET
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (IONS page outcomes: captured 1 \267 attempted 1 \267 read 1 \267 unreadable 0 \267 skipped 0 \267 unread 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 601.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Pages read: 1 \267 unread: not recorded) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 583.6 cm
+1 0 0 1 60 603.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Stopping reason: No stopping reason recorded.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 567.6 cm
+1 0 0 1 60 587.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Built on 31 October 2026 at 18:00 \(local time\)) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Built on 27 October 2026 at 14:10 \(local time\)) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 557.6 cm
+1 0 0 1 60 577.6 cm
 Q
 q
-1 0 0 1 60 527.6 cm
+1 0 0 1 60 547.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Summary) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 509.6 cm
+1 0 0 1 60 529.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and kept: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 491.6 cm
+1 0 0 1 60 511.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Corrected: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 473.6 cm
+1 0 0 1 60 493.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and removed: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 455.6 cm
+1 0 0 1 60 475.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unverified: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 437.6 cm
+1 0 0 1 60 457.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 419.6 cm
+1 0 0 1 60 439.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Mistakes caught by code 0 \267 by the second reader 0 \267 by a person 0 \267 Excluded 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 401.6 cm
+1 0 0 1 60 421.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unresolved \(needs attention\): 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 371.6 cm
+1 0 0 1 60 391.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Calendar) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 355.6 cm
+1 0 0 1 60 375.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Window: 2026-10-27 \226 2027-04-27) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 339.6 cm
+1 0 0 1 60 359.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Kept and corrected rows only, ordered by date. Periods are shown as stated.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 321.6 cm
+1 0 0 1 60 341.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (No kept or corrected rows.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 291.6 cm
+1 0 0 1 60 311.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Corrections) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 273.6 cm
+1 0 0 1 60 293.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 243.6 cm
+1 0 0 1 60 263.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Other edits \267 no mistake demonstrated) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 245.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 215.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Excluded) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 225.6 cm
+1 0 0 1 60 197.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 195.6 cm
+1 0 0 1 60 167.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Still open and unverified) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 177.6 cm
+1 0 0 1 60 149.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 147.6 cm
+1 0 0 1 60 119.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Sources) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 129.6 cm
+1 0 0 1 60 101.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Ionis Pharmaceuticals, Inc. \(filed with the SEC\) \267 filing \267 2026-04-23) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 114.6 cm
+1 0 0 1 60 86.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126016395/ny20063671x3_ars.pdf) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 99.6 cm
+1 0 0 1 60 71.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: aabcaf5ef7714c9390fc5bd135d9ab0f5e77ffc559241ad4b5427802ac2f09a2) Tj T* ET
@@ -284,25 +291,25 @@ endobj
 xref
 0 10
 0000000000 65535 f 
-0000000061 00000 n 
-0000000112 00000 n 
-0000000219 00000 n 
-0000000331 00000 n 
-0000000436 00000 n 
-0000000629 00000 n 
-0000000697 00000 n 
-0000001021 00000 n 
-0000001080 00000 n 
+0000000073 00000 n 
+0000000124 00000 n 
+0000000231 00000 n 
+0000000343 00000 n 
+0000000448 00000 n 
+0000000641 00000 n 
+0000000709 00000 n 
+0000001036 00000 n 
+0000001095 00000 n 
 trailer
 <<
 /ID 
 [<0615925bee3cd89939c0a65e0a4c8188><0615925bee3cd89939c0a65e0a4c8188>]
-% ReportLab generated PDF document -- digest (opensource)
+% ReportLab generated PDF document -- digest (http://www.reportlab.com)
 
 /Info 7 0 R
 /Root 6 0 R
 /Size 10
 >>
 startxref
-4884
+5146
 %%EOF

@@ -25,6 +25,7 @@ class CheckResult:
     kind: str = "Code"  # who ran it: always code for these checks
     near_match: str | None = None  # quote check: the page's wording for a run that nearly matches the quote
     differs: list = field(default_factory=list)  # quote check: [(quote_word, page_word), ...] for that run
+    assessment: dict | None = None  # exact candidate, page-artifact and checker-version binding
 
     def __post_init__(self) -> None:
         if self.result not in RESULTS:
@@ -34,6 +35,8 @@ class CheckResult:
         d = asdict(self)
         if d["near_match"] is None and not d["differs"]:    # only a near-miss quote check carries these
             del d["near_match"], d["differs"]
+        if d["assessment"] is None:
+            del d["assessment"]
         return d
 
 

@@ -53,7 +53,6 @@ COMPLETENESS_KEYS = (
     "completeness_reason",
 )
 
-
 def completeness_fields(src: dict) -> dict:
     """Copy the completeness record from words or a page entry (authoritative fields only)."""
     return {k: src[k] for k in COMPLETENESS_KEYS if k in src}

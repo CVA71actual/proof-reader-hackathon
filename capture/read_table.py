@@ -97,6 +97,9 @@ def load_env_file(path: Path | None = None) -> None:
 
 
 def load_words(path: Path = WORDS_PATH) -> dict:
+    if path == WORDS_PATH:
+        from runs.sources import pinned_words
+        return pinned_words("IONS")
     return json.loads(path.read_text())
 
 
@@ -167,10 +170,6 @@ def _num(v: float) -> str:
 
 def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def _file_sha(path: Path) -> str | None:
-    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
 
 
 # ---------------------------------------------------------------- parsing
@@ -300,7 +299,8 @@ def _reading_record(*, model, prompt, raw, table, problem, extra=None) -> dict:
         "fake": model == FAKE_MODEL,
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "page_sha256": _manifest().get("page_sha256"),
-        "words_sha256": _file_sha(WORDS_PATH),
+        # load_words() checks this exact pinned artifact before parsing it; do not reopen it to stamp a digest.
+        "words_sha256": _manifest().get("words_sha256"),
         "prompt_sha256": sha256_text(prompt),
         "prompt_text": prompt,
         "raw_response": raw,

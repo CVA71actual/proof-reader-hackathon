@@ -440,7 +440,8 @@ def _find_cell(reading: dict, row_label: str, column: str) -> dict | None:
     return None
 
 
-def score_planted(reading: dict, words_doc: dict, plants: list[dict]) -> dict:
+def score_planted(reading: dict, words_doc: dict, plants: list[dict], *,
+                  visual_evidence: dict | None = None, derived_words_present: bool = False) -> dict:
     """Plant each wrong value into a copy of one real cell, run the real checks on it, and count how many the
     checks caught (status failed). A plant: {id, kind, row_label, column, set: {value?, column?, box?,
     row_label?}, expected_type, what}. `row_label` and `column` name the real cell it starts from; `set`
@@ -455,7 +456,8 @@ def score_planted(reading: dict, words_doc: dict, plants: list[dict]) -> dict:
         cell = {k: v for k, v in base.items() if k in ("column", "value", "box", "label")}
         cell.update({k: v for k, v in change.items() if k != "row_label"})
         saved_row = change.get("row_label", p["row_label"])
-        checked = check_cell(cell, words_doc, saved_row, columns)
+        checked = check_cell(cell, words_doc, saved_row, columns, visual_evidence=visual_evidence,
+                             derived_words_present=derived_words_present)
         typ = T.primary_type(checked["checks"])
         items.append({"id": p.get("id"), "kind": p.get("kind"), "what": p.get("what"), "row_label": saved_row,
                       "column": cell.get("column"), "value": cell.get("value"), "box": cell.get("box"),

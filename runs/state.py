@@ -63,6 +63,8 @@ from accuracy.types import primary_type, type_for_field
 from checks import event_checks
 from runs.prices import cost_per_kept_row_usd
 from runs.ids import require_unique_target_ids
+from runs.claim_assessment import checks_current as bound_checks_current, page_evidence, row_source, visible_passage_assessment
+from runs.page_outcomes import read_view as page_outcomes_view
 from datetime import date
 
 
@@ -145,19 +147,6 @@ def _real_disagreement(d) -> dict | None:
     return {**real[0], **({"also": real[1:]} if real[1:] else {})}
 
 
-def _drop_empty_undecided(t: dict, raw, checks=None) -> None:
-    """A target held as undecided only for a one-sided "disagreement" (one reader read nothing) has nothing to
-    decide: it is matched, provided the checks say matched (checks.event_checks.row_status: at least one pass and
-    every other check passed or not needed). A failed, could-not-run or missing check keeps the target as the run
-    left it (open, not matched). An undecided target that never had a disagreement is left as it is. Repair tools
-    only replace a check result; they never write status."""
-    if raw and t["status"] == "undecided" and t["disagreement"] is None \
-            and event_checks.row_status(checks or []) == event_checks.MATCHED:
-        t["status"] = "matched"
-        if t["group"] == "open":
-            t["group"] = "kept"
-
-
 _REVIEW_FOUND_BY = ("coverage", "second_reader")
 
 
@@ -182,11 +171,9 @@ def derive_status(row: dict, checks: list | None = None, disagreement=None) -> t
         return saved
     checks = row.get("checks") or [] if checks is None else checks
     disagreement = _real_disagreement(row.get("disagreement")) if disagreement is None else disagreement
-    fails = any(c.get("result") == "fail" for c in checks)
-    if row.get("found_by") in _REVIEW_FOUND_BY:
-        return ("failed" if fails else "undecided", "open", True)
-    if disagreement:
-        return ("failed" if fails else "undecided", "open", True)
+    if row.get("found_by") in _REVIEW_FOUND_BY or disagreement:
+        status = event_checks.row_status(checks, second_reader_agrees=False)
+        return ("failed" if status == event_checks.FAILED else "undecided", "open", True)
     if row["status"] in ("unreadable", "unchecked") or not checks:
         return saved
     status = event_checks.row_status(checks)
@@ -206,42 +193,47 @@ def _derived_reason(row: dict, status: str, group: str, checks: list) -> str | N
         bad = next((c for c in checks if c.get("result") == "fail"), None)
         return (bad or {}).get("reason") or "A check failed."
     if status == "matched":
-        return "Every check passed on the date as it now reads."
+        return "The complete event-check set has no failures, with at least one check passed."
     return row.get("reason")
 
 
-_PERIOD_FOUND = re.compile(r"^(\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})$")
-
-
 def _period_bounds(row: dict) -> tuple[str, str] | None:
-    """The first and last day the passed date check found for the row's period ("2027-01-01 to 2027-01-31"),
-    or None when the row already stores a date or the check named no period."""
+    """Use the structured date facts emitted by date_match; never parse its reason text."""
     if row.get("date") or row.get("date_end"):
         return None
     for c in row.get("checks") or []:
         if c.get("name") == "date_match" and c.get("result") == "pass":
-            m = _PERIOD_FOUND.match(str((c.get("compared") or {}).get("found") or ""))
-            if m:
-                return m[1], m[2]
+            timing = (c.get("compared") or {}).get("timing") or {}
+            if timing.get("precision") == "period" and timing.get("start") and timing.get("end"):
+                return timing["start"], timing["end"]
     return None
 
 
 def _base_targets(run: dict) -> dict:
     targets = {}
+    sources = {source.get("id"): source for source in run.get("sources", [])}
     for row in run.get("rows", []):
-        values = {f: row.get(f) for f in ROW_FIELDS}
-        bounds = _period_bounds(row)
-        if bounds:
-            values["date"], values["date_end"] = bounds
+        candidate_values = {f: row.get(f) for f in ROW_FIELDS}
+        values = dict(candidate_values)
+        source = sources.get(row.get("source_id"), {})
+        checks = row.get("checks") or []
+        if bound_checks_current(checks, row, source):
+            bounds = _period_bounds({**row, "checks": checks})
+            if bounds:
+                values["date"], values["date_end"] = bounds
         dis = _real_disagreement(row.get("disagreement"))
         status, group, _ = derive_status(row, disagreement=dis)
         targets[row["id"]] = {
             "kind": "row",
             "group": group,
             "status": status,
+            "check_status": event_checks.row_status(row.get("checks") or []),
             "reason": _derived_reason(row, status, group, row.get("checks") or []) or row.get("reason"),
             "saved_checks": copy.deepcopy(row.get("checks") or []),
+            "load_check_history": copy.deepcopy(row.get("check_history") or []),
             "values": values,
+            "candidate_values": candidate_values,
+            "candidate": copy.deepcopy(row),
             "disagreement": dis,
         }
     for table in run.get("tables", []):
@@ -256,7 +248,6 @@ def _base_targets(run: dict) -> dict:
                     "values": {"value": cell.get("value")},
                     "disagreement": _real_disagreement(cell.get("disagreement")),
                 }
-                _drop_empty_undecided(targets[cell["id"]], cell.get("disagreement"), cell.get("checks"))
     return targets
 
 
@@ -266,6 +257,13 @@ def checked_fields(kind: str) -> tuple[str, ...]:
 
 def _apply(base: dict, stack: list[dict]) -> dict:
     s = copy.deepcopy(base)
+    if base["kind"] == "row":
+        s["candidate_values"] = copy.deepcopy(base.get("candidate_values", base["values"]))
+        # Rebuild the editable projection from raw candidate values before
+        # replaying decisions. `base["values"]` may contain period bounds
+        # derived from the original checks; those bounds are not explicit
+        # candidate values and must not survive a later failed re-check.
+        s["values"] = copy.deepcopy(s["candidate_values"])
     s["fixes"] = []
     s["before"] = {}
     s["recheck"] = None
@@ -289,6 +287,8 @@ def _apply(base: dict, stack: list[dict]) -> dict:
             s["before"].setdefault(fx["field"], base["values"][fx["field"]])
             fixed.add(fx["field"])
             s["values"][fx["field"]] = fx["to"]
+            if base["kind"] == "row":
+                s["candidate_values"][fx["field"]] = fx["to"]
             rc = d.get("recheck")
             covered = fx["field"] in checked_fields(s["kind"])
             settles = unsettled and fx["field"] in remaining
@@ -315,8 +315,6 @@ def _apply(base: dict, stack: list[dict]) -> dict:
                         unsettled = bool(remaining)
                     s["status"] = "undecided" if unsettled else "matched"
                     s["reason"] = rc.get("reason") or "The checks were run again on the fixed value and passed."
-                    if unsettled:
-                        s["reason"] = f"{s['reason']} Still disputed: {', '.join(remaining)}."
                     if not outcome["mistake"] and outcome["not_counted_reason"]:
                         s["reason"] = f"{s['reason']} {outcome['not_counted_reason']}"
                 elif rc["result"] in ("could_not_run", "unresolved"):
@@ -324,12 +322,17 @@ def _apply(base: dict, stack: list[dict]) -> dict:
                         s["status"] = "undecided"
                     elif covered or settles:
                         s["status"] = "proposed"
-                    # a field no check compares: the status stays what the checks last said
+                    else:
+                        # An unchecked field edit is not a correction; preserve the bound
+                        # check result while its group/placement remain governed separately.
+                        s["status"] = base.get("check_status", s["status"])
                     s["reason"] = rc.get("reason") or COULD_NOT_RUN_REASON
                 else:
                     s["group"] = "open"
                     s["status"] = "failed"
                     s["reason"] = rc.get("reason") or "The checks were run again on the fixed value and failed."
+            if unsettled:
+                s["reason"] = f"{s['reason']} Still disputed: {', '.join(remaining)}."
     last_fix = s["fixes"][-1] if s["fixes"] else None
     s["recheck"] = last_fix["recheck"] if last_fix else None
     s["needs_recheck"] = bool(last_fix) and last_fix["recheck"] is None
@@ -340,10 +343,20 @@ def _apply(base: dict, stack: list[dict]) -> dict:
         rc = last_fix["recheck"] or {}
         after = rc.get("after") or {}
         s["effective_checks"] = copy.deepcopy(after.get("checks") or rc.get("checks") or [])
-        s["check_history"] = copy.deepcopy(base.get("saved_checks") or [])
+        s["check_history"] = (copy.deepcopy(base.get("load_check_history") or [])
+                               + copy.deepcopy(base.get("saved_checks") or []))
     else:
         s["effective_checks"] = copy.deepcopy(base.get("saved_checks") or [])
-        s["check_history"] = []
+        s["check_history"] = copy.deepcopy(base.get("load_check_history") or [])
+    # Keep the editable view in step with the latest accepted assessment at
+    # every replay prefix. Candidate values remain raw for binding; period
+    # bounds are a projection exposed to GET and used by the next edit's
+    # from-value validation.
+    if base["kind"] == "row":
+        candidate = {**base.get("candidate", {}), **s["candidate_values"]}
+        bounds = _period_bounds({**candidate, "checks": s.get("effective_checks") or []})
+        if bounds:
+            s["values"]["date"], s["values"]["date_end"] = bounds
     s["decisions_in_effect"] = len(stack)
     s["decided_by_person"] = bool(stack)
     s["last_action"] = stack[-1]["action"] if stack else None
@@ -431,6 +444,16 @@ def _needs_attention(s: dict) -> bool:
             or s["status"] == "undecided")
 
 
+def _on_calendar(s: dict) -> bool:
+    """The one placement rule; consumers use this state result rather than re-deriving it."""
+    if s["group"] not in {"kept", "corrected"}:
+        return False
+    if s["group"] == "kept" or not s["fixes"]:
+        return True
+    return ((s["recheck"] or {}).get("result") == "pass" and not s["needs_recheck"]
+            and s["status"] != "undecided")
+
+
 def _exclusions(run: dict, states: dict) -> list[dict]:
     out = []
     for x in run.get("exclusions", []):
@@ -462,7 +485,31 @@ def current_state(run: dict, decisions: list) -> dict:
                 was not recorded or no row is kept
     """
     require_unique_target_ids(run)
-    targets = _base_targets(run)
+    # Delayed import breaks the state/calendar cycle: calendar imports the
+    # shared reference-date contract from this module.
+    from runs.calendar import explicit_dependency, timing_state
+
+    # Historical check outcomes must not establish today's status. Validate the
+    # saved candidate before any check can derive status or timing; load paths
+    # verify the exact artifact bytes before this pure state projection runs.
+    run_view = {**run, "rows": []}
+    by_source = {source.get("id"): source for source in run.get("sources", [])}
+    for original in run.get("rows", []):
+        row = copy.deepcopy(original)
+        source = by_source.get(row.get("source_id"), {})
+        checks = row.get("checks") or []
+        fresh = bound_checks_current(checks, row, source)
+        if not fresh and row.get("group") != "removed":
+            row["check_history"] = [*(row.get("check_history") or []), *checks]
+            row["checks"] = []
+            # Preserve an existing review hold and unreadable outcome even
+            # though stale checks cannot establish a new status.
+            if row.get("status") not in {"undecided", "unreadable"}:
+                row["status"] = "proposed"
+                row["group"] = "unverified"
+                row["reason"] = "Saved checks are history; current checks are unavailable."
+        run_view["rows"].append(row)
+    targets = _base_targets(run_view)
     stacks: dict[str, list[dict]] = {t: [] for t in targets}
     ignored = []
     for i, d in enumerate(decisions):
@@ -475,15 +522,68 @@ def current_state(run: dict, decisions: list) -> dict:
             stacks[d["target"]].pop()
         elif d["action"] == "recheck":
             st = stacks[d["target"]]
-            i = _waiting_fix(st)
+            fix_index = _waiting_fix(st)
             rc = d["recheck"]
-            st[i] = {**st[i], "recheck": {"result": rc["result"], "reason": rc.get("reason"),
+            base = targets[d["target"]]
+            if base["kind"] == "row":
+                pending = _apply(base, st)
+                candidate = {**base["candidate"], **pending["candidate_values"]}
+                source = row_source(run_view, base["candidate"])
+                checks = (rc.get("after") or {}).get("checks") or rc.get("checks") or []
+                from runs.recheck import recheck_result
+                fix_field = st[fix_index]["fix"]["field"]
+                no_evidence_outcome = (not checks and rc.get("result") in {"could_not_run", "unresolved"})
+                expected_result = (rc.get("result") if no_evidence_outcome else recheck_result(
+                    checks, base["kind"], fix_field, pending["fixes"][-1]["settles"]))
+                if (expected_result != rc.get("result")
+                        or (not no_evidence_outcome and not bound_checks_current(checks, candidate, source))):
+                    reason = ("The saved re-check has no check results; it remains history."
+                              if not checks else
+                              "The saved re-check is unbound or stale; it remains history.")
+                    ignored.append({"index": i, "target": d.get("target"), "reason": reason})
+                    continue
+            st[fix_index] = {**st[fix_index], "recheck": {"result": rc["result"], "reason": rc.get("reason"),
                                           "checks": rc.get("checks", []), "at": d.get("at"),
                                           "before": rc.get("before"), "after": rc.get("after")}}
         else:
             stacks[d["target"]].append(d)
 
     states = {t: _apply(base, stacks[t]) for t, base in targets.items()}
+
+    # Text-layer and box checks do not read the words rendered in page ink.
+    # Keep checks current only when their exact bindings still match; otherwise
+    # expose them as history and never inherit a pass.
+    for target, state in states.items():
+        if state["kind"] != "row":
+            continue
+        base = targets[target]
+        source = row_source(run, base["candidate"])
+        state["page_evidence"] = page_evidence(source, base["candidate"].get("page_number"))
+        # Assess the candidate as saved/fixed before adding display dates derived
+        # from the check itself. Otherwise a valid period check invalidates itself.
+        current = {**base["candidate"], **state["candidate_values"]}
+        checks = state.get("effective_checks") or []
+        checks_current = bound_checks_current(checks, current, source)
+        state["checks_stale"] = not checks_current
+        state["claim_assessments"] = {"visible_passage": visible_passage_assessment(current, source)}
+        state["assessment_status"] = "not_checked" if checks_current else "unresolved"
+        if not checks_current:
+            previous = state.get("effective_checks") or []
+            state["check_history"] = copy.deepcopy(state.get("check_history") or previous or base["saved_checks"])
+            state["effective_checks"] = []
+        else:
+            bounds = _period_bounds({**current, "checks": checks})
+            if bounds:
+                state["values"]["date"], state["values"]["date_end"] = bounds
+        display_current = {**current, "date": state["values"].get("date"),
+                           "date_end": state["values"].get("date_end")}
+        state["timing_state"] = timing_state(display_current)
+        state["contingent"] = explicit_dependency(display_current)
+        state.pop("candidate", None)
+        state.pop("candidate_values", None)
+        state.pop("check_status", None)
+        state["needs_attention"] = _needs_attention(state)
+        state["on_calendar"] = _on_calendar(state)
 
     counts = {"rows": {g: 0 for g in GROUPS}, "cells": {g: 0 for g in GROUPS}}
     for s in states.values():
@@ -505,12 +605,13 @@ def current_state(run: dict, decisions: list) -> dict:
     exclusions = _exclusions(run, states)
     excluded = {k: sum(1 for x in exclusions if x["by"] == k) for k in EXCLUDED_BY}
     counts["excluded_by_person"] = excluded["person"]
-    unresolved = sum(1 for s in states.values() if s["kind"] == "row" and _needs_attention(s))
+    unresolved = sum(1 for s in states.values() if s["kind"] == "row" and s["needs_attention"])
 
     spend = (run.get("run") or {}).get("spend_usd")
     kept_rows = counts["rows"]["kept"] + counts["rows"]["corrected"]
 
-    return {"targets": states, "counts": counts, "mistakes": mistakes, "mistake_list": mistake_list,
+    return {"view_version": 1, "targets": states, "page_outcomes": page_outcomes_view((run.get("run") or {}).get("page_outcomes")),
+            "counts": counts, "mistakes": mistakes, "mistake_list": mistake_list,
             "excluded": excluded, "exclusions": exclusions, "unresolved": unresolved, "ignored": ignored,
             "cost_per_kept_row_usd": cost_per_kept_row_usd(spend, kept_rows)}
 

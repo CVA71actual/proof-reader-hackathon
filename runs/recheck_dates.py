@@ -27,6 +27,9 @@ from checks import event_checks
 from checks.common import CheckResult
 from runs.build_entry import START_GROUP, row_reason
 from runs.state import current_state, run_reference_date
+from runs import sources
+from runs.build_run import to_contract_check
+from runs.claim_assessment import bind_checks
 from server.jobs import past_candidate_reason, past_reason
 
 RULE = "event_in_past"
@@ -41,6 +44,7 @@ def rewindow(run: dict, decided: set[str], at: str) -> dict:
     if months is None:
         return out
     rows = {r["id"]: r for r in run.get("rows", [])}
+    sources_by_id = {s.get("id"): s for s in run.get("sources", [])}
     keep = []
     for x in run.get("exclusions", []):
         row = rows.get(x.get("target"))
@@ -48,7 +52,13 @@ def rewindow(run: dict, decided: set[str], at: str) -> dict:
             keep.append(x)
             continue
         now = run_reference_date(run)
-        if now is None or past_reason(row, now) is not None:
+        source = sources_by_id.get(row.get("source_id"), {})
+        date_check = next((c for c in row.get("checks", [])
+                           if c.get("name") == "date_match" or c.get("id") == "date_match"
+                           or c.get("label") == "Date read as written"), None)
+        from runs.claim_assessment import check_current
+        if (now is None or not date_check or not check_current(date_check, row, source)
+                or past_reason(row, now, source) is not None):
             keep.append(x)
             continue
         if row["id"] in decided:
@@ -72,12 +82,18 @@ def _to_result(c: dict) -> CheckResult:
                        {"value": compared.get("looked_for"), "found": compared.get("found")})
 
 
+def person_decisions_in_effect(run: dict, decisions: list[dict]) -> set[str]:
+    """Targets with an active human decision after replay, excluding undone history lines."""
+    return {target for target, state in current_state(run, decisions)["targets"].items()
+            if state.get("decided_by_person")}
+
+
 def recheck_dates(run: dict, run_dir: Path, decided: set[str], at: str) -> dict:
     """Run "Date read as written" again on every row not decided by a person. Changes `run` in place. Returns
     {"rows": rows re-run, "changed": [(row id, old result, new result)], "mutated": [row ids whose result, reason or
     trail changed], "person": rows skipped}."""
-    sources = {s["id"]: s for s in run.get("sources", [])}
-    out = {"rows": 0, "changed": [], "person": 0, "mutated": []}
+    source_by_id = {s["id"]: s for s in run.get("sources", [])}
+    out = {"rows": 0, "changed": [], "person": 0, "mutated": [], "unavailable": []}
     for row in run.get("rows", []):
         idx = next((i for i, c in enumerate(row.get("checks") or []) if c.get("name") == event_checks.DATE_ID), None)
         if idx is None:
@@ -85,22 +101,30 @@ def recheck_dates(run: dict, run_dir: Path, decided: set[str], at: str) -> dict:
         if row["id"] in decided:
             out["person"] += 1
             continue
-        source = sources.get(row.get("source_id")) or {}
+        source = source_by_id.get(row.get("source_id")) or {}
         filed = source.get("published_date")
-        words = []
+        words_doc = None
+        consumed = None
         page = next((p for p in source.get("pages", []) if p.get("page_number") == row.get("page_number")), None)
-        if page and page.get("words") and (run_dir / page["words"]).is_file():
-            words = json.loads((run_dir / page["words"]).read_text()).get("words", [])
+        if page is None:
+            out["unavailable"].append((row["id"], "The cited page is missing from the saved source."))
+            continue
+        try:
+            words_doc, consumed = sources.load_page_evidence(run_dir, page)
+        except sources.SourcesError as exc:
+            out["unavailable"].append((row["id"], str(exc)))
+            continue
+        words = (words_doc or {}).get("words", [])
         got = event_checks.date_match(
             row.get("date_text"), row.get("date"), row.get("quote"), row.get("date_end"),
             event_type=row.get("event_type"), title=row.get("title"), program=row.get("program"), filed=filed,
             today=(event_checks.release_day(words, filed) or (None,))[0])
         out["rows"] += 1
         old = row["checks"][idx]
-        new = {**old, "result": got.result, "reason": got.reason,
-               "compared": {**(old.get("compared") or {}), "looked_for": got.compared.get("value"),
-                            "found": got.compared.get("found")}}
-        if (new["result"], new["reason"]) == (old["result"], old["reason"]):
+        bound = bind_checks([got], row, source, consumed_artifact=consumed)
+        current = to_contract_check(bound[0].to_dict())
+        new = {**old, **current}
+        if new == old:
             continue
         row["checks"][idx] = new
         out["mutated"].append(row["id"])
@@ -205,7 +229,9 @@ def main(argv=None) -> int:
         run = json.loads(f.read_text())
         dec = f.parent / "decisions.jsonl"
         decisions = [json.loads(x) for x in dec.read_text().splitlines() if x.strip()] if dec.is_file() else []
-        decided = {d.get("target") for d in decisions if isinstance(d, dict)}
+        # The JSONL is an immutable trail. Undo changes which decisions are in
+        # effect; only the replayed state may suppress migration work.
+        decided = person_decisions_in_effect(run, decisions)
         before = _counts(run, decisions)
         dates = recheck_dates(run, f.parent, decided, at)
         back = rewindow(run, decided, at)

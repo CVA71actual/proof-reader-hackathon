@@ -73,7 +73,7 @@ def test_list_runs(client):
     s = runs["sample"]
     assert (s["number"], s["label"], s["sample"]) == (2, "Sample run", True)
     assert s["started_at"] and s["finished_at"]
-    # counts come from the current state (the five example decisions applied), not from run.json
+    # The bound $0 re-check on load restores the saved examples' current outcomes.
     assert s["counts"]["rows"] == {"kept": 5, "corrected": 3, "removed": 2, "unverified": 1, "open": 0}
     assert s["counts"]["excluded_by_person"] == 1
     assert runs["demo"]["counts"]["cells"]["kept"] == 69
@@ -258,6 +258,7 @@ def test_fix_settles_the_readers_disagreement(client, runs_dir):
     assert st["reason"] == st["recheck"]["reason"] + " The value already passed its checks before the edit."
     assert r.json()["mistakes"]["person"] == s0["mistakes"]["person"]
     assert r.json()["counts"]["edits_without_error"] == s0["counts"]["edits_without_error"] + 1
+    # The edited row's saved checks no longer bind to its changed claim; the stale result remains unresolved.
     assert r.json()["unresolved"] == s0["unresolved"]
     assert st["fixes"][-1]["settles"] is True
 
@@ -764,6 +765,15 @@ def _report_client(tmp_path, with_files=True):
         (runs / "sample" / "report" / pdf).write_bytes(b"%PDF-1.4 test")
         (runs / "sample" / "report" / docx).write_bytes(b"PK test")
         (runs / "sample" / "report" / "notes.txt").write_text("private")
+        from report.manifest import write_report_manifest
+        run = json.loads((runs / "sample" / "run.json").read_text())
+        from runs.check_load import bind_on_load
+        bind_on_load(run, runs / "sample")
+        decisions_path = runs / "sample" / "decisions.jsonl"
+        decisions = [json.loads(line) for line in decisions_path.read_text().splitlines() if line.strip()]
+        from runs.check_load import bind_decisions_on_load
+        decisions = bind_decisions_on_load(run, decisions, runs / "sample")
+        write_report_manifest(runs / "sample" / "report", run, decisions)
     return TestClient(create_app(runs_dir=runs, ui_dir=tmp_path / "none", reader=object())), pdf, docx
 
 
@@ -788,6 +798,15 @@ def test_other_names_and_unbuilt_reports_are_a_plain_404(tmp_path):
     r = c2.get(f"/runs/sample/report/{pdf2}")
     assert r.status_code == 404 and r.json()["detail"].endswith(".")
     assert c2.head(f"/runs/sample/report/{pdf2}").status_code == 404
+
+
+def test_saved_report_is_refused_when_run_changes_after_build(tmp_path):
+    c, pdf, _ = _report_client(tmp_path)
+    run_path = tmp_path / "runs" / "sample" / "run.json"
+    run = json.loads(run_path.read_text())
+    run["rows"][0]["title"] += " changed"
+    run_path.write_text(json.dumps(run))
+    assert c.get(f"/runs/sample/report/{pdf}").status_code == 404
 
 
 def test_unresolved_correction_is_not_promoted_by_report(client, runs_dir):

@@ -203,7 +203,8 @@ def test_the_recorded_run_has_the_layout_and_nothing_else():
 
 @needs_run
 def test_the_recorded_run_is_a_real_run_named_twelve_1_and_says_how_it_ended():
-    run = json.loads((RECORDED / "run.json").read_text())
+    from runs.check_load import load_bound_run
+    run = load_bound_run(RECORDED)
     RUN_SCHEMA.validate(run)
     m = run["run"]
     assert m["id"] == "twelve-1" and m["sample"] is False and "fake" not in m["label"].lower()
@@ -219,7 +220,8 @@ def test_the_recorded_run_is_a_real_run_named_twelve_1_and_says_how_it_ended():
 @needs_run
 def test_the_recorded_runs_numbers_are_the_ones_written_in_the_record():
     """What the live run of 2026-10-29 04:46-05:47 UTC made, pinned: a change here means the record changed."""
-    run = json.loads((RECORDED / "run.json").read_text())
+    from runs.check_load import load_bound_run
+    run = load_bound_run(RECORDED)
     m = run["run"]
     assert (len(run["sources"]), len(run["rows"]), m["turns_total"], m["resumes"]) == (105, 95, 245, 6)
     assert m["spend_usd"] == pytest.approx(5.055042) and m["label"] == "11 companies · 6 months"
@@ -229,10 +231,10 @@ def test_the_recorded_runs_numbers_are_the_ones_written_in_the_record():
     assert m["second_reader"] == {"model": "Muse Spark Open", "status": "read", "reason": None, "input": "image"}
     assert (m["escalation"]["rows_sent"], m["escalation"]["rows_replaced"]) == (35, 3)
     state = current_state(run, [])
-    assert state["counts"]["rows"] == {"kept": 28, "corrected": 2, "removed": 31, "unverified": 4, "open": 30}
+    assert state["counts"]["rows"] == {"kept": 19, "corrected": 2, "removed": 31, "unverified": 13, "open": 30}
     assert (state["unresolved"], state["mistakes"], state["excluded"]) == (
-        34, {"code": 3, "second_reader": 0, "person": 0}, {"code": 35, "person": 0})
-    assert state["cost_per_kept_row_usd"] == pytest.approx(0.168501)
+        43, {"code": 3, "second_reader": 0, "person": 0}, {"code": 35, "person": 0})
+    assert state["cost_per_kept_row_usd"] == pytest.approx(0.240716)
     read = {}
     for src in run["sources"]:
         read[src["id"].split("-")[1].upper()] = read.get(src["id"].split("-")[1].upper(), 0) + 1
@@ -257,9 +259,12 @@ def test_the_decisions_server_serves_the_recorded_run_with_every_page_hash_holdi
     c = TestClient(create_app(runs_dir=RUNS, ui_dir=RUNS / "no-ui"))
     body = c.get("/api/runs/twelve-1")
     assert body.status_code == 200, body.text
-    run = json.loads((RECORDED / "run.json").read_text())
+    from runs.check_load import load_bound_run
+    run = load_bound_run(RECORDED)
     f = RECORDED / "decisions.jsonl"
     decisions = [json.loads(x) for x in f.read_text().splitlines() if x.strip()]
+    from runs.check_load import bind_decisions_on_load
+    decisions = bind_decisions_on_load(run, decisions, RECORDED)
     state = current_state(run, decisions)
     assert body.json()["state"]["counts"] == state["counts"]
     cal = c.get("/api/runs/twelve-1/calendar").json()["entries"]

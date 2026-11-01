@@ -46,17 +46,24 @@ def test_f1_one_sided_disagreement_with_a_check_that_could_not_run_stays_open():
     assert (t["status"], t["group"]) == ("undecided", "open")
 
 
-def test_f1_one_sided_disagreement_with_every_check_passed_or_not_needed_is_matched():
-    run = _run(_undecided([_check("quote_match", "pass"), _check("type_match", "not_needed")]))
+def test_f1_one_sided_disagreement_with_every_check_passed_or_not_needed_is_matched(tmp_path, check37_evidence_baseline):
+    text = "PN-881 Phase 2 initiation is anticipated in Q1 2027."
+    row = _undecided([_check("quote_match", "pass"), _check("type_match", "not_needed")])
+    row.update(date_text="Q1 2027", quote=text)
+    run = check37_evidence_baseline.r34(tmp_path / "f1", _run(row), text)
     t = current_state(run, [])["targets"]["r1"]
     assert (t["status"], t["group"]) == ("matched", "kept")
+    from runs.claim_assessment import visible_passage_assessment
+    assert visible_passage_assessment(run, run["rows"][0])["result"] == "not_checked"
 
 
 # ---------------------------------------------------------------- F2a
 
-def test_f2a_period_found_by_the_date_check_is_written_to_the_values():
-    row = _row(checks=[_check("date_match", "pass", "2027-01-01 to 2027-01-31")])
-    run = _run(row)
+def test_f2a_period_found_by_the_date_check_is_written_to_the_values(tmp_path, check37_evidence_baseline):
+    text = "PN-881 Phase 2 initiation is anticipated in January 2027."
+    row = _row(date_text="January 2027", quote=text,
+               checks=[_check("date_match", "pass", "2027-01-01 to 2027-01-31")])
+    run = check37_evidence_baseline.r34(tmp_path / "f2a", _run(row), text)
     state = current_state(run, [])
     v = state["targets"]["r1"]["values"]
     assert (v["date"], v["date_end"]) == ("2027-01-01", "2027-01-31")
@@ -108,14 +115,38 @@ def _fixed_program_run():
     return run, [decision, recheck]
 
 
-def test_f9_a_fixed_program_appears_on_the_calendar():
+def test_f9_a_fixed_program_appears_on_the_calendar(tmp_path, check37_evidence_baseline):
     run, decisions = _fixed_program_run()
+    run["rows"][0]["date_text"] = "January 2027"
+    text = "PN-881 Phase 2 initiation is anticipated in January 2027."
+    run = check37_evidence_baseline.r34(tmp_path / "f9-calendar", run, text)
+    from runs.check_load import bind_decisions_on_load
+    decisions = bind_decisions_on_load(run, decisions, tmp_path / "f9-calendar")
+    state_before_keep = current_state(run, decisions)
+    assert state_before_keep["targets"]["r1"]["values"]["program"] == "PN-8047"
+    assert state_before_keep["targets"]["r1"]["group"] == "corrected"
+    assert not state_before_keep["targets"]["r1"]["on_calendar"]
+    assert decisions[-1]["recheck"]["result"] == "could_not_run"
+    assert not state_before_keep["targets"]["r1"]["fixes"][-1]["mistake"]
+    decisions.append({"action": "keep", "target": "r1", "by": "person",
+                      "at": "2026-10-30T00:00:02Z", "note": "Keep the person-corrected program."})
     state = current_state(run, decisions)
     assert state["targets"]["r1"]["values"]["program"] == "PN-8047"
     assert calendar_entries(run, state)[0]["program"] == "PN-8047"
 
 
-def test_f9_a_fixed_program_appears_in_the_export():
+def test_f9_a_fixed_program_appears_in_the_export(tmp_path, check37_evidence_baseline):
     run, decisions = _fixed_program_run()
+    run["rows"][0]["date_text"] = "January 2027"
+    text = "PN-881 Phase 2 initiation is anticipated in January 2027."
+    run = check37_evidence_baseline.r34(tmp_path / "f9-export", run, text)
+    from runs.check_load import bind_decisions_on_load
+    decisions = bind_decisions_on_load(run, decisions, tmp_path / "f9-export")
+    state_before_keep = current_state(run, decisions)
+    assert state_before_keep["targets"]["r1"]["values"]["program"] == "PN-8047"
+    assert not state_before_keep["targets"]["r1"]["on_calendar"]
+    assert decisions[-1]["recheck"]["result"] == "could_not_run"
+    decisions.append({"action": "keep", "target": "r1", "by": "person",
+                      "at": "2026-10-30T00:00:02Z", "note": "Keep the person-corrected program."})
     view = build_view(run, decisions, generated_at="2026-10-30T00:00:00Z")
     assert [r["program"] for r in view["calendar"]] == ["PN-8047"]

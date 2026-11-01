@@ -15,6 +15,7 @@ from pathlib import Path
 
 from accuracy import types as T
 from accuracy.score import model_family
+from runs.check_load import bind_decisions_on_load, load_bound_run
 from runs.state import current_state
 
 NO_TYPE = "NO_TYPE"
@@ -22,10 +23,10 @@ NO_TYPE = "NO_TYPE"
 
 def load_run(run_dir: str | Path) -> tuple[dict, list[dict]]:
     run_dir = Path(run_dir)
-    run = json.loads((run_dir / "run.json").read_text())
+    run = load_bound_run(run_dir)
     path = run_dir / "decisions.jsonl"
     decisions = [json.loads(line) for line in path.read_text().splitlines() if line.strip()] if path.exists() else []
-    return run, decisions
+    return run, bind_decisions_on_load(run, decisions, run_dir)
 
 
 def mistake_log(run: dict, decisions: list[dict] | None = None) -> dict:

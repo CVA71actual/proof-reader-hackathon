@@ -24,6 +24,21 @@
    "note_for_agent": null
   },
   "spend_usd": 0.03185,
+  "page_outcomes": [
+   {
+    "source_id": "src-ptgx-8k-2026-08-05-ex991",
+    "ticker": "PTGX",
+    "company": "Protagonist Therapeutics, Inc.",
+    "page_number": 3,
+    "captured": true,
+    "attempted": true,
+    "read": true,
+    "unreadable": false,
+    "skipped": false,
+    "unread": false
+   }
+  ],
+  "pages_read": 1,
   "second_reader": {
    "model": "Muse Spark Open",
    "status": "read",
@@ -41,11 +56,6 @@
    "published_date": "2026-08-05",
    "captured_at": "2026-10-28T19:17:25+00:00",
    "sha256": "4ba68e37da0c15348d3eb9c3164a8f477ca81fa42d570fd648961e69cb5a1c50",
-   "rendered_from": {
-    "format": "html",
-    "sha256": "ecfd2d79a6e812707d22a9f9a5b86ab1ff7dcc4e8bd9aa2d4c0c7636a7280d57",
-    "renderer": "Google Chrome 156.0.8078.48 headless print-to-pdf"
-   },
    "pages": [
     {
      "page_number": 3,
@@ -54,9 +64,19 @@
      "height_pt": 792.0,
      "words": "pages/p3.words.json",
      "image_sha256": "2bddbbd919e13b8db1ef66533affbcb08881a88976aab5f14e39ceaebe84e8e5",
-     "words_sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed"
+     "words_sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+     "visual_evidence": {
+      "origin": "text_layer",
+      "overlays_supported": true,
+      "reason": null
+     }
     }
-   ]
+   ],
+   "rendered_from": {
+    "format": "html",
+    "sha256": "ecfd2d79a6e812707d22a9f9a5b86ab1ff7dcc4e8bd9aa2d4c0c7636a7280d57",
+    "renderer": "Google Chrome 156.0.8078.48 headless print-to-pdf"
+   }
   }
  ],
  "tables": [],
@@ -85,7 +105,7 @@
    "proposed_by": "Muse Spark",
    "status": "matched",
    "group": "kept",
-   "reason": "Every check passed. The page names a period (the second half of 2027), not a day, so the row keeps the period as stated.",
+   "reason": "Checks passed: Quote found on page, Citation located, Date read as written, Source is more than a calendar, Event type matches the quote. The page names a period (the second half of 2027), not a day, so the row keeps the period as stated.",
    "sample": false,
    "checks": [
     {
@@ -123,6 +143,73 @@
      "code_ref": {
       "file": "checks/event_checks.py",
       "function": "quote_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
+       "box": [
+        69.75,
+        71.34,
+        570.27,
+        94.41
+       ]
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-ptgx-8k-2026-08-05-ex991",
+       "page_number": 3,
+       "image_sha256": "2bddbbd919e13b8db1ef66533affbcb08881a88976aab5f14e39ceaebe84e8e5",
+       "words_sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+       "words_used": {
+        "file": "pages/p3.words.json",
+        "sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "output": {
+       "result": "pass",
+       "reason": "The quote is printed on the page, word for word.",
+       "compared": {
+        "looked_for": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
+        "found": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
+        "word_ids": [
+         "w1",
+         "w2",
+         "w3",
+         "w4",
+         "w5",
+         "w6",
+         "w7",
+         "w8",
+         "w9",
+         "w10",
+         "w11",
+         "w12",
+         "w13",
+         "w14",
+         "w15",
+         "w16",
+         "w17",
+         "w18",
+         "w19",
+         "w20"
+        ]
+       }
+      },
+      "input_sha256": "f1c3d65b7046f8ae4402e2482e4f43cb076783e9125ea5fdbcae7000920f1b68",
+      "assessment_sha256": "deede2da2aa7d56a3d5a7eec090e5bdba5b7d4017bfd84a95d0199f39d7165f6"
      }
     },
     {
@@ -166,6 +253,79 @@
      "code_ref": {
       "file": "checks/selector_match.py",
       "function": "selector_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
+       "box": [
+        69.75,
+        71.34,
+        570.27,
+        94.41
+       ]
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-ptgx-8k-2026-08-05-ex991",
+       "page_number": 3,
+       "image_sha256": "2bddbbd919e13b8db1ef66533affbcb08881a88976aab5f14e39ceaebe84e8e5",
+       "words_sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+       "words_used": {
+        "file": "pages/p3.words.json",
+        "sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "output": {
+       "result": "pass",
+       "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+       "compared": {
+        "looked_for": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
+        "found": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
+        "box": [
+         69.75,
+         71.34,
+         570.27,
+         94.41
+        ],
+        "word_ids": [
+         "w1",
+         "w2",
+         "w3",
+         "w4",
+         "w5",
+         "w6",
+         "w7",
+         "w8",
+         "w9",
+         "w10",
+         "w11",
+         "w12",
+         "w13",
+         "w14",
+         "w15",
+         "w16",
+         "w17",
+         "w18",
+         "w19",
+         "w20"
+        ]
+       }
+      },
+      "input_sha256": "f1c3d65b7046f8ae4402e2482e4f43cb076783e9125ea5fdbcae7000920f1b68",
+      "assessment_sha256": "1ef5085001c1ffea3d70b299c807a8601e3e30c291566d379cdcf4f101166777"
      }
     },
     {
@@ -176,11 +336,71 @@
      "reason": "The period in the row is the period printed in the quote.",
      "compared": {
       "looked_for": "2027-07-01 to 2027-12-31",
-      "found": "2027-07-01 to 2027-12-31"
+      "found": "2027-07-01 to 2027-12-31",
+      "timing": {
+       "wording": "the second half of 2027",
+       "start": "2027-07-01",
+       "end": "2027-12-31",
+       "precision": "period"
+      }
      },
      "code_ref": {
       "file": "checks/event_checks.py",
       "function": "date_match"
+     },
+     "assessment": {
+      "inputs": {
+       "date_text": "the second half of 2027",
+       "date": "2027-07-01",
+       "date_end": "2027-12-31",
+       "quote": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
+       "event_type": "milestone",
+       "title": "Phase 1 initiation",
+       "program": "PN-458o",
+       "source_published_date": "2026-08-05"
+      },
+      "evaluation_mode": {
+       "date_person_selected": false
+      },
+      "evidence": {
+       "source_id": "src-ptgx-8k-2026-08-05-ex991",
+       "page_number": 3,
+       "image_sha256": "2bddbbd919e13b8db1ef66533affbcb08881a88976aab5f14e39ceaebe84e8e5",
+       "words_sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+       "words_used": {
+        "file": "pages/p3.words.json",
+        "sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "output": {
+       "result": "pass",
+       "reason": "The period in the row is the period printed in the quote.",
+       "compared": {
+        "looked_for": "2027-07-01 to 2027-12-31",
+        "found": "2027-07-01 to 2027-12-31",
+        "timing": {
+         "wording": "the second half of 2027",
+         "start": "2027-07-01",
+         "end": "2027-12-31",
+         "precision": "period"
+        }
+       }
+      },
+      "input_sha256": "7b99415957d5411901e6179c2ba44329a76b6259502e902282dab141144a250c",
+      "assessment_sha256": "6b19b7b3716bc9a24f4bec87f4e0de2db7e25a8177eb57a3cd825156c16bca14"
      }
     },
     {
@@ -196,6 +416,45 @@
      "code_ref": {
       "file": "checks/event_checks.py",
       "function": "source_rule"
+     },
+     "assessment": {
+      "inputs": {
+       "source_kind": "filing"
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-ptgx-8k-2026-08-05-ex991",
+       "page_number": 3,
+       "image_sha256": "2bddbbd919e13b8db1ef66533affbcb08881a88976aab5f14e39ceaebe84e8e5",
+       "words_sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+       "words_used": {
+        "file": "pages/p3.words.json",
+        "sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "output": {
+       "result": "pass",
+       "reason": "The source is not a third-party calendar.",
+       "compared": {
+        "looked_for": "filing",
+        "found": null
+       }
+      },
+      "input_sha256": "ce42102d66e60ea375e93f22daefb7c7c2c0c1062f11bffe8aac1a1164bd8336",
+      "assessment_sha256": "52cfb0e6bc9e4fc99f41ebaeeb1b6fe218cfc86b08d3e1aa9160cadf19c2b023"
      }
     },
     {
@@ -211,6 +470,46 @@
      "code_ref": {
       "file": "checks/event_checks.py",
       "function": "type_match"
+     },
+     "assessment": {
+      "inputs": {
+       "event_type": "milestone",
+       "quote": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027."
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-ptgx-8k-2026-08-05-ex991",
+       "page_number": 3,
+       "image_sha256": "2bddbbd919e13b8db1ef66533affbcb08881a88976aab5f14e39ceaebe84e8e5",
+       "words_sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+       "words_used": {
+        "file": "pages/p3.words.json",
+        "sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "output": {
+       "result": "pass",
+       "reason": "The quote's words (initiation) fit milestone.",
+       "compared": {
+        "looked_for": "milestone",
+        "found": "initiation"
+       }
+      },
+      "input_sha256": "a2561691803adaa59d77e14c41732447dbce43aaba8fdb760e55af2fb711ae1f",
+      "assessment_sha256": "0fe914d8a4e5077d0ba1825cb0933ad882793b12ef803141166d6bd4878244e2"
      }
     }
    ],
@@ -366,7 +665,7 @@
    "proposed_by": "Muse Spark",
    "status": "matched",
    "group": "kept",
-   "reason": "Every check passed. The page names a period (Q1 2027), not a day, so the row keeps the period as stated.",
+   "reason": "Checks passed: Quote found on page, Citation located, Date read as written, Source is more than a calendar, Event type matches the quote. The page names a period (Q1 2027), not a day, so the row keeps the period as stated.",
    "sample": false,
    "checks": [
     {
@@ -403,6 +702,72 @@
      "code_ref": {
       "file": "checks/event_checks.py",
       "function": "quote_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
+       "box": [
+        69.75,
+        107.34,
+        544.81,
+        130.41
+       ]
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-ptgx-8k-2026-08-05-ex991",
+       "page_number": 3,
+       "image_sha256": "2bddbbd919e13b8db1ef66533affbcb08881a88976aab5f14e39ceaebe84e8e5",
+       "words_sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+       "words_used": {
+        "file": "pages/p3.words.json",
+        "sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "output": {
+       "result": "pass",
+       "reason": "The quote is printed on the page, word for word.",
+       "compared": {
+        "looked_for": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
+        "found": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
+        "word_ids": [
+         "w22",
+         "w23",
+         "w24",
+         "w25",
+         "w26",
+         "w27",
+         "w28",
+         "w29",
+         "w30",
+         "w31",
+         "w32",
+         "w33",
+         "w34",
+         "w35",
+         "w36",
+         "w37",
+         "w38",
+         "w39",
+         "w40"
+        ]
+       }
+      },
+      "input_sha256": "5815891e34735fda803f56df0a60d26a708ae5d234eb8a2796f57bb3c69e68db",
+      "assessment_sha256": "5f3545c1e9696a1eec0248da2ece52dc8e049327af26bdec45c14aab15938674"
      }
     },
     {
@@ -445,6 +810,78 @@
      "code_ref": {
       "file": "checks/selector_match.py",
       "function": "selector_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
+       "box": [
+        69.75,
+        107.34,
+        544.81,
+        130.41
+       ]
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-ptgx-8k-2026-08-05-ex991",
+       "page_number": 3,
+       "image_sha256": "2bddbbd919e13b8db1ef66533affbcb08881a88976aab5f14e39ceaebe84e8e5",
+       "words_sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+       "words_used": {
+        "file": "pages/p3.words.json",
+        "sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "output": {
+       "result": "pass",
+       "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+       "compared": {
+        "looked_for": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
+        "found": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
+        "box": [
+         69.75,
+         107.34,
+         544.81,
+         130.41
+        ],
+        "word_ids": [
+         "w22",
+         "w23",
+         "w24",
+         "w25",
+         "w26",
+         "w27",
+         "w28",
+         "w29",
+         "w30",
+         "w31",
+         "w32",
+         "w33",
+         "w34",
+         "w35",
+         "w36",
+         "w37",
+         "w38",
+         "w39",
+         "w40"
+        ]
+       }
+      },
+      "input_sha256": "5815891e34735fda803f56df0a60d26a708ae5d234eb8a2796f57bb3c69e68db",
+      "assessment_sha256": "359b9f1686c1abf2eedb81fc1b60e532d75b35fc2f437d1e660b22c907d746c3"
      }
     },
     {
@@ -455,11 +892,71 @@
      "reason": "The period in the row is the period printed in the quote.",
      "compared": {
       "looked_for": "2027-01-01 to 2027-03-31",
-      "found": "2027-01-01 to 2027-03-31"
+      "found": "2027-01-01 to 2027-03-31",
+      "timing": {
+       "wording": "Q1 2027",
+       "start": "2027-01-01",
+       "end": "2027-03-31",
+       "precision": "period"
+      }
      },
      "code_ref": {
       "file": "checks/event_checks.py",
       "function": "date_match"
+     },
+     "assessment": {
+      "inputs": {
+       "date_text": "Q1 2027",
+       "date": "2027-01-01",
+       "date_end": "2027-03-31",
+       "quote": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
+       "event_type": "milestone",
+       "title": "Phase 1 initiation",
+       "program": "PN-8047",
+       "source_published_date": "2026-08-05"
+      },
+      "evaluation_mode": {
+       "date_person_selected": false
+      },
+      "evidence": {
+       "source_id": "src-ptgx-8k-2026-08-05-ex991",
+       "page_number": 3,
+       "image_sha256": "2bddbbd919e13b8db1ef66533affbcb08881a88976aab5f14e39ceaebe84e8e5",
+       "words_sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+       "words_used": {
+        "file": "pages/p3.words.json",
+        "sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "output": {
+       "result": "pass",
+       "reason": "The period in the row is the period printed in the quote.",
+       "compared": {
+        "looked_for": "2027-01-01 to 2027-03-31",
+        "found": "2027-01-01 to 2027-03-31",
+        "timing": {
+         "wording": "Q1 2027",
+         "start": "2027-01-01",
+         "end": "2027-03-31",
+         "precision": "period"
+        }
+       }
+      },
+      "input_sha256": "001ba4cc86e665f5948859f08503b43d0c96ca5e21c0ffe157656a836dbf62bc",
+      "assessment_sha256": "03f2869c43360e346c52c4767440ef53a10314522ee0b6be2227145a6e4c2a53"
      }
     },
     {
@@ -475,6 +972,45 @@
      "code_ref": {
       "file": "checks/event_checks.py",
       "function": "source_rule"
+     },
+     "assessment": {
+      "inputs": {
+       "source_kind": "filing"
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-ptgx-8k-2026-08-05-ex991",
+       "page_number": 3,
+       "image_sha256": "2bddbbd919e13b8db1ef66533affbcb08881a88976aab5f14e39ceaebe84e8e5",
+       "words_sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+       "words_used": {
+        "file": "pages/p3.words.json",
+        "sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "output": {
+       "result": "pass",
+       "reason": "The source is not a third-party calendar.",
+       "compared": {
+        "looked_for": "filing",
+        "found": null
+       }
+      },
+      "input_sha256": "ce42102d66e60ea375e93f22daefb7c7c2c0c1062f11bffe8aac1a1164bd8336",
+      "assessment_sha256": "52cfb0e6bc9e4fc99f41ebaeeb1b6fe218cfc86b08d3e1aa9160cadf19c2b023"
      }
     },
     {
@@ -490,6 +1026,46 @@
      "code_ref": {
       "file": "checks/event_checks.py",
       "function": "type_match"
+     },
+     "assessment": {
+      "inputs": {
+       "event_type": "milestone",
+       "quote": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027."
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-ptgx-8k-2026-08-05-ex991",
+       "page_number": 3,
+       "image_sha256": "2bddbbd919e13b8db1ef66533affbcb08881a88976aab5f14e39ceaebe84e8e5",
+       "words_sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+       "words_used": {
+        "file": "pages/p3.words.json",
+        "sha256": "56601a4ea56cfa9e277a8a2bb3bb7ec64f32f63c420b6166abd9a92e479ed8ed",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "output": {
+       "result": "pass",
+       "reason": "The quote's words (initiation) fit milestone.",
+       "compared": {
+        "looked_for": "milestone",
+        "found": "initiation"
+       }
+      },
+      "input_sha256": "92bc29f24dfcce047f75f194869c22828e19ec3f72d5507e60b155da201b773a",
+      "assessment_sha256": "bfd08ab5c23a0cb5ac8a795a8d6b21f2e9007ede227b7ff1f67b1ade3b83b10f"
      }
     }
    ],

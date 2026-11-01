@@ -1,8 +1,11 @@
 """Job 49: one owner for row status (runs.state); a repair tool only replaces a check result."""
+import hashlib
+import json
 from pathlib import Path
 
 from runs import recheck_dates as rd
 from runs.state import current_state
+from runs.claim_assessment import bind_contract_checks
 
 DATE = {"name": "date_match", "label": "Date read as written", "kind": "Code", "result": "pass", "reason": "x",
         "compared": {}}
@@ -23,24 +26,72 @@ def _row(status, group, checks, disagreement=None):
 
 
 def _run(row):
+    source = {"id": "s1", "kind": "filing", "published_date": "2026-08-01", "pages": [{
+        "page_number": 1, "image": "pages/p1.png", "image_sha256": "b" * 64,
+        "words": "pages/p1.words.json", "words_sha256": "a" * 64,
+        "visual_evidence": {"origin": "text_layer", "overlays_supported": True, "reason": None}}]}
+    row["checks"] = bind_contract_checks(row["checks"], row, source,
+                                          consumed_artifact={"file": "pages/p1.words.json", "sha256": "a" * 64,
+                                                             "kind": "captured"})
     return {"run": {"started_at": "2026-08-10T10:00:00+00:00", "choices": {}},
-            "sources": [{"id": "s1", "published_date": "2026-08-01", "pages": []}],
+            "sources": [source],
             "rows": [row], "exclusions": [], "tables": [], "mistakes": []}
+
+
+def test_date_repair_changes_the_check_but_does_not_write_row_status(tmp_path):
+    row = _row("failed", "open", _five("fail"))
+    run = _run(row)
+    page = run["sources"][0]["pages"][0]
+    page.pop("image")
+    page.pop("image_sha256")
+    words = []
+    x = 20.0
+    for i, token in enumerate(row["quote"].split()):
+        width = max(5.0, len(token) * 5.0)
+        words.append({"id": f"w{i}", "text": token, "x0": x, "y0": 100.0,
+                      "x1": x + width, "y1": 112.0})
+        x += width + 2.0
+    raw = (json.dumps({"page_width": 612.0, "page_height": 792.0, "words": words}) + "\n").encode()
+    path = tmp_path / page["words"]
+    path.parent.mkdir(parents=True)
+    path.write_bytes(raw)
+    page["words_sha256"] = hashlib.sha256(raw).hexdigest()
+    source = run["sources"][0]
+    row["checks"] = bind_contract_checks(
+        row["checks"], row, source,
+        consumed_artifact={"file": page["words"], "sha256": page["words_sha256"], "kind": "captured"})
+    before = (row["status"], row["group"])
+
+    result = rd.recheck_dates(run, tmp_path, set(), "t")
+
+    assert result["mutated"] == ["e1"]
+    assert next(c for c in row["checks"] if c["name"] == "date_match")["result"] == "pass"
+    assert (row["status"], row["group"]) == before  # the repair records a check; state derives status
 
 
 TWO_SIDED = {"field": "program", "first_reader": "Drug A", "second_reader": "Drug B"}
 
 
-def test_a_date_recheck_does_not_resolve_a_two_sided_program_disagreement():
-    checks = [_check(n) for n in ("quote_match", "type_match", "source_check", "page_match")] + [
-        {**DATE, "reason": "an older explanation"}]
-    run = _run(_row("undecided", "open", checks, TWO_SIDED))
-    out = rd.recheck_dates(run, Path("."), set(), "t")
-    assert out["mutated"] == ["e1"]                         # the date check was replaced...
-    row = run["rows"][0]
-    assert (row["status"], row["group"]) == ("undecided", "open")      # ...and the repair wrote no status
+def test_a_date_check_change_does_not_resolve_a_two_sided_program_disagreement():
+    run = _run(_row("undecided", "open", _five(), TWO_SIDED))
+    run["rows"][0]["checks"][2] = {**DATE, "reason": "rechecked", "result": "pass"}
+    run["rows"][0]["checks"] = bind_contract_checks(
+        run["rows"][0]["checks"], run["rows"][0], run["sources"][0],
+        consumed_artifact={"file": "pages/p1.words.json", "sha256": "a" * 64, "kind": "captured"})
     t = current_state(run, [])["targets"]["e1"]
     assert t["status"] == "undecided" and t["group"] == "open"
+
+
+def test_legacy_recheck_without_results_is_ignored_by_pure_state_callers():
+    run = _run(_row("matched", "kept", _five()))
+    fix = {"action": "fix", "target": "e1", "by": "person",
+           "fix": {"field": "date_text", "from": "August 2026", "to": "September 2026"}, "at": "t"}
+    legacy = {"action": "recheck", "target": "e1", "by": "code",
+              "recheck": {"result": "pass", "reason": None, "checks": []}, "at": "t"}
+    state = current_state(run, [fix, legacy])
+    assert len(state["ignored"]) == 1
+    assert state["ignored"][0]["reason"] == "The saved re-check has no check results; it remains history."
+    assert state["targets"]["e1"]["needs_recheck"]
 
 
 def test_a_one_sided_disagreement_with_a_failed_check_does_not_become_matched():
@@ -59,21 +110,24 @@ def test_a_one_sided_disagreement_with_a_missing_check_does_not_become_matched()
 
 def test_a_one_sided_disagreement_with_every_check_passing_is_matched():
     one_sided = {"field": "program", "first_reader": "Drug A", "second_reader": None}
-    run = _run(_row("undecided", "open", [DATE], one_sided))
+    run = _run(_row("undecided", "open", _five(), one_sided))
     t = current_state(run, [])["targets"]["e1"]
     assert t["status"] == "matched" and t["group"] == "kept"
 
 
 # ---- Job 49b: one shared derivation (runs.state.derive_status) from the CURRENT effective checks
-FIVE = ("quote_match", "type_match", "source_check", "page_match")
+FIVE = ("quote_match", "selector_match", "date_match", "source_rule", "type_match")
 
 
 def _five(date_result="pass"):
-    return [_check(n) for n in FIVE] + [{**DATE, "result": date_result}]
+    return [_check(n, date_result if n == "date_match" else "pass") for n in FIVE]
 
 
 def _rechecked(run, new_result):
-    run["rows"][0]["checks"][-1] = {**DATE, "result": new_result}
+    run["rows"][0]["checks"][2] = {**DATE, "result": new_result}
+    run["rows"][0]["checks"] = bind_contract_checks(
+        run["rows"][0]["checks"], run["rows"][0], run["sources"][0],
+        consumed_artifact={"file": "pages/p1.words.json", "sha256": "a" * 64, "kind": "captured"})
     return current_state(run, [])
 
 

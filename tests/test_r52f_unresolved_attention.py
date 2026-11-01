@@ -1,8 +1,11 @@
 import pytest
 
 from checks import event_checks
+from checks.common import CheckResult
 from report import data as report_data
 from runs.recheck import could_not_run_reason
+from runs.claim_assessment import bind_checks
+from runs.build_run import to_contract_check
 from runs.state import current_state
 from tests.test_r49_status_owner import _check, _row, _run
 
@@ -10,7 +13,17 @@ from tests.test_r49_status_owner import _check, _row, _run
 def _corrected_state(result):
     run = _run(_row("matched", "kept", [_check("date_match")]))
     fix = {"field": "date", "from": "2026-08-01", "to": "2026-08-05"}
-    rc = {"result": result, "reason": "r", "checks": []}
+    checks = []
+    if result == "pass":
+        row = dict(run["rows"][0], date=fix["to"])
+        source = run["sources"][0]
+        checks = [to_contract_check(check.to_dict()) for check in bind_checks(
+            [CheckResult(name, name, "pass", "r", {}) for name in
+             ("quote_match", "selector_match", "date_match", "source_rule", "type_match")],
+            row, source,
+            consumed_artifact={"file": "pages/p1.words.json", "sha256": "a" * 64, "kind": "captured"},
+            chosen=True)]
+    rc = {"result": result, "reason": "r", "checks": checks}
     decisions = [
         {"at": "2026-08-10T11:00:00+00:00", "target": "e1", "action": "fix", "note": None, "fix": fix,
          "by": "person"},
@@ -29,9 +42,12 @@ def test_an_unresolved_recheck_is_treated_like_could_not_run(result):
     assert st["counts"]["fixes_pending"] == 1
 
 
-def test_a_passing_recheck_does_not_need_attention():
+def test_a_passing_bound_recheck_is_current_and_clears_attention():
     st = _corrected_state("pass")
-    assert st["unresolved"] == 0 and st["counts"]["fixes_pending"] == 0
+    target = st["targets"]["e1"]
+    assert target["recheck"]["result"] == "pass"
+    assert st["counts"]["fixes_pending"] == 0
+    assert st["unresolved"] == 0
 
 
 def test_report_text_says_unresolved():
@@ -41,8 +57,9 @@ def test_report_text_says_unresolved():
 
 def test_ui_needs_attention_tests_unresolved():
     src = open("ui/app.js").read()
-    line = next(l for l in src.splitlines() if "t.needs_recheck ||" in l and "undecided" in l)
-    assert "'unresolved'" in line
+    # The state projection owns the unresolved/could-not-run rule; the UI
+    # consumes that field instead of deriving attention a second time.
+    assert "return !!(t && t.needs_attention);" in src
 
 
 def test_could_not_run_names_its_own_reason_not_the_unresolved_one():

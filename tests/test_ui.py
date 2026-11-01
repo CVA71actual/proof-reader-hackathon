@@ -16,6 +16,25 @@ from server.app import create_app
 REPO = Path(__file__).resolve().parent.parent
 UI = REPO / "ui"
 
+
+def _calendar_view(rows, targets, partition=None):
+    """Complete the server projection used by the isolated calendarRows mocks."""
+    if partition is None:
+        partition = {name: [] for name in
+                     ("calendar", "past", "later", "contingent", "undated", "timing_unresolved")}
+    listed = {entry["id"] for bucket in partition.values() for entry in bucket}
+    for row in rows:
+        target = targets.setdefault(row["id"], {})
+        target["values"] = {**row, **target.get("values", {})}
+        target.setdefault("effective_checks", row.get("checks", []))
+        if "on_calendar" not in target:
+            target["on_calendar"] = target.get("group") in {"kept", "corrected"}
+        if partition is not None and row["id"] not in listed and target["on_calendar"]:
+            bucket = "calendar" if target["values"].get("date") else (
+                "timing_unresolved" if target["values"].get("date_text") else "undated")
+            partition[bucket].append({"id": row["id"]})
+    return partition
+
 pytestmark = pytest.mark.skipif(not UI.is_dir(), reason="ui/ is built on the ui/* branches")
 
 
@@ -148,7 +167,7 @@ def test_u5_trail_contract_on_screen():
 def test_u6_calendar_rules_on_screen():
     js = (UI / "app.js").read_text()
     # kept and corrected only, periods placed under their period as written, no invented day
-    for word in ("calendarRows", "periodhead", "No day given"):
+    for word in ("calendarRows", "periodhead", "Undated · no timing stated"):
         assert word in js, word
     assert "date_end" in js
     assert "Kept by you" in js and "Fixed by you" in js
@@ -436,17 +455,17 @@ def _judgment_screen(row_id):
     ]
     state = {"targets": {
         "r-cnr": {"group": "corrected", "status": "proposed", "decided_by_person": True,
-                  "needs_recheck": False,
+                  "needs_recheck": False, "needs_attention": True,
                   "recheck": {"result": "could_not_run", "reason": "The quote is not on the page."},
                   "values": {"date_text": "Q3 2027"},
                   "fixes": [{"field": "date_text", "from": "today", "to": "Q3 2027"}],
                   "reason": "Re-check could not run."},
         "r-und": {"group": "corrected", "status": "undecided", "decided_by_person": True,
-                  "needs_recheck": False, "recheck": {"result": "pass"},
+                  "needs_recheck": False, "needs_attention": True, "recheck": {"result": "pass"},
                   "values": {"event_type": "filing"}, "fixes": [],
                   "reason": "The two readers still disagree."},
         "r-kept": {"group": "kept", "status": "matched", "decided_by_person": True,
-                   "needs_recheck": False, "recheck": None,
+                   "needs_recheck": False, "needs_attention": False, "recheck": None,
                    "values": {"date_text": "August 5, 2026"}, "fixes": [], "reason": "Kept."},
     }, "exclusions": [], "mistake_list": []}
     detail = {"id": "run", "run": {"rows": rows, "mistakes": [], "sources": [], "run": {"label": "probe"}},
@@ -1932,8 +1951,10 @@ function lastPersonDecisionIn() {{ return null; }}
 function dateShort(s) {{ return String(s); }}
 {fns}
 function mkX(rows) {{
+  var targets = {{}};
+  rows.forEach(function (r) {{ targets[r.id] = {{ values: Object.assign({{}}, r) }}; }});
   return {{ run: {{ rows: rows, run: {{ label: 'the run' }} }},
-           state: {{ targets: {{}} }}, decisions: [] }};
+           state: {{ targets: targets }}, decisions: [] }};
 }}
 var cards = compareRuns(mkX({json.dumps(rows_a)}), mkX({json.dumps(rows_b)}));
 console.log(JSON.stringify({{ cards: cards.map(function (c) {{
@@ -1969,11 +1990,16 @@ var ACTION_WORDS = {{ keep: 'kept', fix: 'fixed', remove: 'removed' }};
 function dateShort(s) {{ return String(s).slice(0, 10); }}
 {fns}
 function mkX(rows, targets, decisions) {{
+  var projection = {{}};
+  rows.forEach(function (r) {{ projection[r.id] = {{ values: Object.assign({{}}, r) }}; }});
+  Object.keys(targets || {{}}).forEach(function (id) {{
+    projection[id] = Object.assign(projection[id] || {{}}, targets[id]);
+  }});
   return {{ run: {{ rows: rows,
            run: {{ label: 'Run 8 · the run', number: 8,
                    started_at: '2026-10-29T20:00:00+00:00',
                    finished_at: '2026-10-29T21:00:00+00:00' }} }},
-           state: {{ targets: targets || {{}} }}, decisions: decisions || [] }};
+           state: {{ targets: projection }}, decisions: decisions || [] }};
 }}
 var rowsA = [
   {{ id: 'r1', ticker: 'IONS', company: 'Ionis Pharmaceuticals', program: 'zilganersen',
@@ -2267,8 +2293,9 @@ def test_u32_calendar_folds_only_identical_current_events():
     targets = {r["id"]: {"group": "open" if r["id"] == "b4" else "kept",
                          "values": {"date": r["date"], "date_text": r["date_text"]}}
                for r in rows}
+    partition = _calendar_view(rows, targets)
     script = "\n".join([
-        "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
+        "var detail = { run: { rows: " + json.dumps(rows) + ", calendar_partition: " + json.dumps(partition) + " }, state: { targets: " +
         json.dumps(targets) + " } };",
         "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
         _grab_fn(js, "shownVal"),
@@ -2302,8 +2329,9 @@ def test_u32_back_from_a_secondary_source_reselects_the_fold():
     ]
     targets = {r["id"]: {"group": "kept", "values": {"date": r["date"], "date_text": r["date_text"]}}
                for r in rows}
+    partition = _calendar_view(rows, targets)
     script = "\n".join([
-        "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
+        "var detail = { run: { rows: " + json.dumps(rows) + ", calendar_partition: " + json.dumps(partition) + " }, state: { targets: " +
         json.dumps(targets) + " } };",
         "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
         _grab_fn(js, "shownVal"),
@@ -2334,8 +2362,8 @@ def test_u34_g9_1_calendar_uses_the_servers_corrected_rule():
     import json
     import subprocess
     js = (UI / "app.js").read_text()
-    assert "(t.recheck || {}).result === 'pass' && !t.needs_recheck && t.status !== 'undecided'" in js
-    assert "(t.fixes || []).length" in js
+    assert "var partition = detail.run.calendar_partition || null" in js
+    assert "if (!t.on_calendar) return" in js
     rows = [{"id": rid, "ticker": "PTGX", "program": "PN-" + rid, "event_type": "milestone",
              "date": "2027-01-01"} for rid in
             ("keep", "pass", "fail", "cnr", "pending", "undecided", "nofix")]
@@ -2358,8 +2386,14 @@ def test_u34_g9_1_calendar_uses_the_servers_corrected_rule():
                       "values": {"date": "2027-01-01"}},
         "nofix": {"group": "corrected", "fixes": [], "values": {"date": "2027-01-01"}},
     }
+    eligible = {"keep", "pass", "nofix"}
+    for row_id, target in targets.items():
+        target["on_calendar"] = row_id in eligible
+        row = next(row for row in rows if row["id"] == row_id)
+        target["values"] = {**row, **target["values"]}
+    partition = {"calendar": [{"id": row_id} for row_id in eligible]}
     script = "\n".join([
-        "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
+        "var detail = { run: { rows: " + json.dumps(rows) + ", calendar_partition: " + json.dumps(partition) + " }, state: { targets: " +
         json.dumps(targets) + " } };",
         "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
         _grab_fn(js, "shownVal"),
@@ -2379,8 +2413,8 @@ def test_needs_attention_includes_pending_recheck():
     js = (UI / "app.js").read_text()
     script = "\n".join([
         _grab_fn(js, "needsAttention"),
-        "var pending = needsAttention({group:'corrected', needs_recheck:true, recheck:null, status:'matched'});",
-        "var completed = needsAttention({group:'corrected', needs_recheck:false, recheck:{result:'pass'}, status:'matched'});",
+        "var pending = needsAttention({group:'corrected', needs_attention:true, needs_recheck:true, recheck:null, status:'matched'});",
+        "var completed = needsAttention({group:'corrected', needs_attention:false, needs_recheck:false, recheck:{result:'pass'}, status:'matched'});",
         "console.log(JSON.stringify([pending, completed]));",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
@@ -2560,8 +2594,14 @@ function lastPersonDecisionIn() {{ return null; }}
 function dateShort(s) {{ return String(s); }}
 {fns}
 function mkX(rows, targets) {{
+  var projection = {{}};
+  rows.forEach(function (r) {{ projection[r.id] = {{ values: Object.assign({{}}, r) }}; }});
+  Object.keys(targets || {{}}).forEach(function (id) {{
+    projection[id] = Object.assign(projection[id] || {{}}, targets[id]);
+    projection[id].values = Object.assign(projection[id].values || {{}}, targets[id].values || {{}});
+  }});
   return {{ run: {{ rows: rows, run: {{ label: 'the run' }} }},
-           state: {{ targets: targets || {{}} }}, decisions: [] }};
+           state: {{ targets: projection }}, decisions: [] }};
 }}
 var rowsA = [{{ id: 'a1', ticker: 'PTGX', program: 'PN-OLD', event_type: 'milestone',
   title: 'Phase 1 initiation', date: '2027-01-01', date_text: 'Q1 2027' }}];
@@ -2622,9 +2662,11 @@ function dateShort(s) {{ return String(s); }}
 {fns}
 function pg(n) {{ var p = []; for (var i = 1; i <= n; i++) p.push({{ page_number: i }}); return p; }}
 function mk(num, nPages, rows) {{
+  var targets = {{}};
+  rows.forEach(function (r) {{ targets[r.id] = {{ values: Object.assign({{}}, r) }}; }});
   return {{ run: {{ rows: rows, sources: [{{ id: 's1', pages: pg(nPages) }}],
                    run: {{ label: 'L' + num, number: num }} }},
-           state: {{ targets: {{}} }}, decisions: [] }};
+           state: {{ targets: targets }}, decisions: [] }};
 }}
 function row(id, page, title, prog) {{
   return {{ id: id, ticker: 'T', program: prog, event_type: 'milestone', title: title,
@@ -2713,9 +2755,10 @@ def test_u34_af9_second_half_changes_show_state_values():
         "if (shownVal({ program: '' }, raw, 'program') !== '') process.exit(2);",
         # cleared to null -> null
         "if (shownVal({ indication: null }, raw, 'indication') !== null) process.exit(3);",
-        # key absent -> raw wins
-        "if (shownVal({ title: undefined } , raw, 'title') !== undefined) process.exit(4);",
-        "if (shownVal({} , raw, 'program') !== 'PN-OLD') process.exit(5);",
+        # the state mock is the complete current-value projection, so an
+        # unchanged field is present with the raw value it retained
+        "if (shownVal({ title: raw.title } , raw, 'title') !== 'Old title') process.exit(4);",
+        "if (shownVal({ program: raw.program } , raw, 'program') !== 'PN-OLD') process.exit(5);",
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
@@ -2733,7 +2776,10 @@ def test_u35_af2b_calendar_lists_rows_with_no_parsed_day():
     js = (UI / "app.js").read_text()
     assert "nodate: !d" in js
     assert "'Contingent · ') + nodates.length" in js
-    assert "var total = rows.length + past.length + nodates.length + later.length" in js
+    # The total is now the shared server read view; retain the behavior checks
+    # below for dated and undated row membership.
+    assert "detail.run.calendar_partition" in js
+    assert "calendarRows().length" in js
     rows = [
         {"id": "k1", "ticker": "PTGX", "program": "PN-1", "event_type": "milestone",
          "date": "2027-01-01", "date_text": "Q1 2027"},
@@ -2746,8 +2792,9 @@ def test_u35_af2b_calendar_lists_rows_with_no_parsed_day():
     ]
     targets = {r["id"]: {"group": "kept", "values": {"date": r["date"], "date_text": r["date_text"]}}
                for r in rows}
+    partition = _calendar_view(rows, targets)
     script = "\n".join([
-        "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
+        "var detail = { run: { rows: " + json.dumps(rows) + ", calendar_partition: " + json.dumps(partition) + " }, state: { targets: " +
         json.dumps(targets) + " } };",
         "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
         _grab_fn(js, "shownVal"),
@@ -2787,8 +2834,9 @@ def test_u35_af3_fold_key_uses_the_title_when_program_is_empty():
     targets = {r["id"]: {"group": "kept", "values": {"date": r["date"], "date_end": r["date_end"],
                                                     "date_text": r["date_text"]}}
                for r in rows}
+    partition = _calendar_view(rows, targets)
     script = "\n".join([
-        "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
+        "var detail = { run: { rows: " + json.dumps(rows) + ", calendar_partition: " + json.dumps(partition) + " }, state: { targets: " +
         json.dumps(targets) + " } };",
         "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
         _grab_fn(js, "shownVal"),
@@ -2817,6 +2865,7 @@ def test_calendar_partitions_before_folding_and_keeps_period_conflict_visible():
     ]
     targets = {r["id"]: {"group": "kept", "status": "matched", "values": r.copy()} for r in rows}
     partition = {"past": [{"id": "e1"}], "calendar": [{"id": "e2"}], "later": [], "contingent": []}
+    partition = _calendar_view(rows, targets, partition)
     script = "\n".join([
         "var detail = { run: { rows: " + json.dumps(rows) + ", calendar_partition: " + json.dumps(partition) +
         " }, state: { targets: " + json.dumps(targets) + " } };",
@@ -2933,13 +2982,14 @@ def test_u35_af8_fold_representative_is_the_unsettled_source():
         "b1": {"group": "kept", "status": "matched", "values": {"date": "2027-01-01", "date_text": "in 2027"}},
         "b2": {"group": "kept", "status": "matched", "values": {"date": "2027-01-01", "date_text": "in 2027"}},
     }
+    partition = _calendar_view(rows, targets)
     # a1 fully settled; a2 undecided -> a2 represents; b's fold fully settled
     # -> first in file order
     rows[0]["checks"] = [{"result": "pass"}]
     rows[2]["checks"] = [{"result": "pass"}]
     rows[3]["checks"] = [{"result": "pass"}]
     script = "\n".join([
-        "var detail = { run: { rows: " + json.dumps(rows) + " }, state: { targets: " +
+        "var detail = { run: { rows: " + json.dumps(rows) + ", calendar_partition: " + json.dumps(partition) + " }, state: { targets: " +
         json.dumps(targets) + " } };",
         "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
         _grab_fn(js, "shownVal"),
@@ -2992,7 +3042,7 @@ def test_u35_codex_p2s_presence_effective_checks_reader_label():
     import json
     import subprocess
     js = (UI / "app.js").read_text()
-    for word in ("Object.prototype.hasOwnProperty.call(t.values, 'date')",
+    for word in ("Object.prototype.hasOwnProperty.call(cv, k)",
                  "program: shownVal(vals, e.row, 'program')",
                  "function effectiveChecks(row, t)",
                  "effectiveChecks(row, t).filter(function (c) { return c.result === 'fail'; })",
@@ -3008,13 +3058,15 @@ def test_u35_codex_p2s_presence_effective_checks_reader_label():
         "  { id: 'c2', ticker: 'IONS', program: 'bepi', event_type: 'regulatory_decision',",
         "    date: '2027-02-01', date_text: 'Feb 2027', title: 'Two',",
         "    checks: [{ result: 'pass' }] }",
-        "], run: {} }, state: { targets: {",
+        "], calendar_partition: { timing_unresolved: [{ id: 'c1' }], calendar: [{ id: 'c2' }] }, run: {} }, state: { targets: {",
         "  // c1: a fix CLEARED the date (key present, value null) and the re-check",
         "  // re-ran the checks — the saved fail is stale, the after-checks pass",
         "  c1: { group: 'kept', status: 'matched',",
+        "        on_calendar: true, effective_checks: [{ result: 'pass' }],",
         "        values: { date: null, date_text: 'in 2027', title: 'One' },",
         "        recheck: { result: 'pass', after: { checks: [{ result: 'pass' }] } } },",
         "  c2: { group: 'kept', status: 'matched',",
+        "        on_calendar: true, effective_checks: [{ result: 'pass' }],",
         "        values: { date: '2027-02-01', date_text: 'Feb 2027', title: 'Two' } }",
         "} } };",
         "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
@@ -3332,6 +3384,7 @@ def test_r48c_unresolved_window_renders_without_date_arithmetic():
     reason = "This run has no usable reference date (as_of or started_at)."
     run = {"rows": rows, "calendar_window": {"start": None, "end": None, "unresolved": True, "reason": reason},
            "calendar_partition": {"calendar": [], "past": [], "later": [], "contingent": [{"id": "a1"}]}}
+    _calendar_view(rows, targets, run["calendar_partition"])
     script = "\n".join([
         "var detail = { run: " + json.dumps(run) + ", state: { targets: " + json.dumps(targets) + " } };",
         "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",

@@ -106,10 +106,17 @@ def build_pdf(view: dict) -> bytes:
     if view.get("as_of_note"):
         story.append(_p(view["as_of_note"], styles["body"]))
     story.append(_p(f"Run status: {view['run_status']}", styles["body"]))
-    story.append(_p("Companies read: " + (" · ".join(view["companies_read"]) or "none recorded"), styles["body"]))
-    story.append(_p("Companies unread: " + (" · ".join(view["companies_unread"]) or "none recorded"), styles["body"]))
-    page_unread = str(view["pages_unread"]) if view["pages_unread"] is not None else "not recorded"
-    story.append(_p(f"Pages read: {view['pages_read']} · unread: {page_unread}", styles["body"]))
+    if view["page_outcomes_recorded"]:
+        pc = view["page_outcome_counts"]
+        story.append(_p("Page outcomes: " + " · ".join(f"{label} {pc[key]}" for key, label in (
+            ("captured", "captured"), ("attempted", "attempted"), ("read", "read"),
+            ("unreadable", "unreadable"), ("skipped", "skipped"), ("unread", "unread"))), styles["body"]))
+        for company in view["page_outcomes_by_company"]:
+            story.append(_p(f"{company['ticker']} page outcomes: captured {company['captured']} · attempted "
+                            f"{company['attempted']} · read {company['read']} · unreadable {company['unreadable']} · "
+                            f"skipped {company['skipped']} · unread {company['unread']}", styles["small"]))
+    else:
+        story.append(_p("Page outcomes: not recorded for this saved run.", styles["body"]))
     story.append(_p("Stopping reason: " + view["stopping_reason"], styles["body"]))
     if view["sample_stamp"]:
         story.append(_p(view["sample_stamp"], styles["stamp"]))
@@ -130,7 +137,7 @@ def build_pdf(view: dict) -> bytes:
         "Kept and corrected rows only, ordered by date. Periods are shown as stated.",
         styles["small"],
     ))
-    if not view["calendar"] and not view.get("past") and not view.get("contingent") and not view.get("later"):
+    if not view["calendar"] and not view.get("past") and not view.get("contingent") and not view.get("undated") and not view.get("timing_unresolved") and not view.get("later"):
         story.append(_p("No kept or corrected rows.", styles["body"]))
     else:
         data = [[
@@ -143,6 +150,8 @@ def build_pdf(view: dict) -> bytes:
         ]]
         for row in view["calendar"]:
             status = row["status"]
+            if row.get("contingent"):
+                status += " · Contingent"
             if row["person_tag"]:
                 status = f"{status} · {row['person_tag']}"
             data.append([
@@ -165,26 +174,29 @@ def build_pdf(view: dict) -> bytes:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ]))
         story.append(table)
-    for key, label in (("past", "Past"), ("contingent", "Contingent"), ("later", "Later")):
+    for key, label in (("past", "Past"), ("undated", "Undated · no timing stated"),
+                       ("timing_unresolved", "Timing unresolved"), ("contingent", "Contingent"), ("later", "Later")):
         if view.get(key):
             story.append(_p(f"{label} · {len(view[key])}", styles["h1"]))
             for row in view[key]:
                 story.append(_p(f"{row['date_display']} · {row['ticker']} · {row['program']} · {row['event']} · "
                         f"{row['id']} · {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
                                 f"indication: {row['indication'] or 'not stated'} · action: {row['action']} · "
-                                f"{row['reason']}", styles["body"]))
-    for row in view["calendar"] + view.get("past", []) + view.get("contingent", []) + view.get("later", []):
+                                f"{row['reason']}" + (f" · {row['page_evidence_note']}" if row.get("page_evidence_note") else ""),
+                                styles["body"]))
+    for row in view["calendar"] + view.get("past", []) + view.get("undated", []) + view.get("timing_unresolved", []) + view.get("contingent", []) + view.get("later", []):
         checks = "; ".join(f"{c['name']}: {c['result']}" + (f" ({c['limitation']})" if c["limitation"] else "")
                             for c in row["check_limitations"])
         if not checks and row.get("check_status_text"):
             checks = row["check_status_text"]
         history = "; ".join(f"{c['name']}: {c['result']}" + (f" ({c['limitation']})" if c["limitation"] else "")
                               for c in row.get("check_history", []))
-        history_text = f" · original checks (history, before edit): {history}" if history else ""
+        history_text = f" · {row.get('check_history_label') or 'Check history'}: {history}" if history else ""
         story.append(_p(f"Evidence {row['id']}: {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
                         f"indication {row['indication'] or 'not stated'} · action {row['action']} · "
                         f"quote: {row['quote'] or 'not recorded'} · current-value checks: {checks or 'not recorded'}"
-                        f"{history_text}", styles["small"]))
+                        f"{history_text}" + (f" · {row['page_evidence_note']}" if row.get("page_evidence_note") else ""),
+                        styles["small"]))
 
     # Corrections
     story.append(_p("Corrections", styles["h1"]))
@@ -228,10 +240,15 @@ def build_pdf(view: dict) -> bytes:
             checks = "; ".join(f"{c['name']}: {c['result']}" for c in r.get("check_limitations", []))
             checks = checks or r.get("check_status_text") or "not recorded"
             history = "; ".join(f"{c['name']}: {c['result']}" for c in r.get("check_history", []))
-            history_text = f" · original checks (history, before edit): {history}" if history else ""
+            history_text = f" · {r.get('check_history_label') or 'Check history'}: {history}" if history else ""
             story.append(_p(
-                f"{r['group_label']} · {r['ticker']} · {r['event']}: {r['reason']}"
-                f" · current-value checks: {checks}{history_text}"
+                f"{r['group_label']} · {r['ticker']} · {r['company']} · {r['program']} · "
+                f"{r['indication'] or 'indication not stated'} · {r['event']} · {r['date_text'] or 'Undated · no timing stated'} · "
+                f"source {r['source_document']} ({r['source_id']}) page {r['page_number']} · quote: {r['quote']}: {r['reason']}"
+                + (f" · {r['page_evidence_note']}" if r.get("page_evidence_note") else "")
+                + f" · timing: {r.get('timing_state') or 'unresolved'}"
+                + (" · Contingent" if r.get("contingent") else "")
+                + f" · current-value checks: {checks}{history_text}"
                 + (f" · latest re-check: {r['latest_recheck']}" if r.get("latest_recheck") else "")
                 + (f" · override reason: {r['override_reason']}" if r.get("override_reason") else ""),
                 styles["body"],

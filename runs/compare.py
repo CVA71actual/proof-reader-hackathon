@@ -143,7 +143,7 @@ def _instructions_steps(reading: dict, at: str) -> list[dict]:
 
 
 def apply_events(rows: list[dict], second_events: list[dict], second_reading: dict, source: dict, words_doc: dict,
-                 at: str, next_index: int) -> tuple[list[dict], list[dict]]:
+                 at: str, next_index: int, consumed_artifact: dict | None = None) -> tuple[list[dict], list[dict]]:
     """Returns (rows with the comparison recorded, the new second-reader-only rows). `rows`: the first reader's
     rows for this page (event rows the coverage check added are not compared)."""
     mine = [r for r in rows if r.get("found_by") is None and r.get("status") != "unreadable"]
@@ -172,7 +172,10 @@ def apply_events(rows: list[dict], second_events: list[dict], second_reading: di
                          for d in diffs)
         row["disagreement"] = {**first, **({"also": diffs[1:]} if len(diffs) > 1 else {})}
         if row.get("group") != "removed":     # a code exclusion holds: a disagreement does not undo it
-            row["status"] = "failed" if any(c["result"] == "fail" for c in row["checks"]) else "undecided"
+            check_status = event_checks.row_status(row["checks"], second_reader_agrees=False)
+            # An incomplete check set cannot supply a status, but an explicit
+            # two-reader difference still requires a human decision.
+            row["status"] = "failed" if check_status == event_checks.FAILED else "undecided"
             row["group"] = "open"
         row["reason"] = (f"{row['reason']} " if row["status"] == "failed" else "") + (
             f"The two readers disagree on {build_entry.plain_field(first['field'])}: {SECOND_FIRST} read "
@@ -191,9 +194,10 @@ def apply_events(rows: list[dict], second_events: list[dict], second_reading: di
             new_rows.append(row)
             continue
         row = build_entry.build_row(next_index + len(new_rows), ev, second_reading, source, words_doc, at,
-                                    share=shares[j], model_name=SECOND, instructions_who=SECOND_WHO, second_reader=True)
-        failed = any(c["result"] == "fail" for c in row["checks"])
+                                    share=shares[j], model_name=SECOND, instructions_who=SECOND_WHO, second_reader=True,
+                                    consumed_artifact=consumed_artifact)
         row["status"] = event_checks.row_status(row["checks"], second_reader_agrees=False)
+        failed = row["status"] == event_checks.FAILED
         row["group"], row["found_by"] = "open", "second_reader"
         row["reason"] = (f"{row['reason']} " if failed else "") + ONLY_REASON
         row["trail"].append({"step": "Compared the two readings", "tag": "Code", "who": WHO, "at": at,

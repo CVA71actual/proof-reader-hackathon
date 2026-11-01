@@ -1,5 +1,5 @@
 %PDF-1.4
-%“Œ‹ž ReportLab Generated PDF document (opensource)
+%“Œ‹ž ReportLab Generated PDF document http://www.reportlab.com
 1 0 obj
 <<
 /F1 2 0 R /F2 3 0 R /F3 4 0 R /F4 7 0 R
@@ -62,7 +62,7 @@ endobj
 endobj
 10 0 obj
 <<
-/Author (built by code from the saved results) /CreationDate (D:20000101000000+00'00') /Creator (\(unspecified\)) /Keywords () /ModDate (D:20000101000000+00'00') /Producer (ReportLab PDF Library - \(opensource\)) 
+/Author (built by code from the saved results) /CreationDate (D:20000101000000+00'00') /Creator (\(unspecified\)) /Keywords () /ModDate (D:20000101000000+00'00') /Producer (ReportLab PDF Library - www.reportlab.com) 
   /Subject (\(unspecified\)) /Title (Biotech Coverage Catalyst Calendar) /Trapped /False
 >>
 endobj
@@ -73,7 +73,7 @@ endobj
 endobj
 12 0 obj
 <<
-/Length 6504
+/Length 6565
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -115,126 +115,126 @@ q
 1 0 0 1 60 637.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Companies read: IONS) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Page outcomes: captured 6 \267 attempted 6 \267 read 5 \267 unreadable 1 \267 skipped 0 \267 unread 1) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 619.6 cm
+1 0 0 1 60 621.6 cm
 q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Companies unread: SMPL1 \267 SMPL2 \267 SMPL3 \267 SMPL4 \267 SMPL6 \267 SMPL7) Tj T* ET
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (IONS page outcomes: captured 1 \267 attempted 1 \267 read 1 \267 unreadable 0 \267 skipped 0 \267 unread 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 601.6 cm
+1 0 0 1 60 605.6 cm
 q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Pages read: 6 \267 unread: not recorded) Tj T* ET
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Sample page outcomes: captured 5 \267 attempted 5 \267 read 4 \267 unreadable 1 \267 skipped 0 \267 unread 1) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 583.6 cm
+1 0 0 1 60 587.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Stopping reason: No stopping reason recorded.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 563.6 cm
+1 0 0 1 60 567.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 10 Tf 12 TL (Sample data \227 not real events) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 545.6 cm
+1 0 0 1 60 549.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Built on 31 October 2026 at 18:00 \(local time\)) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Built on 27 October 2026 at 08:20 \(local time\)) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 535.6 cm
+1 0 0 1 60 539.6 cm
 Q
 q
-1 0 0 1 60 505.6 cm
+1 0 0 1 60 509.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Summary) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 487.6 cm
+1 0 0 1 60 491.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and kept: 5) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 469.6 cm
+1 0 0 1 60 473.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Corrected: 3) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 451.6 cm
+1 0 0 1 60 455.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and removed: 2) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 433.6 cm
+1 0 0 1 60 437.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unverified: 1) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 415.6 cm
+1 0 0 1 60 419.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 397.6 cm
+1 0 0 1 60 401.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Mistakes caught by code 1 \267 by the second reader 1 \267 by a person 1 \267 Excluded 2) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 379.6 cm
+1 0 0 1 60 383.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unresolved \(needs attention\): 1) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 349.6 cm
+1 0 0 1 60 353.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Calendar) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 333.6 cm
+1 0 0 1 60 337.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Window: 2026-10-27 \226 2027-04-27) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 317.6 cm
+1 0 0 1 60 321.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Kept and corrected rows only, ordered by date. Periods are shown as stated.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 54 247.6 cm
+1 0 0 1 54 251.6 cm
 q
 .933333 .933333 .933333 rg
 n 0 68 504 -16 re f*
@@ -387,38 +387,31 @@ Q
 Q
 Q
 q
-1 0 0 1 60 217.6 cm
+1 0 0 1 60 221.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Later \267 6) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 175.6 cm
+1 0 0 1 60 179.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (May 4, 2027 \267 SMPL1 \267 \267 FDA advisory committee meeting \267 e5 \267 Sample source: Samplebio One news release) Tj T* (\(smp-release-a\) \267 page 1 \267 indication: not stated \267 action: advisory_committee \267 You changed the event type while the run) Tj T* (was going; the checks ran again after.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 133.6 cm
+1 0 0 1 60 137.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL -0.123682 Tw (June 30, 2027 \267 SMPL2 \267 \267 FDA target action date \267 e3 \267 Sample source: Samplebio Two quarterly report \(smp-filing-b\) \267 page) Tj T* 0 Tw -0.057409 Tw (1 \267 indication: not stated \267 action: regulatory_decision \267 The date check caught a wrong day; the day was read again from the) Tj T* 0 Tw (quote.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 91.6 cm
+1 0 0 1 60 83.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 27 Tm /F1 9 Tf 12 TL (Q3 2027 \267 SMPL1 \267 \267 52-week data presentation \267 e2 \267 Sample source: Samplebio One news release \(smp-release-a\) \267 page) Tj T* (1 \267 indication: not stated \267 action: trial_results \267 Every check passed. The source names a quarter, not a day, so the row) Tj T* (keeps the quarter as stated.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 61.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (July 9, 2027 \267 SMPL6 \267 \267 Final results \267 e7 \267 Sample source: Samplebio Six news release \(smp-release-e\) \267 page 1 \267) Tj T* (indication: not stated \267 action: trial_readout \267 Keep it; I will check the release myself.) Tj T* ET
+BT 1 0 0 1 0 39 Tm /F1 9 Tf 12 TL (Q3 2027 \267 SMPL1 \267 \267 52-week data presentation \267 e2 \267 Sample source: Samplebio One news release \(smp-release-a\) \267 page) Tj T* (1 \267 indication: not stated \267 action: trial_results \267 Checks passed: Quote found on page, Citation located, Date read as written,) Tj T* (Source is more than a calendar, Event type matches the quote. The page names a period \(Q3 2027\), not a day, so the row) Tj T* (keeps the period as stated. The second reader agreed; agreement does not replace these checks.) Tj T* ET
 Q
 Q
  
@@ -426,7 +419,7 @@ endstream
 endobj
 13 0 obj
 <<
-/Length 8533
+/Length 9226
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -440,98 +433,77 @@ q
 1 0 0 1 60 711.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (August 2, 2027 \267 SMPL6 \267 \267 Application filing \267 e8 \267 Sample source: Samplebio Six news release \(smp-release-e\) \267 page 1 \267) Tj T* (indication: not stated \267 action: regulatory_decision \267 It is a filing, but keep it.) Tj T* ET
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (July 9, 2027 \267 SMPL6 \267 \267 Final results \267 e7 \267 Sample source: Samplebio Six news release \(smp-release-e\) \267 page 1 \267) Tj T* (indication: not stated \267 action: trial_readout \267 Keep it; I will check the release myself.) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 681.6 cm
 q
 0 0 0 rg
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (August 2, 2027 \267 SMPL6 \267 \267 Application filing \267 e8 \267 Sample source: Samplebio Six news release \(smp-release-e\) \267 page 1 \267) Tj T* (indication: not stated \267 action: regulatory_decision \267 It is a filing, but keep it.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 651.6 cm
+q
+0 0 0 rg
 BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (September 15, 2027 \267 SMPL3 \267 \267 Investor day \267 e4 \267 Sample source: Samplebio Two quarterly report \(smp-filing-b\) \267 page 1 \267) Tj T* (indication: not stated \267 action: investor_day \267 The second reader saw that the event belongs to the partner, not the filer.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 615.6 cm
+1 0 0 1 60 575.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 52 Tm /F1 8 Tf 10 TL (Evidence e11: Sample source: Samplebio One news release \(smp-release-a\) \267 page 1 \267 indication not stated \267 action) Tj T* (conference_presentation \267 quote: Samplebio One will present at a medical meeting later this year. \267 checks: Quote found on page: pass) Tj T* (\(The quote is printed on the page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on) Tj T* (the quote's lines.\); Date read as written: pass \(\223later this year\224 is counted from the filing date \(2026-10-01 to 2026-12-31\); the row gives no) Tj T* (day.\); Source is more than a calendar: pass \(The source is not a third-party calendar.\); Event type matches the quote: pass \(The quote's) Tj T* (words \(present\) fit conference.\)) Tj T* ET
+BT 1 0 0 1 0 62 Tm /F1 8 Tf 10 TL (Evidence e11: Sample source: Samplebio One news release \(smp-release-a\) \267 page 1 \267 indication not stated \267 action) Tj T* (conference_presentation \267 quote: Samplebio One will present at a medical meeting later this year. \267 current-value checks: Quote found on) Tj T* -0.044 Tw (page: pass \(The quote is printed on the page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box) Tj T* 0 Tw (stays on the quote's lines.\); Date read as written: pass \(\223later this year\224 is counted from the filing date \(2026-10-01 to 2026-12-31\); the row) Tj T* (gives no day.\); Source is more than a calendar: pass \(The source is not a third-party calendar.\); Event type matches the quote: pass \(The) Tj T* (quote's words \(present\) fit conference.\); Claimed words visible on the rendered page: not_checked \(The text-layer and box checks do not) Tj T* (read the words from rendered page ink.\)) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 559.6 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 42 Tm /F1 8 Tf 10 TL (Evidence e1: Sample source: Samplebio One news release \(smp-release-a\) \267 page 1 \267 indication not stated \267 action trial_readout \267 quote:) Tj T* (Topline results from the Phase 3 STAR-1 trial are expected on March 12, 2027. \267 checks: Quote found on page: pass \(The quote is printed) Tj T* -0.085538 Tw (on the page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the quote's lines.\); Date) Tj T* 0 Tw (read as written: pass \(The day in the row is the day printed in the quote.\); Source is more than a calendar: pass \(The source is not a) Tj T* (third-party calendar.\); Event type matches the quote: pass \(The quote's words \(results, topline\) fit trial results.\)) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 503.6 cm
+1 0 0 1 60 509.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 42 Tm /F1 8 Tf 10 TL (Evidence e5: Sample source: Samplebio One news release \(smp-release-a\) \267 page 1 \267 indication not stated \267 action advisory_committee \267) Tj T* -0.066 Tw (quote: An FDA advisory committee meeting is scheduled for May 4, 2027. \267 checks: Quote found on page: pass \(The quote is printed on the) Tj T* 0 Tw (page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the quote's lines.\); Date read) Tj T* (as written: pass \(The day in the row is the day printed in the quote.\); Source is more than a calendar: pass \(The source is not a third-party) Tj T* (calendar.\); Event type matches the quote: not_needed \(The event type advisory committee has no fixed words to compare the quote with.\)) Tj T* ET
+BT 1 0 0 1 0 52 Tm /F1 8 Tf 10 TL (Evidence e1: Sample source: Samplebio One news release \(smp-release-a\) \267 page 1 \267 indication not stated \267 action trial_readout \267 quote:) Tj T* (Topline results from the Phase 3 STAR-1 trial are expected on March 12, 2027. \267 current-value checks: Quote found on page: pass \(The) Tj T* (quote is printed on the page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the) Tj T* (quote's lines.\); Date read as written: pass \(The day in the row is the day printed in the quote.\); Source is more than a calendar: pass \(The) Tj T* (source is not a third-party calendar.\); Event type matches the quote: pass \(The quote's words \(results, topline\) fit trial results.\); Claimed) Tj T* (words visible on the rendered page: not_checked \(The text-layer and box checks do not read the words from rendered page ink.\)) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 447.6 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 42 Tm /F1 8 Tf 10 TL (Evidence e3: Sample source: Samplebio Two quarterly report \(smp-filing-b\) \267 page 1 \267 indication not stated \267 action regulatory_decision \267) Tj T* -0.060444 Tw (quote: The FDA has set a target action date of June 30, 2027. \267 checks: Quote found on page: pass \(The quote is printed on the page, word) Tj T* 0 Tw (for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the quote's lines.\); Date read as written:) Tj T* (pass \(The day in the row is the day printed in the quote.\); Source is more than a calendar: pass \(The source is not a third-party calendar.\);) Tj T* (Event type matches the quote: pass \(The quote's words \(action date\) fit regulatory decision.\)) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 391.6 cm
+1 0 0 1 60 433.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 42 Tm /F1 8 Tf 10 TL (Evidence e2: Sample source: Samplebio One news release \(smp-release-a\) \267 page 1 \267 indication not stated \267 action trial_results \267 quote:) Tj T* (The company plans to present 52-week data in Q3 2027. \267 checks: Quote found on page: pass \(The quote is printed on the page, word for) Tj T* -0.01728 Tw (word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the quote's lines.\); Date read as written: pass) Tj T* 0 Tw (\(The period in the row is the period printed in the quote.\); Source is more than a calendar: pass \(The source is not a third-party calendar.\);) Tj T* (Event type matches the quote: pass \(The quote's words \(data\) fit trial results.\)) Tj T* ET
+BT 1 0 0 1 0 62 Tm /F1 8 Tf 10 TL (Evidence e5: Sample source: Samplebio One news release \(smp-release-a\) \267 page 1 \267 indication not stated \267 action advisory_committee \267) Tj T* (quote: An FDA advisory committee meeting is scheduled for May 4, 2027. \267 current-value checks: Quote found on page: pass \(The quote is) Tj T* (printed on the page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the quote's) Tj T* (lines.\); Date read as written: pass \(The day in the row is the day printed in the quote.\); Source is more than a calendar: pass \(The source is) Tj T* (not a third-party calendar.\); Event type matches the quote: not_needed \(The event type advisory committee has no fixed words to compare) Tj T* (the quote with.\); Claimed words visible on the rendered page: not_checked \(The text-layer and box checks do not read the words from) Tj T* (rendered page ink.\)) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 335.6 cm
-q
-.2 .2 .2 rg
-BT 1 0 0 1 0 42 Tm /F1 8 Tf 10 TL (Evidence e7: Sample source: Samplebio Six news release \(smp-release-e\) \267 page 1 \267 indication not stated \267 action trial_readout \267 quote:) Tj T* (Samplebio Six will report final results on July 9, 2027. \267 checks: Quote found on page: fail \(The quote nearly matches the page; 1 word) Tj T* (differs \227 quote \2219,\222, page \22119,\222.\); Citation located: fail \(The text inside the box reads differently from the value.\); Date read as written: pass) Tj T* (\(The day in the row is the day printed in the quote.\); Source is more than a calendar: pass \(The source is not a third-party calendar.\); Event) Tj T* (type matches the quote: pass \(The quote's words \(results, report\) fit trial results.\)) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 269.6 cm
+1 0 0 1 60 367.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 52 Tm /F1 8 Tf 10 TL (Evidence e8: Sample source: Samplebio Six news release \(smp-release-e\) \267 page 1 \267 indication not stated \267 action regulatory_decision \267) Tj T* (quote: Samplebio Six expects to file its application on August 2, 2027. \267 checks: Quote found on page: pass \(The quote is printed on the) Tj T* (page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the quote's lines.\); Date read) Tj T* (as written: pass \(The day in the row is the day printed in the quote.\); Source is more than a calendar: pass \(The source is not a third-party) Tj T* (calendar.\); Event type matches the quote: not_needed \(The quote holds no fixed word for regulatory decision or any other kind of event, so) Tj T* (there is nothing to compare the type with.\)) Tj T* ET
+BT 1 0 0 1 0 52 Tm /F1 8 Tf 10 TL (Evidence e3: Sample source: Samplebio Two quarterly report \(smp-filing-b\) \267 page 1 \267 indication not stated \267 action regulatory_decision \267) Tj T* (quote: The FDA has set a target action date of June 30, 2027. \267 current-value checks: Quote found on page: pass \(The quote is printed on) Tj T* (the page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the quote's lines.\); Date) Tj T* (read as written: pass \(The day in the row is the day printed in the quote.\); Source is more than a calendar: pass \(The source is not a) Tj T* (third-party calendar.\); Event type matches the quote: pass \(The quote's words \(action date\) fit regulatory decision.\); Claimed words visible) Tj T* (on the rendered page: not_checked \(The text-layer and box checks do not read the words from rendered page ink.\)) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 203.6 cm
+1 0 0 1 60 301.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 52 Tm /F1 8 Tf 10 TL (Evidence e4: Sample source: Samplebio Two quarterly report \(smp-filing-b\) \267 page 1 \267 indication not stated \267 action investor_day \267 quote:) Tj T* (Our partner Samplebio Three will host its investor day on September 15, 2027. \267 checks: Quote found on page: pass \(The quote is printed) Tj T* -0.085538 Tw (on the page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the quote's lines.\); Date) Tj T* 0 Tw (read as written: pass \(The day in the row is the day printed in the quote.\); Source is more than a calendar: pass \(The source is not a) Tj T* (third-party calendar.\); Event type matches the quote: not_needed \(The event type investor day has no fixed words to compare the quote) Tj T* (with.\)) Tj T* ET
+BT 1 0 0 1 0 52 Tm /F1 8 Tf 10 TL (Evidence e2: Sample source: Samplebio One news release \(smp-release-a\) \267 page 1 \267 indication not stated \267 action trial_results \267 quote:) Tj T* (The company plans to present 52-week data in Q3 2027. \267 current-value checks: Quote found on page: pass \(The quote is printed on the) Tj T* (page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the quote's lines.\); Date read) Tj T* (as written: pass \(The period in the row is the period printed in the quote.\); Source is more than a calendar: pass \(The source is not a) Tj T* -0.064 Tw (third-party calendar.\); Event type matches the quote: pass \(The quote's words \(data\) fit trial results.\); Claimed words visible on the rendered) Tj T* 0 Tw (page: not_checked \(The text-layer and box checks do not read the words from rendered page ink.\)) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 173.6 cm
+1 0 0 1 60 235.6 cm
 q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Corrections) Tj T* ET
+.2 .2 .2 rg
+BT 1 0 0 1 0 52 Tm /F1 8 Tf 10 TL (Evidence e7: Sample source: Samplebio Six news release \(smp-release-e\) \267 page 1 \267 indication not stated \267 action trial_readout \267 quote:) Tj T* (Samplebio Six will report final results on July 9, 2027. \267 current-value checks: Quote found on page: fail \(The quote nearly matches the) Tj T* (page; 1 word differs \227 quote \2219,\222, page \22119,\222.\); Citation located: fail \(The text inside the box reads differently from the value.\); Date read as) Tj T* (written: pass \(The day in the row is the day printed in the quote.\); Source is more than a calendar: pass \(The source is not a third-party) Tj T* (calendar.\); Event type matches the quote: pass \(The quote's words \(results, report\) fit trial results.\); Claimed words visible on the rendered) Tj T* (page: not_checked \(The text-layer and box checks do not read the words from rendered page ink.\)) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 143.6 cm
+1 0 0 1 60 159.6 cm
 q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (e3 \267 SMPL2 \267 FDA target action date: Date changed from 2027-06-03 to 2027-06-30 after the date check failed. \(caught by) Tj T* (code\); latest re-check: not applicable) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 113.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (e4 \267 SMPL3 \267 Investor day: Company changed from Samplebio Two \(SMPL2\) to Samplebio Three \(SMPL3\). \(caught by) Tj T* (second reader\); latest re-check: not applicable) Tj T* ET
+.2 .2 .2 rg
+BT 1 0 0 1 0 62 Tm /F1 8 Tf 10 TL (Evidence e8: Sample source: Samplebio Six news release \(smp-release-e\) \267 page 1 \267 indication not stated \267 action regulatory_decision \267) Tj T* (quote: Samplebio Six expects to file its application on August 2, 2027. \267 current-value checks: Quote found on page: pass \(The quote is) Tj T* (printed on the page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the quote's) Tj T* (lines.\); Date read as written: pass \(The day in the row is the day printed in the quote.\); Source is more than a calendar: pass \(The source is) Tj T* (not a third-party calendar.\); Event type matches the quote: not_needed \(No event named: the quote holds no fixed word for regulatory) Tj T* (decision or any other kind of event, so there is nothing to compare the type with.\); Claimed words visible on the rendered page:) Tj T* (not_checked \(The text-layer and box checks do not read the words from rendered page ink.\)) Tj T* ET
 Q
 Q
 q
 1 0 0 1 60 83.6 cm
 q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (e5 \267 SMPL1 \267 FDA advisory committee meeting: Event type changed from regulatory_decision to advisory_committee.) Tj T* (\(caught by person\); latest re-check: not applicable) Tj T* ET
+.2 .2 .2 rg
+BT 1 0 0 1 0 62 Tm /F1 8 Tf 10 TL (Evidence e4: Sample source: Samplebio Two quarterly report \(smp-filing-b\) \267 page 1 \267 indication not stated \267 action investor_day \267 quote:) Tj T* (Our partner Samplebio Three will host its investor day on September 15, 2027. \267 current-value checks: Quote found on page: pass \(The) Tj T* (quote is printed on the page, word for word.\); Citation located: pass \(Every word of the quote is inside the box, and the box stays on the) Tj T* (quote's lines.\); Date read as written: pass \(The day in the row is the day printed in the quote.\); Source is more than a calendar: pass \(The) Tj T* (source is not a third-party calendar.\); Event type matches the quote: not_needed \(The event type investor day has no fixed words to) Tj T* (compare the quote with.\); Claimed words visible on the rendered page: not_checked \(The text-layer and box checks do not read the words) Tj T* (from rendered page ink.\)) Tj T* ET
 Q
 Q
  
@@ -539,7 +511,7 @@ endstream
 endobj
 14 0 obj
 <<
-/Length 3061
+/Length 4659
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -553,130 +525,172 @@ q
 1 0 0 1 60 719.6 cm
 q
 0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Corrections) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 689.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (e3 \267 SMPL2 \267 FDA target action date: Date changed from 2027-06-03 to 2027-06-30 after the date check failed. \(caught by) Tj T* (code\); latest re-check: not applicable) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 659.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (e4 \267 SMPL3 \267 Investor day: Company changed from Samplebio Two \(SMPL2\) to Samplebio Three \(SMPL3\). \(caught by) Tj T* (second reader\); latest re-check: not applicable) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 629.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (e5 \267 SMPL1 \267 FDA advisory committee meeting: Event type changed from regulatory_decision to advisory_committee.) Tj T* (\(caught by person\); latest re-check: not applicable) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 599.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Other edits \267 no mistake demonstrated) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 581.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 551.6 cm
+q
+0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Excluded) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 701.6 cm
+1 0 0 1 60 533.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e6: House rule: a third-party calendar is never a source on its own.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 683.6 cm
+1 0 0 1 60 515.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (e10: Removed by you.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 653.6 cm
+1 0 0 1 60 485.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Still open and unverified) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 623.6 cm
+1 0 0 1 60 419.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Unverified \267 SMPL7 \267 No event could be read from this page: The page is a scan with no text layer and the reader's answer) Tj T* (could not be read.) Tj T* ET
+BT 1 0 0 1 0 51 Tm /F1 9 Tf 12 TL -0.072875 Tw (Unverified \267 SMPL7 \267 Samplebio Seven \267 \267 indication not stated \267 No event could be read from this page \267 Undated \267 no timing) Tj T* 0 Tw (stated \267 source Sample source: scanned letter with no text layer \(smp-scan-d\) page 1 \267 quote: : The page is a scan with no) Tj T* (text layer and the reader's answer could not be read. \267 timing: undated \267 current-value checks: Quote found on page:) Tj T* (could_not_run; Citation located: could_not_run; Date read as written: could_not_run; Source is more than a calendar: pass;) Tj T* (Event type matches the quote: not_needed; Claimed words visible on the rendered page: not_checked) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 593.6 cm
+1 0 0 1 60 389.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Sources) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 575.6 cm
+1 0 0 1 60 371.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Ionis Pharmaceuticals, Inc. \(filed with the SEC\) \267 filing \267 2026-04-23) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 560.6 cm
+1 0 0 1 60 356.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/874015/000114036126016395/ny20063671x3_ars.pdf) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 545.6 cm
+1 0 0 1 60 341.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (sha256: aabcaf5ef7714c9390fc5bd135d9ab0f5e77ffc559241ad4b5427802ac2f09a2) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 527.6 cm
+1 0 0 1 60 323.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Sample source \(made up for the sample run\) \267 company_release \267 2026-10-01) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 512.6 cm
+1 0 0 1 60 308.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (sha256: 3f207ed1b817db90085f847e2099f7b4b9e819c385d0f13d3fffbb71b5bba222) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 494.6 cm
+1 0 0 1 60 290.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Sample source \(made up for the sample run\) \267 filing \267 2026-09-15) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 479.6 cm
+1 0 0 1 60 275.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (sha256: a349ffbc33d8a7a38f4ceb5a15cfc8d98390a80d4af78c00dcb23032fe56cc97) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 461.6 cm
+1 0 0 1 60 257.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Sample source \(made up for the sample run\) \267 third_party_calendar \267 2026-10-20) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 446.6 cm
+1 0 0 1 60 242.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (sha256: c62139fe19605952efc4fdc7cb295a1fb33719894a9f8a5ebb36f1033e39d44f) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 428.6 cm
+1 0 0 1 60 224.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Sample source \(made up for the sample run\) \267 other \267 \227) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 413.6 cm
+1 0 0 1 60 209.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (sha256: 2ba7285457e623ff737b1234e9435a5b37f02ec692fbb32cc64c2562da3dc09d) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 395.6 cm
+1 0 0 1 60 191.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Sample source \(made up for the sample run\) \267 company_release \267 2026-10-10) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 380.6 cm
+1 0 0 1 60 176.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F4 7 Tf 9 TL (sha256: 035d2ee6b526894437b1f704aea8ed3c8335f258d77476d39b3c4577cf7c94df) Tj T* ET
@@ -688,30 +702,30 @@ endobj
 xref
 0 15
 0000000000 65535 f 
-0000000061 00000 n 
-0000000122 00000 n 
-0000000229 00000 n 
-0000000341 00000 n 
-0000000456 00000 n 
-0000000651 00000 n 
-0000000846 00000 n 
-0000000951 00000 n 
-0000001146 00000 n 
-0000001215 00000 n 
-0000001540 00000 n 
-0000001612 00000 n 
-0000008168 00000 n 
-0000016753 00000 n 
+0000000073 00000 n 
+0000000134 00000 n 
+0000000241 00000 n 
+0000000353 00000 n 
+0000000468 00000 n 
+0000000663 00000 n 
+0000000858 00000 n 
+0000000963 00000 n 
+0000001158 00000 n 
+0000001227 00000 n 
+0000001555 00000 n 
+0000001627 00000 n 
+0000008244 00000 n 
+0000017522 00000 n 
 trailer
 <<
 /ID 
 [<0615925bee3cd89939c0a65e0a4c8188><0615925bee3cd89939c0a65e0a4c8188>]
-% ReportLab generated PDF document -- digest (opensource)
+% ReportLab generated PDF document -- digest (http://www.reportlab.com)
 
 /Info 10 0 R
 /Root 9 0 R
 /Size 15
 >>
 startxref
-19866
+22233
 %%EOF

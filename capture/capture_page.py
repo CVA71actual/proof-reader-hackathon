@@ -66,7 +66,12 @@ def extract_page(source: Path, page_index: int, out_pdf: Path) -> None:
 def page_words(pdf: Path, page_number: int | None = None) -> dict:
     """Every word on the (single) page, in the PDF's own reading order. `page_number`: the page's number in
     the full source (default: the pinned IONS page)."""
-    doc = pymupdf.open(pdf)
+    return page_words_bytes(Path(pdf).read_bytes(), page_number)
+
+
+def page_words_bytes(pdf_bytes: bytes, page_number: int | None = None) -> dict:
+    """Extract words from the exact PDF byte snapshot supplied by the caller."""
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     page = doc[0]
     raw = page.get_text("words", sort=False)
     words = []

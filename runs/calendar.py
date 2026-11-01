@@ -11,35 +11,46 @@ period start are listed after the dated ones, never dropped.
 from __future__ import annotations
 
 from datetime import date
+import re
 
 from checks.event_checks import add_months_to, period_last_day
 from runs.state import run_reference_date
 
-CALENDAR_GROUPS = ("kept", "corrected")
+_DEPENDENCY = re.compile(r"\b(?:if|unless|subject to|contingent on|dependent on|provided that|only if|pending)\b", re.I)
 
 
-def on_calendar(s: dict) -> bool:
-    """A kept row is on the calendar. A row a person corrected is on it only when the re-check of the fix passed
-    and the readers' disagreement, if there was one, is settled; a fix that is "fixed but still open" (not yet
-    re-checked, re-check failed or could not run, readers still undecided) stays off until the person keeps it."""
-    if s["group"] not in CALENDAR_GROUPS:
-        return False
-    if s["group"] == "kept" or not s["fixes"]:
-        return True
-    return (s["recheck"] or {}).get("result") == "pass" and not s["needs_recheck"] and s["status"] != "undecided"
+def explicit_dependency(row: dict) -> bool:
+    return bool(_DEPENDENCY.search(row.get("quote") or ""))
+
+
+def timing_state(row: dict) -> str:
+    """Describe date wording; conditionality is independent and recorded separately."""
+    text = (row.get("date_text") or "").strip()
+    if not text and not row.get("date") and not row.get("date_end"):
+        return "undated"
+    if not row.get("date") and not row.get("date_end"):
+        return "timing_unresolved"
+    return "dated"
+
+
+def on_calendar(state: dict) -> bool:
+    """Compatibility view of the single placement decision made by current_state."""
+    return bool(state.get("on_calendar"))
 
 
 def calendar_entries(run: dict, state: dict) -> list[dict]:
     out = []
     for row in run.get("rows", []):
         s = state["targets"].get(row["id"])
-        if s is None or not on_calendar(s):
+        if s is None or not s.get("on_calendar"):
             continue
         v = {**row, **s["values"]}      # the state's current values; the raw row only where the state has none
         out.append({
             "id": row["id"], "ticker": v["ticker"], "company": v["company"], "event_type": v["event_type"],
             "title": v["title"], "program": v["program"], "date_text": v["date_text"], "date": v["date"],
             "date_end": v["date_end"], "quote": v["quote"], "source_id": row["source_id"],
+            "timing_state": s.get("timing_state"), "contingent": s.get("contingent"),
+            "assessment_status": s.get("assessment_status"),
             "page_number": row["page_number"], "group": s["group"], "status": s["status"],
             "decided_by_person": s["decided_by_person"], "last_action": s["last_action"],
             "needs_recheck": s["needs_recheck"], "reason": s["reason"],
@@ -52,17 +63,20 @@ def partition_intervals(entries: list[dict], anchor: str, end: str) -> dict[str,
     """Partition eligible calendar rows once for both the API/UI and saved reports.
 
     Intersecting periods stay in-window. Historical rows are retained in Past,
-    including human-kept rows, and undated rows remain Contingent.
+    including human-kept rows. Missing dates remain Undated, unresolved date wording stays distinct, and Contingent
+    requires explicit dependency wording in the quoted passage.
     """
     lower, upper = date.fromisoformat(anchor), date.fromisoformat(end)
-    out = {key: [] for key in ("calendar", "past", "later", "contingent")}
+    out = {key: [] for key in ("calendar", "past", "later", "contingent", "undated", "timing_unresolved")}
     for row in entries:
         try:
             start = date.fromisoformat(row.get("date") or "")
         except (TypeError, ValueError):
             start = None
         if start is None:
-            out["contingent"].append(row)
+            state = "contingent" if row.get("contingent") else (row.get("timing_state") or
+                     ("undated" if not row.get("date_text") else "timing_unresolved"))
+            out[state if state in {"contingent", "undated", "timing_unresolved"} else "timing_unresolved"].append(row)
             continue
         try:
             finish_value = row.get("date_end")

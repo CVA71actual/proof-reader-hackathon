@@ -19,7 +19,6 @@ import argparse
 import hashlib
 import inspect
 import json
-import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +29,7 @@ from capture import read_table
 from checks import event_checks, row_column_match, selector_match, text_layer_match
 from checks.status import UNREADABLE, check_reading
 from runs import prices
+from runs.page_outcomes import interpreted_page
 
 REPO = Path(__file__).resolve().parent.parent
 FIXTURES = REPO / "fixtures"
@@ -76,6 +76,8 @@ def to_contract_check(c: dict) -> dict:
         compared["box"] = list(raw["box"]) if raw["box"] is not None else None
     if "word_ids" in raw:
         compared["word_ids"] = list(raw["word_ids"])
+    if "timing" in raw:
+        compared["timing"] = raw["timing"]
     out = {
         "name": c["check"],
         "label": c["label"],
@@ -85,6 +87,14 @@ def to_contract_check(c: dict) -> dict:
         "compared": compared,
         "code_ref": code_ref(c["check"]),
     }
+    # These are optional evidence fields on the shared CheckResult contract.
+    # Keep the adapter in one place so new supported evidence cannot vanish at
+    # the run.json boundary (as near_match/differs once did).
+    if c.get("near_match") is not None or c.get("differs"):
+        out["near_match"] = c.get("near_match")
+        out["differs"] = [list(pair) for pair in c.get("differs") or []]
+    if c.get("assessment") is not None:
+        out["assessment"] = c["assessment"]
     if c.get("near_match") is not None or c.get("differs"):    # only a near-miss quote check carries these
         out["near_match"] = c.get("near_match")
         out["differs"] = [list(p) for p in c.get("differs") or []]
@@ -99,25 +109,34 @@ def model_display_name(model_id: str) -> str:
     return model_id
 
 
-def build_table(reading: dict, words_doc: dict, *, table_id: str, source_id: str, page_number: int) -> dict:
+def build_table(reading: dict, words_doc: dict, *, table_id: str, source_id: str, page_number: int,
+                source: dict | None = None, consumed_artifact: dict | None = None,
+                visual_evidence: dict | None = None, derived_words_present: bool = False) -> dict:
     prompt = reading.get("prompt_text") or ""
     sha = reading.get("prompt_sha256") or ""
     if read_table.sha256_text(prompt) != sha:
         raise ValueError("The saved instructions do not match their SHA-256; refusing to build the run.")
-    checked = check_reading(reading, words_doc)
+    checked = check_reading(reading, words_doc, visual_evidence, derived_words_present)
     table = reading.get("table") if isinstance(reading.get("table"), dict) else {}
     rows = []
+    from runs.claim_assessment import bind_contract_checks
     for ri, row in enumerate(checked["rows"]):
         cells = []
         for ci, cell in enumerate(row["cells"]):
             box = cell.get("box")
+            check_list = cell["checks"]
+            if source is not None and consumed_artifact is not None:
+                check_list = bind_contract_checks(check_list,
+                    {"page_number": page_number, "value": cell.get("value"), "box": cell.get("box"),
+                     "column": cell.get("column"), "row_label": row.get("label"),
+                     "columns": list(table.get("columns", []))}, source, consumed_artifact=consumed_artifact)
             cells.append({
                 "id": f"{table_id}.{ri}.{ci}",
                 "column": str(cell.get("column", "")),
                 "value": cell.get("value"),
                 "box": list(box) if isinstance(box, (list, tuple)) else None,
                 "status": cell["status"],
-                "checks": [to_contract_check(c) for c in cell["checks"]],
+                "checks": [to_contract_check(c) if "check" in c else c for c in check_list],
             })
         rows.append({"label": row["label"], "cells": cells})
     unreadable = checked["status"] == UNREADABLE
@@ -135,12 +154,15 @@ def build_table(reading: dict, words_doc: dict, *, table_id: str, source_id: str
     }
 
 
-def render_page(pdf: Path, out_png: Path, zoom: float = RENDER_ZOOM) -> None:
+def render_page_bytes(pdf_bytes: bytes, out_png: Path, zoom: float = RENDER_ZOOM) -> None:
+    """Render the exact already-verified PDF byte snapshot used by capture_page."""
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    doc = pymupdf.open(pdf)
-    pix = doc[0].get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
-    pix.save(out_png)
-    doc.close()
+    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        pix = doc[0].get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
+        pix.save(out_png)
+    finally:
+        doc.close()
 
 
 def file_sha256(path: Path) -> str:
@@ -148,45 +170,34 @@ def file_sha256(path: Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def ions_source(manifest: dict, run_dir: Path) -> tuple[dict, dict]:
-    """Render page 95 into the run folder and copy its words beside it. Returns (source, words_doc)."""
-    page_no = manifest["page_number"]
-    image_rel = f"pages/p{page_no}.png"
-    words_rel = f"pages/p{page_no}.words.json"
-    render_page(FIXTURES / manifest["page_file"], run_dir / image_rel)
-    words_src = FIXTURES / manifest["words_file"]
-    if hashlib.sha256(words_src.read_bytes()).hexdigest() != manifest["words_sha256"]:
-        raise ValueError("The words file does not match the manifest; refusing to build the run.")
-    shutil.copyfile(words_src, run_dir / words_rel)
-    words_doc = json.loads(words_src.read_text())
-    source = {
-        "id": IONS_SOURCE_ID,
-        "publisher": f"{manifest['company']} (filed with the SEC)",
-        "kind": "filing",
-        "title": f"{manifest['ticker']} annual report to shareholders ({manifest['form']}), filed {manifest['filing_date']}",
-        "url": manifest["source_url"],
-        "published_date": manifest["filing_date"],
-        "captured_at": manifest["captured_at"],
-        "sha256": manifest["source_sha256"],
-        "pages": [{
-            "page_number": page_no,
-            "image": image_rel,
-            "width_pt": words_doc["page_width"],
-            "height_pt": words_doc["page_height"],
-            "words": words_rel,
-            "image_sha256": file_sha256(run_dir / image_rel),
-            "words_sha256": file_sha256(run_dir / words_rel),
-        }],
-    }
-    return source, words_doc
+def ions_source(manifest: dict, run_dir: Path) -> tuple[dict, dict, dict]:
+    """Capture the pinned page through the shared verified-artifact boundary."""
+    return _ions_source_evidence(manifest, run_dir)
+
+
+def _ions_source_evidence(manifest: dict, run_dir: Path) -> tuple[dict, dict, dict]:
+    from runs import sources
+
+    record = dict(manifest)
+    record.update({"id": "ions-p95", "ticker": manifest["ticker"], "kind": "table",
+                   "source_id": IONS_SOURCE_ID, "file_stem": "p95",
+                   "page_path": str(FIXTURES / manifest["page_file"]),
+                   "words_path": str(FIXTURES / manifest["words_file"])})
+    return sources.capture_page_evidence(record, run_dir)
 
 
 def build_demo_run(reading: dict, run_dir: Path, *, finished_at: str | None = None) -> dict:
     manifest = json.loads((FIXTURES / "MANIFEST.json").read_text())
     run_dir.mkdir(parents=True, exist_ok=True)
-    source, words_doc = ions_source(manifest, run_dir)
+    source, words_doc, consumed_artifact = _ions_source_evidence(manifest, run_dir)
+    page = source["pages"][0]
     table = build_table(reading, words_doc, table_id="t1", source_id=source["id"],
-                        page_number=manifest["page_number"])
+                        page_number=manifest["page_number"], source=source, consumed_artifact=consumed_artifact,
+                        visual_evidence=page.get("visual_evidence"),
+                        derived_words_present=bool(page.get("derived_words")))
+    outcome = interpreted_page(source, source["pages"][0], attempted=True,
+                               read=bool(reading.get("readable")), unreadable=not bool(reading.get("readable")),
+                               reason=reading.get("parse_problem"))
     fake = bool(reading.get("fake")) or reading.get("model") == read_table.FAKE_MODEL
     return {
         "schema_version": SCHEMA_VERSION,
@@ -205,6 +216,7 @@ def build_demo_run(reading: dict, run_dir: Path, *, finished_at: str | None = No
                 "note_for_agent": None,
             },
             "spend_usd": None,  # the S1 reading did not record its cost
+            "page_outcomes": [outcome], "pages_read": int(outcome["read"]),
         },
         "sources": [source],
         "tables": [table],

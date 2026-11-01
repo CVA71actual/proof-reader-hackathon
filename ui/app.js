@@ -227,9 +227,7 @@
   var accuracyCache = { id: null, line: null, tried: false };   // runs/<id>/accuracy.json, one line for the audit header
 
   function needsAttention(t) {
-    if (t.group === 'open' || t.group === 'unverified') return true;
-    if (t.group !== 'corrected') return false;
-    return !!t.needs_recheck || (t.recheck && (t.recheck.result === 'could_not_run' || t.recheck.result === 'unresolved')) || t.status === 'undecided';
+    return !!(t && t.needs_attention);
   }
   function rowTarget(row) { return detail.state.targets[row.id] || {}; }
   function rowOf(id) {
@@ -473,7 +471,8 @@
     updateRunCardJob();
 
     var nRows = detail.run.rows.length;
-    var nPages = detail.run.sources.reduce(function (n, s) { return n + (s.pages || []).length; }, 0);
+    var outcomeView = st.page_outcomes || {};
+    var nPages = outcomeView.recorded ? outcomeView.counts.captured : '—';
     document.getElementById('ct-audit').textContent = nRows;
     document.getElementById('ct-source').textContent = nPages;
     document.getElementById('ct-judgment').textContent = st.unresolved;
@@ -490,7 +489,7 @@
   // first source's row and carries `fold`, every source row in it.
   // G9-1: a corrected row reaches the calendar only when the re-check of the
   // fix passed, no re-check is pending and the readers are decided — the same
-  // rule as runs/calendar.py on_calendar(). A fix that failed, could not run
+  // rule as runs/state.py. A fix that failed, could not run
   // or waits on a re-check stays off until the person keeps it.
   function calendarRows() {
     var out = [];
@@ -499,33 +498,21 @@
     var partition = detail.run.calendar_partition || null;
     var bucketById = {};
     if (partition) {
-      ['calendar', 'past', 'later', 'contingent'].forEach(function (bucket) {
+      ['calendar', 'past', 'later', 'contingent', 'undated', 'timing_unresolved'].forEach(function (bucket) {
         (partition[bucket] || []).forEach(function (entry) { bucketById[entry.id] = bucket; });
       });
     }
-    var window = partition ? null : (typeof calWindow === 'function'
-      ? calWindow() : { anchor: '0000-00-00', end: '9999-12-31' });
     detail.run.rows.forEach(function (r) {
       var t = rowTarget(r);
-      if (t.group !== 'kept' && t.group !== 'corrected') return;
-      if (t.group === 'corrected' && (t.fixes || []).length &&
-          !((t.recheck || {}).result === 'pass' && !t.needs_recheck && t.status !== 'undecided')) return;
-      // presence, not truthiness: a date the state holds as null was CLEARED
-      // by a fix — the raw row's date must not resurrect it
-      var d = t.values && Object.prototype.hasOwnProperty.call(t.values, 'date')
-        ? t.values.date : r.date;
-      var end = t.values && Object.prototype.hasOwnProperty.call(t.values, 'date_end')
-        ? t.values.date_end : r.date_end;
-      var dt = t.values && Object.prototype.hasOwnProperty.call(t.values, 'date_text')
-        ? t.values.date_text : r.date_text;
-      // A-F2(b): a kept or corrected row whose date text names no parsed day
-      // is not dropped — it lists in the calendar's "No day given" section
-      // Undated supported events remain visible for review and output.
+      if (!t.on_calendar) return;
+      var bucket = bucketById[r.id];
+      if (!bucket) return; // the shared read view is the only placement authority
+      var vals = t.values || {};
+      var d = vals.date || null;
+      var end = vals.date_end || null;
+      var dt = vals.date_text || null;
       var entry = { row: r, t: t, date: d || null, nodate: !d,
-                    period: !!end, end: end || null, dateText: dt || null };
-      if (partition) entry.bucket = bucketById[r.id] || null;
-      else entry.bucket = !entry.date ? 'contingent' : (entry.end || entry.date) < window.anchor ? 'past'
-        : entry.date > window.end ? 'later' : 'calendar';
+                    period: !!end, end: end || null, dateText: dt || null, bucket: bucket };
       out.push(entry);
     });
     var groups = {}, order = [];
@@ -1004,6 +991,16 @@
 
   function pageImage(pp, highlightId) {
     var wrap = el('div', 'page-wrap');
+    var visualEvidence = pp.page.visual_evidence || {};
+    if (visualEvidence.overlays_supported === false) {
+      var why = visualEvidence.origin === 'hidden_text'
+        ? 'Hidden text layer: citation overlays are unavailable because its word boxes are nonvisual slivers.'
+        : visualEvidence.origin === 'approximate'
+          ? 'Approximate image geometry: citation overlays are unavailable because SAM or model transcription did not verify visible words.'
+          : 'No visible text geometry is available for citation overlays.';
+      wrap.append(el('div', 'hint', why));
+      highlightId = null;
+    }
     // G1-14: boxes live in an inner container that exactly frames the image —
     // percentages of this container are the page points scaled to the rendered
     // image, with no padding offset
@@ -1015,7 +1012,7 @@
     inner.append(img);
     wrap.append(inner);
     var W = pp.page.width_pt, H = pp.page.height_pt;
-    valuesOnPage(pp).forEach(function (v) {
+    (visualEvidence.overlays_supported === false ? [] : valuesOnPage(pp)).forEach(function (v) {
       if (!Array.isArray(v.box) || v.box.length !== 4 ||
           v.box.some(function (n) { return typeof n !== 'number'; })) return;
       var b = el('div', 'box ' + v.status + (v.id === highlightId ? ' sel' : ''));
@@ -1100,6 +1097,9 @@
     if (row.program) kv('Program', row.program);
     kv('Type', eventWord(row.event_type));
     kv('Event date', '', el('span', 'v mono', t.values && t.values.date_text || row.date_text || ''));
+    var timingWords = { undated: 'Undated · no timing stated', timing_unresolved: 'Timing unresolved', dated: 'Timing stated' };
+    kv('Timing', (timingWords[t.timing_state] || 'Timing unresolved') +
+      (t.contingent ? ' · Contingent (explicit dependency)' : ''));
     kv('Proposed by', 'Model · ' + (row.proposed_by || ''));
     if (src) {
       var a = el('a', 'link', src.publisher);
@@ -1330,7 +1330,19 @@
     var sec = el('div', 'sec');
     var hasFix = (t.fixes || []).length > 0;
     var current = effectiveChecks(row, t);
-    var history = t.check_history || (t.recheck ? (row.checks || []) : []);
+    var history = t.check_history || [];
+    var visible = (t.claim_assessments || {}).visible_passage;
+    var evidence = t.page_evidence || {};
+    var capture = evidence.capture_completeness || {};
+    if (capture.capture_incomplete) {
+      sec.append(el('div', 'hint', 'Capture may be incomplete: ' + (capture.capture_incomplete_reason || 'reason not recorded')));
+    } else if (capture.completeness_not_established) {
+      sec.append(el('div', 'hint', 'Capture completeness was not established: ' +
+        (capture.completeness_reason || 'reason not recorded')));
+    }
+    if (evidence.derived_words) {
+      sec.append(el('div', 'hint', 'Words came from a model transcription of the captured page image; their geometry is approximate.'));
+    }
 
     function appendChecks(label, checks, emptyText) {
       sec.append(el('h4', null, label));
@@ -1358,13 +1370,21 @@
     }
 
     appendChecks(hasFix ? 'Checks on current value · by Code' : 'Checks · by Code', current,
-      t.needs_recheck ? 'No checks ran on the current value yet; re-check pending.'
-        : (t.recheck && t.recheck.result === 'unresolved'
-          ? 'The re-check is unresolved; no checks are recorded for the current value.'
-          : (t.recheck && t.recheck.result === 'could_not_run'
-            ? 'The re-check could not run; no checks are recorded for the current value.'
-            : 'No checks ran for this row.')));
-    if (history.length) appendChecks('Original checks · history (before edit)', history,
+      t.assessment_status === 'unresolved' ? (t.checks_stale
+        ? 'Saved checks are not current for this candidate or page.'
+        : 'No check establishes that the claimed words are visible on the rendered page.')
+        : t.needs_recheck ? 'No checks ran on the current value yet; re-check pending.'
+        : (t.recheck && (t.recheck.result === 'could_not_run' || t.recheck.result === 'unresolved')
+          ? (t.recheck.result === 'unresolved' ? 'The re-check is unresolved; no checks are recorded for the current value.'
+            : 'The re-check could not run; no checks are recorded for the current value.')
+          : 'No checks ran for this row.'));
+    if (visible) {
+      var vline = el('div', 'chk');
+      vline.append(checkDot(visible.result));
+      vline.append(el('span', 'cn', visible.label), el('span', 'cr', 'not checked'));
+      sec.append(vline, el('div', 'hint', visible.reason));
+    }
+    if (history.length) appendChecks(t.checks_stale ? 'Saved checks · history (not current)' : 'Original checks · history (before edit)', history,
       'No original checks were recorded.');
     return sec;
   }
@@ -1383,6 +1403,7 @@
       box.append(el('span', 'lf', ' · found '),
         esc(cmp.found === null || cmp.found === undefined || cmp.found === '' ? 'nothing' : cmp.found));
     }
+    if (c.near_match) box.append(el('span', 'lf', ' · page wording '), esc(c.near_match));
     d.append(box);
     var res = el('div', 'recline');
     res.append('Result: ', el('b', null, checkResultWord(c.result)));
@@ -1442,6 +1463,11 @@
     document.getElementById('src-sub').textContent = 'Every page the rows were read from';
 
     var pages = [];
+    var pageOutcomeView = ((detail.state || {}).page_outcomes || {});
+    var pageOutcomeByKey = {};
+    (pageOutcomeView.items || []).forEach(function (outcome) {
+      pageOutcomeByKey[outcome.source_id + ':' + outcome.page_number] = outcome;
+    });
     detail.run.sources.forEach(function (s) {
       (s.pages || []).forEach(function (p) { pages.push({ source: s, page: p }); });
     });
@@ -1490,6 +1516,10 @@
         var key = 'p' + pp.page.page_number;
         var b = btn('pg' + (selected && pp === selected ? ' on' : ''), '');
         b.append(el('span', 'c', 'page ' + pp.page.page_number));
+        var outcome = pageOutcomeByKey[pp.source.id + ':' + pp.page.page_number];
+        var outcomeLabel = !outcome ? 'outcome unavailable' : outcome.read ? 'read'
+          : outcome.skipped ? 'skipped' : outcome.unreadable ? 'unreadable' : 'not read';
+        b.append(el('span', 'c', outcomeLabel));
         b.addEventListener('click', function () {
           navigate({ runId: currentRunId(), screen: 'source', srcId: pp.source.id, page: key,
                      valueId: null, back: route.back });
@@ -2100,6 +2130,8 @@
     var past = all.filter(function (r) { return r.bucket === 'past'; });
     var later = all.filter(function (r) { return r.bucket === 'later'; });
     var nodates = all.filter(function (r) { return r.bucket === 'contingent'; });
+    var undated = all.filter(function (r) { return r.bucket === 'undated'; });
+    var timingUnresolved = all.filter(function (r) { return r.bucket === 'timing_unresolved'; });
     var pastIds = {};
     (detail.run.exclusions || []).forEach(function (x) { if (x.rule === 'event_in_past') pastIds[x.target] = true; });
     var lastEvents = (detail.run.rows || []).filter(function (r) { return pastIds[r.id]; })
@@ -2120,7 +2152,7 @@
     head.append(el('h2', null, 'Catalyst Calendar'));
     var subrow = el('div', 'cal-subrow');
     // A-F2(b): the count includes the rows with no parsed day
-    var total = rows.length + past.length + nodates.length + later.length;
+    var total = rows.length + past.length + nodates.length + undated.length + timingUnresolved.length + later.length;
     subrow.append(el('div', 'sub', 'Kept events, by date · ' + total + ' row' +
       (total === 1 ? '' : 's') + ' · ' + (w.unresolved ? w.reason : w.anchor + ' – ' + w.end)));
     head.append(subrow);
@@ -2128,7 +2160,7 @@
     head.append(rl);
     host.append(head);
 
-    if (!rows.length && !past.length && !nodates.length && !later.length && !lastEvents.length) {
+    if (!rows.length && !past.length && !nodates.length && !undated.length && !timingUnresolved.length && !later.length && !lastEvents.length) {
       host.append(el('div', 'empty', 'Nothing kept yet — the calendar fills as rows are kept or corrected.'));
       det.append(el('div', 'empty', 'Pick an event to see its details.'));
       return;
@@ -2198,8 +2230,15 @@
         p.rows.forEach(function (r) { wrap.append(calRow(r, '', true)); });
       });
     });
-    // A-F2(b): kept rows whose date text names no day sit in a final section,
-    // the date text as written with a hollow dot — never dropped
+    // Wording distinguishes missing timing, unresolved timing, and explicit dependencies.
+    if (undated.length) {
+      wrap.append(el('div', 'mo', 'Undated · no timing stated · ' + undated.length));
+      undated.forEach(function (r) { wrap.append(calRow(r, '', true)); });
+    }
+    if (timingUnresolved.length) {
+      wrap.append(el('div', 'mo', 'Timing unresolved · ' + timingUnresolved.length));
+      timingUnresolved.forEach(function (r) { wrap.append(calRow(r, '', true)); });
+    }
     if (nodates.length) {
       wrap.append(el('div', 'mo', (w.unresolved ? 'Timing unresolved · ' : 'Contingent · ') + nodates.length));
       nodates.forEach(function (r) { wrap.append(calRow(r, '', true)); });
@@ -2307,9 +2346,14 @@
     c2.append(el('span', 'tk', row.ticker || '—'));
     if (row.program) c2.append(el('span', 'pg2', row.program));
     c2.append(el('span', 'tt', row.title || '(no title)'));
+    if (t.contingent) c2.append(el('span', 'keepwarn', 'Contingent · explicit dependency'));
     // A-F7: a row a person kept while a check failed or the readers disagree
     // is not settled — a small warm marker says so next to the title
     if (t.decided_by_person && t.group === 'kept') {
+      if (t.claim_assessments && t.claim_assessments.visible_passage &&
+          t.claim_assessments.visible_passage.result === 'not_checked') {
+        c2.append(el('span', 'keepwarn', 'kept by you · visible words not checked'));
+      }
       var af7fail = effectiveChecks(row, t).some(function (c) { return c.result === 'fail'; });
       var af7dis = t.disagreement && t.disagreement.second_reader !== null &&
                    t.disagreement.second_reader !== undefined;
@@ -3295,25 +3339,20 @@
 
   function rowVals(x, row) {
     var t = x.state.targets[row.id] || {};
-    return t.values || row;
+    return t.values || {};
   }
   // Codex P2 (#112): the state value wins on KEY PRESENCE — a value a person
   // cleared ('' or null) must show as cleared, never fall back to the raw row;
   // the raw row is only the answer when the state has no value for the field
   function shownVal(cv, raw, k) {
     if (cv && Object.prototype.hasOwnProperty.call(cv, k)) return cv[k];
-    return raw[k];
+    return undefined;
   }
   // Codex P2 (#113): a corrected row's effective checks are the re-check's
   // 'after' set — the saved row.checks can be stale (a saved run is never
   // rebuilt); only when no re-check ran do the saved checks speak
   function effectiveChecks(row, t) {
-    if (Object.prototype.hasOwnProperty.call(t || {}, 'effective_checks')) return t.effective_checks || [];
-    if (t && t.needs_recheck) return [];
-    var after = (t.recheck || {}).after || {};
-    if (after.checks && after.checks.length) return after.checks;
-    if (t.recheck) return (t.recheck.checks || []);
-    return row.checks || [];
+    return (t && t.effective_checks) || [];
   }
   function fmtField(field, value) {
     if (value === null || value === undefined || value === '') return '(none)';
@@ -3919,6 +3958,23 @@
         : cents(meta.spend_usd) + ' used');
     }
     if (bits.length) host.append(el('div', 'jb-sub', bits.join(' · ')));
+    var outcomeView = (detail.state || {}).page_outcomes || {};
+    if (outcomeView.recorded) {
+      var oc = outcomeView.counts;
+      host.append(el('div', 'jb-sub', 'Pages · captured ' + oc.captured + ' · attempted ' + oc.attempted +
+        ' · read ' + oc.read + ' · unreadable ' + oc.unreadable + ' · skipped ' + oc.skipped + ' · unread ' + oc.unread));
+      if (outcomeView.by_company.length) {
+        var by = el('details', 'jb-sub');
+        by.append(el('summary', null, 'Page outcomes by company'));
+        outcomeView.by_company.forEach(function (c) {
+          by.append(el('div', null, c.ticker + ' · captured ' + c.captured + ' · attempted ' + c.attempted +
+            ' · read ' + c.read + ' · unreadable ' + c.unreadable + ' · skipped ' + c.skipped + ' · unread ' + c.unread));
+        });
+        host.append(by);
+      }
+    } else {
+      host.append(el('div', 'jb-sub', 'Page outcomes not recorded for this saved run.'));
+    }
     // the stop sentence wears the warm box only when it needs you; a done
     // run's 'Read N pages' summary is plain text
     if (meta.status_reason) {

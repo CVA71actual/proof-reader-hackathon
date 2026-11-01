@@ -1,5 +1,5 @@
 %PDF-1.4
-%“Œ‹ž ReportLab Generated PDF document (opensource)
+%“Œ‹ž ReportLab Generated PDF document http://www.reportlab.com
 1 0 obj
 <<
 /F1 2 0 R /F2 3 0 R /F3 5 0 R
@@ -47,7 +47,7 @@ endobj
 endobj
 8 0 obj
 <<
-/Author (built by code from the saved results) /CreationDate (D:20000101000000+00'00') /Creator (\(unspecified\)) /Keywords () /ModDate (D:20000101000000+00'00') /Producer (ReportLab PDF Library - \(opensource\)) 
+/Author (built by code from the saved results) /CreationDate (D:20000101000000+00'00') /Creator (\(unspecified\)) /Keywords () /ModDate (D:20000101000000+00'00') /Producer (ReportLab PDF Library - www.reportlab.com) 
   /Subject (\(unspecified\)) /Title (Biotech Coverage Catalyst Calendar) /Trapped /False
 >>
 endobj
@@ -58,7 +58,7 @@ endobj
 endobj
 10 0 obj
 <<
-/Length 3833
+/Length 4457
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -100,178 +100,171 @@ q
 1 0 0 1 60 637.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Companies read: PTGX) Tj T* ET
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Page outcomes: captured 1 \267 attempted 1 \267 read 1 \267 unreadable 0 \267 skipped 0 \267 unread 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 619.6 cm
+1 0 0 1 60 621.6 cm
 q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Companies unread: none recorded) Tj T* ET
+.2 .2 .2 rg
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (PTGX page outcomes: captured 1 \267 attempted 1 \267 read 1 \267 unreadable 0 \267 skipped 0 \267 unread 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 601.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Pages read: 1 \267 unread: not recorded) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 583.6 cm
+1 0 0 1 60 603.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Stopping reason: No stopping reason recorded.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 567.6 cm
+1 0 0 1 60 587.6 cm
 q
 .2 .2 .2 rg
-BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Built on 31 October 2026 at 18:00 \(local time\)) Tj T* ET
+BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Built on 31 October 2026 at 19:59 \(local time\)) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 557.6 cm
+1 0 0 1 60 577.6 cm
 Q
 q
-1 0 0 1 60 527.6 cm
+1 0 0 1 60 547.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Summary) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 509.6 cm
+1 0 0 1 60 529.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and kept: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 491.6 cm
+1 0 0 1 60 511.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Corrected: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 473.6 cm
+1 0 0 1 60 493.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Checked and removed: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 455.6 cm
+1 0 0 1 60 475.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unverified: 2) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 437.6 cm
+1 0 0 1 60 457.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Still open: 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 419.6 cm
+1 0 0 1 60 439.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Mistakes caught by code 0 \267 by the second reader 0 \267 by a person 0 \267 Excluded 0) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 401.6 cm
+1 0 0 1 60 421.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Unresolved \(needs attention\): 2) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 371.6 cm
+1 0 0 1 60 391.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Calendar) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 355.6 cm
+1 0 0 1 60 375.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Window: 2026-10-29 \226 2027-04-29) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 339.6 cm
+1 0 0 1 60 359.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 2 Tm /F1 8 Tf 10 TL (Kept and corrected rows only, ordered by date. Periods are shown as stated.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 321.6 cm
+1 0 0 1 60 341.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (No kept or corrected rows.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 291.6 cm
+1 0 0 1 60 311.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Corrections) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 273.6 cm
+1 0 0 1 60 293.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 243.6 cm
+1 0 0 1 60 263.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Other edits \267 no mistake demonstrated) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 245.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 215.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Excluded) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 225.6 cm
+1 0 0 1 60 197.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (None.) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 195.6 cm
+1 0 0 1 60 167.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Still open and unverified) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 165.6 cm
+1 0 0 1 60 65.6 cm
 q
 0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Unverified \267 PTGX \267 Phase 1 initiation: Quote found on page could not run: The page has no text layer to compare against.) Tj T* (The page is a scan: there is no text layer, so nothing printed was compared with this row.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 135.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 15 Tm /F1 9 Tf 12 TL (Unverified \267 PTGX \267 Phase 1 initiation: Quote found on page could not run: The page has no text layer to compare against.) Tj T* (The page is a scan: there is no text layer, so nothing printed was compared with this row.) Tj T* ET
-Q
-Q
-q
-1 0 0 1 60 105.6 cm
-q
-0 0 0 rg
-BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Sources) Tj T* ET
+BT 1 0 0 1 0 87 Tm /F1 9 Tf 12 TL (Unverified \267 PTGX \267 Protagonist Therapeutics, Inc. \267 PN-458o \267 indication not stated \267 Phase 1 initiation \267 the second half of) Tj T* (2027 \267 source PTGX-SCAN 8-K exhibit 99.1 \(second quarter 2026 financial results press release\), filed 2026-08-05, as a) Tj T* (scanned page \(the image only\) \(src-ptgx-8k-2026-08-05-ex991-scanned\) page 3 \267 quote: PN-458o \(dual GLP/GIP agonist) Tj T* (peptide\): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.: Quote found on) Tj T* (page could not run: The page has no text layer to compare against. The page is a scan: there is no text layer, so nothing) Tj T* (printed was compared with this row. \267 timing: dated \267 current-value checks: Quote found on page: could_not_run; Citation) Tj T* (located: could_not_run; Date read as written: pass; Source is more than a calendar: pass; Event type matches the quote:) Tj T* (pass; Claimed words visible on the rendered page: not_checked) Tj T* ET
 Q
 Q
  
@@ -279,7 +272,7 @@ endstream
 endobj
 11 0 obj
 <<
-/Length 1027
+/Length 2190
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -290,28 +283,42 @@ BT 1 0 0 1 54 32.4 Tm (Built with Meta Muse models \267 built by code from the s
 BT 1 0 0 1 536.594 32.4 Tm (page 2) Tj T* ET
 Q
 q
-1 0 0 1 60 723.6 cm
+1 0 0 1 60 639.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 87 Tm /F1 9 Tf 12 TL (Unverified \267 PTGX \267 Protagonist Therapeutics, Inc. \267 PN-8047 \267 indication not stated \267 Phase 1 initiation \267 Q1 2027 \267 source) Tj T* (PTGX-SCAN 8-K exhibit 99.1 \(second quarter 2026 financial results press release\), filed 2026-08-05, as a scanned page) Tj T* (\(the image only\) \(src-ptgx-8k-2026-08-05-ex991-scanned\) page 3 \267 quote: PN-8047 \(oral small molecule hepcidin functional) Tj T* (mimetic\): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.: Quote found on page could not) Tj T* (run: The page has no text layer to compare against. The page is a scan: there is no text layer, so nothing printed was) Tj T* (compared with this row. \267 timing: dated \267 current-value checks: Quote found on page: could_not_run; Citation located:) Tj T* (could_not_run; Date read as written: pass; Source is more than a calendar: pass; Event type matches the quote: pass;) Tj T* (Claimed words visible on the rendered page: not_checked) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 609.6 cm
+q
+0 0 0 rg
+BT 1 0 0 1 0 3 Tm /F2 13 Tf 16 TL (Sources) Tj T* ET
+Q
+Q
+q
+1 0 0 1 60 591.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 3 Tm /F1 9 Tf 12 TL (Protagonist Therapeutics, Inc. \(filed with the SEC\) \267 filing \267 2026-08-05) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 708.6 cm
+1 0 0 1 60 576.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (https://www.sec.gov/Archives/edgar/data/1377121/000110465926091099/tm2622272d1_ex99-1.htm) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 693.6 cm
+1 0 0 1 60 561.6 cm
 q
 0 0 0 rg
 BT 1 0 0 1 0 2 Tm /F3 7 Tf 9 TL (sha256: 4ba68e37da0c15348d3eb9c3164a8f477ca81fa42d570fd648961e69cb5a1c50) Tj T* ET
 Q
 Q
 q
-1 0 0 1 60 657.6 cm
+1 0 0 1 60 525.6 cm
 q
 .2 .2 .2 rg
 BT 1 0 0 1 0 22 Tm /F1 8 Tf 10 TL (page rendered by code from the filed HTML \267 source HTML sha256:) Tj T* (ecfd2d79a6e812707d22a9f9a5b86ab1ff7dcc4e8bd9aa2d4c0c7636a7280d57 \267 renderer: Google Chrome 156.0.8078.48 headless) Tj T* (print-to-pdf) Tj T* ET
@@ -323,27 +330,27 @@ endobj
 xref
 0 12
 0000000000 65535 f 
-0000000061 00000 n 
-0000000112 00000 n 
-0000000219 00000 n 
-0000000331 00000 n 
-0000000525 00000 n 
-0000000630 00000 n 
-0000000824 00000 n 
-0000000892 00000 n 
-0000001216 00000 n 
-0000001281 00000 n 
-0000005166 00000 n 
+0000000073 00000 n 
+0000000124 00000 n 
+0000000231 00000 n 
+0000000343 00000 n 
+0000000537 00000 n 
+0000000642 00000 n 
+0000000836 00000 n 
+0000000904 00000 n 
+0000001231 00000 n 
+0000001296 00000 n 
+0000005805 00000 n 
 trailer
 <<
 /ID 
 [<0615925bee3cd89939c0a65e0a4c8188><0615925bee3cd89939c0a65e0a4c8188>]
-% ReportLab generated PDF document -- digest (opensource)
+% ReportLab generated PDF document -- digest (http://www.reportlab.com)
 
 /Info 8 0 R
 /Root 7 0 R
 /Size 12
 >>
 startxref
-6245
+8047
 %%EOF

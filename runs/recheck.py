@@ -37,12 +37,14 @@ No other page is ever used in its place.
 from __future__ import annotations
 
 from checks import event_checks
-from checks.common import COULD_NOT_RUN, FAIL, UNRESOLVED, CheckResult
+from checks.common import COULD_NOT_RUN, FAIL, PASS, UNRESOLVED, CheckResult
+from checks.selector_match import CHECK_ID as SELECTOR_ID, LABEL as SELECTOR_LABEL, selector_match
 from checks.selector_match import region_match, selector_match
 from checks.status import MATCHED as CELL_MATCHED
 from checks.status import check_cell
 from runs.build_run import to_contract_check
 from runs.state import checked_fields
+from runs.claim_assessment import bind_checks
 
 PASSED_REASON = "The checks were run again on the fixed value and passed."
 FAILED_REASON = "The checks were run again on the fixed value and failed."
@@ -76,19 +78,38 @@ def as_iso(value):
     return day.isoformat() if day else value
 
 
-def row_checks(row: dict, source: dict, words_doc: dict | None, chosen: bool = False) -> list:
+def row_checks(row: dict, source: dict, words_doc: dict | None, chosen: bool = False,
+               consumed_artifact: dict | None = None) -> list:
     """The five event-row checks, in the order the run shows them. `chosen`: a person typed the date (a fix of
     date_text, date or date_end), so the quote need not show by itself which of its dates is the event's."""
     words = words_doc["words"] if words_doc else []
     w, h = (words_doc["page_width"], words_doc["page_height"]) if words_doc else (612.0, 792.0)
     regions = next((p.get("regions") for p in source.get("pages", []) if p.get("page_number") == row.get("page_number")),
                    None)
-    if words_doc is not None and not words and regions:
-        # a scan: no text layer, so the box is checked against the regions SAM 3.1 found, not against words
-        box_check = region_match(row.get("box"), regions, w, h)
+    page = next((p for p in source.get("pages", []) if p.get("page_number") == row.get("page_number")), {})
+    visual = page.get("visual_evidence") or {}
+    # A positive contradiction from the captured SAM regions remains a failed
+    # citation even when transcription/visibility cannot be established.
+    region_width = (words_doc or {}).get("page_width") or page.get("width_pt") or 612.0
+    region_height = (words_doc or {}).get("page_height") or page.get("height_pt") or 792.0
+    region_result = region_match(row.get("box"), regions, region_width, region_height) if regions and words_doc is not None else None
+    if region_result is not None:
+        # This is the narrower, actually executed box-in-region comparison.
+        # Approximate transcription geometry affects word alignment, not this
+        # independently bound comparison in the page coordinate frame.
+        box_check = region_result
+    elif row.get("box") is not None and (page.get("derived_words") or visual.get("origin") == "approximate"):
+        box_check = CheckResult(
+            SELECTOR_ID, SELECTOR_LABEL, COULD_NOT_RUN,
+            "SAM 3.1 found no region to compare the box with; word alignment cannot run on derived or approximate geometry.",
+            {"value": row.get("quote"), "box": row.get("box")},
+        )
+    elif row.get("box") is not None and visual.get("origin") == "hidden_text":
+        box_check = CheckResult(SELECTOR_ID, SELECTOR_LABEL, COULD_NOT_RUN, visual["reason"],
+                                {"value": row.get("quote"), "box": row.get("box")})
     else:
         box_check = selector_match(row.get("quote"), row.get("box"), words, w, h, quote_lines=True)
-    return [
+    results = [
         event_checks.quote_match(row.get("quote"), words, row.get("box")),
         box_check,
         event_checks.date_match(row.get("date_text"), as_iso(row.get("date")), row.get("quote"),
@@ -99,6 +120,7 @@ def row_checks(row: dict, source: dict, words_doc: dict | None, chosen: bool = F
         event_checks.source_rule(source["kind"], []),
         event_checks.type_match(row.get("event_type"), row.get("quote")),
     ]
+    return bind_checks(results, row, source, consumed_artifact=consumed_artifact, chosen=chosen)
 
 
 def could_not_run_reason(checks: list[dict]) -> str:
@@ -120,38 +142,69 @@ def failed_reason(checks: list[dict]) -> str:
     return f"The re-check failed: {first['reason']}" if first else FAILED_REASON
 
 
-def recheck_result(checks: list[dict], passed: bool) -> str:
-    if passed:
-        return "pass"
-    results = {c["result"] for c in checks}
+def recheck_result(checks: list[dict], kind: str | bool, field: str | None = None,
+                   settles: bool = False) -> str:
+    """Derive the re-check result from the same applicability contract at write and replay time."""
+    if not isinstance(checks, list) or any(not isinstance(c, dict) for c in checks):
+        return COULD_NOT_RUN
+    results = [c.get("result") for c in checks]
+    # Keep the small result-only entry point used by callers that have already
+    # computed applicability. Stateful write/replay paths pass kind + field.
+    if isinstance(kind, bool):
+        if kind:
+            return "pass"
+        if FAIL in results:
+            return "fail"
+        if UNRESOLVED in results:
+            return UNRESOLVED
+        return COULD_NOT_RUN if COULD_NOT_RUN in results else "fail"
     if FAIL in results:
         return "fail"
-    return COULD_NOT_RUN if COULD_NOT_RUN in results else UNRESOLVED if UNRESOLVED in results else "fail"
+    if UNRESOLVED in results:
+        return UNRESOLVED
+    if field is not None and not settles and field not in checked_fields(kind):
+        return COULD_NOT_RUN
+    if kind == "row":
+        status = event_checks.row_status(checks)
+        if status == event_checks.MATCHED:
+            return "pass"
+        if status == event_checks.FAILED:
+            return "fail"
+        return COULD_NOT_RUN
+    from checks.status import REQUIRED_CHECKS
+    by_name = {c.get("name") or c.get("check"): c.get("result") for c in checks}
+    if all(by_name.get(name) == "pass" for name in REQUIRED_CHECKS):
+        return "pass"
+    if UNRESOLVED in by_name.values():
+        return UNRESOLVED
+    return COULD_NOT_RUN
 
 
-def recheck_line(at: str, target: str, checks: list[dict], passed: bool, settles: bool = False,
-                 reason_if_not_run: str | None = None) -> dict:
+def recheck_line(at: str, target: str, checks: list[dict], kind: str | bool, field: str | None = None,
+                 settles: bool = False, reason_if_not_run: str | None = None) -> dict:
     """`settles`: the fix changed the field the two readers disagreed on."""
-    result = recheck_result(checks, passed)
+    result = recheck_result(checks, kind, field, settles)
+    if isinstance(kind, bool):
+        reason = (PASSED_REASON if result == "pass" else failed_reason(checks) if result == "fail"
+                  else unresolved_reason(checks) if result == UNRESOLVED
+                  else reason_if_not_run or could_not_run_reason(checks))
+        return {"at": at, "target": target, "action": "recheck", "note": None, "fix": None, "by": "code",
+                "recheck": {"result": result, "reason": reason, "checks": checks}}
+    unmeasured = (field is not None and not settles and field not in checked_fields(kind)
+                  and FAIL not in {c.get("result") for c in checks})
     reason = (PASSED_REASON if result == "pass" else failed_reason(checks) if result == "fail"
               else unresolved_reason(checks) if result == UNRESOLVED
-              else reason_if_not_run or could_not_run_reason(checks))
+              else uncovered_reason(field) if unmeasured else reason_if_not_run or could_not_run_reason(checks))
     if settles and result == "pass":
         reason = SETTLES_PREFIX + reason
     return {"at": at, "target": target, "action": "recheck", "note": None, "fix": None, "by": "code",
             "recheck": {"result": result, "reason": reason, "checks": checks}}
 
 
-def _finish(at: str, target: str, kind: str, checks: list[dict], passed: bool, settles: bool,
+def _finish(at: str, target: str, kind: str, checks: list[dict], settles: bool,
             field: str | None, page_missing) -> dict:
-    if field is not None and not settles and field not in checked_fields(kind):
-        # Nothing compared the changed field: unless a check fails, the fix is recorded, not demonstrated.
-        if FAIL in {c["result"] for c in checks}:
-            return recheck_line(at, target, checks, False)
-        return {"at": at, "target": target, "action": "recheck", "note": None, "fix": None, "by": "code",
-                "recheck": {"result": COULD_NOT_RUN, "reason": uncovered_reason(field), "checks": checks}}
     not_run = f"The re-check could not run: {page_not_captured(page_missing)}" if page_missing is not None else None
-    return recheck_line(at, target, checks, passed, settles, reason_if_not_run=not_run)
+    return recheck_line(at, target, checks, kind, field, settles, reason_if_not_run=not_run)
 
 
 def _with_before(line: dict, before_line: dict | None) -> dict:
@@ -166,48 +219,62 @@ def _with_before(line: dict, before_line: dict | None) -> dict:
 
 
 def recheck_row(at: str, row: dict, source: dict, words_doc: dict | None, settles: bool = False,
-                field: str | None = None, before: dict | None = None) -> dict:
+                field: str | None = None, before: dict | None = None,
+                consumed_artifact: dict | None = None) -> dict:
     """`row` already carries the fixed values; `field` is the field the fix changed (None: not given).
     `before`: the row as it was before the fix (the old value); the same checks run on it too.
     words_doc None: the row's page was not captured."""
     # the old value was typed by the reader, not chosen by the person: the quote alone must show its date
     before_line = (None if before is None
-                   else _recheck_row(at, before, source, words_doc, settles, field, chosen=False))
-    return _with_before(_recheck_row(at, row, source, words_doc, settles, field), before_line)
+                   else _recheck_row(at, before, source, words_doc, settles, field, chosen=False,
+                                     consumed_artifact=consumed_artifact))
+    return _with_before(_recheck_row(at, row, source, words_doc, settles, field, chosen=True,
+                                     consumed_artifact=consumed_artifact), before_line)
 
 
 def _recheck_row(at: str, row: dict, source: dict, words_doc: dict | None, settles: bool,
-                 field: str | None, chosen: bool = True) -> dict:
-    results = row_checks(row, source, words_doc, chosen=chosen and field in DATE_FIELDS)
+                 field: str | None, chosen: bool = True, consumed_artifact: dict | None = None) -> dict:
+    if words_doc is None and consumed_artifact is None:
+        page = next((p for p in source.get("pages", []) if p.get("page_number") == row.get("page_number")), {})
+        if not page.get("words") and not page.get("derived_words"):
+            consumed_artifact = {"file": None, "sha256": None, "kind": "unavailable"}
+    results = row_checks(row, source, words_doc, chosen=chosen and field in DATE_FIELDS,
+                         consumed_artifact=consumed_artifact)
     page_missing = None
     if words_doc is None:
         page_missing = row.get("page_number")
         results[0], results[1] = _not_captured(results[0], page_missing), _not_captured(results[1], page_missing)
-    passed = event_checks.row_status(results) == event_checks.MATCHED
-    return _finish(at, row["id"], "row", [to_contract_check(r.to_dict()) for r in results], passed, settles,
+        results = bind_checks(results, row, source, consumed_artifact=consumed_artifact,
+                              chosen=chosen and field in DATE_FIELDS)
+    return _finish(at, row["id"], "row", [to_contract_check(r.to_dict()) for r in results], settles,
                    field, page_missing)
 
 
 def recheck_cell(at: str, cell: dict, words_doc: dict | None, settles: bool = False,
                  field: str | None = None, page_number=None, before: dict | None = None,
-                 row_label: str | None = None, columns: list[str] | None = None) -> dict:
+                 row_label: str | None = None, columns: list[str] | None = None,
+                 visual_evidence: dict | None = None, derived_words_present: bool = False) -> dict:
     """`cell` already carries the fixed value; its box is the one the reader proposed.
     `before`: the cell as it was before the fix (the old value); the same checks run on it too.
     `row_label` / `columns`: the label of the row the cell sits in and the table's column headers.
     words_doc None: the table's page (`page_number`) was not captured."""
     before_line = None if before is None else recheck_cell(at, before, words_doc, settles, field, page_number,
-                                                           row_label=row_label, columns=columns)
-    return _with_before(_recheck_cell(at, cell, words_doc, settles, field, page_number, row_label, columns),
+                                                           row_label=row_label, columns=columns,
+                                                           visual_evidence=visual_evidence,
+                                                           derived_words_present=derived_words_present)
+    return _with_before(_recheck_cell(at, cell, words_doc, settles, field, page_number, row_label, columns,
+                                      visual_evidence, derived_words_present),
                         before_line)
 
 
 def _recheck_cell(at: str, cell: dict, words_doc: dict | None, settles: bool, field: str | None,
-                  page_number, row_label: str | None = None, columns: list[str] | None = None) -> dict:
-    checked = check_cell(cell, words_doc or BLANK_PAGE, row_label, columns)
+                  page_number, row_label: str | None = None, columns: list[str] | None = None,
+                  visual_evidence: dict | None = None, derived_words_present: bool = False) -> dict:
+    checked = check_cell(cell, words_doc or BLANK_PAGE, row_label, columns, visual_evidence=visual_evidence,
+                         derived_words_present=derived_words_present)
     checks = [to_contract_check(c) for c in checked["checks"]]
     page_missing = None
     if words_doc is None:
         page_missing = page_number
         checks = [{**c, "result": COULD_NOT_RUN, "reason": page_not_captured(page_number)} for c in checks]
-    return _finish(at, cell["id"], "cell", checks, checked["status"] == CELL_MATCHED and words_doc is not None,
-                   settles, field, page_missing)
+    return _finish(at, cell["id"], "cell", checks, settles, field, page_missing)

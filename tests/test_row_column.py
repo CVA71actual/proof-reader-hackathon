@@ -1,5 +1,6 @@
 """R3: the value's box must sit on its row label's line and under its column header."""
 
+import hashlib
 import json
 
 import pytest
@@ -196,7 +197,9 @@ from itertools import combinations
 
 from capture.read_table import parse_table
 from runs.build_run import build_table
+from runs.check_load import bind_on_load
 from runs.recheck import recheck_cell
+from runs import page_outcomes, sources
 
 
 def _reading_from(table: dict) -> dict:
@@ -289,6 +292,89 @@ def test_codex7_a_cell_checked_on_its_own_keeps_its_label(words, words_doc):
     got = check_cell({"column": "2025", "value": c["value"], "box": c["box"], "label": "Royalty revenue"},
                      _doc(words, words_doc))
     assert got["status"] == MATCHED
+
+
+def test_recheck_does_not_use_derived_geometry_for_table_alignment(words, words_doc):
+    cell = {"id": "recheck-derived", **_cell("Royalty revenue", "2025")}
+    line = recheck_cell("2026-11-01T00:00:00+00:00", cell, _doc(words, words_doc),
+                        field="value", row_label="Royalty revenue", columns=COLUMNS,
+                        visual_evidence={"origin": "approximate",
+                                         "reason": "The citation geometry comes from image transcription."},
+                        derived_words_present=True)
+    checks = line["recheck"]["checks"]
+    assert checks[0]["result"] == PASS  # text occurrence retains its narrower meaning
+    assert checks[1]["result"] == COULD_NOT_RUN
+    assert checks[2]["result"] == COULD_NOT_RUN
+    assert line["recheck"]["result"] == COULD_NOT_RUN
+
+
+def test_recheck_uses_hidden_text_page_reason_for_table_alignment(words, words_doc):
+    cell = _cell("Royalty revenue", "2025")
+    reason = "The page's text layer has only nonvisual sliver geometry."
+    got = check_cell(cell, _doc(words, words_doc), "Royalty revenue", COLUMNS,
+                     visual_evidence={"origin": "hidden_text", "reason": reason})
+    assert got["checks"][0]["result"] == PASS
+    assert [check["result"] for check in got["checks"][1:]] == [COULD_NOT_RUN, COULD_NOT_RUN]
+    assert [check["reason"] for check in got["checks"][1:]] == [reason, reason]
+
+
+def test_job_table_branch_and_load_never_keep_hidden_geometry_passes(tmp_path, words_doc, monkeypatch):
+    from capture.read_events import EVENT_TYPES
+    from server import jobs
+    from tests.test_run_controls import FakeReader
+
+    run_dir = tmp_path / "run-1"
+    slivers = json.loads(json.dumps(words_doc))
+    for word in slivers["words"]:
+        middle = (word["y0"] + word["y1"]) / 2
+        word["y0"], word["y1"] = middle - 0.28, middle + 0.28
+    source_page = {"page_number": 95, "words": "pages/p95.words.json",
+                   "width_pt": slivers["page_width"], "height_pt": slivers["page_height"]}
+    source_page["visual_evidence"] = sources.visual_evidence({}, slivers)
+    source = {"id": "src-hidden-table", "kind": "filing", "published_date": "2026-10-27",
+              "pages": [source_page]}
+    reason = source_page["visual_evidence"]["reason"]
+    raw = json.dumps(slivers).encode()
+
+    def capture(_record, _run_dir):
+        return source, slivers, consumed
+
+    monkeypatch.setattr(sources, "capture_page_evidence", capture)
+    run_path = run_dir / "run.json"
+    choices = {"companies": ["IONS"], "event_types": list(EVENT_TYPES), "time_window_months": 6,
+               "spending_limit_usd": None, "note_for_agent": None, "reader_tools": False}
+    jobs.create_run(tmp_path, choices, run_id="run-1")
+    (run_dir / source_page["words"]).parent.mkdir(parents=True, exist_ok=True)
+    (run_dir / source_page["words"]).write_bytes(raw)
+    source_page["words_sha256"] = hashlib.sha256(raw).hexdigest()
+    consumed = {"file": source_page["words"], "sha256": source_page["words_sha256"], "kind": "captured"}
+    job = jobs.Job(run_dir, FakeReader(), index=sources.Index())
+    job.meta["status"] = "running"
+    job_page = {"source_id": source["id"], "kind": "table",
+                "record": {"id": "ions-annual-p95", "ticker": "IONS", "company": "Ionis Pharmaceuticals",
+                           "page_number": 95, "page_sha256": "b" * 64}}
+    page_outcomes.initialize(job.meta, [job_page], job.run, job.job)
+    assert job.read_page(job_page)
+    built = job.run["tables"][0]
+    built_cells = [cell for row in built["rows"] for cell in row["cells"]]
+    assert built_cells
+    # This is the mutation-sensitive assertion: bypassing build_table_for_page at the Job branch
+    # leaves bound PASS results here even though the page itself is hidden text.
+    for cell in built_cells:
+        by_name = {check["name"]: check for check in cell["checks"]}
+        for name in ("selector_match", "row_column_match"):
+            assert by_name[name]["result"] == COULD_NOT_RUN
+            assert by_name[name]["reason"] == reason
+
+    run = json.loads(run_path.read_text())
+    bound = bind_on_load(run, run_dir)
+    cells = [cell for row in bound["tables"][0]["rows"] for cell in row["cells"]]
+    assert cells
+    for cell in cells:
+        by_name = {check["name"]: check for check in cell["checks"]}
+        for name in ("selector_match", "row_column_match"):
+            assert by_name[name]["result"] == COULD_NOT_RUN
+            assert by_name[name]["reason"] == reason
 
 
 # ---- the omitted header

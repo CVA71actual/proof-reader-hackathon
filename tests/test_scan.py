@@ -166,14 +166,14 @@ def test_the_grid_box_over_a_crop_becomes_a_box_on_the_page():
 
 def test_the_crop_png_is_the_part_of_the_page_image_inside_the_box():
     import pymupdf
-    png = scan.scanned_png(load_entry(PIN))
+    png, _identity = scan.scanned_png(load_entry(PIN))
     part = pymupdf.Pixmap(scan.crop_png(png, [100.0, 100.0, 300.0, 200.0], W))
     assert (part.width, part.height) == (400, 200), "2x: points to pixels"
 
 
 def test_the_scanned_page_has_no_text_layer():
     import pymupdf
-    png = scan.scanned_png(load_entry(PIN))
+    png, _identity = scan.scanned_png(load_entry(PIN))
     doc = pymupdf.open(stream=png, filetype="png")
     assert doc[0].get_text().strip() == "" and png[:4] == b"\x89PNG"
     full = pymupdf.Pixmap(png)
@@ -219,7 +219,7 @@ def test_a_whole_page_region_says_nothing_about_where_the_quote_is_so_it_never_p
     assert region_match([700, 10, 800, 20], page, W, H).result == FAIL, "off the page is still wrong"
 
 
-def test_the_row_checks_use_the_region_on_a_scan_and_the_text_layer_otherwise():
+def test_the_row_checks_do_not_treat_sam_regions_as_verified_visible_text():
     row = {"id": "e1", "quote": "Phase 1 initiation is anticipated in Q1 2027.", "box": [100, 200, 500, 300],
            "date_text": "Q1 2027", "date": "2027-01-01", "date_end": "2027-03-31", "event_type": "milestone",
            "title": "x", "program": "PN-1", "page_number": 3}
@@ -257,7 +257,9 @@ def test_two_regions_are_read_one_by_one_and_each_row_is_checked_against_its_own
     page = run["sources"][0]["pages"][0]
     assert page["scanned"] is True and [(r["id"], r["concept"]) for r in page["regions"]] == [
         ("r1", "table"), ("r2", "block of text")]
-    assert (runs_dir / rid / page["words"]).read_text().count('"words": []') == 1, "no text layer"
+    captured_words = json.loads((runs_dir / rid / page["words"]).read_text())
+    assert captured_words["words"], "the original captured text artifact stays intact"
+    assert page["scanned"] and page["visual_evidence"]["origin"] == "approximate"
     assert len(first.prompts) == 2 and "one region of a scanned page (a table that SAM 3.1 found)" in first.prompts[0]
     assert "a block of text that SAM 3.1 found" in first.prompts[1]
     assert first.images[0] is not None and first.images[0][:4] == b"\x89PNG"
@@ -265,10 +267,10 @@ def test_two_regions_are_read_one_by_one_and_each_row_is_checked_against_its_own
         got = {c["name"]: c["result"] for c in row["checks"]}
         assert got == {"quote_match": "could_not_run", "selector_match": "pass", "date_match": "pass",
                        "source_rule": "pass", "type_match": "pass"}
-        assert (row["status"], row["group"]) == ("proposed", "unverified"), "a scan is never matched"
+        assert (row["status"], row["group"]) == ("proposed", "unverified"), "missing word support still prevents matched"
         assert "The page is a scan" in row["reason"]
-    assert run["rows"][0]["checks"][1]["reason"].startswith("The box lies inside r1, a table region")
-    assert run["rows"][1]["checks"][1]["reason"].startswith("The box lies inside r2, a block of text region")
+    assert "box lies inside r1" in run["rows"][0]["checks"][1]["reason"]
+    assert "box lies inside r2" in run["rows"][1]["checks"][1]["reason"]
 
 
 def test_the_trail_names_the_scanned_page_and_sam_as_a_model_step_with_its_image_cost(runs_dir):
@@ -412,7 +414,8 @@ def test_the_saved_live_sam_answers_on_the_scanned_ptgx_page():
     rec = json.loads((FIXTURES / f"{PIN}.sam.json").read_text())
     assert rec["model"] == "sam-3.1" and rec["base_url"] == "https://api.meta.ai/v1"
     assert rec["input"] == "page image rendered with no text layer"
-    assert rec["image_sha256"] == scan.sha256(scan.scanned_png(load_entry(PIN)))
+    _png, identity = scan.scanned_png(load_entry(PIN))
+    assert rec["image_sha256"] == identity["sha256"]
     c = rec["concepts"]
     assert c["table"]["boxes"] == [] and c["block of text"]["boxes"] == [], "matched nothing: an object segmenter"
     [page] = c["page"]["boxes"]
@@ -425,7 +428,7 @@ def test_the_committed_scan_run_is_what_the_builder_makes(tmp_path):
     run = json.loads((REPO / "runs" / "ptgx-scan" / "run.json").read_text())
     sam_record = json.loads((FIXTURES / f"{PIN}.sam.json").read_text())
     read_record = json.loads((FIXTURES / f"{PIN}.scan_reading.json").read_text())
-    fresh = scan.assemble(entry, tmp_path / "ptgx-scan", scan.scanned_png(entry), sam_record, read_record,
+    fresh = scan.assemble(entry, tmp_path / "ptgx-scan", sam_record, read_record,
                           finished_at=run["run"]["finished_at"])
     assert without_trails(fresh) == without_trails(run)
     RUN_SCHEMA.validate(run)

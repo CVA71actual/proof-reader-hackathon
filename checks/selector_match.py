@@ -157,10 +157,16 @@ def region_match(box, regions: list[dict] | None, page_width: float, page_height
         return result(FAIL, "The proposed box is off the page.")
     if not regions:
         return result(COULD_NOT_RUN, "SAM 3.1 found no region on this page to compare the box with.")
-    regions = [r for r in regions if r.get("concept") != "page"]
+    # These names are fallback geometry, not regions SAM located. A whole-page
+    # box says nothing about where a citation sits.
+    fallback_regions = [r for r in regions if r.get("concept") in {"page", "whole page"}]
+    regions = [r for r in regions if r.get("concept") not in {"page", "whole page"}]
     if not regions:
-        return result(COULD_NOT_RUN, "SAM 3.1 found no table or text block on this page; its only region is the whole "
-                                     "page, which says nothing about where the quote is.")
+        reason = ("SAM 3.1 found no region on this page to compare the box with."
+                  if any(r.get("concept") == "whole page" for r in fallback_regions) else
+                  "SAM 3.1 found no table or text block on this page; its only region is the whole "
+                  "page, which says nothing about where the quote is.")
+        return result(COULD_NOT_RUN, reason)
     s = REGION_SLACK_PT
     for r in regions:
         rx0, ry0, rx1, ry1 = r["box"]

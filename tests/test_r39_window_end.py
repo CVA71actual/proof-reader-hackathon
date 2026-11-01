@@ -1,5 +1,7 @@
 """Job 39: the time window tests the period's END (GLASS 9 #6)."""
 import json
+import hashlib
+import re
 from datetime import date
 
 import pytest
@@ -70,12 +72,48 @@ def make_run():
             "rows": rows, "tables": [], "mistakes": [], "exclusions": ex}
 
 
+def bind_run_to_stored_words(run, run_dir):
+    """Give each synthetic row a real local artifact and a date check bound to those bytes."""
+    from checks import event_checks
+    from runs.build_run import to_contract_check
+    from runs.claim_assessment import bind_checks
+
+    source = {"id": "s1", "kind": "filing", "published_date": "2026-10-20", "pages": []}
+    for index, row in enumerate(run["rows"], 1):
+        words = []
+        x = 0.0
+        for token in re.findall(r"\S+", row["quote"]):
+            width = max(8.0, len(token) * 5.0)
+            words.append({"id": f"w{len(words)}", "text": token, "x0": x, "y0": 20.0,
+                          "x1": x + width, "y1": 30.0})
+            x += width + 2.0
+        raw = (json.dumps({"page_width": max(612.0, x), "page_height": 792.0, "words": words}) + "\n").encode()
+        name = f"pages/p{index}.words.json"
+        path = run_dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+        digest = hashlib.sha256(raw).hexdigest()
+        page = {"page_number": index, "words": name, "words_sha256": digest,
+                "width_pt": max(612.0, x), "height_pt": 792.0}
+        source["pages"].append(page)
+        row["source_id"], row["page_number"] = source["id"], index
+        result = event_checks.date_match(row["date_text"], row["date"], row["quote"], row["date_end"],
+                                        event_type=row.get("event_type"), title=row.get("title"),
+                                        program=row.get("program"), filed=source["published_date"])
+        row["checks"] = [to_contract_check(c.to_dict()) for c in bind_checks(
+            [result], row, source,
+            consumed_artifact={"file": name, "sha256": digest, "kind": "captured"})]
+    run["sources"] = [source]
+
+
 def test_rewindow_puts_back_the_right_rows_and_leaves_person_decisions_alone(tmp_path, capsys):
     d = tmp_path / "r1"
     d.mkdir()
     run = make_run()
+    bind_run_to_stored_words(run, d)
     (d / "run.json").write_text(json.dumps(run))
-    (d / "decisions.jsonl").write_text(json.dumps({"action": "remove", "target": "e4", "note": "no"}) + "\n")
+    (d / "decisions.jsonl").write_text(json.dumps({"by": "person", "action": "remove", "target": "e4",
+                                                   "note": "no", "at": "2026-10-29T11:00:00Z"}) + "\n")
     before = (d / "run.json").read_bytes()
     assert rewindow.main(["r1", "--runs-dir", str(tmp_path)]) == 0
     assert (d / "run.json").read_bytes() == before                         # dry run saves nothing

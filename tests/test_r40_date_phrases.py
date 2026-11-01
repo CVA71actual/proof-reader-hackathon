@@ -64,6 +64,15 @@ def test_glass9_8_calendar_year_wording_passes(dt):
     assert _check(dt).result == "pass"
 
 
+def test_date_check_emits_structured_period_bounds_without_reading_display_text():
+    result = date_match("first half of calendar year 2027", None, QUOTE,
+                        event_type="trial_results", title="Phase 3 topline results", filed="2026-10-21")
+    assert result.result == "pass"
+    assert result.compared["timing"] == {"wording": "first half of calendar year 2027",
+                                         "start": "2027-01-01", "end": "2027-06-30",
+                                         "precision": "period"}
+
+
 def test_second_half_hyphen_and_a_wrong_row_date_still_fails():
     q = "Data are expected in the second half of calendar year 2026."
     assert _check("second-half 2026", q, "2026-07-01", "2026-12-31").result == "pass"
@@ -77,10 +86,31 @@ def test_a_date_text_that_parses_to_none_could_not_run():
 
 # ---------------------------------------------------------------- runs.recheck_dates
 
-def _run_with(row):
+def _run_with(row, run_dir=None):
+    import hashlib
+    import json
+    from checks import event_checks
+    from runs.build_run import to_contract_check
+    from runs.claim_assessment import bind_checks
+
+    words = json.dumps({"page_width": 612.0, "page_height": 792.0, "words": []}).encode() + b"\n"
+    words_name = "pages/p1.words.json"
+    words_sha = hashlib.sha256(words).hexdigest()
+    if run_dir is not None:
+        page_file = Path(run_dir) / words_name
+        page_file.parent.mkdir(parents=True, exist_ok=True)
+        page_file.write_bytes(words)
+    source = {"id": "s1", "kind": "filing", "published_date": "2026-10-21", "pages": [{
+        "page_number": 1, "words": words_name, "words_sha256": words_sha}]}
+    result = event_checks.date_match(row.get("date_text"), row.get("date"), row.get("quote"),
+                                     row.get("date_end"), event_type=row.get("event_type"),
+                                     title=row.get("title"), program=row.get("program"),
+                                     filed=source["published_date"])
+    row["checks"] = [to_contract_check(c.to_dict()) for c in bind_checks(
+        [result], row, source,
+        consumed_artifact={"file": words_name, "sha256": words_sha, "kind": "captured"})]
     return {"run": {"started_at": "2026-10-29T10:00:00+00:00", "choices": {"time_window_months": 6}},
-            "sources": [{"id": "s1", "published_date": "2026-10-21", "pages": []}],
-            "rows": [row], "exclusions": []}
+            "sources": [source], "rows": [row], "exclusions": []}
 
 
 def _row(rid="e1", **kw):
@@ -92,16 +122,32 @@ def _row(rid="e1", **kw):
     return {**base, **kw}
 
 
-def test_recheck_dates_excludes_a_past_period_and_leaves_a_decided_row_alone():
+def test_recheck_dates_excludes_a_past_period_and_leaves_a_decided_row_alone(tmp_path):
     from runs import recheck_dates as rd
     from pathlib import Path
-    run = _run_with(_row())
-    rd.recheck_dates(run, Path("."), set(), "t")
+    run = _run_with(_row(), tmp_path)
+    rd.recheck_dates(run, tmp_path, set(), "t")
     assert rd.exclude_again(run, set(), "t")["out"] == ["e1"]
     assert run["rows"][0]["group"] == "removed" and run["exclusions"][0]["rule"] == "event_in_past"
-    run = _run_with(_row())
+    run = _run_with(_row(), tmp_path)
     assert rd.exclude_again(run, {"e1"}, "t")["out"] == []
-    assert rd.recheck_dates(run, Path("."), {"e1"}, "t")["person"] == 1 and run["rows"][0]["group"] == "kept"
+    assert rd.recheck_dates(run, tmp_path, {"e1"}, "t")["person"] == 1 and run["rows"][0]["group"] == "kept"
+
+
+def test_date_migration_respects_the_replayed_decision_and_rechecks_after_undo(tmp_path):
+    from runs import recheck_dates as rd
+
+    run = _run_with(_row(), tmp_path)
+    keep = {"at": "2026-10-29T11:00:00+00:00", "target": "e1", "action": "keep", "by": "person"}
+    undo = {"at": "2026-10-29T11:01:00+00:00", "target": "e1", "action": "undo", "by": "person"}
+
+    active = rd.person_decisions_in_effect(run, [keep])
+    assert active == {"e1"}
+    assert rd.exclude_again(run, active, "t")["out"] == []
+
+    after_undo = rd.person_decisions_in_effect(run, [keep, undo])
+    assert after_undo == set()
+    assert rd.exclude_again(run, after_undo, "t")["out"] == ["e1"]
 
 
 def test_recheck_dates_keeps_a_period_that_contains_today():
@@ -133,6 +179,7 @@ def _write_run(d, row):
 
 
 def test_write_saves_a_same_result_new_reason_change(tmp_path):
+    import hashlib
     import json
     from runs import recheck_dates as rd
     row = _row(date_text="August 2026", quote="topline results in August 2026.", date="2026-08-01",
@@ -141,7 +188,22 @@ def test_write_saves_a_same_result_new_reason_change(tmp_path):
     run = _run_with(row)
     run["run"]["choices"] = {}                       # no window: only the date check can change
     d = tmp_path / "r1"
-    d.mkdir()
+    pages = d / "pages"
+    pages.mkdir(parents=True)
+    image_bytes = b"fixture image bytes"
+    image_name, words_name = "pages/p1.png", "pages/p1.words.json"
+    (d / image_name).write_bytes(image_bytes)
+    tokens = "topline results in August 2026.".split()
+    words_doc = {"page_width": 612.0, "page_height": 792.0,
+                 "words": [{"id": f"w{i}", "text": text, "x0": i * 60.0, "y0": 100.0,
+                            "x1": i * 60.0 + 50.0, "y1": 112.0, "block": 0, "line": 0, "word": i}
+                           for i, text in enumerate(tokens)]}
+    words_bytes = (json.dumps(words_doc) + "\n").encode()
+    (d / words_name).write_bytes(words_bytes)
+    run["sources"] = [{"id": "s1", "kind": "filing", "published_date": "2026-10-21", "pages": [{
+        "page_number": 1, "image": image_name, "image_sha256": hashlib.sha256(image_bytes).hexdigest(),
+        "words": words_name, "words_sha256": hashlib.sha256(words_bytes).hexdigest(),
+        "width_pt": 612.0, "height_pt": 792.0}]}]
     (d / "run.json").write_text(json.dumps(run))
     assert rd.recheck_dates(json.loads((d / "run.json").read_text()), d, set(), "t")["changed"] == []
     assert rd.main(["r1", "--runs-dir", str(tmp_path), "--write"]) == 0
@@ -224,7 +286,7 @@ def test_write_with_nothing_changed_leaves_reports_untouched(tmp_path):
 def test_put_back_row_with_no_source_note_gets_empty_reason():
     from runs import recheck_dates as rd
     row = _row(group="removed", reason="Outside the 6-month window.", date_text="December 2026",
-               date="2026-12-01", date_end="2026-12-31")
+               quote="topline results are expected in December 2026.", date="2026-12-01", date_end="2026-12-31")
     run = _run_with(row)
     run["exclusions"] = [{"id": "x1", "target": "e1", "rule": rd.RULE, "reason": "old", "by": "code"}]
     assert rd.rewindow(run, set(), "t")["back"] == ["e1"]
@@ -234,7 +296,7 @@ def test_put_back_row_with_no_source_note_gets_empty_reason():
 def test_put_back_row_keeps_its_source_note():
     from runs import recheck_dates as rd
     row = _row(group="removed", reason="Outside the window. Source note: kept as read.", date_text="December 2026",
-               date="2026-12-01", date_end="2026-12-31")
+               quote="topline results are expected in December 2026.", date="2026-12-01", date_end="2026-12-31")
     run = _run_with(row)
     run["exclusions"] = [{"id": "x1", "target": "e1", "rule": rd.RULE, "reason": "old", "by": "code"}]
     rd.rewindow(run, set(), "t")

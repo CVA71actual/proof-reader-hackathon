@@ -11,8 +11,9 @@ from checks import event_checks
 from checks.common import COULD_NOT_RUN, FAIL, PASS
 from checks.selector_match import PICTURE_REASON, selector_match
 from runs import build_entry
-from runs.calendar import calendar_entries
+from runs.calendar import calendar_entries, on_calendar as state_on_calendar
 from runs.recheck import recheck_row, row_checks
+from runs.state import current_state
 from server.app import RunStore, create_app
 
 REPO = Path(__file__).resolve().parent.parent
@@ -149,16 +150,20 @@ def test_a_fix_whose_recheck_could_not_run_or_whose_readers_are_undecided_stays_
 
 
 def test_a_row_corrected_in_the_run_with_no_fix_by_a_person_stays_on_the_calendar():
-    run = {"rows": [{"id": "e1", "source_id": "s", "page_number": 1, "program": None}]}
-    values = {"ticker": "T", "company": "C", "event_type": "launch", "title": "t", "date_text": "x", "date": None,
-              "date_end": None, "quote": "q"}
-    state = {"targets": {"e1": {"group": "corrected", "status": "matched", "values": values, "fixes": [],
-                                "recheck": None, "needs_recheck": False, "decided_by_person": False,
-                                "last_action": None, "reason": None}}}
-    assert [e["id"] for e in calendar_entries(run, state)] == ["e1"]
-    state["targets"]["e1"]["fixes"] = [{"field": "date"}]          # a fix with no re-check yet
-    state["targets"]["e1"]["needs_recheck"] = True
-    assert calendar_entries(run, state) == []
+    run = STORE.run("sample")
+    row = next(row for row in run["rows"] if row["id"] == "e3")
+    state = current_state(run, [])
+    target = state["targets"][row["id"]]
+    assert target["group"] == "corrected" and target["status"] == "matched"
+    assert not target["decided_by_person"] and state_on_calendar(target)
+    assert row["id"] in [entry["id"] for entry in calendar_entries(run, state)]
+
+    pending = current_state(run, [{"by": "person", "target": row["id"], "action": "fix",
+                                   "fix": {"field": "title", "from": row["title"], "to": row["title"] + " revised"},
+                                   "at": "t"}])
+    pending_target = pending["targets"][row["id"]]
+    assert pending_target["needs_recheck"] and not state_on_calendar(pending_target)
+    assert row["id"] not in [entry["id"] for entry in calendar_entries(run, pending)]
 
 
 # ---------------------------------------------------------------- 3. check source

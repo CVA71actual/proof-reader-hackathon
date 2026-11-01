@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from accuracy import types as T
 from capture import read_events, read_table
+from checks import event_checks
 from checks.common import normalize
 from checks.selector_match import _quote_run
 from runs import build_entry, prices
@@ -56,7 +57,8 @@ def candidates(rows: list[dict]) -> list[dict]:
     for r in rows:
         if r.get("found_by") == "coverage" or r.get("status") == "unreadable" or r.get("group") == "removed":
             continue
-        if any(c["result"] == "fail" for c in r.get("checks", [])) or r.get("disagreement"):
+        status = event_checks.row_status(r.get("checks") or [])
+        if status == event_checks.FAILED or r.get("disagreement"):
             out.append(r)
     return out
 
@@ -65,16 +67,18 @@ def budgeted(rows: list[dict]) -> list[dict]:
     """The candidates Wonder is worth sending: a failed date or event type check. A box or quote failure is mended by
     code (runs.build_entry.locate_box) or is a paraphrase Wonder cannot cure; a disagreement is settled only by a person,
     so Wonder's reading would be evidence only."""
-    return [r for r in candidates(rows) if any(c["result"] == "fail" and c["label"] in SENT_FOR
-                                               for c in r.get("checks", []))]
+    return [r for r in candidates(rows) if event_checks.row_status(r.get("checks") or []) == event_checks.FAILED
+            and any(c["result"] == "fail" and c["label"] in SENT_FOR for c in r.get("checks", []))]
 
 
 def trigger(row: dict, labels: tuple[str, ...] | None = None) -> dict:
     """{kind, label, why}: the first failed check (of `labels`, if given), else the readers' disagreement."""
     for c in row.get("checks", []):
-        if c["result"] == "fail" and (labels is None or c["label"] in labels):
-            return {"kind": "check", "label": c["label"], "why": c["reason"]}
-    d = row["disagreement"]
+        if c.get("result") == "fail" and (labels is None or c.get("label") in labels):
+            return {"kind": "check", "label": c.get("label"), "why": c.get("reason")}
+    d = row.get("disagreement")
+    if not d:
+        return {"kind": "none", "label": None, "why": None}
     f = d["field"]
     return {"kind": "disagreement", "label": f"the two readers disagree on {build_entry.plain_field(f)}",
             "why": (f"Muse Spark read {build_entry.plain_value(f, d['first_reader']) if d['first_reader'] is not None else 'nothing'} and "
@@ -169,7 +173,7 @@ def record_unused_call(row: dict, reply, at: str, why: str) -> None:
 
 
 def apply(row: dict, event: dict | None, reading: dict, source: dict, words_doc: dict, at: str, trig: dict,
-          run: dict, share: tuple, prompt_text: str) -> str:
+          run: dict, share: tuple, prompt_text: str, consumed_artifact: dict | None = None) -> str:
     """Record the escalation on `row` (and its replacement and mistake on `run`). Returns what happened:
     "replaced", "kept" (the re-read did not pass every check), "evidence" (a disagreement: nothing replaced) or
     "unreadable" (no event in the answer)."""
@@ -184,7 +188,7 @@ def apply(row: dict, event: dict | None, reading: dict, source: dict, words_doc:
                              "text": f"{WONDER}'s answer held no event for this row. The row stays as it was."})
         return "unreadable"
     proposal = build_entry.build_row(0, event, reading, source, words_doc, at, share=share, model_name=WONDER,
-                                     instructions_who=WONDER_WHO)
+                                     instructions_who=WONDER_WHO, consumed_artifact=consumed_artifact)
     model_step = next((t for t in proposal["trail"] if t["tag"] == "Model"),
                       next(t for t in proposal["trail"] if t["step"] == "Proposed"))
     row["trail"].append({**model_step, "step": WONDER})

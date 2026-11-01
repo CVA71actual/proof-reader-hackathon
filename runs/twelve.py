@@ -35,6 +35,7 @@ from capture.second_reader import SecondReader
 from capture.wonder import WonderReader
 from runs import build_run, sources
 from runs.calendar import calendar_entries
+from runs.check_load import bind_decisions_on_load, load_bound_run
 from runs.state import current_state
 from server import jobs
 
@@ -46,9 +47,12 @@ def summary(run: dict, state: dict, calendar: list[dict]) -> list[str]:
     who = state["mistakes"]
     cost = m.get("spend_usd")
     per = state["cost_per_kept_row_usd"]
+    page_outcomes = state.get("page_outcomes") or {}
+    pages_read = (page_outcomes.get("counts") or {}).get("read", "not recorded") \
+        if page_outcomes.get("recorded") else "not recorded"
     lines = [f"{m['id']} · {m['label']}: {m.get('status') or 'saved'}"
              + (f" ({m['status_reason']})" if m.get("status_reason") else ""),
-             f"  pages read: {len(run['sources'])}"
+             f"  pages read: {pages_read}"
              + (f"; turns: {m['turns_total']}; resumes: {m.get('resumes', 0)}" if "turns_total" in m else ""),
              "  rows: " + ", ".join(f"{g} {n}" for g, n in rows.items()),
              "  values: " + ", ".join(f"{g} {n}" for g, n in cells.items()),
@@ -132,9 +136,10 @@ def main(argv: list[str] | None = None, readers: tuple | None = None) -> int:
         print(f"  {meta['status']}: {meta.get('status_reason')}\n  resuming ({resumed + 1})")
         jobs.resume_run(args.runs_dir, rid)
 
-    run_json = json.loads((args.runs_dir / rid / "run.json").read_text())
+    run_json = load_bound_run(args.runs_dir / rid)
     decisions_file = args.runs_dir / rid / "decisions.jsonl"
     decisions = [json.loads(x) for x in decisions_file.read_text().splitlines() if x.strip()]
+    decisions = bind_decisions_on_load(run_json, decisions, args.runs_dir / rid)
     state = current_state(run_json, decisions)
     for line in summary(run_json, state, calendar_entries(run_json, state)):
         print(line)

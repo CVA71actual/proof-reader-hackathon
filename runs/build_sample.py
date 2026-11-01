@@ -30,9 +30,10 @@ from pathlib import Path
 import pymupdf
 
 from capture import read_table
-from capture.capture_page import page_words
+from capture.capture_page import page_words_bytes
 from checks import event_checks
-from runs import prices, recheck
+from runs import build_entry, prices, recheck
+from runs.page_outcomes import interpreted_page
 from runs.build_entry import plain_type
 from runs.build_run import (
     IONS_SOURCE_ID,
@@ -42,7 +43,7 @@ from runs.build_run import (
     build_table,
     file_sha256,
     ions_source,
-    render_page,
+    render_page_bytes,
     to_contract_check,
     write_run,
 )
@@ -145,14 +146,16 @@ def make_sample_pdf(src: dict, out_pdf: Path) -> None:
     doc.close()
 
 
-def sample_source(src: dict, run_dir: Path, tmp_dir: Path) -> tuple[dict, dict]:
+def sample_source(src: dict, run_dir: Path, tmp_dir: Path) -> tuple[dict, dict, dict]:
     pdf = tmp_dir / f"{src['id']}.pdf"
     make_sample_pdf(src, pdf)
-    words_doc = page_words(pdf)
+    pdf_bytes = pdf.read_bytes()
+    words_doc = page_words_bytes(pdf_bytes)
     words_doc["page_number"] = 1
     image_rel, words_rel = f"pages/{src['id']}-p1.png", f"pages/{src['id']}-p1.words.json"
-    render_page(pdf, run_dir / image_rel)
-    (run_dir / words_rel).write_text(json.dumps(words_doc, indent=1) + "\n")
+    render_page_bytes(pdf_bytes, run_dir / image_rel)
+    words_bytes = (json.dumps(words_doc, indent=1) + "\n").encode("utf-8")
+    (run_dir / words_rel).write_bytes(words_bytes)
     source = {
         "id": src["id"],
         "publisher": SAMPLE_PUBLISHER,
@@ -161,13 +164,16 @@ def sample_source(src: dict, run_dir: Path, tmp_dir: Path) -> tuple[dict, dict]:
         "url": None,
         "published_date": src["published_date"],
         "captured_at": CAPTURED,
-        "sha256": hashlib.sha256(pdf.read_bytes()).hexdigest(),
+        "sha256": hashlib.sha256(pdf_bytes).hexdigest(),
         "pages": [{"page_number": 1, "image": image_rel, "width_pt": words_doc["page_width"],
                    "height_pt": words_doc["page_height"], "words": words_rel,
                    "image_sha256": file_sha256(run_dir / image_rel),
-                   "words_sha256": file_sha256(run_dir / words_rel)}],
+                   "words_sha256": hashlib.sha256(words_bytes).hexdigest()}],
     }
-    return source, words_doc
+    from runs.sources import visual_evidence
+    source["pages"][0]["visual_evidence"] = visual_evidence(source["pages"][0], words_doc)
+    consumed = {"file": words_rel, "sha256": hashlib.sha256(words_bytes).hexdigest(), "kind": "captured"}
+    return source, words_doc, consumed
 
 
 # ---------------------------------------------------------------- made-up rows
@@ -184,7 +190,9 @@ def box_of_text(text: str, words: list[dict], pad: float = 0.5) -> list[float]:
             round(max(w["x1"] for w in ws) + pad, 2), round(max(w["y1"] for w in ws) + pad, 2)]
 
 
-run_checks = recheck.row_checks
+def run_checks(row: dict, source: dict, words_doc: dict | None, consumed_artifact: dict,
+               chosen: bool = False):
+    return recheck.row_checks(row, source, words_doc, chosen=chosen, consumed_artifact=consumed_artifact)
 
 # SAMPLE token counts, fixed by hand for the sample run (no model was called for its event rows). Each Model step
 # gets its step's numbers and the cost from runs/prices.py, so the screens can show cost per step; the run is
@@ -281,8 +289,12 @@ ROW_SPECS = [
 
 def recheck_line(at_: str, row: dict, fix: dict, source: dict, words_doc: dict) -> dict:
     """The decisions line code writes after running the real checks again on a person's fix."""
+    page = next((p for p in source.get("pages", []) if p.get("page_number") == row.get("page_number")), {})
+    derived = page.get("derived_words")
+    artifact = ({"file": derived.get("file"), "sha256": derived.get("sha256"), "kind": "derived"}
+                if derived else {"file": page.get("words"), "sha256": page.get("words_sha256"), "kind": "captured"})
     return recheck.recheck_row(at_, {**row, fix["field"]: fix["to"]}, source, words_doc, field=fix["field"],
-                               before={**row, fix["field"]: fix["from"]})
+                               before={**row, fix["field"]: fix["from"]}, consumed_artifact=artifact)
 
 
 def when(row: dict) -> str:
@@ -293,7 +305,8 @@ def when(row: dict) -> str:
     return row["date"] or row["date_text"]
 
 
-def build_row(spec: dict, source: dict, words_doc: dict, minute: int) -> tuple[dict, list[dict]]:
+def build_row(spec: dict, source: dict, words_doc: dict, consumed_artifact: dict,
+              minute: int) -> tuple[dict, list[dict]]:
     words = words_doc["words"] if words_doc else []
     box = None
     if not spec.get("no_box"):
@@ -340,7 +353,7 @@ def build_row(spec: dict, source: dict, words_doc: dict, minute: int) -> tuple[d
             trail.append({"step": "Fixed", "tag": "Code", "who": BUILDER,
                           "text": f"Date changed from {first['date']} to {spec['date']}, as the new reading gave.",
                           "at": at(minute, 30)})
-    results = run_checks(row, source, words_doc)
+    results = run_checks(row, source, words_doc, consumed_artifact)
     trail += check_steps(results, minute + 1)
     second = spec["second"]
     if second == "agrees":
@@ -363,18 +376,23 @@ def build_row(spec: dict, source: dict, words_doc: dict, minute: int) -> tuple[d
         trail.append({"step": "Changed by you", "tag": "Person", "who": "person",
                       "text": f"Event type changed from {plain_type(spec['first_type'])} to {plain_type(spec['event_type'])}.",
                       "at": at(minute + 2)})
-        trail += check_steps(run_checks(row, source, words_doc), minute + 2)
+        trail += check_steps(run_checks(row, source, words_doc, consumed_artifact), minute + 2)
     if spec["group"] == "removed":
         trail.append({"step": "Removed", "tag": "Code", "who": "source_rule",
                       "text": spec["reason"], "at": at(minute + 2, 30)})
 
     status = event_checks.row_status(results, readable=readable,
                                      second_reader_agrees=(False if second == "disagrees" else None))
+    reason = spec["reason"]
+    if status == event_checks.MATCHED and reason.startswith("Every check passed"):
+        reason = build_entry.row_reason(status, results, row)
+        if second == "agrees":
+            reason += " The second reader agreed; agreement does not replace these checks."
     if second == "disagrees":
         row["disagreement"] = {"field": "event_type", "first_reader": spec["event_type"],
                                "second_reader": spec["second_type"]}
     row.update({
-        "status": status, "group": spec["group"], "reason": spec["reason"], "sample": True,
+        "status": status, "group": spec["group"], "reason": reason, "sample": True,
         "checks": [to_contract_check(r.to_dict()) for r in results], "trail": add_sample_cost(trail),
     })
     return row, results
@@ -393,20 +411,33 @@ def build_sample_run(run_dir: Path) -> tuple[dict, list[dict]]:
     if reading.get("fake"):
         raise ValueError("The sample run uses the real reading only.")
     run_dir.mkdir(parents=True, exist_ok=True)
-    ions, ions_words = ions_source(manifest, run_dir)
+    ions, ions_words, ions_artifact = ions_source(manifest, run_dir)
     sources, words_by_source = [ions], {ions["id"]: ions_words}
+    artifacts_by_source = {ions["id"]: ions_artifact}
     with tempfile.TemporaryDirectory() as tmp:
         for src in SAMPLE_SOURCES:
-            s, wd = sample_source(src, run_dir, Path(tmp))
+            s, wd, consumed = sample_source(src, run_dir, Path(tmp))
             sources.append(s)
             words_by_source[s["id"]] = wd
+            artifacts_by_source[s["id"]] = consumed
     by_id = {s["id"]: s for s in sources}
+    unreadable_sources = {spec["source"] for spec in ROW_SPECS if spec.get("readable") is False}
+    outcomes = [interpreted_page(source, page, attempted=True,
+                                 read=source["id"] not in unreadable_sources,
+                                 unreadable=source["id"] in unreadable_sources,
+                                 reason="The saved sample answer could not be parsed."
+                                 if source["id"] in unreadable_sources else None)
+                for source in sources for page in source.get("pages", [])]
     table = build_table(reading, ions_words, table_id="t1", source_id=ions["id"],
-                        page_number=manifest["page_number"])
+                        page_number=manifest["page_number"], source=ions,
+                        consumed_artifact=ions_artifact,
+                        visual_evidence=ions["pages"][0].get("visual_evidence"),
+                        derived_words_present=bool(ions["pages"][0].get("derived_words")))
 
     rows, mistakes, exclusions = [], [], []
     for i, spec in enumerate(ROW_SPECS):
-        row, _ = build_row(spec, by_id[spec["source"]], words_by_source[spec["source"]], minute=1 + i)
+        row, _ = build_row(spec, by_id[spec["source"]], words_by_source[spec["source"]],
+                           artifacts_by_source[spec["source"]], minute=1 + i)
         if row["status"] != EXPECTED_STATUS[row["id"]]:
             raise AssertionError(f"{row['id']}: status {row['status']}, expected {EXPECTED_STATUS[row['id']]}")
         rows.append(row)
@@ -432,6 +463,7 @@ def build_sample_run(run_dir: Path) -> tuple[dict, list[dict]]:
                 "note_for_agent": "Sample note: skip events that only appear on a calendar.",
             },
             "spend_usd": prices.run_spend_usd(rows),  # the sum of the sample's Model step costs
+            "page_outcomes": outcomes, "pages_read": sum(1 for outcome in outcomes if outcome["read"]),
             "prices": prices.snapshot(),
         },
         "sources": sources,

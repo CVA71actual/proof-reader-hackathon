@@ -669,7 +669,8 @@ def test_baseten_stays_available_after_the_openrouter_cap_is_reached(monkeypatch
 
 def _sample_with_disagreement(second):
     from runs.state import current_state
-    run = json.loads((REPO / "runs" / "sample" / "run.json").read_text())
+    from runs.check_load import load_bound_run
+    run = load_bound_run(REPO / "runs" / "sample")
     row = run["rows"][0]
     row["status"], row["group"] = "undecided", "open"
     row["disagreement"] = {"field": "date", "first_reader": row.get("date") or "2027-01-01", "second_reader": second}

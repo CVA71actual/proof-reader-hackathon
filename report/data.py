@@ -8,8 +8,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 from runs.state import UNRESOLVED_REASON, as_of_note, current_state, run_reference_date
-from runs.calendar import on_calendar, run_interval_partition
-from runs.state import _needs_attention
+from runs.calendar import run_interval_partition
+from runs.check_load import bind_decisions_on_load, load_bound_run
 from checks import event_checks
 
 TITLE = "Biotech Coverage Catalyst Calendar"
@@ -37,14 +37,7 @@ BANNED_WORDS = ("verified", "proved")  # "correct" checked as a whole word separ
 
 
 def load_run_dir(run_dir: Path) -> tuple[dict, list[dict]]:
-    run = json.loads((run_dir / "run.json").read_text())
-    job_path = run_dir / "job.json"
-    if job_path.is_file():
-        job = json.loads(job_path.read_text())
-        meta = run.setdefault("run", {})
-        meta.setdefault("pages_read", len(run.get("sources", [])))
-        if meta.get("status") == "done" and isinstance(job.get("skipped"), dict):
-            meta.setdefault("pages_total", len(run.get("sources", [])) + len(job["skipped"]))
+    run = load_bound_run(run_dir)
     dec_path = run_dir / "decisions.jsonl"
     decisions = []
     if dec_path.exists() and dec_path.stat().st_size:
@@ -52,6 +45,7 @@ def load_run_dir(run_dir: Path) -> tuple[dict, list[dict]]:
             line = line.strip()
             if line:
                 decisions.append(json.loads(line))
+    decisions = bind_decisions_on_load(run, decisions, run_dir)
     return run, decisions
 
 
@@ -148,12 +142,48 @@ def _caught_by_label(who: str) -> str:
 
 
 def _check_rows(checks: list[dict]) -> list[dict]:
-    return [{"name": c.get("label") or c.get("name") or "Check",
-             "result": c.get("result") or "unknown", "limitation": c.get("reason") or ""}
-            for c in checks]
+    rows = []
+    for c in checks:
+        row = {"name": c.get("label") or c.get("name") or "Check",
+               "check_name": c.get("name") or c.get("check"),
+               "result": c.get("result") or "unknown", "limitation": c.get("reason") or ""}
+        for key in ("kind", "compared", "near_match", "differs", "assessment", "code_ref"):
+            if key in c:
+                row[key] = c[key]
+        rows.append(row)
+    return rows
+
+
+def _effective_check_rows(state: dict) -> list[dict]:
+    out = _check_rows(state.get("effective_checks") or [])
+    claim = (state.get("claim_assessments") or {}).get("visible_passage")
+    if claim:
+        out.append({"name": claim["label"], "result": claim["result"], "limitation": claim["reason"]})
+    return out
+
+
+def _page_evidence_note(evidence: dict | None) -> str | None:
+    evidence = evidence or {}
+    capture = evidence.get("capture_completeness") or {}
+    if capture.get("capture_incomplete"):
+        note = "Capture may be incomplete: " + (capture.get("capture_incomplete_reason") or "reason not recorded")
+    elif capture.get("completeness_not_established"):
+        note = "Capture completeness was not established: " + (capture.get("completeness_reason") or "reason not recorded")
+    else:
+        note = None
+    if evidence.get("derived_words"):
+        transcription = "Words came from a model transcription linked to the captured page image; geometry is approximate."
+        note = f"{note} {transcription}" if note else transcription
+    return note
 
 
 def _check_status_text(state: dict) -> str | None:
+    claim = (state.get("claim_assessments") or {}).get("visible_passage")
+    if claim and claim.get("result") == "not_checked":
+        if state.get("checks_stale"):
+            return ("Checks are not current for this candidate or page, and visible words have not been checked "
+                    "against rendered page ink.")
+        return "Visible words have not been checked against rendered page ink."
     if state.get("needs_recheck"):
         return "Re-check pending; no checks are recorded for the current value."
     rc_result = (state.get("recheck") or {}).get("result")
@@ -202,13 +232,14 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
     companies = list(meta.get("choices", {}).get("companies") or [])
     if not companies:
         companies = sorted({r.get("ticker") for r in run.get("rows", []) if r.get("ticker")})
-    read_source_ids = [s.get("id", "").lower() for s in run.get("sources", [])]
-    companies_read = [ticker for ticker in companies
-                      if any(sid.startswith("src-" + ticker.lower() + "-") for sid in read_source_ids)]
-    companies_unread = [ticker for ticker in companies if ticker not in companies_read]
-    pages_total = meta.get("pages_total")
-    pages_read = meta.get("pages_read") if isinstance(meta.get("pages_read"), int) else len(run.get("sources", []))
-    pages_unread = max(0, pages_total - pages_read) if isinstance(pages_total, int) else None
+    outcomes_view = state["page_outcomes"]
+    outcomes_recorded = outcomes_view["recorded"]
+    outcome_counts = outcomes_view["counts"]
+    per_company_outcomes = outcomes_view["by_company"]
+    companies_read = [x["ticker"] for x in per_company_outcomes if x["read"]]
+    companies_unread = [x["ticker"] for x in per_company_outcomes if x["unread"] == x["pages"]]
+    pages_read = outcome_counts["read"] if outcome_counts is not None else None
+    pages_unread = outcome_counts["unread"] if outcome_counts is not None else None
     status = meta.get("status") or ("done" if meta.get("finished_at") else "unknown")
     status_label = {
         "done": "Done",
@@ -223,7 +254,7 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
     bucket_for_id = {entry["id"]: bucket for bucket, entries in interval_rows.items() for entry in entries}
     calendar = []
     for rid, st in state["targets"].items():
-        if st["kind"] != "row" or not on_calendar(st):
+        if st["kind"] != "row" or not st.get("on_calendar"):
             continue
         row = rows_raw[rid]
         values = st["values"]
@@ -249,9 +280,16 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
             "source_document": (src or {}).get("title") or (src or {}).get("publisher") or row.get("source_id") or "—",
             "source_id": row.get("source_id") or "—",
             "page_number": row.get("page_number"),
+            "page_evidence": st.get("page_evidence"),
+            "page_evidence_note": _page_evidence_note(st.get("page_evidence")),
+            "timing_state": st.get("timing_state"),
+            "contingent": st.get("contingent"),
             "quote": _value(values, row, "quote") or "",
-            "check_limitations": _check_rows(effective_checks),
+            "check_limitations": _effective_check_rows(st),
             "check_history": _check_rows(check_history),
+            "check_history_label": ("Saved checks · history (not current)" if st.get("checks_stale")
+                                    or any(c.get("assessment") is None for c in st.get("check_history") or [])
+                                    else "Original checks · history (before edit)"),
             "check_status_text": check_status_text,
             "reason": st.get("reason") or row.get("reason") or "",
         })
@@ -270,10 +308,18 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
     past = [r for r in calendar if r["bucket"] == "past"]
     later = [r for r in calendar if r["bucket"] == "later"]
     contingent = [r for r in calendar if r["bucket"] == "contingent"]
+    undated = [r for r in calendar if r["bucket"] == "undated"]
+    timing_unresolved = [r for r in calendar if r["bucket"] == "timing_unresolved"]
     calendar = [r for r in calendar if r["bucket"] == "calendar"]
+    for row in undated:
+        row["date_display"] = "Undated · no timing stated"
+    for row in timing_unresolved:
+        if row["date_display"] == "—":
+            row["date_display"] = "Timing unresolved"
     for row in contingent:
         if row["date_display"] == "—":
-            row["date_display"] = "Date not stated"
+            row["date_display"] = ("Timing unresolved" if row.get("timing_state") == "timing_unresolved"
+                                   else "Undated · no timing stated")
 
     corrections = []
     for m in run.get("mistakes", []):
@@ -329,6 +375,10 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
                            for c in corrections):
                     corrections.append(entry)
             else:
+                # A human edit can still belong in the visible chronology
+                # even when the checks cannot establish that it corrected a
+                # model error. Keep the explicit qualification on the entry;
+                # do not count it in accuracy.
                 if fx.get("edit_without_error"):
                     entry["edit_status"] = "The old value passed its checks; no mistake was demonstrated."
                 elif fx.get("before_undemonstrated"):
@@ -337,6 +387,12 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
                     entry["edit_status"] = "This change was not demonstrated to be a mistake."
                 else:
                     entry["edit_status"] = "The checks did not demonstrate a mistake."
+                # Keep a later human edit beside an already recorded mistake on
+                # the same row. It is chronology, not another counted mistake;
+                # unrelated or unassessed edits stay only in the edits section.
+                if any(c["id"] == rid for c in corrections) and not any(
+                        c["id"] == rid and line in (c.get("what") or "") for c in corrections):
+                    corrections.append(entry)
                 edits.append(entry)
 
     exclusions = []
@@ -352,21 +408,37 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
 
     open_rows = []
     for rid, st in state["targets"].items():
-        if st["kind"] != "row" or not _needs_attention(st):
+        if st["kind"] != "row" or not st.get("needs_attention"):
             continue
         row = rows_raw[rid]
+        src = sources.get(row.get("source_id"))
         open_rows.append({
             "id": rid,
             "group": st["group"],
             "group_label": GROUP_LABEL[st["group"]],
             "ticker": st["values"].get("ticker") or row.get("ticker") or "",
+            "company": st["values"].get("company") or row.get("company") or "",
+            "program": st["values"].get("program") or row.get("program") or "",
+            "indication": st["values"].get("indication") or row.get("indication") or "",
             "event": _event_label(row, st["values"]),
+            "date_text": st["values"].get("date_text") or row.get("date_text") or "",
+            "source_document": (src or {}).get("title") or (src or {}).get("publisher") or row.get("source_id") or "—",
+            "source_id": row.get("source_id") or "—",
+            "page_number": row.get("page_number"),
+            "page_evidence": st.get("page_evidence"),
+            "page_evidence_note": _page_evidence_note(st.get("page_evidence")),
+            "quote": st["values"].get("quote") or row.get("quote") or "",
             "reason": st.get("reason") or row.get("reason") or "No reason recorded.",
             "latest_recheck": (st.get("recheck") or {}).get("result"),
             "override_reason": st.get("reason") if st.get("decided_by_person") else None,
-            "check_limitations": _check_rows(st.get("effective_checks") or []),
+            "check_limitations": _effective_check_rows(st),
             "check_history": _check_rows(st.get("check_history") or []),
+            "check_history_label": ("Saved checks · history (not current)" if st.get("checks_stale")
+                                    or any(c.get("assessment") is None for c in st.get("check_history") or [])
+                                    else "Original checks · history (before edit)"),
             "check_status_text": _check_status_text(st),
+            "timing_state": st.get("timing_state"),
+            "contingent": st.get("contingent"),
         })
     open_rows.sort(key=lambda r: (r["group"], r["ticker"], r["id"]))
 
@@ -404,6 +476,9 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         "companies_unread": companies_unread,
         "pages_read": pages_read,
         "pages_unread": pages_unread,
+        "page_outcomes_recorded": outcomes_recorded,
+        "page_outcome_counts": outcome_counts,
+        "page_outcomes_by_company": per_company_outcomes,
         "companies": companies,
         "generated_at": built_on_words(generated_at),
         "counts": {g: counts[g] for g in GROUP_LABEL},
@@ -420,6 +495,8 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         "past": past,
         "later": later,
         "contingent": contingent,
+        "undated": undated,
+        "timing_unresolved": timing_unresolved,
         "corrections": corrections,
         "edits": edits,
         "exclusions": exclusions,

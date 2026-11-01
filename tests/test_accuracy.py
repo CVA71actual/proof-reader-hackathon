@@ -1,6 +1,7 @@
 """R4b-1: the accuracy scorer, the mistake type codes, the answer-key checker and the report."""
 
 import copy
+import hashlib
 import json
 import re
 
@@ -10,7 +11,7 @@ from accuracy import types as T
 from accuracy.key import KeyRefused, check_key, load_key, raise_if_refused
 from accuracy.mistake_log import load_run, mistake_log
 from accuracy.report import build_report, render_text
-from accuracy.run import main as run_main
+from accuracy.run import main as run_main, score_reading
 from accuracy.score import model_family, period_of, score_events, score_planted, score_table
 from checks.event_checks import date_match, quote_match, source_rule
 from checks.row_column_match import row_column_match
@@ -159,6 +160,67 @@ def test_planted_twelve_caught(reading, words_doc, plants):
                              "box_drift": {"total": 4, "caught": 4}}
     for it in sc["items"]:
         assert it["type"] == it["expected_type"], it
+
+
+def test_planted_scoring_does_not_claim_hidden_text_geometry(reading, words_doc, plants):
+    plant = next(p for p in plants if p["expected_type"] == "WRONG_COLUMN")
+    reason = "The page's text layer has only nonvisual sliver geometry."
+    sc = score_planted(reading, words_doc, [plant],
+                       visual_evidence={"origin": "hidden_text", "reason": reason})
+    item = sc["items"][0]
+    assert item["status"] == "proposed" and item["caught"] is False
+    assert item["type"] is None and item["types"] == [] and item["failed_checks"] == []
+    assert item["type_as_planted"] is False
+
+
+def test_score_reading_classifies_sliver_words_before_planted_scoring(tmp_path, key, reading, words_doc, plants):
+    slivers = copy.deepcopy(words_doc)
+    for word in slivers["words"]:
+        middle = (word["y0"] + word["y1"]) / 2
+        word["y0"], word["y1"] = middle - 0.28, middle + 0.28
+    raw = json.dumps(slivers).encode()
+    words_path = tmp_path / "p95.slivers.words.json"
+    words_path.write_bytes(raw)
+    bound_key = copy.deepcopy(key)
+    bound_key["words_sha256"] = hashlib.sha256(raw).hexdigest()
+    sliver_reading = copy.deepcopy(reading)
+    sliver_reading["words_sha256"] = bound_key["words_sha256"]
+    report = score_reading(bound_key, sliver_reading, words_path, "ions.key.json", plants)
+    planted = report["planted"]
+    assert planted["total"] == 12
+    assert planted["caught"] == 2
+    assert all(not item["caught"] for item in planted["items"] if item["expected_type"] in
+               {T.WRONG_COLUMN, T.WRONG_ROW, T.BOX_DRIFT})
+
+
+def test_cli_does_not_count_native_height_picture_transcription_as_geometry_support(
+        tmp_path, key, reading, words_doc, plants):
+    picture_words = copy.deepcopy(words_doc)
+    picture_words["kind"] = "picture"
+    picture_words["words_from"] = "sam+image reader"
+    raw = json.dumps(picture_words).encode()
+    words_path = tmp_path / "transcription.words.json"
+    words_path.write_bytes(raw)
+
+    cli_key = copy.deepcopy(key)
+    cli_key["words_sha256"] = hashlib.sha256(raw).hexdigest()
+    key_path = tmp_path / "key.json"
+    key_path.write_text(json.dumps(cli_key))
+    cli_reading = copy.deepcopy(reading)
+    cli_reading["words_sha256"] = cli_key["words_sha256"]
+    reading_path = tmp_path / "reading.json"
+    reading_path.write_text(json.dumps(cli_reading))
+    planted_path = tmp_path / "planted.json"
+    planted_path.write_text(json.dumps({"plants": plants}))
+
+    assert run_main(["--key", str(key_path), "--reading", str(reading_path), "--words", str(words_path),
+                     "--planted", str(planted_path), "--out", str(tmp_path / "out")]) == 0
+    report = json.loads((tmp_path / "out" / "report.json").read_text())
+    planted = report["planted"]
+    geometry = {T.WRONG_COLUMN, T.WRONG_ROW, T.BOX_DRIFT}
+    assert planted["total"] == 12
+    assert all(not item["caught"] for item in planted["items"] if item["expected_type"] in geometry)
+    assert planted["caught"] == 2
 
 
 def test_planted_values_come_from_the_real_reading(reading, plants):
@@ -337,13 +399,27 @@ def test_mistake_log_on_the_sample():
 
 def test_mistake_log_counts_a_demonstrated_fix_by_its_failed_check():
     run, decisions = load_run(REPO / "runs" / "sample")
-    e7 = next(d for d in decisions if d["action"] == "recheck")
-    before_fail = [c for c in e7["recheck"]["checks"]]
-    ds = [{"at": "t", "target": "e7", "action": "fix", "note": None, "by": "person",
-           "fix": {"field": "date", "from": "2027-07-09", "to": "2027-07-19"}},
-          {"at": "t", "target": "e7", "action": "recheck", "note": None, "fix": None, "by": "code",
-           "recheck": {"result": "pass", "reason": "r", "checks": [], "before": {"result": "fail", "checks": before_fail},
-                       "after": {"result": "pass", "checks": []}}}]
+    e7 = next(row for row in run["rows"] if row["id"] == "e7")
+    source = next(source for source in run["sources"] if source["id"] == e7["source_id"])
+    page = next(page for page in source["pages"] if page["page_number"] == e7["page_number"])
+    from runs.sources import load_page_evidence
+    from runs.recheck import recheck_row
+    words, consumed = load_page_evidence(REPO / "runs" / "sample", page)
+    quote = "Samplebio Six will report final results on July 19, 2027."
+    fixed = {**e7, "date": "2027-07-19", "date_text": "July 19, 2027", "quote": quote}
+    before = {**fixed, "quote": e7["quote"]}
+    recheck = recheck_row("t", fixed, source, words, field="quote", before=before,
+                          consumed_artifact=consumed)["recheck"]
+    ds = [
+        {"at": "t", "target": "e7", "action": "fix", "note": None, "by": "person",
+         "fix": {"field": "date", "from": "2027-07-09", "to": "2027-07-19"}},
+        {"at": "t", "target": "e7", "action": "fix", "note": None, "by": "person",
+         "fix": {"field": "date_text", "from": "July 9, 2027", "to": "July 19, 2027"}},
+        {"at": "t", "target": "e7", "action": "fix", "note": None, "by": "person",
+         "fix": {"field": "quote", "from": e7["quote"], "to": quote}},
+        {"at": "t", "target": "e7", "action": "recheck", "note": None, "fix": None,
+         "by": "code", "recheck": recheck},
+    ]
     st = current_state(run, ds)
     fixes = [m for m in st["mistake_list"] if m["recorded_in"] == "decisions"]
     assert len(fixes) == 1 and fixes[0]["caught_by"] == "person"

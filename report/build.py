@@ -18,6 +18,7 @@ from pathlib import Path
 from report.data import build_view, load_run_dir, report_filenames
 from report.docx_report import build_docx
 from report.pdf_report import build_pdf
+from report.manifest import write_report_manifest
 
 REPO = Path(__file__).resolve().parent.parent
 RUNS = REPO / "runs"
@@ -76,6 +77,7 @@ def build(
     out_dir.mkdir(parents=True, exist_ok=True)
     pdf_path.write_bytes(pdf_bytes)
     docx_path.write_bytes(docx_bytes)
+    write_report_manifest(out_dir, run, decisions)
     return {
         "run_id": run_id,
         "out_dir": out_dir,

@@ -614,12 +614,26 @@ def test_fixed_window_keeps_undated_rows_and_excludes_only_past_periods(runs_dir
 def test_past_rule_uses_period_end_and_is_strictly_before_run_date():
     job = object.__new__(jobs.Job)
     job.meta = {"started_at": "2026-10-13T12:00:00+00:00"}
-    job.run = {"exclusions": []}
+    source = {"id": "s1", "kind": "filing", "published_date": "2026-08-01", "pages": [{
+        "page_number": 1, "image": "p1.png", "image_sha256": "b" * 64,
+        "words": "p1.words.json", "words_sha256": "a" * 64}]}
     rows = [
         {"id": "h2", "date": "2026-07-01", "date_end": "2026-12-31", "group": "kept", "trail": []},
         {"id": "sep", "date": "2026-09-01", "date_end": "2026-09-30", "group": "kept", "trail": [],
-         "checks": [{"name": "date_match", "result": "pass"}]},
+         "source_id": "s1", "page_number": 1, "date_text": "September 2026",
+         "quote": "Topline results are expected in September 2026.", "event_type": "trial_results",
+         "title": "topline results", "program": None},
     ]
+    from checks import event_checks
+    from runs.build_run import to_contract_check
+    from runs.claim_assessment import bind_checks
+    result = event_checks.date_match(rows[1]["date_text"], rows[1]["date"], rows[1]["quote"],
+                                     rows[1]["date_end"], event_type=rows[1]["event_type"],
+                                     title=rows[1]["title"], filed=source["published_date"])
+    rows[1]["checks"] = [to_contract_check(c.to_dict()) for c in bind_checks(
+        [result], rows[1], source,
+        consumed_artifact={"file": "p1.words.json", "sha256": "a" * 64, "kind": "captured"})]
+    job.run = {"exclusions": [], "sources": [source]}
     job.apply_window(rows, "2026-10-13T12:00:00+00:00")
     assert rows[0]["group"] == "kept"
     assert rows[1]["group"] == "removed"

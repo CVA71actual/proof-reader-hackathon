@@ -66,10 +66,16 @@ def build_docx(view: dict) -> bytes:
     if view.get("as_of_note"):
         _line(doc, view["as_of_note"])
     _line(doc, f"Run status: {view['run_status']}")
-    _line(doc, "Companies read: " + (" · ".join(view["companies_read"]) or "none recorded"))
-    _line(doc, "Companies unread: " + (" · ".join(view["companies_unread"]) or "none recorded"))
-    page_unread = str(view["pages_unread"]) if view["pages_unread"] is not None else "not recorded"
-    _line(doc, f"Pages read: {view['pages_read']} · unread: {page_unread}")
+    if view["page_outcomes_recorded"]:
+        pc = view["page_outcome_counts"]
+        _line(doc, "Page outcomes: " + " · ".join(f"{key.replace('_', ' ')} {pc[key]}" for key in (
+            "captured", "attempted", "read", "unreadable", "skipped", "unread")))
+        for company in view["page_outcomes_by_company"]:
+            _line(doc, f"{company['ticker']} page outcomes: captured {company['captured']} · attempted "
+                  f"{company['attempted']} · read {company['read']} · unreadable {company['unreadable']} · "
+                  f"skipped {company['skipped']} · unread {company['unread']}")
+    else:
+        _line(doc, "Page outcomes: not recorded for this saved run.")
     _line(doc, "Stopping reason: " + view["stopping_reason"])
     if view["sample_stamp"]:
         _line(doc, view["sample_stamp"], italic=True, size=10)
@@ -84,7 +90,7 @@ def build_docx(view: dict) -> bytes:
     _heading(doc, "Calendar")
     _line(doc, f"Window: {view['calendar_window']}", size=8)
     _line(doc, "Kept and corrected rows only, ordered by date. Periods are shown as stated.", size=8)
-    if not view["calendar"] and not view.get("past") and not view.get("contingent") and not view.get("later"):
+    if not view["calendar"] and not view.get("past") and not view.get("contingent") and not view.get("undated") and not view.get("timing_unresolved") and not view.get("later"):
         _line(doc, "No kept or corrected rows.")
     else:
         table = doc.add_table(rows=1, cols=6)
@@ -97,6 +103,8 @@ def build_docx(view: dict) -> bytes:
         for row in view["calendar"]:
             cells = table.add_row().cells
             status = row["status"]
+            if row.get("contingent"):
+                status += " · Contingent"
             if row["person_tag"]:
                 status = f"{status} · {row['person_tag']}"
             vals = [
@@ -108,25 +116,27 @@ def build_docx(view: dict) -> bytes:
                 for p in cells[i].paragraphs:
                     for r in p.runs:
                         _set_run_font(r, size=8)
-    for key, label in (("past", "Past"), ("contingent", "Contingent"), ("later", "Later")):
+    for key, label in (("past", "Past"), ("undated", "Undated · no timing stated"),
+                       ("timing_unresolved", "Timing unresolved"), ("contingent", "Contingent"), ("later", "Later")):
         if view.get(key):
             _heading(doc, f"{label} · {len(view[key])}")
             for row in view[key]:
                 _line(doc, f"{row['date_display']} · {row['ticker']} · {row['program']} · {row['event']} · "
                       f"{row['id']} · {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
-                      f"indication: {row['indication'] or 'not stated'} · action: {row['action']} · {row['reason']}", size=8)
-    for row in view["calendar"] + view.get("past", []) + view.get("contingent", []) + view.get("later", []):
+                      f"indication: {row['indication'] or 'not stated'} · action: {row['action']} · {row['reason']}"
+                      + (f" · {row['page_evidence_note']}" if row.get("page_evidence_note") else ""), size=8)
+    for row in view["calendar"] + view.get("past", []) + view.get("undated", []) + view.get("timing_unresolved", []) + view.get("contingent", []) + view.get("later", []):
         checks = "; ".join(f"{c['name']}: {c['result']}" + (f" ({c['limitation']})" if c["limitation"] else "")
                             for c in row["check_limitations"])
         if not checks and row.get("check_status_text"):
             checks = row["check_status_text"]
         history = "; ".join(f"{c['name']}: {c['result']}" + (f" ({c['limitation']})" if c["limitation"] else "")
                               for c in row.get("check_history", []))
-        history_text = f" · original checks (history, before edit): {history}" if history else ""
+        history_text = f" · {row.get('check_history_label') or 'Check history'}: {history}" if history else ""
         _line(doc, f"Evidence {row['id']}: {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
               f"indication {row['indication'] or 'not stated'} · action {row['action']} · "
               f"quote: {row['quote'] or 'not recorded'} · current-value checks: {checks or 'not recorded'}"
-              f"{history_text}", size=8)
+              f"{history_text}" + (f" · {row['page_evidence_note']}" if row.get("page_evidence_note") else ""), size=8)
 
     _heading(doc, "Corrections")
     if not view["corrections"]:
@@ -163,9 +173,14 @@ def build_docx(view: dict) -> bytes:
             checks = "; ".join(f"{c['name']}: {c['result']}" for c in r.get("check_limitations", []))
             checks = checks or r.get("check_status_text") or "not recorded"
             history = "; ".join(f"{c['name']}: {c['result']}" for c in r.get("check_history", []))
-            history_text = f" · original checks (history, before edit): {history}" if history else ""
-            _line(doc, f"{r['group_label']} · {r['ticker']} · {r['event']}: {r['reason']}"
-                  f" · current-value checks: {checks}{history_text}"
+            history_text = f" · {r.get('check_history_label') or 'Check history'}: {history}" if history else ""
+            _line(doc, f"{r['group_label']} · {r['ticker']} · {r['company']} · {r['program']} · "
+                  f"{r['indication'] or 'indication not stated'} · {r['event']} · {r['date_text'] or 'Undated · no timing stated'} · "
+                  f"source {r['source_document']} ({r['source_id']}) page {r['page_number']} · quote: {r['quote']}: {r['reason']}"
+                  + (f" · {r['page_evidence_note']}" if r.get("page_evidence_note") else "")
+                  + f" · timing: {r.get('timing_state') or 'unresolved'}"
+                  + (" · Contingent" if r.get("contingent") else "")
+                  + f" · current-value checks: {checks}{history_text}"
                   + (f" · latest re-check: {r['latest_recheck']}" if r.get("latest_recheck") else "")
                   + (f" · override reason: {r['override_reason']}" if r.get("override_reason") else ""))
 

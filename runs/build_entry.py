@@ -24,9 +24,7 @@ anything else -> unverified), the same rule table values start from. A fake read
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import shutil
 import sys
 from datetime import date
 from pathlib import Path
@@ -38,8 +36,10 @@ from checks import event_checks
 from checks.common import CheckResult, normalize
 from checks.selector_match import MIN_WORD_HEIGHT_PT, _quote_run, selector_match
 from runs import coverage, prices, recheck
-from runs.build_run import MUSE_SPARK, RUNS, SCHEMA_VERSION, file_sha256, now_utc, render_page, to_contract_check
+from runs.build_run import MUSE_SPARK, RUNS, SCHEMA_VERSION, now_utc, to_contract_check
 from runs.build_run import write_run
+from runs.page_outcomes import interpreted_page
+from runs.claim_assessment import bind_checks
 
 PIN = read_events.PIN
 RUN_ID = "ptgx-r4a"
@@ -56,45 +56,21 @@ START_GROUP = {event_checks.MATCHED: "kept", event_checks.FAILED: "open"}
 _SENTENCE_END = ".,;:"
 
 
-def _sha(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def ptgx_source(entry: dict, run_dir: Path) -> tuple[dict, dict, dict]:
+    """Capture the pinned page through the shared verified-artifact boundary."""
+    return _ptgx_source_evidence(entry, run_dir)
 
 
-def ptgx_source(entry: dict, run_dir: Path) -> tuple[dict, dict]:
-    """Render page 3 into the run folder and copy its words beside it. Returns (source, words_doc)."""
-    page_pdf, words_src = FIXTURES / entry["page_file"], FIXTURES / entry["words_file"]
-    if _sha(page_pdf) != entry["page_sha256"]:
-        raise ValueError("The page file does not match the manifest; refusing to build the run.")
-    if _sha(words_src) != entry["words_sha256"]:
-        raise ValueError("The words file does not match the manifest; refusing to build the run.")
-    page_no = entry["page_number"]
-    image_rel, words_rel = f"pages/p{page_no}.png", f"pages/p{page_no}.words.json"
-    render_page(page_pdf, run_dir / image_rel)
-    shutil.copyfile(words_src, run_dir / words_rel)
-    words_doc = json.loads(words_src.read_text())
-    source = {
-        "id": SOURCE_ID,
-        "publisher": f"{entry['company']} (filed with the SEC)",
-        "kind": "filing",
-        "title": (f"{entry['ticker']} 8-K exhibit {entry['exhibit']} ({entry['exhibit_title'].lower()}), "
-                  f"filed {entry['filing_date']}"),
-        "url": entry["source_url"],
-        "published_date": entry["filing_date"],
-        "captured_at": entry["captured_at"],
-        "sha256": entry["rendered_pdf_sha256"],
-        "rendered_from": {"format": entry["source_format"], "sha256": entry["source_sha256"],
-                          "renderer": entry["renderer"]},
-        "pages": [{
-            "page_number": page_no,
-            "image": image_rel,
-            "width_pt": words_doc["page_width"],
-            "height_pt": words_doc["page_height"],
-            "words": words_rel,
-            "image_sha256": file_sha256(run_dir / image_rel),
-            "words_sha256": file_sha256(run_dir / words_rel),
-        }],
-    }
-    return source, words_doc
+def _ptgx_source_evidence(entry: dict, run_dir: Path) -> tuple[dict, dict, dict]:
+    # Keep the old fixture-manifest API, but send its bytes through the same read/hash/parse boundary
+    # as indexed pages. There is no hash-then-reopen path here.
+    from runs import sources
+
+    record = dict(entry)
+    record.update({"id": "ptgx-p3", "kind": "events", "source_id": SOURCE_ID, "file_stem": "p3",
+                   "page_path": str(FIXTURES / entry["page_file"]),
+                   "words_path": str(FIXTURES / entry["words_file"])})
+    return sources.capture_page_evidence(record, run_dir)
 
 
 def _str(v) -> str | None:
@@ -183,10 +159,14 @@ def sent_text(model_name: str, reading: dict) -> str:
 
 def row_reason(status: str, results: list, row: dict) -> str:
     if status == event_checks.MATCHED:
+        passed = [r.label for r in results if r.result == event_checks.PASS]
+        not_applicable = [r.label for r in results if r.result == event_checks.NOT_NEEDED]
+        text = "Checks passed: " + ", ".join(passed) + "."
+        if not_applicable:
+            text += " Not applicable: " + ", ".join(not_applicable) + "."
         if row.get("date_end"):
-            return (f"Every check passed. The page names a period ({row['date_text']}), not a day, so the row "
-                    f"keeps the period as stated.")
-        return "Every check passed."
+            return f"{text} The page names a period ({row['date_text']}), not a day, so the row keeps the period as stated."
+        return text
     if status == event_checks.FAILED:
         r = next(r for r in results if r.result == "fail")
         return f"{r.label} failed: {r.reason} Waiting for you."
@@ -201,7 +181,7 @@ def row_reason(status: str, results: list, row: dict) -> str:
 def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict, at: str,
               share: tuple[int | None, int | None, int] = (None, None, 1), model_name: str = MUSE_SPARK,
               instructions_who: str = READER, second_reader: bool = False, tool_steps: list[dict] | None = None,
-              tool_type: str | None = None) -> dict:
+              tool_type: str | None = None, consumed_artifact: dict | None = None) -> dict:
     """`share` is this row's part of the one call's tokens: (prompt, completion, rows the call proposed).
     `model_name`: the model that proposed it (the second reader's rows are built by the same function)."""
     words = words_doc["words"]
@@ -291,24 +271,30 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
                               f"{was} was only a hint.", "at": at})
     if why := event_checks.event_type_reason(row["quote"]):    # carried on the row only when something is missing
         row["type_reason"] = why
-    results = recheck.row_checks(row, source, words_doc)
+    results = recheck.row_checks(row, source, words_doc, consumed_artifact=consumed_artifact)
     if tool_type and tool_type != row["event_type"]:
         # The reader asked the type tool and handed over another type. The row keeps the hand-over; the tool's
         # answer is not stored as the type and never replaces the code's own check, but the disagreement is held.
         results = [CheckResult(r.check, r.label, event_checks.FAIL,
                                             f"The reader's own check found the type {tool_type} for these words and "
-                                            f"it handed over {row['event_type']}: " + r.reason, {**r.compared, "found": tool_type})
+                                            f"it handed over {row['event_type']}: " + r.reason,
+                                            {**r.compared, "found": tool_type}, assessment=r.assessment)
                    if r.check == event_checks.TYPE_ID and r.result != event_checks.FAIL else r for r in results]
+        results = bind_checks(results, row, source, consumed_artifact=consumed_artifact)
     for r in results:
         trail.append({"step": "Checked", "tag": "Code", "who": r.check,
                       "text": f"{r.label}: {r.result.replace('_', ' ')}. {r.reason}", "at": at})
-    status = event_checks.row_status(results)
+    checked_status = event_checks.row_status(results)
+    # This is the result of the named text-layer and geometry checks only. The
+    # shared state separately refuses to treat it as a complete event claim
+    # while rendered visible words remain not checked.
+    status = checked_status
     inferred = any(t["step"] == "Year inferred from the filing date" for t in trail)
     row.update({
         "status": status,
         "group": START_GROUP.get(status, "unverified"),
-        "reason": row_reason(status, results, row) + (" Year inferred from the filing date." if inferred
-                                                      and status == event_checks.MATCHED else ""),
+        "reason": row_reason(status, results, row)
+                  + (" Year inferred from the filing date." if inferred and status == event_checks.MATCHED else ""),
         "sample": False,
         "checks": [to_contract_check(r.to_dict()) for r in results],
         "trail": trail,
@@ -328,14 +314,15 @@ def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = N
     if reading.get("call_failed") or not reading.get("readable"):
         raise SystemExit(f"The reading has no events ({reading.get('parse_problem')}); no run is built from it.")
     run_dir.mkdir(parents=True, exist_ok=True)
-    source, words_doc = ptgx_source(entry, run_dir)
+    source, words_doc, consumed_artifact = _ptgx_source_evidence(entry, run_dir)
     at = reading["created_at"]
     fake = bool(reading.get("fake")) or reading.get("model") == FAKE_MODEL
     usage = {} if fake else (reading.get("usage") or {})
     n = len(reading["events"])
     shares = list(zip(prices.split_tokens(usage.get("prompt_tokens"), n),
                       prices.split_tokens(usage.get("completion_tokens"), n), [n] * n))
-    rows = [build_row(i, ev, reading, source, words_doc, at, share=shares[i - 1])
+    rows = [build_row(i, ev, reading, source, words_doc, at, share=shares[i - 1],
+                      consumed_artifact=consumed_artifact)
             for i, ev in enumerate(reading["events"], start=1)]
     second = None
     if second_reading is not None and second_reading.get("readable") and not second_reading.get("call_failed"):
@@ -349,7 +336,8 @@ def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = N
             events = [{**e, "box": read_events.grid_to_points(e.get("box"), words_doc["page_width"],
                                                               words_doc["page_height"])} for e in events]
         _, only_second = compare.apply_events(rows, events, second_reading, source, words_doc,
-                                              second_reading["created_at"], next_index=len(rows) + 1)
+                                              second_reading["created_at"], next_index=len(rows) + 1,
+                                              consumed_artifact=consumed_artifact)
         rows += only_second
         second = {"model": compare.SECOND, "status": "read", "reason": None,
                   "input": second_reading.get("input") or "words"}
@@ -374,6 +362,8 @@ def build_entry_run(reading: dict, run_dir: Path, *, finished_at: str | None = N
                 "note_for_agent": None,
             },
             "spend_usd": prices.run_spend_usd(rows),  # from the readings' tokens and runs/prices.py
+            "page_outcomes": [interpreted_page(source, source["pages"][0], attempted=True, read=True)],
+            "pages_read": 1,
             **({"second_reader": second} if second else {}),
         },
         "sources": [source],
