@@ -6,7 +6,7 @@ Nothing here is re-judged by hand: the checks are the same functions that checke
     row_checks(row, source, words_doc)   event row: quote_match, selector_match, date_match (period-aware),
                                          source_rule, type_match
     recheck_row(at, row, source, words_doc)
-    recheck_cell(at, cell, words_doc)    table value: text_layer_match + selector_match + row_column_match
+    recheck_cell(at, cell, words_doc, visual_evidence=..., derived_words_present=...)    table value: text_layer_match + selector_match + row_column_match
                                          (checks.status)
 
 A re-check passes only when the fixed item comes out "matched" under the same status rule the run used.
@@ -38,6 +38,7 @@ from __future__ import annotations
 
 from checks import event_checks
 from checks.common import COULD_NOT_RUN, FAIL, PASS, UNRESOLVED, CheckResult
+from checks.restriction import ROW, page_capability, page_restriction
 from checks.selector_match import CHECK_ID as SELECTOR_ID, LABEL as SELECTOR_LABEL, selector_match
 from checks.selector_match import region_match, selector_match
 from checks.status import MATCHED as CELL_MATCHED
@@ -93,24 +94,22 @@ def row_checks(row: dict, source: dict, words_doc: dict | None, chosen: bool = F
     region_width = (words_doc or {}).get("page_width") or page.get("width_pt") or 612.0
     region_height = (words_doc or {}).get("page_height") or page.get("height_pt") or 792.0
     region_result = region_match(row.get("box"), regions, region_width, region_height) if regions and words_doc is not None else None
+    used = page_capability(page)
+    restriction = page_restriction(visual, used["derived_words_present"], path=ROW, box=row.get("box"))
     if region_result is not None:
         # This is the narrower, actually executed box-in-region comparison.
         # Approximate transcription geometry affects word alignment, not this
         # independently bound comparison in the page coordinate frame.
         box_check = region_result
-    elif row.get("box") is not None and (page.get("derived_words") or visual.get("origin") == "approximate"):
-        box_check = CheckResult(
-            SELECTOR_ID, SELECTOR_LABEL, COULD_NOT_RUN,
-            "SAM 3.1 found no region to compare the box with; word alignment cannot run on derived or approximate geometry.",
-            {"value": row.get("quote"), "box": row.get("box")},
-        )
-    elif row.get("box") is not None and visual.get("origin") == "hidden_text":
-        box_check = CheckResult(SELECTOR_ID, SELECTOR_LABEL, COULD_NOT_RUN, visual["reason"],
+    elif restriction.restricted and row.get("box") is not None:
+        # One shared decision with the cell path (checks/restriction.py). With no box the selector runs
+        # and gives its own no-place sentence (the helper's NO_PLACE_REASON), exactly as before.
+        box_check = CheckResult(SELECTOR_ID, SELECTOR_LABEL, COULD_NOT_RUN, restriction.reason,
                                 {"value": row.get("quote"), "box": row.get("box")})
     else:
         box_check = selector_match(row.get("quote"), row.get("box"), words, w, h, quote_lines=True)
     results = [
-        event_checks.quote_match(row.get("quote"), words, row.get("box")),
+        event_checks.quote_match(row.get("quote"), words, row.get("box"), transcribed=restriction.restricted),
         box_check,
         event_checks.date_match(row.get("date_text"), as_iso(row.get("date")), row.get("quote"),
                                 date_end=as_iso(row.get("date_end")), chosen=chosen, event_type=row.get("event_type"),
@@ -120,7 +119,7 @@ def row_checks(row: dict, source: dict, words_doc: dict | None, chosen: bool = F
         event_checks.source_rule(source["kind"], []),
         event_checks.type_match(row.get("event_type"), row.get("quote")),
     ]
-    return bind_checks(results, row, source, consumed_artifact=consumed_artifact, chosen=chosen)
+    return bind_checks(results, row, source, consumed_artifact=consumed_artifact, chosen=chosen, capability=used)
 
 
 def could_not_run_reason(checks: list[dict]) -> str:
@@ -252,8 +251,8 @@ def _recheck_row(at: str, row: dict, source: dict, words_doc: dict | None, settl
 
 def recheck_cell(at: str, cell: dict, words_doc: dict | None, settles: bool = False,
                  field: str | None = None, page_number=None, before: dict | None = None,
-                 row_label: str | None = None, columns: list[str] | None = None,
-                 visual_evidence: dict | None = None, derived_words_present: bool = False) -> dict:
+                 row_label: str | None = None, columns: list[str] | None = None, *,
+                 visual_evidence: dict | None, derived_words_present: bool) -> dict:
     """`cell` already carries the fixed value; its box is the one the reader proposed.
     `before`: the cell as it was before the fix (the old value); the same checks run on it too.
     `row_label` / `columns`: the label of the row the cell sits in and the table's column headers.
@@ -263,13 +262,14 @@ def recheck_cell(at: str, cell: dict, words_doc: dict | None, settles: bool = Fa
                                                            visual_evidence=visual_evidence,
                                                            derived_words_present=derived_words_present)
     return _with_before(_recheck_cell(at, cell, words_doc, settles, field, page_number, row_label, columns,
-                                      visual_evidence, derived_words_present),
+                                      visual_evidence=visual_evidence,
+                                      derived_words_present=derived_words_present),
                         before_line)
 
 
 def _recheck_cell(at: str, cell: dict, words_doc: dict | None, settles: bool, field: str | None,
-                  page_number, row_label: str | None = None, columns: list[str] | None = None,
-                  visual_evidence: dict | None = None, derived_words_present: bool = False) -> dict:
+                  page_number, row_label: str | None = None, columns: list[str] | None = None, *,
+                  visual_evidence: dict | None, derived_words_present: bool) -> dict:
     checked = check_cell(cell, words_doc or BLANK_PAGE, row_label, columns, visual_evidence=visual_evidence,
                          derived_words_present=derived_words_present)
     checks = [to_contract_check(c) for c in checked["checks"]]

@@ -138,7 +138,11 @@
                 57.02,
                 569.16,
                 88.7
-              ]
+              ],
+              "page_capability": {
+                "visual_origin": "approximate",
+                "derived_words_present": false
+              }
             },
             "evaluation_mode": null,
             "evidence": {
@@ -174,7 +178,7 @@
               "width_pt": 612.0,
               "height_pt": 792.0
             },
-            "checker_version": "cf6a9f19f4c2ae51d698cde9800c6aaf9bb678d7d0c7ca3742db0ffff3b6e4d0",
+            "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
             "output": {
               "result": "could_not_run",
               "reason": "The page has no text layer to compare against.",
@@ -183,8 +187,8 @@
                 "found": null
               }
             },
-            "input_sha256": "900077a2798a7deb0d6fdf9f31ced5c7dcb13e18996eb8fc1256fcf07159ef5b",
-            "assessment_sha256": "e1a7fd295d2232b962158bff52f29bb3270e39ab33ccf098be6b2eab79ae4cb2"
+            "input_sha256": "46c84c7f01cf1046447a1ba47e875ae5f3b1ade9b70983df3e98dc6b667d7d32",
+            "assessment_sha256": "a284e50ba60f3cc61776a3500d90832231960aad2e8e921ef4cc67da70600db1"
           }
         },
         {
@@ -215,7 +219,11 @@
                 57.02,
                 569.16,
                 88.7
-              ]
+              ],
+              "page_capability": {
+                "visual_origin": "approximate",
+                "derived_words_present": false
+              }
             },
             "evaluation_mode": null,
             "evidence": {
@@ -251,7 +259,7 @@
               "width_pt": 612.0,
               "height_pt": 792.0
             },
-            "checker_version": "cf6a9f19f4c2ae51d698cde9800c6aaf9bb678d7d0c7ca3742db0ffff3b6e4d0",
+            "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
             "output": {
               "result": "could_not_run",
               "reason": "SAM 3.1 found no table or text block on this page; its only region is the whole page, which says nothing about where the quote is.",
@@ -266,8 +274,8 @@
                 ]
               }
             },
-            "input_sha256": "900077a2798a7deb0d6fdf9f31ced5c7dcb13e18996eb8fc1256fcf07159ef5b",
-            "assessment_sha256": "6deaee7ded5138166a44017de413f7ba2960585f72e834f44d9fa21ddbefec46"
+            "input_sha256": "46c84c7f01cf1046447a1ba47e875ae5f3b1ade9b70983df3e98dc6b667d7d32",
+            "assessment_sha256": "5dd64697980647d7863c700358570c8dd2c440c52c43fad57d560ffd08a12172"
           }
         },
         {
@@ -335,7 +343,7 @@
               "width_pt": 612.0,
               "height_pt": 792.0
             },
-            "checker_version": "cf6a9f19f4c2ae51d698cde9800c6aaf9bb678d7d0c7ca3742db0ffff3b6e4d0",
+            "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
             "output": {
               "result": "pass",
               "reason": "The period in the row is the period printed in the quote.",
@@ -351,7 +359,7 @@
               }
             },
             "input_sha256": "82be0a6b446d05dd212fe1d0d1ab377244964ced8b5fd8003489a8a21fe3e1cc",
-            "assessment_sha256": "31ffa4a226a828aa70a61e4bdeea44d46d88ad190fed4efe2e95c976822e1670"
+            "assessment_sha256": "57159e67e83a2805525612b3228854536430a756088cf8098097331c24f5e0a2"
           }
         },
         {
@@ -406,7 +414,7 @@
               "width_pt": 612.0,
               "height_pt": 792.0
             },
-            "checker_version": "cf6a9f19f4c2ae51d698cde9800c6aaf9bb678d7d0c7ca3742db0ffff3b6e4d0",
+            "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
             "output": {
               "result": "pass",
               "reason": "The source is not a third-party calendar.",
@@ -416,7 +424,7 @@
               }
             },
             "input_sha256": "ce42102d66e60ea375e93f22daefb7c7c2c0c1062f11bffe8aac1a1164bd8336",
-            "assessment_sha256": "d0f188e076090e5aaab9150c9ca913cf002ab1554c758faca2d0fd8371e4c2e7"
+            "assessment_sha256": "de377f0b29f3014427c3026a296a641f6dc64a2a90888cf7dc271ae89d451402"
           }
         },
         {
@@ -472,7 +480,7 @@
               "width_pt": 612.0,
               "height_pt": 792.0
             },
-            "checker_version": "cf6a9f19f4c2ae51d698cde9800c6aaf9bb678d7d0c7ca3742db0ffff3b6e4d0",
+            "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
             "output": {
               "result": "pass",
               "reason": "The quote's words (initiation) fit milestone.",
@@ -482,7 +490,7 @@
               }
             },
             "input_sha256": "a2561691803adaa59d77e14c41732447dbce43aaba8fdb760e55af2fb711ae1f",
-            "assessment_sha256": "b17ebb1443e386c1f9e25afd7c060e75a3c47a7124809255852064a48fe67944"
+            "assessment_sha256": "4e86bc682eb9fd35b20421f099804a7fb501dd1c3d6c4d27a5b2c83bc96c4a82"
           }
         }
       ],
@@ -634,7 +642,11 @@
                 105.34,
                 544.68,
                 136.22
-              ]
+              ],
+              "page_capability": {
+                "visual_origin": "approximate",
+                "derived_words_present": false
+              }
             },
             "evaluation_mode": null,
             "evidence": {
@@ -670,7 +682,7 @@
               "width_pt": 612.0,
               "height_pt": 792.0
             },
-            "checker_version": "cf6a9f19f4c2ae51d698cde9800c6aaf9bb678d7d0c7ca3742db0ffff3b6e4d0",
+            "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
             "output": {
               "result": "could_not_run",
               "reason": "The page has no text layer to compare against.",
@@ -679,8 +691,8 @@
                 "found": null
               }
             },
-            "input_sha256": "9a88490e72eb497a77a33a67340a8834d18bd1db97d0a5bc60a620b8dff9f285",
-            "assessment_sha256": "a0ab76d301841f03c1a418c5d8186a7953e1cbd6ca3d9f389825695ab5d25317"
+            "input_sha256": "b7539c2a4940390ad57208ff24573e0e6048ac805858d5c019512f1ae6fe9e72",
+            "assessment_sha256": "67502b03c53960b2b8724c417725aed8a3fbe1f18b19e8a4493fcfda780ebad2"
           }
         },
         {
@@ -711,7 +723,11 @@
                 105.34,
                 544.68,
                 136.22
-              ]
+              ],
+              "page_capability": {
+                "visual_origin": "approximate",
+                "derived_words_present": false
+              }
             },
             "evaluation_mode": null,
             "evidence": {
@@ -747,7 +763,7 @@
               "width_pt": 612.0,
               "height_pt": 792.0
             },
-            "checker_version": "cf6a9f19f4c2ae51d698cde9800c6aaf9bb678d7d0c7ca3742db0ffff3b6e4d0",
+            "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
             "output": {
               "result": "could_not_run",
               "reason": "SAM 3.1 found no table or text block on this page; its only region is the whole page, which says nothing about where the quote is.",
@@ -762,8 +778,8 @@
                 ]
               }
             },
-            "input_sha256": "9a88490e72eb497a77a33a67340a8834d18bd1db97d0a5bc60a620b8dff9f285",
-            "assessment_sha256": "77b5ed29d6d020549dc7b025350744d86e8bcce7d792c8ce5fe7e7ca28af1e8c"
+            "input_sha256": "b7539c2a4940390ad57208ff24573e0e6048ac805858d5c019512f1ae6fe9e72",
+            "assessment_sha256": "8df5d6869f9f9d90f586611c7091a9611648f6881b1a89abacb6c9822290f6f0"
           }
         },
         {
@@ -831,7 +847,7 @@
               "width_pt": 612.0,
               "height_pt": 792.0
             },
-            "checker_version": "cf6a9f19f4c2ae51d698cde9800c6aaf9bb678d7d0c7ca3742db0ffff3b6e4d0",
+            "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
             "output": {
               "result": "pass",
               "reason": "The period in the row is the period printed in the quote.",
@@ -847,7 +863,7 @@
               }
             },
             "input_sha256": "da2436158188df6118552415e26432993f66cbb3df3290dc4c0c5b58042ed7d3",
-            "assessment_sha256": "c721f02769c66cd3c210da28a109d3942cb990953809bdfedbb4c2aad4daa543"
+            "assessment_sha256": "8b984c77ff43937f62dc73383f1887c3700c2e20093b2a41f3a835fc956547d4"
           }
         },
         {
@@ -902,7 +918,7 @@
               "width_pt": 612.0,
               "height_pt": 792.0
             },
-            "checker_version": "cf6a9f19f4c2ae51d698cde9800c6aaf9bb678d7d0c7ca3742db0ffff3b6e4d0",
+            "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
             "output": {
               "result": "pass",
               "reason": "The source is not a third-party calendar.",
@@ -912,7 +928,7 @@
               }
             },
             "input_sha256": "ce42102d66e60ea375e93f22daefb7c7c2c0c1062f11bffe8aac1a1164bd8336",
-            "assessment_sha256": "d0f188e076090e5aaab9150c9ca913cf002ab1554c758faca2d0fd8371e4c2e7"
+            "assessment_sha256": "de377f0b29f3014427c3026a296a641f6dc64a2a90888cf7dc271ae89d451402"
           }
         },
         {
@@ -968,7 +984,7 @@
               "width_pt": 612.0,
               "height_pt": 792.0
             },
-            "checker_version": "cf6a9f19f4c2ae51d698cde9800c6aaf9bb678d7d0c7ca3742db0ffff3b6e4d0",
+            "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
             "output": {
               "result": "pass",
               "reason": "The quote's words (initiation) fit milestone.",
@@ -978,7 +994,7 @@
               }
             },
             "input_sha256": "92bc29f24dfcce047f75f194869c22828e19ec3f72d5507e60b155da201b773a",
-            "assessment_sha256": "a9da18de51b259082dd27f06ad61b1dd69cd562f908352820258cee2d97bb220"
+            "assessment_sha256": "c49bda14ab1615bd5cf7311bb27759ee9b7c3281c2350a7c730f9633480ef424"
           }
         }
       ],

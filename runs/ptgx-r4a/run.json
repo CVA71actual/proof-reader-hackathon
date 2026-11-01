@@ -146,7 +146,11 @@
         71.34,
         570.27,
         94.41
-       ]
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
       },
       "evaluation_mode": null,
       "evidence": {
@@ -171,7 +175,7 @@
        "width_pt": 612.0,
        "height_pt": 792.0
       },
-      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
       "output": {
        "result": "pass",
        "reason": "The quote is printed on the page, word for word.",
@@ -202,8 +206,8 @@
         ]
        }
       },
-      "input_sha256": "f1c3d65b7046f8ae4402e2482e4f43cb076783e9125ea5fdbcae7000920f1b68",
-      "assessment_sha256": "deede2da2aa7d56a3d5a7eec090e5bdba5b7d4017bfd84a95d0199f39d7165f6"
+      "input_sha256": "0736b1f70e976213aeeec8a416e07445528ad8d8e87f504bf16b0b71068daecb",
+      "assessment_sha256": "ce45d2e81ba83ae84bce06f1be11ab8b7cd145c23d6482c13bd5ce705b664e81"
      }
     },
     {
@@ -256,7 +260,11 @@
         71.34,
         570.27,
         94.41
-       ]
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
       },
       "evaluation_mode": null,
       "evidence": {
@@ -281,7 +289,7 @@
        "width_pt": 612.0,
        "height_pt": 792.0
       },
-      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
       "output": {
        "result": "pass",
        "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
@@ -318,8 +326,8 @@
         ]
        }
       },
-      "input_sha256": "f1c3d65b7046f8ae4402e2482e4f43cb076783e9125ea5fdbcae7000920f1b68",
-      "assessment_sha256": "1ef5085001c1ffea3d70b299c807a8601e3e30c291566d379cdcf4f101166777"
+      "input_sha256": "0736b1f70e976213aeeec8a416e07445528ad8d8e87f504bf16b0b71068daecb",
+      "assessment_sha256": "7cbbd872db085e74628b73656ae8391c21b6a25bc2d3dfd00ad62cf1253e39cb"
      }
     },
     {
@@ -345,8 +353,6 @@
      "assessment": {
       "inputs": {
        "date_text": "the second half of 2027",
-       "date": "2027-07-01",
-       "date_end": "2027-12-31",
        "quote": "PN-458o (dual GLP/GIP agonist peptide): IND-enabling studies are ongoing with Phase 1 initiation anticipated in the second half of 2027.",
        "event_type": "milestone",
        "title": "Phase 1 initiation",
@@ -378,7 +384,7 @@
        "width_pt": 612.0,
        "height_pt": 792.0
       },
-      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
       "output": {
        "result": "pass",
        "reason": "The period in the row is the period printed in the quote.",
@@ -393,8 +399,8 @@
         }
        }
       },
-      "input_sha256": "7b99415957d5411901e6179c2ba44329a76b6259502e902282dab141144a250c",
-      "assessment_sha256": "6b19b7b3716bc9a24f4bec87f4e0de2db7e25a8177eb57a3cd825156c16bca14"
+      "input_sha256": "82be0a6b446d05dd212fe1d0d1ab377244964ced8b5fd8003489a8a21fe3e1cc",
+      "assessment_sha256": "daa33c7eebab8c248cf5dc07f103d7e3d25203e0bd6d1d855321391ac163af58"
      }
     },
     {
@@ -438,7 +444,7 @@
        "width_pt": 612.0,
        "height_pt": 792.0
       },
-      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
       "output": {
        "result": "pass",
        "reason": "The source is not a third-party calendar.",
@@ -448,7 +454,7 @@
        }
       },
       "input_sha256": "ce42102d66e60ea375e93f22daefb7c7c2c0c1062f11bffe8aac1a1164bd8336",
-      "assessment_sha256": "52cfb0e6bc9e4fc99f41ebaeeb1b6fe218cfc86b08d3e1aa9160cadf19c2b023"
+      "assessment_sha256": "6e2387590cc5abfeffe2a803a41336282ad55623b5fa910427341fb4f3b489f0"
      }
     },
     {
@@ -493,7 +499,7 @@
        "width_pt": 612.0,
        "height_pt": 792.0
       },
-      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
       "output": {
        "result": "pass",
        "reason": "The quote's words (initiation) fit milestone.",
@@ -503,7 +509,7 @@
        }
       },
       "input_sha256": "a2561691803adaa59d77e14c41732447dbce43aaba8fdb760e55af2fb711ae1f",
-      "assessment_sha256": "0fe914d8a4e5077d0ba1825cb0933ad882793b12ef803141166d6bd4878244e2"
+      "assessment_sha256": "580043ab5e821d5f32bd1cd43793534d8ee2f8b46fa463eb4b08941376d75dfa"
      }
     }
    ],
@@ -667,7 +673,11 @@
         107.34,
         544.81,
         130.41
-       ]
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
       },
       "evaluation_mode": null,
       "evidence": {
@@ -692,7 +702,7 @@
        "width_pt": 612.0,
        "height_pt": 792.0
       },
-      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
       "output": {
        "result": "pass",
        "reason": "The quote is printed on the page, word for word.",
@@ -722,8 +732,8 @@
         ]
        }
       },
-      "input_sha256": "5815891e34735fda803f56df0a60d26a708ae5d234eb8a2796f57bb3c69e68db",
-      "assessment_sha256": "5f3545c1e9696a1eec0248da2ece52dc8e049327af26bdec45c14aab15938674"
+      "input_sha256": "81f3c837b1927a59037990171f473793f1d41b4d53e91e4ddd83519ffb435342",
+      "assessment_sha256": "5399dc9460b0450a1a3a8c55a35bd168dd29dc6a5d67685dde60d9e31d3e42d8"
      }
     },
     {
@@ -775,7 +785,11 @@
         107.34,
         544.81,
         130.41
-       ]
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
       },
       "evaluation_mode": null,
       "evidence": {
@@ -800,7 +814,7 @@
        "width_pt": 612.0,
        "height_pt": 792.0
       },
-      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
       "output": {
        "result": "pass",
        "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
@@ -836,8 +850,8 @@
         ]
        }
       },
-      "input_sha256": "5815891e34735fda803f56df0a60d26a708ae5d234eb8a2796f57bb3c69e68db",
-      "assessment_sha256": "359b9f1686c1abf2eedb81fc1b60e532d75b35fc2f437d1e660b22c907d746c3"
+      "input_sha256": "81f3c837b1927a59037990171f473793f1d41b4d53e91e4ddd83519ffb435342",
+      "assessment_sha256": "3d72bd7a6eb67fee11e6ccdc219bae125209df26ce26467239c65e6700b9b816"
      }
     },
     {
@@ -863,8 +877,6 @@
      "assessment": {
       "inputs": {
        "date_text": "Q1 2027",
-       "date": "2027-01-01",
-       "date_end": "2027-03-31",
        "quote": "PN-8047 (oral small molecule hepcidin functional mimetic): IND-enabling studies are ongoing, with Phase 1 initiation anticipated in Q1 2027.",
        "event_type": "milestone",
        "title": "Phase 1 initiation",
@@ -896,7 +908,7 @@
        "width_pt": 612.0,
        "height_pt": 792.0
       },
-      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
       "output": {
        "result": "pass",
        "reason": "The period in the row is the period printed in the quote.",
@@ -911,8 +923,8 @@
         }
        }
       },
-      "input_sha256": "001ba4cc86e665f5948859f08503b43d0c96ca5e21c0ffe157656a836dbf62bc",
-      "assessment_sha256": "03f2869c43360e346c52c4767440ef53a10314522ee0b6be2227145a6e4c2a53"
+      "input_sha256": "da2436158188df6118552415e26432993f66cbb3df3290dc4c0c5b58042ed7d3",
+      "assessment_sha256": "657994cb78438407689194ad8c3daed01bf58855cbacbd73357fc603b80a996f"
      }
     },
     {
@@ -956,7 +968,7 @@
        "width_pt": 612.0,
        "height_pt": 792.0
       },
-      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
       "output": {
        "result": "pass",
        "reason": "The source is not a third-party calendar.",
@@ -966,7 +978,7 @@
        }
       },
       "input_sha256": "ce42102d66e60ea375e93f22daefb7c7c2c0c1062f11bffe8aac1a1164bd8336",
-      "assessment_sha256": "52cfb0e6bc9e4fc99f41ebaeeb1b6fe218cfc86b08d3e1aa9160cadf19c2b023"
+      "assessment_sha256": "6e2387590cc5abfeffe2a803a41336282ad55623b5fa910427341fb4f3b489f0"
      }
     },
     {
@@ -1011,7 +1023,7 @@
        "width_pt": 612.0,
        "height_pt": 792.0
       },
-      "checker_version": "d492155294ce6a2318c4067ee2b55a519e4fba56e66540fdcc554e372b661dfd",
+      "checker_version": "717da4149fe0b432d22e78c3fba6acc5da3739337afccaf030faf55cb989d610",
       "output": {
        "result": "pass",
        "reason": "The quote's words (initiation) fit milestone.",
@@ -1021,7 +1033,7 @@
        }
       },
       "input_sha256": "92bc29f24dfcce047f75f194869c22828e19ec3f72d5507e60b155da201b773a",
-      "assessment_sha256": "bfd08ab5c23a0cb5ac8a795a8d6b21f2e9007ede227b7ff1f67b1ade3b83b10f"
+      "assessment_sha256": "46d2c03b035d3c47683381e40440352f9cb58bf2944611d0acf593c42623ed88"
      }
     }
    ],

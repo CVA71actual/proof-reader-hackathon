@@ -122,9 +122,12 @@ def score_reading(key: dict, reading: dict, words_path: Path, key_path: str | No
     from runs.sources import visual_evidence as classify_visual_evidence
     evidence = classify_visual_evidence({}, words_doc)
     model = model_family(reading.get("model"))
-    table = score_table(check_reading(reading, words_doc, evidence), key, model) \
+    # No page record means no separate derived-words flag: the classifier above already reads the words
+    # artifact's own picture / words_from markers into `evidence`.
+    table = score_table(check_reading(reading, words_doc, evidence, False), key, model) \
         if key.get("cells") else None
-    plant = score_planted(reading, words_doc, planted, visual_evidence=evidence) if planted else None
+    plant = score_planted(reading, words_doc, planted, visual_evidence=evidence,
+                          derived_words_present=False) if planted else None
     return build_report(key, key_path, table=table, planted=plant, planted_model=model)
 
 

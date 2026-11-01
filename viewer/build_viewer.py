@@ -47,7 +47,9 @@ def choose_reading(path: Path | None) -> dict:
 def build(reading: dict, out: Path) -> Path:
     manifest = json.loads((FIXTURES / "MANIFEST.json").read_text())
     words_doc = json.loads((FIXTURES / manifest["words_file"]).read_text())
-    checked = check_reading(reading, words_doc)
+    # The viewer renders only the pinned native fixture page (MANIFEST page_file, a PDF with its own text
+    # layer), so its page capability is native: no visual_evidence restriction, no derived words.
+    checked = check_reading(reading, words_doc, visual_evidence=None, derived_words_present=False)
     png = render_page_png(FIXTURES / manifest["page_file"])
 
     data = {

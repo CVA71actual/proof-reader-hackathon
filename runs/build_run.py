@@ -111,7 +111,7 @@ def model_display_name(model_id: str) -> str:
 
 def build_table(reading: dict, words_doc: dict, *, table_id: str, source_id: str, page_number: int,
                 source: dict | None = None, consumed_artifact: dict | None = None,
-                visual_evidence: dict | None = None, derived_words_present: bool = False) -> dict:
+                visual_evidence: dict | None, derived_words_present: bool) -> dict:
     prompt = reading.get("prompt_text") or ""
     sha = reading.get("prompt_sha256") or ""
     if read_table.sha256_text(prompt) != sha:
@@ -119,6 +119,7 @@ def build_table(reading: dict, words_doc: dict, *, table_id: str, source_id: str
     checked = check_reading(reading, words_doc, visual_evidence, derived_words_present)
     table = reading.get("table") if isinstance(reading.get("table"), dict) else {}
     rows = []
+    from checks.restriction import capability
     from runs.claim_assessment import bind_contract_checks
     for ri, row in enumerate(checked["rows"]):
         cells = []
@@ -129,7 +130,8 @@ def build_table(reading: dict, words_doc: dict, *, table_id: str, source_id: str
                 check_list = bind_contract_checks(check_list,
                     {"page_number": page_number, "value": cell.get("value"), "box": cell.get("box"),
                      "column": cell.get("column"), "row_label": row.get("label"),
-                     "columns": list(table.get("columns", []))}, source, consumed_artifact=consumed_artifact)
+                     "columns": list(table.get("columns", []))}, source, consumed_artifact=consumed_artifact,
+                    capability=capability(visual_evidence, derived_words_present))
             cells.append({
                 "id": f"{table_id}.{ri}.{ci}",
                 "column": str(cell.get("column", "")),

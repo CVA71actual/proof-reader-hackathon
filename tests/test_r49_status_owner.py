@@ -5,6 +5,7 @@ from pathlib import Path
 
 from runs import recheck_dates as rd
 from runs.state import current_state
+from checks.restriction import page_capability
 from runs.claim_assessment import bind_contract_checks
 
 DATE = {"name": "date_match", "label": "Date read as written", "kind": "Code", "result": "pass", "reason": "x",
@@ -32,7 +33,8 @@ def _run(row):
         "visual_evidence": {"origin": "text_layer", "overlays_supported": True, "reason": None}}]}
     row["checks"] = bind_contract_checks(row["checks"], row, source,
                                           consumed_artifact={"file": "pages/p1.words.json", "sha256": "a" * 64,
-                                                             "kind": "captured"})
+                                                             "kind": "captured"},
+        capability=page_capability(source["pages"][0]))
     return {"run": {"started_at": "2026-08-10T10:00:00+00:00", "choices": {}},
             "sources": [source],
             "rows": [row], "exclusions": [], "tables": [], "mistakes": []}
@@ -59,7 +61,8 @@ def test_date_repair_changes_the_check_but_does_not_write_row_status(tmp_path):
     source = run["sources"][0]
     row["checks"] = bind_contract_checks(
         row["checks"], row, source,
-        consumed_artifact={"file": page["words"], "sha256": page["words_sha256"], "kind": "captured"})
+        consumed_artifact={"file": page["words"], "sha256": page["words_sha256"], "kind": "captured"},
+        capability=page_capability(source["pages"][0]))
     before = (row["status"], row["group"])
 
     result = rd.recheck_dates(run, tmp_path, set(), "t")
@@ -77,7 +80,8 @@ def test_a_date_check_change_does_not_resolve_a_two_sided_program_disagreement()
     run["rows"][0]["checks"][2] = {**DATE, "reason": "rechecked", "result": "pass"}
     run["rows"][0]["checks"] = bind_contract_checks(
         run["rows"][0]["checks"], run["rows"][0], run["sources"][0],
-        consumed_artifact={"file": "pages/p1.words.json", "sha256": "a" * 64, "kind": "captured"})
+        consumed_artifact={"file": "pages/p1.words.json", "sha256": "a" * 64, "kind": "captured"},
+        capability=page_capability(run["sources"][0]["pages"][0]))
     t = current_state(run, [])["targets"]["e1"]
     assert t["status"] == "undecided" and t["group"] == "open"
 
@@ -127,7 +131,8 @@ def _rechecked(run, new_result):
     run["rows"][0]["checks"][2] = {**DATE, "result": new_result}
     run["rows"][0]["checks"] = bind_contract_checks(
         run["rows"][0]["checks"], run["rows"][0], run["sources"][0],
-        consumed_artifact={"file": "pages/p1.words.json", "sha256": "a" * 64, "kind": "captured"})
+        consumed_artifact={"file": "pages/p1.words.json", "sha256": "a" * 64, "kind": "captured"},
+        capability=page_capability(run["sources"][0]["pages"][0]))
     return current_state(run, [])
 
 

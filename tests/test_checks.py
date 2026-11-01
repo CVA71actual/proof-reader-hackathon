@@ -122,5 +122,5 @@ def test_box_alone_never_matches(words):
     w = find_word(words, "115,315")
     from checks.status import check_cell
     cell = check_cell({"column": "2025", "value": "115,316", "box": box_of(w)},
-                      {"words": words, "page_width": W, "page_height": H})
+                      {"words": words, "page_width": W, "page_height": H}, visual_evidence=None, derived_words_present=False)
     assert cell["status"] == FAILED

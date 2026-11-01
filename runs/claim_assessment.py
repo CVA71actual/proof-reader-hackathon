@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 from checks import event_checks
+from checks.restriction import page_capability
 
 REPO = Path(__file__).resolve().parent.parent
 VISIBLE_NOT_CHECKED = {
@@ -29,6 +30,12 @@ CHECK_INPUTS = {
     "text_layer_match": ("value",),
     "row_column_match": ("value", "box", "column", "row_label", "columns"),
 }
+# Checks whose result depends on the page capability (checks/restriction.py): the capability the check was
+# COMPUTED with is a bound input. check_current re-derives it from the page record now, so a check computed
+# without it (None) or with another page's capability is unbound by construction and load re-runs it.
+CAPABILITY_CHECKS = frozenset({event_checks.QUOTE_ID, "selector_match", "text_layer_match", "row_column_match"})
+_STAMPED = object()
+
 def _digest(value) -> str:
     raw = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
@@ -55,10 +62,18 @@ def page_evidence(source: dict, page_number, consumed_artifact: dict | None = No
             "height_pt": page.get("height_pt")}
 
 
+def _page(source: dict, page_number) -> dict:
+    return next((p for p in source.get("pages", []) if p.get("page_number") == page_number), {})
+
+
 def assessment_for(check_name: str, row: dict, source: dict, *, consumed_artifact: dict | None = None,
-                   chosen: bool = False, output: dict | None = None) -> dict:
+                   chosen: bool = False, output: dict | None = None, capability: dict | None = None) -> dict:
+    """`capability`: the page capability the check was computed with (checks.restriction.capability).
+    None for a capability check means "computed without it": it is bound as None and never current."""
     fields = CHECK_INPUTS.get(check_name, ())
     candidate = {key: row.get(key) for key in fields}
+    if check_name in CAPABILITY_CHECKS:
+        candidate["page_capability"] = capability
     if check_name == event_checks.SOURCE_ID:
         candidate = {"source_kind": source.get("kind")}
     elif check_name == event_checks.DATE_ID:
@@ -85,33 +100,49 @@ def visible_passage_assessment(row: dict, source: dict) -> dict:
                                                    "assessment_sha256": _digest(bound)}}
 
 
-def bind_checks(results, row: dict, source: dict, *, consumed_artifact: dict | None = None, chosen: bool = False):
-    """Attach an immutable assessment binding to every returned CheckResult."""
+def bind_checks(results, row: dict, source: dict, *, consumed_artifact: dict | None = None, chosen: bool = False,
+                capability: dict | None = None):
+    """Attach an immutable assessment binding to every returned CheckResult.
+    Row checks always derive their restriction from the cited page itself (runs/recheck.row_checks), so
+    the capability defaults to the page's own; row_checks passes the value it actually used."""
     from dataclasses import replace
     from runs.build_run import to_contract_check
 
+    if capability is None:
+        capability = page_capability(_page(source, row.get("page_number")))
     bound = []
     for result in results:
         contract = to_contract_check(result.to_dict())
         output = {key: contract[key] for key in ("result", "reason", "compared", "near_match", "differs")
                   if key in contract}
         bound.append(replace(result, assessment=assessment_for(
-            result.check, row, source, consumed_artifact=consumed_artifact, chosen=chosen, output=output)))
+            result.check, row, source, consumed_artifact=consumed_artifact, chosen=chosen, output=output,
+            capability=capability)))
     return bound
 
 
-def bind_contract_checks(checks: list[dict], row: dict, source: dict, *, consumed_artifact: dict | None = None) -> list[dict]:
-    """Bind already serialized table check results to the exact cell and page inputs."""
+def bind_contract_checks(checks: list[dict], row: dict, source: dict, *, consumed_artifact: dict | None = None,
+                         capability=_STAMPED) -> list[dict]:
+    """Bind already serialized table check results to the exact cell and page inputs.
+    `capability`: the page capability the cell was checked with. When not passed, each check's own
+    "page_capability" stamp (set by checks.status.check_cell) is used; a check without a stamp binds
+    None and is never current, so a check computed without capability re-runs on load.
+    TODO(SLICE-1B-001, after PERF-001): runs/check_load.py:73 should pass capability= explicitly (the
+    cell's checks all carry the same stamp); then drop the _STAMPED default so an unflagged call raises
+    TypeError. Left out of this change because runs/check_load.py is reserved for PERF-001."""
     out = []
     for check in checks:
         from runs.build_run import to_contract_check
 
+        used = check.get("page_capability") if capability is _STAMPED else capability
         result = to_contract_check(check) if check.get("check") else dict(check)
+        result.pop("page_capability", None)
         name = result.get("name") or result.get("check")
         result["assessment"] = assessment_for(name, row, source, consumed_artifact=consumed_artifact,
                                              output={key: result[key] for key in
                                                      ("result", "reason", "compared", "near_match", "differs")
-                                                     if key in result})
+                                                     if key in result},
+                                             capability=used)
         out.append(result)
     return out
 
@@ -128,7 +159,7 @@ def check_current(check: dict, row: dict, source: dict, *, consumed_artifact: di
     actual = consumed_artifact or (recorded.get("evidence") or {}).get("words_used")
     if not actual or actual.get("kind") == "unverified":
         return False
-    page = next((p for p in source.get("pages", []) if p.get("page_number") == row.get("page_number")), {})
+    page = _page(source, row.get("page_number"))
     if actual.get("kind") == "unavailable":
         # A missing cited page is a stable, explicit could-not-run fact. It is
         # current only while the source still has no page at that number.
@@ -154,7 +185,9 @@ def check_current(check: dict, row: dict, source: dict, *, consumed_artifact: di
               if key in contract}
     if output.get("result") is None:
         return False
-    return recorded == assessment_for(name, row, source, consumed_artifact=actual, chosen=chosen, output=output)
+    # The capability is re-derived from the page record now, never read back from the binding.
+    return recorded == assessment_for(name, row, source, consumed_artifact=actual, chosen=chosen, output=output,
+                                      capability=page_capability(page))
 
 
 def checks_current(checks: list[dict], row: dict, source: dict, *, consumed_artifact: dict | None = None) -> bool:

@@ -27,7 +27,7 @@ def test_fake_reading_is_deterministic(words_doc, fake_reading):
 
 
 def test_end_to_end_on_fake_reading(words_doc, fake_reading):
-    checked = check_reading(fake_reading, words_doc)
+    checked = check_reading(fake_reading, words_doc, visual_evidence=None, derived_words_present=False)
     cells = [c for r in checked["rows"] for c in r["cells"]]
     assert len(checked["rows"]) == 23 and len(cells) == 69
     assert checked["counts"] == {MATCHED: 66, FAILED: 2, PROPOSED: 1}
@@ -55,7 +55,7 @@ def test_unparsable_answer_is_unreadable(raw, words_doc):
     table, problem = read_table.parse_table(raw)
     assert table is None and problem
     reading = {"readable": False, "table": None, "raw_response": raw}
-    assert check_reading(reading, words_doc)["status"] == UNREADABLE
+    assert check_reading(reading, words_doc, visual_evidence=None, derived_words_present=False)["status"] == UNREADABLE
 
 
 def test_fenced_json_answer_is_parsed():
@@ -104,7 +104,7 @@ def test_checks_run_over_model_reading(words_doc):
     reading = json.loads(REAL.read_text())
     assert reading["model"] != "fake" and reading["fake"] is False
     assert reading["prompt_sha256"] == read_table.sha256_text(reading["prompt_text"])
-    checked = check_reading(reading, words_doc)
+    checked = check_reading(reading, words_doc, visual_evidence=None, derived_words_present=False)
     if not reading["readable"]:
         assert checked["status"] == UNREADABLE
         return

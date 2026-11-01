@@ -316,7 +316,7 @@ def test_a_nearer_caption_does_not_match_the_other_column():
     value = next(w for w in words if w["id"] == "v2")
     doc = {"words": words, "page_width": 612.0, "page_height": 792.0}
     cell = {"id": "c", "column": "2025", "value": "257,307", "box": _box(value)}
-    checked = check_cell(cell, doc, "Royalty", ["2025", "2024"])
+    checked = check_cell(cell, doc, "Royalty", ["2025", "2024"], visual_evidence=None, derived_words_present=False)
     row = next(c for c in checked["checks"] if c["check"] == "row_column_match")
     assert (checked["status"], row["result"]) == (FAILED, FAIL), (checked["status"], row["result"], row["reason"])
 
@@ -333,7 +333,7 @@ def test_a_nearer_caption_on_the_real_page_does_not_move_the_2024_cell():
     doc = {"words": inserted, "page_width": 612.0, "page_height": 792.0}
     cell = {"id": "t", "column": "2024", "value": "257,307",
             "box": [royalty["x0"], royalty["y0"], royalty["x1"], royalty["y1"]]}
-    checked = check_cell(cell, doc, "Royalty revenue", COLUMNS)
+    checked = check_cell(cell, doc, "Royalty revenue", COLUMNS, visual_evidence=None, derived_words_present=False)
     row = next(c for c in checked["checks"] if c["check"] == "row_column_match")
     assert (checked["status"], row["result"], row["reason"]) == (
         MATCHED, PASS, "The box is on the 'Royalty revenue' line and under 2024."), (

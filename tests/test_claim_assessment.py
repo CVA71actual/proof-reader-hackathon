@@ -4,6 +4,7 @@ import copy
 import json
 from pathlib import Path
 
+from checks.restriction import page_capability
 from runs import claim_assessment
 from runs.recheck import row_checks
 from runs.state import current_state
@@ -29,7 +30,8 @@ def test_row_checks_bind_exact_candidate_page_and_checker_inputs():
     from runs.build_run import to_contract_check
     quote = to_contract_check(next(c.to_dict() for c in results if c.check == "quote_match"))
     binding = quote["assessment"]
-    assert binding["inputs"] == {"quote": row["quote"], "box": row["box"]}
+    assert binding["inputs"] == {"quote": row["quote"], "box": row["box"],
+                                 "page_capability": page_capability(page)}
     assert binding["evidence"]["source_id"] == row["source_id"]
     assert binding["evidence"]["page_number"] == row["page_number"]
     assert binding["evidence"]["image_sha256"] == page["image_sha256"]
@@ -102,10 +104,12 @@ def test_check_freshness_matches_the_artifact_actually_consumed_even_if_derived_
     check_output = {"result": "pass", "reason": "fixture", "compared": {}}
     captured_check = {"name": "quote_match", **check_output}
     captured_check["assessment"] = claim_assessment.assessment_for(
-        "quote_match", row, changed_source, consumed_artifact=captured, output=check_output)
+        "quote_match", row, changed_source, consumed_artifact=captured, output=check_output,
+        capability=page_capability(changed_page))
     derived_check = {"name": "quote_match", **check_output}
     derived_check["assessment"] = claim_assessment.assessment_for(
-        "quote_match", row, changed_source, consumed_artifact=derived, output=check_output)
+        "quote_match", row, changed_source, consumed_artifact=derived, output=check_output,
+        capability=page_capability(changed_page))
 
     assert claim_assessment.check_current(captured_check, row, changed_source, consumed_artifact=captured)
     assert not claim_assessment.check_current(derived_check, row, changed_source, consumed_artifact=captured)

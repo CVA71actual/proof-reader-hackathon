@@ -46,10 +46,12 @@ def _norm_quote(text: str | None) -> str:
     return s
 
 
-def quote_match(quote: str | None, words: list[dict], box=None) -> CheckResult:
+def quote_match(quote: str | None, words: list[dict], box=None, *, transcribed: bool = False) -> CheckResult:
     """Pass if the quote equals some run of consecutive page words (any length).
     `box`: the box the reader proposed. A quote that is not in the text layer, with little or no text under or near
-    that box, is a picture: the check could not run (it is not a failure)."""
+    that box, is a picture: the check could not run (it is not a failure).
+    `transcribed`: the words are the page's transcribed/derived words (checks/restriction.py says the page is
+    restricted), so a match is a match against those words, not against print anyone has seen."""
     want = _norm_quote(quote)
 
     def result(res: str, reason: str, found=None, word_ids=None, near_match=None, differs=None) -> CheckResult:
@@ -70,7 +72,8 @@ def quote_match(quote: str | None, words: list[dict], box=None) -> CheckResult:
         if any(w.get("break") for w in run):        # rebuilt picture words: a run never crosses a region break
             continue
         if _norm_quote(join_words(run)) == want:
-            return result(PASS, "The quote is printed on the page, word for word.",
+            return result(PASS, ("The quote appears in the page's transcribed words, word for word." if transcribed
+                                 else "The quote is printed on the page, word for word."),
                           found=join_words(run), word_ids=[w["id"] for w in run])
     if picture:
         return result(COULD_NOT_RUN, PICTURE_REASON)
@@ -83,7 +86,8 @@ def quote_match(quote: str | None, words: list[dict], box=None) -> CheckResult:
         what = "1 word differs" if k == 1 else f"{k} words differ"
         return result(FAIL, f"The quote nearly matches the page; {what} \u2014 {shown}{more}.",
                       near_match=join_words(run), differs=differs)
-    return result(FAIL, "The quote is not printed anywhere on the page.")
+    return result(FAIL, ("The quote does not appear anywhere in the page's transcribed words." if transcribed
+                         else "The quote is not printed anywhere on the page."))
 
 
 NEAR_RATIO = 0.9

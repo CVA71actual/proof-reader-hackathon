@@ -37,7 +37,7 @@ def test_every_real_cell_is_on_its_row_and_under_its_column(words):
 
 
 def test_every_real_cell_is_matched_with_all_three_checks(words_doc):
-    checked = check_reading(READING, words_doc)
+    checked = check_reading(READING, words_doc, visual_evidence=None, derived_words_present=False)
     assert checked["counts"] == {MATCHED: 69, FAILED: 0, PROPOSED: 0}
     for row in checked["rows"]:
         for c in row["cells"]:
@@ -52,7 +52,7 @@ def test_a_2024_value_under_the_2025_column_fails(words, words_doc):
     assert r.compared["value"] == "row Royalty revenue, column 2025"
     assert r.compared["found_column"] == "2024"
     cell = {"column": "2025", "value": other["value"], "box": other["box"]}
-    got = check_cell(cell, _doc(words, words_doc), "Royalty revenue", COLUMNS)
+    got = check_cell(cell, _doc(words, words_doc), "Royalty revenue", COLUMNS, visual_evidence=None, derived_words_present=False)
     assert got["status"] == FAILED
     # the other two checks pass: only the new check catches it
     assert [k["result"] for k in got["checks"]] == [PASS, PASS, FAIL]
@@ -71,7 +71,7 @@ def test_another_rows_value_fails(words, words_doc):
     assert r.reason == "The row label 'Royalty revenue' is not on this line; found 'Product sales, net'."
     assert r.compared["found"] == "row Product sales, net, column 2025"
     got = check_cell({"column": "2025", "value": sales["value"], "box": sales["box"]},
-                     _doc(words, words_doc), "Royalty revenue", COLUMNS)
+                     _doc(words, words_doc), "Royalty revenue", COLUMNS, visual_evidence=None, derived_words_present=False)
     assert got["status"] == FAILED
 
 
@@ -137,7 +137,7 @@ def test_could_not_run_when_no_label_is_on_the_line(words, words_doc):
 
 def test_no_row_label_given_leaves_the_value_proposed(words, words_doc):
     c = _cell("Royalty revenue", "2025")
-    got = check_cell({"column": "2025", "value": c["value"], "box": c["box"]}, _doc(words, words_doc))
+    got = check_cell({"column": "2025", "value": c["value"], "box": c["box"]}, _doc(words, words_doc), visual_evidence=None, derived_words_present=False)
     assert got["checks"][2]["result"] == COULD_NOT_RUN
     assert got["status"] == PROPOSED
 
@@ -210,7 +210,7 @@ def _reading_from(table: dict) -> dict:
 
 
 def _built(reading, words_doc):
-    return build_table(reading, words_doc, table_id="t1", source_id="src", page_number=95)
+    return build_table(reading, words_doc, table_id="t1", source_id="src", page_number=95, visual_evidence=None, derived_words_present=False)
 
 
 def _moved_sales_table(label="Product sales, net"):
@@ -225,7 +225,7 @@ def _moved_sales_table(label="Product sales, net"):
 
 def test_codex7_a_cell_label_does_not_override_the_row_it_is_saved_in(words_doc):
     reading = _reading_from(_moved_sales_table())
-    checked = check_reading(reading, words_doc)
+    checked = check_reading(reading, words_doc, visual_evidence=None, derived_words_present=False)
     row = next(r for r in checked["rows"] if r["label"] == "Royalty revenue")
     cell = next(c for c in row["cells"] if c["column"] == "2025")
     rc = cell["checks"][2]
@@ -249,7 +249,7 @@ def test_codex7_without_the_cell_label_the_moved_value_still_fails_on_its_row(wo
     for r in table["rows"]:
         for c in r["cells"]:
             c.pop("label", None)
-    checked = check_reading(_reading_from(table), words_doc)
+    checked = check_reading(_reading_from(table), words_doc, visual_evidence=None, derived_words_present=False)
     row = next(r for r in checked["rows"] if r["label"] == "Royalty revenue")
     cell = next(c for c in row["cells"] if c["column"] == "2025")
     assert cell["status"] == FAILED
@@ -261,7 +261,7 @@ def test_codex7_a_cell_label_equal_to_its_row_label_is_fine(words_doc):
     for r in table["rows"]:
         for c in r["cells"]:
             c["label"] = "  " + r["label"] + " "
-    assert check_reading(_reading_from(table), words_doc)["counts"] == {MATCHED: 69, FAILED: 0, PROPOSED: 0}
+    assert check_reading(_reading_from(table), words_doc, visual_evidence=None, derived_words_present=False)["counts"] == {MATCHED: 69, FAILED: 0, PROPOSED: 0}
 
 
 def test_codex7_a_cell_label_in_a_row_with_no_label_fails(words_doc):
@@ -269,7 +269,7 @@ def test_codex7_a_cell_label_in_a_row_with_no_label_fails(words_doc):
     table = {"title": "", "columns": COLUMNS, "rows": [
         {"cells": [{"column": "2025", "value": sales["value"], "box": sales["box"],
                     "label": "Product sales, net"}]}]}
-    checked = check_reading(_reading_from(table), words_doc)
+    checked = check_reading(_reading_from(table), words_doc, visual_evidence=None, derived_words_present=False)
     cell = checked["rows"][0]["cells"][0]
     assert checked["rows"][0]["label"] == ""
     assert cell["status"] == FAILED
@@ -282,7 +282,7 @@ def test_codex7_the_recheck_path_uses_the_saved_row_label(words, words_doc):
     cell = {"id": "t1.1.0", "column": "2025", "value": sales["value"], "box": sales["box"],
             "label": "Product sales, net"}
     line = recheck_cell("2026-10-28T00:00:00+00:00", cell, _doc(words, words_doc),
-                        row_label="Royalty revenue", columns=COLUMNS)
+                        row_label="Royalty revenue", columns=COLUMNS, visual_evidence=None, derived_words_present=False)
     rc = next(c for c in line["recheck"]["checks"] if c["name"] == "row_column_match")
     assert rc["result"] == FAIL and "sits in row 'Royalty revenue'" in rc["reason"]
 
@@ -290,7 +290,7 @@ def test_codex7_the_recheck_path_uses_the_saved_row_label(words, words_doc):
 def test_codex7_a_cell_checked_on_its_own_keeps_its_label(words, words_doc):
     c = _cell("Royalty revenue", "2025")
     got = check_cell({"column": "2025", "value": c["value"], "box": c["box"], "label": "Royalty revenue"},
-                     _doc(words, words_doc))
+                     _doc(words, words_doc), visual_evidence=None, derived_words_present=False)
     assert got["status"] == MATCHED
 
 
@@ -312,7 +312,7 @@ def test_recheck_uses_hidden_text_page_reason_for_table_alignment(words, words_d
     cell = _cell("Royalty revenue", "2025")
     reason = "The page's text layer has only nonvisual sliver geometry."
     got = check_cell(cell, _doc(words, words_doc), "Royalty revenue", COLUMNS,
-                     visual_evidence={"origin": "hidden_text", "reason": reason})
+                     visual_evidence={"origin": "hidden_text", "reason": reason}, derived_words_present=False)
     assert got["checks"][0]["result"] == PASS
     assert [check["result"] for check in got["checks"][1:]] == [COULD_NOT_RUN, COULD_NOT_RUN]
     assert [check["reason"] for check in got["checks"][1:]] == [reason, reason]
@@ -371,6 +371,7 @@ def test_job_table_branch_and_load_never_keep_hidden_geometry_passes(tmp_path, w
     cells = [cell for row in bound["tables"][0]["rows"] for cell in row["cells"]]
     assert cells
     for cell in cells:
+        assert cell["status"] != MATCHED
         by_name = {check["name"]: check for check in cell["checks"]}
         for name in ("selector_match", "row_column_match"):
             assert by_name[name]["result"] == COULD_NOT_RUN
@@ -410,7 +411,7 @@ def test_codex7_the_omission_case_through_parsing_check_reading_and_build_table(
         if c["column"] == "2024":
             c["column"] = "2023"
     reading = _reading_from(table)
-    checked = check_reading(reading, words_doc)
+    checked = check_reading(reading, words_doc, visual_evidence=None, derived_words_present=False)
     crow = next(r for r in checked["rows"] if r["label"] == "Royalty revenue")
     claimed = next(c for c in crow["cells"] if c["column"] == "2023")
     assert claimed["value"] == "257,307"
@@ -425,7 +426,7 @@ def test_codex7_the_omission_case_through_parsing_check_reading_and_build_table(
 def test_codex7_the_omission_case_on_the_recheck_path(words, words_doc):
     cell = {"id": "t1.1.1", "column": "2023", "value": "257,307", "box": REAL_2024_BOX}
     line = recheck_cell("2026-10-28T00:00:00+00:00", cell, _doc(words, words_doc),
-                        row_label="Royalty revenue", columns=OMIT_2024)
+                        row_label="Royalty revenue", columns=OMIT_2024, visual_evidence=None, derived_words_present=False)
     rc = next(c for c in line["recheck"]["checks"] if c["name"] == "row_column_match")
     assert rc["result"] == FAIL and rc["reason"] == "The box sits under 2024, not 2023."
 

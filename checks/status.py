@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from checks.common import COULD_NOT_RUN, FAIL, PASS, CheckResult
 from checks.row_column_match import CHECK_ID as ROW_COLUMN_ID, LABEL as ROW_COLUMN_LABEL
+from checks.restriction import CELL, capability, page_restriction
 from checks.row_column_match import row_column_match
 from checks.selector_match import CHECK_ID as SELECTOR_ID, LABEL as SELECTOR_LABEL
 from checks.selector_match import selector_match
@@ -37,12 +38,16 @@ def combine_status(results: list[CheckResult], required: tuple[str, ...] = REQUI
 
 
 def check_cell(cell: dict, words_doc: dict, row_label: str | None = None,
-               columns: list[str] | None = None, visual_evidence: dict | None = None,
-               derived_words_present: bool = False) -> dict:
+               columns: list[str] | None = None, *, visual_evidence: dict | None,
+               derived_words_present: bool) -> dict:
     """`row_label`: the label of the row the cell is saved in; it is always the claim checked. A "label" the
     reader put on the cell itself is only compared against it (a different one fails the check). With no
     `row_label` (a cell checked on its own), the cell's own "label" is the claim.
-    `columns`: the table's column headers as the reader gave them."""
+    `columns`: the table's column headers as the reader gave them.
+    `visual_evidence` / `derived_words_present`: the page capability, required (pass None / False for a
+    native page): an unflagged call raises TypeError rather than running geometry on an unknown page.
+    Each returned check carries the capability it was computed with under "page_capability"; the binding
+    (runs/claim_assessment.bind_contract_checks) consumes it and run.json never stores it."""
     words = words_doc["words"]
     value = cell.get("value")
     if row_label is None:
@@ -52,37 +57,31 @@ def check_cell(cell: dict, words_doc: dict, row_label: str | None = None,
     # OCR/transcription words can support a narrow text-occurrence fact, but
     # their synthetic positions cannot establish where a table value or its
     # row/column sits on the source page.
-    visual = visual_evidence or {}
-    if visual.get("origin") == "hidden_text":
-        reason = visual.get("reason") or "The page has no visible text-word geometry."
-        restricted = True
-    elif (visual.get("origin") in {"approximate", "derived"} or visual.get("derived_words")
-          or derived_words_present):
-        reason = "Word and row/column alignment cannot run on derived or approximate geometry."
-        restricted = True
-    else:
-        reason = None
-        restricted = False
-    if restricted:
-        box = cell.get("box")
+    box = cell.get("box")
+    # No `box` argument: a box-less cell on a restricted page keeps the page's own reason (pinned by
+    # tests/test_row_column.py's job-table test); only the row path falls through to the selector.
+    restriction = page_restriction(visual_evidence, derived_words_present, path=CELL)
+    if restriction.restricted:
         results = [
-            text_layer_match(value, words),
-            CheckResult(SELECTOR_ID, SELECTOR_LABEL, COULD_NOT_RUN, reason,
+            text_layer_match(value, words, transcribed=True),
+            CheckResult(SELECTOR_ID, SELECTOR_LABEL, COULD_NOT_RUN, restriction.reason,
                         {"value": value, "box": box}),
-            CheckResult(ROW_COLUMN_ID, ROW_COLUMN_LABEL, COULD_NOT_RUN, reason,
+            CheckResult(ROW_COLUMN_ID, ROW_COLUMN_LABEL, COULD_NOT_RUN, restriction.reason,
                         {"value": f"row {label}, column {cell.get('column')}", "box": box}),
         ]
     else:
         results = [
             text_layer_match(value, words),
-            selector_match(value, cell.get("box"), words, words_doc["page_width"], words_doc["page_height"]),
-            row_column_match(label, cell.get("column"), cell.get("box"), words, columns, reader_label),
+            selector_match(value, box, words, words_doc["page_width"], words_doc["page_height"]),
+            row_column_match(label, cell.get("column"), box, words, columns, reader_label),
         ]
-    return {**cell, "checks": [r.to_dict() for r in results], "status": combine_status(results)}
+    used = capability(visual_evidence, derived_words_present)
+    return {**cell, "checks": [{**r.to_dict(), "page_capability": used} for r in results],
+            "status": combine_status(results)}
 
 
-def check_reading(reading: dict, words_doc: dict, visual_evidence: dict | None = None,
-                  derived_words_present: bool = False) -> dict:
+def check_reading(reading: dict, words_doc: dict, visual_evidence: dict | None,
+                  derived_words_present: bool) -> dict:
     """Return {status, rows:[{label, cells:[cell + checks + status]}], counts}."""
     table = reading.get("table")
     if not reading.get("readable") or not isinstance(table, dict):

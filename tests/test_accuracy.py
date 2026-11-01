@@ -44,7 +44,7 @@ def reading():
 
 @pytest.fixture(scope="module")
 def checked(reading, words_doc):
-    return check_reading(reading, words_doc)
+    return check_reading(reading, words_doc, visual_evidence=None, derived_words_present=False)
 
 
 @pytest.fixture(scope="module")
@@ -110,7 +110,7 @@ def test_refused_key_stops_the_run(tmp_path, key, capsys):
 
 def recheck(cell, row_label, words_doc):
     return check_cell({k: cell[k] for k in ("column", "value", "box")}, words_doc, row_label,
-                      ["2025", "2024", "2023"])
+                      ["2025", "2024", "2023"], visual_evidence=None, derived_words_present=False)
 
 
 def test_score_table_on_the_real_reading(checked, key, reading):
@@ -154,7 +154,7 @@ def test_unreadable_reading_misses_every_value(key):
 
 def test_planted_twelve_caught(reading, words_doc, plants):
     assert len(plants) == 12
-    sc = score_planted(reading, words_doc, plants)
+    sc = score_planted(reading, words_doc, plants, visual_evidence=None, derived_words_present=False)
     assert (sc["caught"], sc["total"]) == (12, 12)
     assert sc["by_kind"] == {"wrong_value": {"total": 4, "caught": 4}, "wrong_place": {"total": 4, "caught": 4},
                              "box_drift": {"total": 4, "caught": 4}}
@@ -166,7 +166,7 @@ def test_planted_scoring_does_not_claim_hidden_text_geometry(reading, words_doc,
     plant = next(p for p in plants if p["expected_type"] == "WRONG_COLUMN")
     reason = "The page's text layer has only nonvisual sliver geometry."
     sc = score_planted(reading, words_doc, [plant],
-                       visual_evidence={"origin": "hidden_text", "reason": reason})
+                       visual_evidence={"origin": "hidden_text", "reason": reason}, derived_words_present=False)
     item = sc["items"][0]
     assert item["status"] == "proposed" and item["caught"] is False
     assert item["type"] is None and item["types"] == [] and item["failed_checks"] == []
@@ -231,7 +231,7 @@ def test_planted_values_come_from_the_real_reading(reading, plants):
 
 def test_an_unchanged_plant_is_not_caught(reading, words_doc):
     sc = score_planted(reading, words_doc, [{"id": "x", "kind": "wrong_value", "row_label": "Net loss",
-                                             "column": "2025", "set": {}, "expected_type": None}])
+                                             "column": "2025", "set": {}, "expected_type": None}], visual_evidence=None, derived_words_present=False)
     assert sc["caught"] == 0 and sc["items"][0]["status"] == "matched"
 
 
@@ -441,7 +441,7 @@ def test_state_mistake_counts_unchanged_by_the_listing():
 def test_report_builds_and_holds_the_numbers(checked, key, reading, words_doc, plants, tmp_path, capsys):
     rep = build_report(key, "accuracy/keys/ions_ars_2026_p95.key.json",
                        table=score_table(checked, key, reading["model"]),
-                       planted=score_planted(reading, words_doc, plants), planted_model="Muse Spark")
+                       planted=score_planted(reading, words_doc, plants, visual_evidence=None, derived_words_present=False), planted_model="Muse Spark")
     m = rep["models"]["Muse Spark"]
     assert m["values"]["found"] == 69 and m["values"]["N"] == 69
     assert (m["planted"]["caught"], m["planted"]["total"]) == (12, 12)
@@ -483,7 +483,7 @@ def test_banned_words_absent(checked, key, reading, words_doc, plants):
         if p.is_file() and p.suffix in (".py", ".json"):
             assert not BANNED.search(p.read_text()), p
     text = render_text(build_report(key, None, table=score_table(checked, key, reading["model"]),
-                                    planted=score_planted(reading, words_doc, plants)))
+                                    planted=score_planted(reading, words_doc, plants, visual_evidence=None, derived_words_present=False)))
     assert not BANNED.search(text)
     assert not BANNED.search(" ".join(T.LABELS.values()))
 
@@ -561,7 +561,7 @@ def test_a_column_the_reader_names_as_a_dated_year_is_the_key_column(key, readin
         for c in row["cells"]:
             if c["column"] == "2025":
                 c["column"] = name
-    sc = score_table(check_reading(r, words_doc), key, reading["model"])
+    sc = score_table(check_reading(r, words_doc, visual_evidence=None, derived_words_present=False), key, reading["model"])
     assert sc["counts"] == {"found": 69, "wrong_value": 0, "wrong_place": 0, "missed": 0, "extra": 0, "unscored": 0}
 
 

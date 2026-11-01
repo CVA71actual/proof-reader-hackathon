@@ -14,9 +14,12 @@ LABEL = "Matches source text"
 MAX_RUN = 6
 
 
-def text_layer_match(value: str | None, words: list[dict]) -> CheckResult:
-    """Pass if the normalized value equals some run of consecutive page words."""
+def text_layer_match(value: str | None, words: list[dict], *, transcribed: bool = False) -> CheckResult:
+    """Pass if the normalized value equals some run of consecutive page words.
+    `transcribed`: the words are the page's transcribed/derived words, not a visible native text layer
+    (checks/restriction.py says the page is restricted); the reason then says what was compared."""
     want = normalize(value)
+    where = "the page's transcribed words" if transcribed else "the page text"
 
     def result(res: str, reason: str, **compared) -> CheckResult:
         return CheckResult(CHECK_ID, LABEL, res, reason, {"value": want, **compared})
@@ -34,8 +37,8 @@ def text_layer_match(value: str | None, words: list[dict]) -> CheckResult:
             if normalize(join_words(run)) == want:
                 return result(
                     PASS,
-                    "The value appears in the page text.",
+                    f"The value appears in {where}.",
                     found=join_words(run),
                     word_ids=[w["id"] for w in run],
                 )
-    return result(FAIL, "The value does not appear anywhere in the page text.", found=None)
+    return result(FAIL, f"The value does not appear anywhere in {where}.", found=None)

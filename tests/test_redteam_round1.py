@@ -66,7 +66,7 @@ def test_a_2024_number_in_the_2025_column_is_not_matched(words, words_doc):
     by_year = {c["column"]: c for c in royalty["cells"]}
     assert by_year["2024"]["value"] != by_year["2025"]["value"]
     cell = {"column": "2025", "value": by_year["2024"]["value"], "box": by_year["2024"]["box"]}
-    got = check_cell(cell, _doc(words, words_doc))
+    got = check_cell(cell, _doc(words, words_doc), visual_evidence=None, derived_words_present=False)
     assert got["status"] == "failed", [(c["check"], c["result"]) for c in got["checks"]]
 
 
@@ -77,7 +77,7 @@ def test_another_rows_number_is_not_matched(words, words_doc):
     sales_2025 = next(c for c in sales["cells"] if c["column"] == "2025")
     cell = {"column": "2025", "label": "Royalty revenue",
             "value": sales_2025["value"], "box": sales_2025["box"]}
-    got = check_cell(cell, _doc(words, words_doc))
+    got = check_cell(cell, _doc(words, words_doc), visual_evidence=None, derived_words_present=False)
     assert got["status"] == "failed", got["status"]
 
 

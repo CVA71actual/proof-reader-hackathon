@@ -441,7 +441,7 @@ def _find_cell(reading: dict, row_label: str, column: str) -> dict | None:
 
 
 def score_planted(reading: dict, words_doc: dict, plants: list[dict], *,
-                  visual_evidence: dict | None = None, derived_words_present: bool = False) -> dict:
+                  visual_evidence: dict | None, derived_words_present: bool) -> dict:
     """Plant each wrong value into a copy of one real cell, run the real checks on it, and count how many the
     checks caught (status failed). A plant: {id, kind, row_label, column, set: {value?, column?, box?,
     row_label?}, expected_type, what}. `row_label` and `column` name the real cell it starts from; `set`
