@@ -110,7 +110,7 @@ def _group(doc) -> list[dict]:
     if isinstance(doc, list):
         return doc
     if not isinstance(doc, dict):
-        raise SourcesError("The sources index is not a list of pages or an object holding them.")
+        raise SourcesError("The captured-pages file is not a list of pages or an object holding them.")
     if isinstance(doc.get("companies"), dict):
         out = []
         for ticker, body in doc["companies"].items():
@@ -121,7 +121,7 @@ def _group(doc) -> list[dict]:
         return out
     if isinstance(doc.get("pages"), list):
         return doc["pages"]
-    raise SourcesError("The sources index holds no companies and no pages.")
+    raise SourcesError("The captured-pages file holds no companies and no pages.")
 
 
 def parse_index(doc, base: Path | None = None, path: Path | None = None) -> Index:
@@ -134,15 +134,15 @@ def parse_index(doc, base: Path | None = None, path: Path | None = None) -> Inde
     stems: dict[str, str] = {}       # lower case: a case-insensitive file system would fold two stems into one file
     for i, raw in enumerate(_group(doc)):
         if not isinstance(raw, dict):
-            raise SourcesError(f"Page {i + 1} of the index is not an object.")
-        rec = _normalize(raw, base, f"Page {i + 1} of the index ({raw.get('ticker', '?')})")
+            raise SourcesError(f"Page {i + 1} of the captured-pages file is not an object.")
+        rec = _normalize(raw, base, f"Page {i + 1} of the captured-pages file ({raw.get('ticker', '?')})")
         for what in ("id", "source_id"):
             if rec[what] in ids:
-                raise SourcesError(f"Page {i + 1} of the index ({rec['ticker']}): the {what} {rec[what]} is used twice.")
+                raise SourcesError(f"Page {i + 1} of the captured-pages file ({rec['ticker']}): the {what} {rec[what]} is used twice.")
             ids.add(rec[what])
         stem = rec["file_stem"].lower()
         if stem in stems:
-            raise SourcesError(f"Page {i + 1} of the index ({rec['ticker']}): the file stem {rec['file_stem']} is already "
+            raise SourcesError(f"Page {i + 1} of the captured-pages file ({rec['ticker']}): the file stem {rec['file_stem']} is already "
                                f"used by {stems[stem]}, so their captured files would overwrite each other.")
         stems[stem] = f"page {rec['id']}"
         index.by_ticker.setdefault(rec["ticker"], []).append(rec)
@@ -172,12 +172,12 @@ def load_index(path: Path | None = None) -> Index:
     p = Path(path) if path is not None else INDEX_PATH
     if not p.is_file():
         if path is not None:
-            raise SourcesError(f"There is no sources index at {p}.")
+            raise SourcesError(f"There is no captured-pages file at {p}.")
         return builtin_index()
     try:
         doc = json.loads(p.read_text())
     except json.JSONDecodeError:
-        raise SourcesError(f"The sources index {p.name} is not valid JSON.") from None
+        raise SourcesError(f"The captured-pages file {p.name} is not valid JSON.") from None
     return parse_index(doc, p.parent, p)
 
 
@@ -225,11 +225,11 @@ def pinned_source_snapshot(record: dict) -> tuple[bytes, bytes, dict, dict]:
     for what, f, want in (("page", page_pdf, record["page_sha256"]), ("words", words_src, record["words_sha256"])):
         if not f.is_file():
             raise SourcesError(f"The {what} file for {record['ticker']} page {record['page_number']} is missing "
-                               f"({f.name}); the index names it.")
+                               f"({f.name}); the captured-pages file names it.")
         raw = f.read_bytes()
         if hashlib.sha256(raw).hexdigest() != want:
             raise SourcesError(f"The {what} file for {record['ticker']} page {record['page_number']} ({f.name}) does not "
-                               f"match the hash the index recorded; refusing to read it.")
+                               f"match the hash the captured-pages file recorded; refusing to read it.")
         snapshots[what] = raw
     try:
         words_doc = json.loads(snapshots["words"])

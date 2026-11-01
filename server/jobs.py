@@ -317,14 +317,14 @@ def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
         # every company with a page to read; one the index lists with no page (ABVX in the captured index) is left out
         companies = selectable_companies(index)[0]
         if not companies:
-            raise ValueError("The sources index holds no page to read.")
+            raise ValueError("The captured-pages file holds no page to read.")
     empty = [c for c in companies if c in index.empty and c not in index.tickers]
     unknown = [c for c in companies if c not in index.tickers and c not in index.empty]
     if unknown:
         raise ValueError(f"No source has been captured for {', '.join(unknown)} yet. "
                          f"Captured so far: {', '.join(sorted(index.tickers))}.")
     if empty:
-        raise ValueError(f"The sources index lists {', '.join(empty)} but holds no page for "
+        raise ValueError(f"The captured-pages file lists {', '.join(empty)} but holds no page for "
                          f"{'it' if len(empty) == 1 else 'them'} yet, so there is nothing to read.")
     if len(set(companies)) != len(companies):
         raise ValueError("A company is listed twice.")
@@ -461,7 +461,7 @@ def limit_unpriced(limit, job: dict) -> bool:
 
 SOURCE_SET_CHANGED = "source set changed; historical replay would not be the same run"
 NO_SOURCE_FREEZE = ("This run started before its source set was recorded (Job 51f), so a resume cannot show it reads "
-                    "the same sources. Record it with record_source_freeze after checking the sources index hash by "
+                    "the same sources. Record it with record_source_freeze after checking the captured-pages file hash by "
                     "hand, or start a new run.")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -494,7 +494,7 @@ def frozen_index(frozen: dict, given: sources.Index | None = None) -> sources.In
         return given if given is not None else sources.builtin_index()
     p = Path(path)
     if not p.is_file():
-        raise JobError(409, f"The sources index this run was frozen with, {p.name}, is not on disk at {p}, so a "
+        raise JobError(409, f"The captured-pages file this run was frozen with, {p.name}, is not on disk at {p}, so a "
                             f"resume cannot show it reads the same sources. Put that file back, or start a new run.")
     try:
         return sources.load_index(p)
@@ -520,8 +520,8 @@ def source_set_changes(frozen: dict, index: sources.Index, companies: list[str])
     out = []
     was, is_ = frozen.get("index") or {}, now["index"]
     if was.get("sha256") != is_["sha256"]:
-        name = Path(is_["path"]).name if is_["path"] else "the built-in index"
-        out.append(f"the sources index ({name}) hashes to {is_['sha256']}, recorded {was.get('sha256')}")
+        name = Path(is_["path"]).name if is_["path"] else "the built-in captured-pages file"
+        out.append(f"the captured-pages file ({name}) hashes to {is_['sha256']}, recorded {was.get('sha256')}")
     old = {p["source_id"]: p for p in frozen.get("pages") or []}
     new = {p["source_id"]: p for p in now["pages"]}
     added, gone = [s for s in new if s not in old], [s for s in old if s not in new]
@@ -577,11 +577,11 @@ def record_source_freeze(runs_dir: Path, run_id: str, index: sources.Index, inde
             raise JobError(409, "This run is being driven by this server now; its source set was recorded when it "
                                 "started.")
         if index.path is None:
-            raise JobError(409, "The built-in sources index has no file to check by hand; record a run's source set "
-                                "only from an index file.")
+            raise JobError(409, "The built-in captured-pages file has no file to check by hand; record a run's source set "
+                                "only from a captured-pages file.")
         found = index_fingerprint(index)
         if found["sha256"] != index_sha256:
-            raise JobError(409, f"The sources index {Path(index.path).name} hashes to {found['sha256']}, not the "
+            raise JobError(409, f"The captured-pages file {Path(index.path).name} hashes to {found['sha256']}, not the "
                                 f"{index_sha256} you checked; nothing was recorded.")
         companies = meta["choices"]["companies"]
         frozen = source_set(index, companies)
@@ -592,11 +592,11 @@ def record_source_freeze(runs_dir: Path, run_id: str, index: sources.Index, inde
             for what in ("page", "words"):
                 if p[f"{what}_sha256"] != r[f"{what}_sha256"]:
                     problems.append(f"the {what} file of {p['source_id']} "
-                                    f"{'is missing' if p[what + '_sha256'] is None else 'does not match the index'}")
+                                    f"{'is missing' if p[what + '_sha256'] is None else 'does not match the captured-pages file'}")
         listed = {p["source_id"]: p for p in frozen["pages"]}
         for s in run.get("sources", []):
             if s["id"] not in listed:
-                problems.append(f"the run has read {s['id']}, which this index does not list")
+                problems.append(f"the run has read {s['id']}, which this captured-pages file does not list")
             elif any(pg.get("words_sha256") not in (None, listed[s["id"]]["words_sha256"])
                      for pg in s.get("pages", [])):
                 problems.append(f"the words the run copied for {s['id']} differ from the words file now")
@@ -605,9 +605,9 @@ def record_source_freeze(runs_dir: Path, run_id: str, index: sources.Index, inde
         at = now_utc()
         job["source_freeze"] = {"recorded_at": at, "by": "record_source_freeze",
                                 "checked_index_sha256": index_sha256, **frozen}
-        text = (f"Source set recorded after the sources index hash was checked by hand: "
+        text = (f"Source set recorded after the captured-pages file hash was checked by hand: "
                 f"{frozen['index']['name']} ({frozen['index']['path']}) sha256 {index_sha256}; this run's resumes read "
-                f"that index, not the server's. {len(frozen['pages'])} page(s) of "
+                f"that captured-pages file, not the server's. {len(frozen['pages'])} page(s) of "
                 f"{len(companies)} companies, each file's hash recorded. A resume is refused if any of them changes.")
         meta.setdefault("trail", []).append({"step": "Source set recorded", "tag": "Person", "who": "person",
                                              "at": at, "text": text})

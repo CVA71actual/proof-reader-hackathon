@@ -4,17 +4,17 @@
 
 creates the run (server/jobs.py create_run), carries it on with the live readers (Muse Spark first, Muse Spark Open second
 on the page image, Muse Wonder for a row that fails a check, SAM 3.1 for a scan), resumes it past a turn limit, builds the
-report when it is done, and prints the audit counts, the cost and the cost per kept row. Every page comes from the sources
-index (runs/sources.py); every limit is the server's. Keys are read by the readers from ~/.config/proof-reader/env and are
+report when it is done, and prints the audit counts, the cost and the cost per kept row. Every page comes from the captured-pages
+file (runs/sources.py); every limit is the server's. Keys are read by the readers from ~/.config/proof-reader/env and are
 never printed.
 
-    --companies all | PTGX,IONS    which companies (default all: every company in the index)
+    --companies all | PTGX,IONS    which companies (default all: every company in the captured-pages file)
     --window 6                     months ahead a date may be; earlier or later is left out (default: none)
     --limit 5.00                   spending limit in dollars (default: none)
     --turns 40                     model calls before a pause; the command resumes through pauses (--max-resumes)
     --types milestone,trial_results  event types (default: all)
     --note "..."                   a note for the agent (context only: it cannot remove a check)
-    --runs-dir DIR / --index FILE  where runs go (default runs/) / the sources index (default: runs/sources_index.twelve.json when present, else runs/sources_index.json)
+    --runs-dir DIR / --index FILE  where runs go (default runs/) / the captured-pages file (default: runs/sources_index.twelve.json when present, else runs/sources_index.json)
     --no-second / --no-wonder      leave that model out of the run (cost control)
     --no-report                    do not build the PDF and Word report
     --reader-tools                 the first reader may call the checks as tools while it reads (capture/reader_tools.py)

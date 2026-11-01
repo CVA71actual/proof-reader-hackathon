@@ -89,7 +89,7 @@ def test_api_companies_broken_index_is_a_409_with_its_sentence(runs_dir, tmp_pat
     c = TestClient(create_app(runs_dir=runs_dir, ui_dir=runs_dir / "no-ui"))
     r = c.get("/api/companies")
     assert r.status_code == 409
-    assert r.json()["detail"] == "The sources index sources_index.json is not valid JSON."
+    assert r.json()["detail"] == "The captured-pages file sources_index.json is not valid JSON."
 
 
 def lines(runs_dir):

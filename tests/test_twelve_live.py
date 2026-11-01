@@ -113,7 +113,7 @@ def test_all_means_every_company_that_has_a_page_and_names_nobody_else(index):
     assert got == index.tickers and not set(got) & set(index.empty)
     assert jobs.label_for(1, {"companies": got, "time_window_months": 6}) == f"{len(got)} companies · 6 months"
     for t in index.empty:
-        with pytest.raises(ValueError, match=f"The sources index lists {t} but holds no page for it yet"):
+        with pytest.raises(ValueError, match=f"The captured-pages file lists {t} but holds no page for it yet"):
             jobs.validate_choices({"companies": [t], "event_types": [], "time_window_months": None,
                                    "spending_limit_usd": None, "note_for_agent": None}, index)
 

@@ -151,7 +151,7 @@ def test_with_no_index_file_the_built_in_index_is_the_two_old_pages_and_the_scan
     assert [(p["kind"], p["source_id"]) for t in idx.tickers for p in idx.pages(t)] == [
         ("events", build_entry.SOURCE_ID), ("table", build_run.IONS_SOURCE_ID),
         ("scan_events", "src-ptgx-8k-2026-08-05-ex991-scanned")]
-    with pytest.raises(sources.SourcesError, match="There is no sources index at"):
+    with pytest.raises(sources.SourcesError, match="There is no captured-pages file at"):
         sources.load_index(tmp_path / "also-absent.json")
 
 
@@ -281,7 +281,7 @@ def test_a_page_that_no_longer_matches_its_hash_is_skipped_with_the_reason_and_t
     assert [s["id"] for s in run["sources"]] == ["src-aaa-pr-p3", "src-aaa-ars-p95"], "AAA read; BBB's page was not"
     [skipped] = m["skipped_pages"]
     assert (skipped["source_id"], skipped["ticker"]) == ("src-bbb-pr-p3", "BBB")
-    assert "does not match the hash the index recorded" in skipped["reason"]
+    assert "does not match the hash the captured-pages file recorded" in skipped["reason"]
     assert "1 page skipped (see skipped_pages)" in m["status_reason"] and len(first.prompts) == 2
     RUN_SCHEMA.validate(run)
     assert json.loads((runs_dir / rid / "job.json").read_text())["skipped"]["src-bbb-pr-p3"]["ticker"] == "BBB"
@@ -438,7 +438,7 @@ def two_records(stem_a, stem_b):
 
 def test_two_distinct_pages_with_the_same_file_stem_are_refused_at_load():
     """Codex's case: two valid records, different ids and sources, one stem. Both would write pages/shared.png."""
-    with pytest.raises(sources.SourcesError, match=r"Page 2 of the index \(BBB\): the file stem shared is already used by "
+    with pytest.raises(sources.SourcesError, match=r"Page 2 of the captured-pages file \(BBB\): the file stem shared is already used by "
                                                    r"page first, so their captured files would overwrite each other"):
         sources.parse_index(two_records("shared", "shared"))
 
@@ -533,7 +533,7 @@ def test_a_company_with_no_page_asked_for_by_name_is_refused_naming_it(runs_dir,
     for companies in (["EEE"], ["AAA", "EEE"]):
         r = c.post("/api/runs/new", json={**CHOICES, "companies": companies})
         assert r.status_code == 422
-        assert r.json()["detail"] == "The sources index lists EEE but holds no page for it yet, so there is nothing to read."
+        assert r.json()["detail"] == "The captured-pages file lists EEE but holds no page for it yet, so there is nothing to read."
     r = c.post("/api/runs/new", json={**CHOICES, "companies": ["ZZZ"]})
     assert r.json()["detail"].startswith("No source has been captured for ZZZ yet."), "still the plain unknown case"
     assert not first.prompts and not list(runs_dir.iterdir())
