@@ -657,7 +657,7 @@ def test_clean_sentence_string_fallback_strips_only_symbols():
 def test_coverage_no_guessable_program_stays_null():
     (row,) = _rows_for("The company expects a decision in 2027.")
     g = row["guess"]
-    assert g["program"] is None and g["event_type"] == "regulatory_decision"
+    assert g["program"] is None and g["event_type"] is None   # Job 52: bare "decision" names no regulator
 
 
 def test_coverage_vague_period_and_known_program():

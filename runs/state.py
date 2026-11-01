@@ -109,7 +109,7 @@ def _plain_value(field, value):
 GROUPS = ("kept", "corrected", "removed", "unverified", "open")
 ACTIONS = ("keep", "fix", "remove", "undo", "recheck")
 PERSON_ACTIONS = ("keep", "fix", "remove", "undo")
-RECHECK_RESULTS = ("pass", "fail", "could_not_run")
+RECHECK_RESULTS = ("pass", "fail", "could_not_run", "unresolved")
 COULD_NOT_RUN_REASON = "The re-check could not run: a check had nothing to compare."
 NO_ERROR_REASON = "The value already passed its checks before the edit."
 NO_BEFORE_REASON = "The re-check did not record the checks on the value before the edit."
@@ -319,7 +319,7 @@ def _apply(base: dict, stack: list[dict]) -> dict:
                         s["reason"] = f"{s['reason']} Still disputed: {', '.join(remaining)}."
                     if not outcome["mistake"] and outcome["not_counted_reason"]:
                         s["reason"] = f"{s['reason']} {outcome['not_counted_reason']}"
-                elif rc["result"] == "could_not_run":
+                elif rc["result"] in ("could_not_run", "unresolved"):
                     if unsettled and not settles:
                         s["status"] = "undecided"
                     elif covered or settles:
@@ -390,7 +390,7 @@ def _why_not(d, targets: dict, stacks: dict) -> str | None:
     if action == "recheck":
         rc = d.get("recheck")
         if not isinstance(rc, dict) or rc.get("result") not in RECHECK_RESULTS:
-            return "A re-check needs a result of pass, fail or could_not_run."
+            return "A re-check needs a result of pass, fail, could_not_run or unresolved."
         if _waiting_fix(stacks[target]) is None:
             return "There is no fix waiting for a re-check on this target."
         return None
@@ -427,7 +427,7 @@ def _needs_attention(s: dict) -> bool:
     if s["group"] != "corrected":
         return False
     return (s.get("needs_recheck", False)
-            or (s["recheck"] or {}).get("result") == "could_not_run"
+            or (s["recheck"] or {}).get("result") in ("could_not_run", "unresolved")
             or s["status"] == "undecided")
 
 
@@ -498,7 +498,7 @@ def current_state(run: dict, decisions: list) -> dict:
     mistakes["second_reader"] += sum(1 for f, _ in fixes if f["mistake"] and f["second_reader_value"])
     counts["edits_without_error"] = sum(1 for f, _ in fixes if f["edit_without_error"])
     counts["fixes_pending"] = sum(1 for f, s in fixes if s["group"] != "removed"
-                                  and (f["recheck"] is None or f["recheck"]["result"] == "could_not_run"))
+                                  and (f["recheck"] is None or f["recheck"]["result"] in ("could_not_run", "unresolved")))
 
     mistake_list = _mistake_list(run, states)
 

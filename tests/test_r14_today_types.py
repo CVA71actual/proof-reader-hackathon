@@ -102,9 +102,9 @@ def test_date_match_today_cases():
 # ---------------------------------------------------------------- one event-type word table
 
 WORD_TYPE = [
-    ("submit", "filing"), ("submission", "filing"), ("NDA", "filing"), ("BLA", "filing"), ("MAA", "filing"),
-    ("IND", "filing"), ("filed", "filing"),
-    ("approval", "regulatory_decision"), ("decision", "regulatory_decision"), ("PDUFA", "regulatory_decision"),
+    ("submit", "filing"), ("submission", "filing"), ("resubmission", "filing"),
+    ("filed", "filing"),
+    ("PDUFA", "regulatory_decision"),
     ("CHMP opinion", "regulatory_decision"),
     ("topline", "trial_results"), ("data", "trial_results"), ("readout", "trial_results"),
     ("results", "trial_results"), ("presentation of data", "trial_results"),
@@ -215,3 +215,75 @@ def test_has_word_rejects_digit_and_underscore_adjacency(text):
 @pytest.mark.parametrize("text", ["data.", "(data)", "the data, shown"])
 def test_has_word_accepts_punctuation_adjacency(text):
     assert event_checks._has_word(text, "data")
+
+
+# ---- Job 52: the word "decision" alone does not make a regulatory decision
+def test_decision_needs_a_regulator():
+    from checks.event_checks import event_type_for, type_match
+    from runs.coverage import guess_type
+    valid = "PDUFA target action date of March 12, 2027"
+    false_success = "decision to advance PN-881 into Phase 2, initiation expected early Q1 2027"
+    bare = "a decision is expected"
+    assert event_type_for(valid) == guess_type(valid) == "regulatory_decision"
+    assert event_type_for(false_success) == guess_type(false_success) == "milestone"
+    assert event_type_for(bare) == "unknown" and guess_type(bare) is None
+    assert event_type_for("FDA decision expected in Q1 2027") == "regulatory_decision"
+    assert type_match("regulatory_decision", bare).result != "pass"
+
+
+# ---- Job 52b: one word matcher: a slash is an edge, the plain plural is the word
+@pytest.mark.parametrize("sentence", [
+    "FDA decisions anticipated in 2027",
+    "CHMP decisions expected in Q1 2027",
+    "key regulatory decisions anticipated in the coming months",
+    "Potential FDA approval/launch",
+])
+def test_plural_and_slash_forms_keep_their_regulatory_anchor(sentence):
+    from checks.event_checks import event_type_for
+    from runs.coverage import guess_type
+    assert event_type_for(sentence) == guess_type(sentence) == "regulatory_decision"
+
+
+def test_regulatory_submissions_with_regulatory_decisions_is_a_decision():
+    from checks.event_checks import event_type_for
+    s = "continues to advance regulatory submissions with key regulatory decisions anticipated"
+    assert event_type_for(s) == "regulatory_decision"
+
+
+def test_bare_plural_decisions_without_a_regulator_is_unknown():
+    from checks.event_checks import event_type_for
+    from runs.coverage import guess_type
+    s = "The company expects decisions in 2027."
+    assert event_type_for(s) == "unknown" and guess_type(s) is None
+
+
+def test_fda_decision_expected_still_regulatory():
+    from checks.event_checks import event_type_for
+    assert event_type_for("FDA decision expected") == "regulatory_decision"
+
+
+# Job 52c: a regulator NEARBY is not a regulator ACTING. decision/approval are regulatory only when governed.
+_NOT_REGULATORY = [
+    "Following FDA feedback, the company made a decision to advance PN-881 into Phase 2",
+    "Following FDA feedback. The company made a decision to advance PN-881 into Phase 2",
+    "Board approval", "shareholder approval", "approval of the budget",
+    "decision expected by the FDA",    # the agency is not immediately after the preposition's noun shape (Job 52d)
+]
+_REGULATORY = [
+    "FDA decision expected", "decision by the FDA", "the FDA's decision", "FDA approval", "approval from the EMA",
+    "PDUFA target action date", "CHMP opinion", "CRL", "MAA decision", "regulatory decision",
+    "advisory committee vote",
+]
+
+
+@pytest.mark.parametrize("text", _NOT_REGULATORY)
+def test_nearby_regulator_is_not_regulatory(text):
+    assert event_checks.event_type_for(text) in ("unknown", "milestone")
+    assert event_checks.event_type_for(text, loose=True, none_as=None) in (None, "milestone")
+    assert event_checks.type_match("regulatory_decision", text).result != event_checks.PASS
+
+
+@pytest.mark.parametrize("text", _REGULATORY)
+def test_governed_decision_is_regulatory(text):
+    assert event_checks.event_type_for(text) == "regulatory_decision"
+    assert event_checks.type_match("regulatory_decision", text).result == event_checks.PASS

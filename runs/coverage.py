@@ -15,7 +15,7 @@ import re
 from datetime import date
 
 from checks import coverage
-from checks.event_checks import EVENT_WORDS, TYPE_PRIORITY, parse_exact_date
+from checks.event_checks import event_type_for, parse_exact_date
 
 SCAN_WHO = "checks.coverage"
 TITLE = "Possible event not read: "
@@ -95,17 +95,10 @@ def guess_program(sentence: str, known: list[str] | None = None) -> str | None:
     return None
 
 
-_EXTRA_WORDS = {"milestone": ("initiat", "dos", "first patient", "enroll")}   # "initiation", "dosing", "enrolling" ...
-
-
 def guess_type(sentence: str) -> str | None:
-    """The event type the sentence's words point at (the app's own words table, checks.event_checks.EVENT_WORDS):
-    the first of TYPE_PRIORITY with a word in the sentence, else a milestone word, else None."""
-    for t in (*TYPE_PRIORITY, "milestone"):
-        if any(re.search(rf"(?<![\w-]){re.escape(w)}(?:e?s|ed|ing)?(?![\w-])", sentence, re.I)
-               for w in (*EVENT_WORDS[t], *_EXTRA_WORDS.get(t, ()))):
-            return t
-    return None
+    """The event type the sentence's words point at: the app's one classifier (checks.event_checks.event_type_for),
+    with word endings allowed; None when no word fits."""
+    return event_type_for(sentence, loose=True, none_as=None)
 
 
 def in_words(text: str | None) -> str | None:

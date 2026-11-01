@@ -37,7 +37,7 @@ No other page is ever used in its place.
 from __future__ import annotations
 
 from checks import event_checks
-from checks.common import COULD_NOT_RUN, FAIL, CheckResult
+from checks.common import COULD_NOT_RUN, FAIL, UNRESOLVED, CheckResult
 from checks.selector_match import region_match, selector_match
 from checks.status import MATCHED as CELL_MATCHED
 from checks.status import check_cell
@@ -103,8 +103,15 @@ def row_checks(row: dict, source: dict, words_doc: dict | None, chosen: bool = F
 
 def could_not_run_reason(checks: list[dict]) -> str:
     """The reason of the first check that could not run, as that check gave it on the new value."""
-    first = next((c for c in checks if c["result"] == COULD_NOT_RUN), None)
+    first = (next((c for c in checks if c["result"] == COULD_NOT_RUN), None)
+             or next((c for c in checks if c["result"] == UNRESOLVED), None))
     return f"The re-check could not run: {first['reason']}" if first else COULD_NOT_RUN_FALLBACK
+
+
+def unresolved_reason(checks: list[dict]) -> str:
+    """The plain-words reason of the first unresolved check, as that check gave it."""
+    first = next((c for c in checks if c["result"] == UNRESOLVED), None)
+    return first["reason"] if first else COULD_NOT_RUN_FALLBACK
 
 
 def failed_reason(checks: list[dict]) -> str:
@@ -117,7 +124,9 @@ def recheck_result(checks: list[dict], passed: bool) -> str:
     if passed:
         return "pass"
     results = {c["result"] for c in checks}
-    return COULD_NOT_RUN if FAIL not in results and COULD_NOT_RUN in results else "fail"
+    if FAIL in results:
+        return "fail"
+    return COULD_NOT_RUN if COULD_NOT_RUN in results else UNRESOLVED if UNRESOLVED in results else "fail"
 
 
 def recheck_line(at: str, target: str, checks: list[dict], passed: bool, settles: bool = False,
@@ -125,6 +134,7 @@ def recheck_line(at: str, target: str, checks: list[dict], passed: bool, settles
     """`settles`: the fix changed the field the two readers disagreed on."""
     result = recheck_result(checks, passed)
     reason = (PASSED_REASON if result == "pass" else failed_reason(checks) if result == "fail"
+              else unresolved_reason(checks) if result == UNRESOLVED
               else reason_if_not_run or could_not_run_reason(checks))
     if settles and result == "pass":
         reason = SETTLES_PREFIX + reason

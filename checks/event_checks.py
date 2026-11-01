@@ -24,7 +24,7 @@ import calendar
 import re
 from datetime import date
 
-from checks.common import COULD_NOT_RUN, FAIL, NOT_NEEDED, PASS, CheckResult, join_words, normalize
+from checks.common import COULD_NOT_RUN, FAIL, NOT_NEEDED, PASS, UNRESOLVED, CheckResult, join_words, normalize
 from checks.selector_match import PICTURE_REASON, _valid_box, is_picture_at
 
 QUOTE_ID, QUOTE_LABEL = "quote_match", "Quote found on page"
@@ -600,40 +600,201 @@ _REFERENCE = re.compile(r"^(?:follow(?:s|ed|ing)?|compared (?:with|to)|versus|vs
 # a quote holding none of the words of the other types is a milestone ("else milestone"). Whole words only.
 EVENT_WORDS = {
     "trial_results": ("results", "data", "readout", "topline", "presentation of data", "report"),
-    "regulatory_decision": ("approval", "decision", "pdufa", "chmp opinion", "crl", "action date"),
+    "regulatory_decision": ("pdufa", "chmp opinion", "crl", "action date"),
     "launch": ("launch", "commercial availability"),
     "conference": ("conference", "symposium", "investor day", "webcast", "present", "presentation", "late-breaker"),
-    "filing": ("submit", "submitted", "submission", "nda", "bla", "maa", "ind", "filed", "filing"),
+    "filing": ("submit", "submitted", "submission", "resubmit", "resubmission", "filed", "filing",
+               "accepted for review"),
     "milestone": ("dosed", "enrolled", "initiated", "initiation", "completed", "first patient"),
 }
 EVENT_TYPES = tuple(EVENT_WORDS)
 # When one sentence holds words of several types, the first of these wins (a decision on a filing is a decision).
 TYPE_PRIORITY = ("regulatory_decision", "filing", "trial_results", "launch", "conference")
+# "decision" / "approval" are regulatory ONLY in one of these exact shapes (Job 52d), the regulator bound to the noun:
+# 1. "<AGENCY> <noun>" / "<AGENCY>'s <noun>": the agency token immediately before the noun (no adjective between);
+# 2. "<noun> by|from (the) <AGENCY>": the agency immediately after the preposition AND ending its phrase (Job 52h):
+#    the token after the agency is end-of-clause or one of _AGENCY_END. "of" never binds ("approval of the FDA
+#    submission" is the object of the noun); "from FDA feedback" is evidence, not the actor;
+# 3. "regulatory <noun>": the adjective immediately before the noun;
+# 4. fixed terms that are the event by themselves (EVENT_WORDS above, "MAA decision", "advisory committee vote").
+# Nothing else binds ("told the FDA its decision", "decision by management", "regulatory affairs team ... decision").
+# "US" / "U.S." / "the" before an agency is not part of the shape ("U.S. FDA" is one agency token).
+_AGENCIES = {("fda",), ("ema",), ("chmp",), ("mhra",), ("pmda",), ("nmpa",), ("regulator",), ("regulators",),
+             ("health", "canada"), ("european", "medicines", "agency")}
+_AGENCY_LEN = {len(a) for a in _AGENCIES}
+# Closed whitelist of words that may follow an agency that ends its phrase (any other word: no binding).
+_AGENCY_END = {"is", "are", "was", "were", "will", "would", "expected", "anticipated", "in", "on", "by", "before", "after",
+               "during", "to", "for", "of"}
+# Job 52j: "and" / "or" are not on the list: "from FDA and EMA feedback" coordinates agencies, it does not end the
+# phrase. A comma after an agency ends the phrase only when the token after the comma is itself on the list
+# ("approval by the MHRA, expected in 2027"); otherwise it continues ("from FDA, EMA and MHRA feedback").
+# An application word (BLA, NDA, MAA, sBLA, sNDA, IND, PMA, 510(k)) is never filing evidence by itself (Job 52e).
+_TOKEN_RE = re.compile(r"\w[\w'\u2019-]*")
+_CUT = re.compile(r"[.;:!?,]")
+_US_ABBR = re.compile(r"(?<![\w.])U\.S\.?(?![\w])")
+_INHERENT_RE = re.compile(r"(?<![\w-])(?:(?:advisory committee|adcomm)\s+vote|complete response letter)s?(?![\w-])", re.I)
+
+
+def _tok(t: str) -> str:
+    return re.sub(r"(?:['\u2019]s)$", "", t.lower())
+
+
+def _agency_at(tokens: list[str], i: int) -> int:
+    """If an agency starts at tokens[i] (after an optional 'the' / 'US'), the index just past it, else -1."""
+    while i < len(tokens) and tokens[i] in ("the", "us"):
+        i += 1
+    for n in _AGENCY_LEN:
+        if tuple(tokens[i:i + n]) in _AGENCIES:
+            return i + n
+    return -1
+
+
+def _scan_nouns(text: str) -> tuple[list[str], list[str]]:
+    """(bound, unbound): every decision/approval word in `text`, lowercased, split by whether a regulator is bound
+    to it by one of the shapes above. Clauses end at . ; : ! ? , but the dots of 'U.S.' are not ends."""
+    bound, unbound = [], []
+    parts = re.split(r"([.;:!?,])", _US_ABBR.sub("US", text or ""))
+    for k in range(0, len(parts), 2):
+        clause = parts[k]
+        toks = [_tok(t) for t in _TOKEN_RE.findall(clause)]
+        nxt = [_tok(t) for t in _TOKEN_RE.findall(parts[k + 2])][:1] if k + 2 < len(parts) else []
+        comma_cont = k + 1 < len(parts) and parts[k + 1] == "," and bool(nxt) and nxt[0] not in _AGENCY_END
+        for i, t in enumerate(toks):
+            noun = t.rstrip("s")
+            if noun not in ("decision", "approval"):
+                continue
+            ok = toks[i - 1:i] == ["regulatory"] or (noun == "decision" and toks[i - 1:i] == ["maa"])
+            ok = ok or any(tuple(toks[max(0, i - n):i]) in _AGENCIES for n in _AGENCY_LEN)
+            if not ok and toks[i + 1:i + 2] in (["by"], ["from"]):
+                end = _agency_at(toks, i + 2)
+                ok = end != -1 and ((end >= len(toks) and not comma_cont) or
+                                    (end < len(toks) and toks[end] in _AGENCY_END))
+            (bound if ok else unbound).append(t)
+    return bound, unbound
+
+
+def _bound_nouns(text: str) -> list[str]:
+    return _scan_nouns(text)[0]
+
+
+def _regulatory_extra(text: str) -> list[str]:
+    """Regulatory evidence beyond the fixed EVENT_WORDS: governed decision/approval words, inherent phrases."""
+    return [*_bound_nouns(text), *(m.group(0).lower() for m in _INHERENT_RE.finditer(text))]
+
+
 _ANCHORS = {
     **{t.replace("_", " "): w for t, w in EVENT_WORDS.items()},
+    "regulatory decision": (*EVENT_WORDS["regulatory_decision"], "approval", "decision"),
     "earnings": ("results", "earnings", "revenue", "net loss", "quarter ended", "year ended"),
     "other": (),
 }
+_GOVERNED = ("approval", "decision")
 
 
 def _word_re(word: str) -> re.Pattern:
-    """A fixed word as a whole word. The edge of a word is anything that is not a letter, digit, underscore, hyphen
-    or slash: data-room, data/set, data2, data_code are not 'data'; 'data.' and '(data)' are."""
-    return re.compile(rf"(?<![\w/-]){re.escape(word)}(?![\w/-])", re.I)
+    """A fixed word as a whole word, or its plain plural (-s). The edge of a word is anything that is not a letter,
+    digit, underscore or hyphen (a slash is an edge): data-room, data2, data_code are not 'data'; 'data.', '(data)'
+    and 'approval/launch' are."""
+    return re.compile(rf"(?<![\w-]){re.escape(word)}s?(?![\w-])", re.I)
+
+
+# Job 52i (CVA ruling 2026-10-31): "Submission is mentioned, but a filing event is not established." A filing noun
+# (submission, resubmission, filing, "accepted for review") establishes filing only when it ENDS its phrase: the next
+# token is end-of-clause or one of _AGENCY_END (the same closed list as 52h, no new list). Any other next word
+# ("submission budget", "filing strategy") makes it a mention: no type is inferred. Job 52k: a plural noun
+# (submissions, resubmissions, filings) is read by exactly the same rule ("submissions budget", "regulatory
+# submissions planned for 2027" are mentions; "submissions are expected" is filing). "are" was added to _AGENCY_END
+# as the missing form of is/was/were (operator ruling 2026-10-31); nothing else was added. The verb forms (submit, submitted, resubmit, filed) take an object and are
+# not affected ("submitted the BLA.").
+_FILING_NOUNS = ("submission", "resubmission", "filing")
+_ACCEPTED = ("accepted", "for", "review")
+
+
+def _filing_scan(text: str | None) -> tuple[list[str], list[str]]:
+    """(established, mentioned): filing nouns (and 'accepted for review') in `text`, lowercased in their table form,
+    split by whether they end their phrase."""
+    est, men = [], []
+    for clause in _CUT.split(_US_ABBR.sub("US", text or "")):
+        toks = [t.lower() for t in _TOKEN_RE.findall(clause)]
+        for i, t in enumerate(toks):
+            if t in _FILING_NOUNS or (t.endswith("s") and t[:-1] in _FILING_NOUNS):
+                word, end = t, i + 1     # Job 52k: singular and plural go through the same phrase-end rule
+            elif tuple(toks[i:i + 3]) == _ACCEPTED:
+                word, end = "accepted for review", i + 3
+            else:
+                continue
+            if end >= len(toks) or toks[end] in _AGENCY_END:
+                est.append(word[:-1] if word.endswith("s") and word[:-1] in _FILING_NOUNS else word)
+            else:
+                men.append(word)         # the quote's own form, so the sentence can say "Submissions are"
+    return est, men
 
 
 def _has_word(text: str, word: str) -> bool:
-    return bool(_word_re(word).search(text))
+    if word in _GOVERNED:      # a decision/approval word counts only with a regulator governing it
+        return any(n.rstrip("s") == word for n in _bound_nouns(text))
+    if word in _FILING_NOUNS or word == "accepted for review":
+        return word in _filing_scan(text)[0]
+    return bool(_word_re(word).search(text or ""))
 
 
-def event_type_for(text: str | None) -> str:
-    """Assign a controlled event type from quoted words; use unknown when no fixed anchor fits."""
-    for t in TYPE_PRIORITY:
-        if any(_has_word(text or "", w) for w in EVENT_WORDS[t]):
+def _type_hit(text: str, t: str, suffixes: bool = False, extra: tuple[str, ...] = ()) -> bool:
+    words = (*EVENT_WORDS[t], *extra)
+    if t == "regulatory_decision" and _regulatory_extra(text):
+        return True
+    if suffixes and t != "filing":   # "initiation", "dosing", "enrolling": the word with a plural / past / -ing ending
+        # (filing words are always read by the phrase rule of Job 52i, loose or not)
+        return any(re.search(rf"(?<![\w-]){re.escape(w)}(?:e?s|ed|ing)?(?![\w-])", text, re.I) for w in words)
+    return any(_has_word(text, w) for w in words)
+
+
+def event_type_for(text: str | None, *, loose: bool = False, none_as: str | None = "unknown") -> str | None:
+    """The ONE classifier: a controlled event type from quoted words (first of TYPE_PRIORITY, else a milestone word,
+    else `none_as`). decision/approval are regulatory only when a regulator governs them (see _bound_nouns).
+    `loose`: also match word endings (coverage's guess)."""
+    text = text or ""
+    extra = {"milestone": ("initiat", "dos", "first patient", "enroll")} if loose else {}
+    for t in (*TYPE_PRIORITY, "milestone"):
+        if _type_hit(text, t, loose, extra.get(t, ())):
             return t
-    if any(_has_word(text or "", w) for w in EVENT_WORDS["milestone"]):
-        return "milestone"
-    return "unknown"
+    return none_as
+
+
+AGENCY_NOT_ESTABLISHED = "agency_not_established"
+EVENT_TYPE_NOT_ESTABLISHED = "event_type_not_established"
+EVENT_MENTIONED_NOT_ESTABLISHED = "event_mentioned_not_established"
+_REASON_WORDS = {AGENCY_NOT_ESTABLISHED: "approval named, agency not named", EVENT_TYPE_NOT_ESTABLISHED: "no event named"}
+
+
+def event_type_reason(text: str | None) -> str | None:
+    """Why the type (or part of it) is not established, from the quote's words alone; None when nothing is missing.
+    agency_not_established: a decision/approval word is present but no agency is bound to it (the passage supports an
+    approval/decision event, the actor is not established; a type other words support, e.g. launch, stays).
+    event_type_not_established: no event word supports any type."""
+    bound, unbound = _scan_nouns(text)
+    if event_type_for(text) == "unknown" and _filing_scan(text)[1]:    # Job 52i: a filing word is only mentioned
+        return EVENT_MENTIONED_NOT_ESTABLISHED
+    if unbound and not bound:      # a reason only when NO noun in the quote is bound
+        return AGENCY_NOT_ESTABLISHED
+    return EVENT_TYPE_NOT_ESTABLISHED if event_type_for(text) == "unknown" else None
+
+
+def reason_words(reason: str | None, text: str | None = None) -> str:
+    """The reason in plain words for the person ("approval named, agency not named" / "no event named")."""
+    if reason == EVENT_MENTIONED_NOT_ESTABLISHED:
+        return mentioned_sentence(text)
+    words = _REASON_WORDS.get(reason or "", "")
+    unbound = _scan_nouns(text)[1] if text else []
+    return words.replace("approval", "decision", 1) if reason == AGENCY_NOT_ESTABLISHED and unbound and \
+        not any(u.startswith("approval") for u in unbound) else words
+
+
+def mentioned_sentence(text: str | None) -> str:
+    """CVA's sentence with the quote's own word: "Submission is mentioned, but a filing event is not established." """
+    men = _filing_scan(text)[1] if text else []
+    word = men[0] if men else "submission"
+    verb = "are" if word.endswith("s") and word[:-1] in _FILING_NOUNS else "is"
+    return f"{word.capitalize()} {verb} mentioned, but a filing event is not established."
 
 
 _ACRONYMS = ("nda", "bla", "maa", "ind", "pdufa", "crl", "chmp")
@@ -644,7 +805,9 @@ def type_guide(types: tuple[str, ...] | None = None) -> str:
     the types the run asks for (default all)."""
     types = types or EVENT_TYPES
     caps = lambda w: " ".join(x.upper() if x in _ACRONYMS else x for x in w.split(" "))
-    lines = [f'  {t}: {", ".join(caps(w) for w in EVENT_WORDS[t])}' for t in TYPE_PRIORITY if t in types]
+    lines = [f'  {t}: {", ".join(caps(w) for w in EVENT_WORDS[t])}'
+             + (", FDA/EMA decision or approval (a regulator must decide; board or shareholder approval is not)"
+                if t == "regulatory_decision" else "") for t in TYPE_PRIORITY if t in types]
     if "milestone" in types:
         lines.append("  milestone: anything else (for example " + ", ".join(EVENT_WORDS["milestone"][:4]) + ")")
     return "\n".join(lines)
@@ -679,8 +842,9 @@ def event_anchors(event_type: str | None, title: str | None = None, program: str
 
 
 def _anchor_in(text: str, anchors: list[str]) -> str | None:
+    # An anchor only finds WHERE the event is named; a mentioned filing word (Job 52i) still locates its clause.
     for a in anchors:
-        if _has_word(text, a):
+        if _has_word(text, a) or (a in (*_FILING_NOUNS, "accepted for review") and _word_re(a).search(text or "")):
             return a
     return None
 
@@ -992,7 +1156,10 @@ def group_key(group: str) -> str:
 
 
 def _words_in(quote: str, group: str) -> list[str]:
-    return [w for w in _ANCHORS[group] if _has_word(quote, w)]
+    found = [w for w in _ANCHORS[group] if _has_word(quote, w)]
+    if group == "regulatory decision":
+        found += [w for w in _INHERENT_RE.findall(quote.lower()) if w not in found]
+    return found
 
 
 def type_match(event_type: str | None, quote: str | None) -> CheckResult:
@@ -1016,6 +1183,12 @@ def type_match(event_type: str | None, quote: str | None) -> CheckResult:
         return result(NOT_NEEDED, f"The quote holds words of both milestone and trial results ({both}), so there is "
                                   f"nothing decisive to compare the type with.", both)
     own = _words_in(quote, group)
+    if not own and group == "filing" and _filing_scan(quote)[1]:
+        # Job 52i: a filing word is mentioned but does not end its phrase: no filing event established, unresolved
+        return result(UNRESOLVED, mentioned_sentence(quote), None)
+    if not own and group == "regulatory decision" and _scan_nouns(quote)[1]:
+        # a decision/approval event is named but no agency is bound to it: neither right nor wrong, unresolved
+        return result(UNRESOLVED, reason_words(AGENCY_NOT_ESTABLISHED, quote) + ".", None)
     first = event_type_for(quote)
     if own and first not in (group_key(group), "milestone") and _words_in(quote, first.replace("_", " ")):
         return result(FAIL, f"The quote's words ({', '.join(_words_in(quote, first.replace('_', ' ')))}) put it first "
@@ -1028,8 +1201,8 @@ def type_match(event_type: str | None, quote: str | None) -> CheckResult:
         found = "; ".join(f"{g}: {', '.join(w)}" for g, w in other.items())
         first_group, first_words = next(iter(other.items()))
         return result(FAIL, f"The quote's words ({', '.join(first_words)}) point to {first_group}, not {group}.", found)
-    return result(NOT_NEEDED, f"The quote holds no fixed word for {group} or any other kind of event, so there is "
-                              f"nothing to compare the type with.")
+    return result(NOT_NEEDED, f"{_REASON_WORDS[EVENT_TYPE_NOT_ESTABLISHED].capitalize()}: the quote holds no fixed word "
+                              f"for {group} or any other kind of event, so there is nothing to compare the type with.")
 
 
 # ---------------------------------------------------------------- house rule

@@ -289,6 +289,8 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         trail.append({"step": "Box located by code", "tag": "Code", "who": BUILDER,
                       "text": f"The quote is printed on the page, so the box is the words found there; "
                               f"{was} was only a hint.", "at": at})
+    if why := event_checks.event_type_reason(row["quote"]):    # carried on the row only when something is missing
+        row["type_reason"] = why
     results = recheck.row_checks(row, source, words_doc)
     if tool_type and tool_type != row["event_type"]:
         # The reader asked the type tool and handed over another type. The row keeps the hand-over; the tool's

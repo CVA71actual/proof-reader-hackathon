@@ -1,11 +1,11 @@
 """One word-boundary rule for every fixed-word test: the edge of a word is anything that is not a letter, digit,
-underscore, hyphen or slash."""
+underscore or hyphen (Job 52b: a slash is an edge)."""
 import pytest
 
 from checks.event_checks import date_match, event_type_for, type_match
 
-NOT_THE_WORD = ["data-room", "data/set", "data2", "data_code", "_data", "2data"]
-THE_WORD = ["data.", "(data)", "data,", "the data"]
+NOT_THE_WORD = ["data-room", "data2", "data_code", "_data", "2data"]
+THE_WORD = ["data.", "(data)", "data,", "the data", "data/set"]
 
 
 @pytest.mark.parametrize("w", NOT_THE_WORD)

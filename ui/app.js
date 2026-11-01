@@ -7,7 +7,7 @@
   var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed',
                        unreadable: 'unreadable', undecided: 'undecided' };
   var CHECK_WORDS = { pass: 'passed', fail: 'failed', could_not_run: 'could not run',
-                      not_needed: 'not needed' };
+                      not_needed: 'not needed', unresolved: 'unresolved' };
   var GROUP_NAMES = { kept: 'Checked and kept', corrected: 'Corrected', removed: 'Checked and removed',
                       unverified: 'Unverified', open: 'Still open' };
   var GROUP_ORDER = ['kept', 'corrected', 'removed', 'unverified', 'open'];
@@ -229,7 +229,7 @@
   function needsAttention(t) {
     if (t.group === 'open' || t.group === 'unverified') return true;
     if (t.group !== 'corrected') return false;
-    return !!t.needs_recheck || (t.recheck && t.recheck.result === 'could_not_run') || t.status === 'undecided';
+    return !!t.needs_recheck || (t.recheck && (t.recheck.result === 'could_not_run' || t.recheck.result === 'unresolved')) || t.status === 'undecided';
   }
   function rowTarget(row) { return detail.state.targets[row.id] || {}; }
   function rowOf(id) {
@@ -1359,9 +1359,11 @@
 
     appendChecks(hasFix ? 'Checks on current value · by Code' : 'Checks · by Code', current,
       t.needs_recheck ? 'No checks ran on the current value yet; re-check pending.'
-        : (t.recheck && t.recheck.result === 'could_not_run'
-          ? 'The re-check could not run; no checks are recorded for the current value.'
-          : 'No checks ran for this row.'));
+        : (t.recheck && t.recheck.result === 'unresolved'
+          ? 'The re-check is unresolved; no checks are recorded for the current value.'
+          : (t.recheck && t.recheck.result === 'could_not_run'
+            ? 'The re-check could not run; no checks are recorded for the current value.'
+            : 'No checks ran for this row.')));
     if (history.length) appendChecks('Original checks · history (before edit)', history,
       'No original checks were recorded.');
     return sec;

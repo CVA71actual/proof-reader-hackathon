@@ -156,7 +156,10 @@ def _check_rows(checks: list[dict]) -> list[dict]:
 def _check_status_text(state: dict) -> str | None:
     if state.get("needs_recheck"):
         return "Re-check pending; no checks are recorded for the current value."
-    if (state.get("recheck") or {}).get("result") == "could_not_run":
+    rc_result = (state.get("recheck") or {}).get("result")
+    if rc_result == "unresolved":
+        return "Re-check unresolved; the row remains unresolved."
+    if rc_result == "could_not_run":
         if state.get("effective_checks"):
             return "Re-check incomplete; the checks below ran on the current value, and the row remains unresolved."
         return "Re-check could not run; no checks are recorded for the current value."
@@ -330,7 +333,7 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
                     entry["edit_status"] = "The old value passed its checks; no mistake was demonstrated."
                 elif fx.get("before_undemonstrated"):
                     entry["edit_status"] = "The old value could not be assessed; no mistake was demonstrated."
-                elif not rc or rc.get("result") == "could_not_run":
+                elif not rc or rc.get("result") in ("could_not_run", "unresolved"):
                     entry["edit_status"] = "This change was not demonstrated to be a mistake."
                 else:
                     entry["edit_status"] = "The checks did not demonstrate a mistake."

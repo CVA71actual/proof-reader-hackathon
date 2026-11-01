@@ -66,15 +66,14 @@ def _node(script: str) -> str:
 # ---------------------------------------------------------------- whole words
 
 
-def test_a_hyphen_or_a_slash_is_not_the_edge_of_the_event_word():
-    """'data-room' is not the word 'data', and neither is 'data/set'. The date check still passes: the clause
-    is treated as the event's. Gap 8: the date belongs to the event's own word, not to a word glued on with
-    a hyphen or a slash."""
+def test_a_hyphen_is_not_the_edge_of_the_event_word_but_a_slash_is():
+    """'data-room' is not the word 'data'; the date check cannot tell and stays could_not_run. Job 52b: a slash
+    IS a word edge ('approval/launch'), so 'data/set' holds the word 'data'."""
     room = date_match("Q4 2027", "2027-10-01", "The data-room opens in Q4 2027.", "2027-12-31",
                       event_type="trial_results")
     slash = date_match("Q4 2027", "2027-10-01", "The data/set arrives in Q4 2027.", "2027-12-31",
                        event_type="trial_results")
-    assert (room.result, slash.result) == ("could_not_run", "could_not_run")
+    assert (room.result, slash.result) == ("could_not_run", "pass")
 
 
 def test_the_type_check_uses_the_same_whole_word_boundary():

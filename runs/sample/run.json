@@ -7426,7 +7426,7 @@
      "label": "Event type matches the quote",
      "kind": "Code",
      "result": "not_needed",
-     "reason": "The quote holds no fixed word for regulatory decision or any other kind of event, so there is nothing to compare the type with.",
+     "reason": "No event named: the quote holds no fixed word for regulatory decision or any other kind of event, so there is nothing to compare the type with.",
      "compared": {
       "looked_for": "regulatory_decision",
       "found": null
@@ -7507,7 +7507,7 @@
      "step": "Checked",
      "tag": "Code",
      "who": "type_match",
-     "text": "Event type matches the quote: not needed. The quote holds no fixed word for regulatory decision or any other kind of event, so there is nothing to compare the type with.",
+     "text": "Event type matches the quote: not needed. No event named: the quote holds no fixed word for regulatory decision or any other kind of event, so there is nothing to compare the type with.",
      "at": "2026-10-27T15:09:14+00:00"
     },
     {

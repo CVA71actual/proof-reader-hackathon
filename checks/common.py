@@ -9,7 +9,8 @@ PASS = "pass"
 FAIL = "fail"
 COULD_NOT_RUN = "could_not_run"
 NOT_NEEDED = "not_needed"  # the check does not apply to this item (e.g. no exact date was claimed)
-RESULTS = (PASS, FAIL, COULD_NOT_RUN, NOT_NEEDED)
+UNRESOLVED = "unresolved"  # the quote supports the event but not who acts (a decision/approval with no agency named)
+RESULTS = (PASS, FAIL, COULD_NOT_RUN, NOT_NEEDED, UNRESOLVED)
 
 
 @dataclass(frozen=True)
