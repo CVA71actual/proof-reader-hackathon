@@ -23,6 +23,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import sys
 import time
 import urllib.error
@@ -407,9 +408,13 @@ def render_html_to_pdf(html_path: Path, pdf_path: Path, chrome: Path | None = No
     width_in, height_in = paper_size_for_html(html_path)
     print_html = _print_html_with_page_size(html_path, width_in, height_in)
     url = print_html.resolve().as_uri()
+    profile = tempfile.TemporaryDirectory(prefix="proof-reader-chrome-", ignore_cleanup_errors=True)
     cmd = [
         str(chrome),
         "--headless",
+        f"--user-data-dir={profile.name}",
+        "--no-first-run",
+        "--no-default-browser-check",
         "--disable-gpu",
         "--no-pdf-header-footer",
         f"--print-to-pdf={pdf_path}",
@@ -423,6 +428,7 @@ def render_html_to_pdf(html_path: Path, pdf_path: Path, chrome: Path | None = No
     except subprocess.TimeoutExpired as e:
         raise FetchError(f"Chrome timed out rendering {html_path.name}.") from e
     finally:
+        profile.cleanup()
         try:
             print_html.unlink(missing_ok=True)
         except OSError:
