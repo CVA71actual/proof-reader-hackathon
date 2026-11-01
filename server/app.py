@@ -219,8 +219,11 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     transcriber = transcriber or voice.transcribe
     voice_locks: dict[str, asyncio.Lock] = {}   # one lock per run_id: voice calls on a run go one at a time
     store = RunStore(runs_dir)
+    # A production second reader carries mutable routing flags and the current
+    # job's fallback callback. Never share it across independently started jobs.
+    default_second_for_job = second_reader == "default" and reader is None
     if second_reader == "default":
-        second_reader = SecondReader() if reader is None else None
+        second_reader = None
     if wonder_reader == "default":
         wonder_reader = WonderReader() if reader is None else None
     if sam_reader == "default":
@@ -228,12 +231,13 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     reader = reader or LiveReader()
 
     def start_job(run_id: str) -> None:
+        job_second = SecondReader() if default_second_for_job else second_reader
         if background:
-            threading.Thread(target=jobs.run_job, args=(store.runs_dir, run_id, reader, second_reader, coverage_as_of, wonder_reader,
+            threading.Thread(target=jobs.run_job, args=(store.runs_dir, run_id, reader, job_second, coverage_as_of, wonder_reader,
                                    sam_reader, index),
                              daemon=True).start()
         else:
-            jobs.run_job(store.runs_dir, run_id, reader, second_reader, coverage_as_of, wonder_reader, sam_reader,
+            jobs.run_job(store.runs_dir, run_id, reader, job_second, coverage_as_of, wonder_reader, sam_reader,
                          index)
 
     validator = Draft202012Validator(json.loads(DECISION_SCHEMA.read_text()))
