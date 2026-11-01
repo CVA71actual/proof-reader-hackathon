@@ -6,6 +6,7 @@ artifacts and makes no model calls. The old results remain attached as history.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -74,6 +75,24 @@ def bind_on_load(run: dict, run_dir: Path, *, refuse_invalid_artifact: bool = Fa
                                                       consumed_artifact=consumed)
                 cell["status"] = checked["status"]
     return run
+
+
+def list_input_stamp(run_bytes: bytes, run: dict, decisions_bytes: bytes) -> str:
+    """Key a run-list summary to every persisted input that can change its bound state."""
+    from runs.claim_assessment import checker_version
+
+    pages = []
+    for source in run.get("sources", []):
+        for page in source.get("pages", []):
+            pages.append({"source_id": source.get("id"), "page_number": page.get("page_number"),
+                          "image": page.get("image"), "image_sha256": page.get("image_sha256"),
+                          "words": page.get("words"), "words_sha256": page.get("words_sha256"),
+                          "derived_words": page.get("derived_words")})
+    payload = {"run_sha256": hashlib.sha256(run_bytes).hexdigest(),
+               "decisions_sha256": hashlib.sha256(decisions_bytes).hexdigest(),
+               "checker_version": checker_version("selector_match"), "pages": pages}
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def load_bound_run(run_dir: Path) -> dict:

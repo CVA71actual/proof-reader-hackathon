@@ -79,6 +79,116 @@ def test_list_runs(client):
     assert runs["demo"]["counts"]["cells"]["kept"] == 69
 
 
+def test_list_runs_reuses_bound_summary_until_an_input_changes(client, runs_dir, monkeypatch):
+    from runs import check_load
+    from runs import claim_assessment
+
+    real_bind = check_load.bind_on_load
+    calls = []
+
+    def counted_bind(run, run_dir, **kwargs):
+        calls.append(Path(run_dir).name)
+        return real_bind(run, run_dir, **kwargs)
+
+    monkeypatch.setattr(check_load, "bind_on_load", counted_bind)
+    client.get("/api/runs").raise_for_status()
+    first_count = len(calls)
+    assert first_count == 2
+    client.get("/api/runs").raise_for_status()
+    assert len(calls) == first_count
+
+    # A changed checker version also makes the old bound summary ineligible.
+    monkeypatch.setattr(claim_assessment, "checker_version", lambda _name: "new-checker-version")
+    client.get("/api/runs").raise_for_status()
+    first_count += 2
+    assert len(calls) == first_count
+
+    # A single-run GET retains its normal fresh bind path.
+    single = client.get("/api/runs/sample")
+    single.raise_for_status()
+    assert len(calls) == first_count + 2
+
+    # A new, correctly declared words artifact invalidates only that run's list entry.
+    run_path = runs_dir / "sample" / "run.json"
+    run = json.loads(run_path.read_text())
+    page = run["sources"][0]["pages"][0]
+    words_path = runs_dir / "sample" / page["words"]
+    words = json.loads(words_path.read_text())
+    words_path.write_text(json.dumps(words, indent=1) + "\n")
+    page["words_sha256"] = hashlib.sha256(words_path.read_bytes()).hexdigest()
+    run_path.write_text(json.dumps(run, indent=1) + "\n")
+    before_words_list = len(calls)
+    client.get("/api/runs").raise_for_status()
+    assert len(calls) == before_words_list + 1
+
+    # A changed decisions artifact also invalidates its cached summary.
+    decisions_path = runs_dir / "sample" / "decisions.jsonl"
+    decisions_path.write_bytes(decisions_path.read_bytes() + b"\n")
+    before_decisions_list = len(calls)
+    client.get("/api/runs").raise_for_status()
+    assert len(calls) == before_decisions_list + 1
+
+    # A cache hit never serves old current-state counts after a page artifact is tampered with.
+    page = json.loads(run_path.read_text())["sources"][0]["pages"][0]
+    image_path = runs_dir / "sample" / page["image"]
+    image = bytearray(image_path.read_bytes())
+    image[len(image) // 2] ^= 1
+    image_path.write_bytes(image)
+    before_refusal = len(calls)
+    listed = {item["id"]: item for item in client.get("/api/runs").json()}
+    assert "refused" in listed["sample"] and "does not match" in listed["sample"]["refused"]
+    assert len(calls) == before_refusal
+
+
+def _count_binds(monkeypatch):
+    from runs import check_load
+
+    real_bind = check_load.bind_on_load
+    calls = []
+
+    def counted_bind(run, run_dir, **kwargs):
+        calls.append(Path(run_dir).name)
+        return real_bind(run, run_dir, **kwargs)
+
+    monkeypatch.setattr(check_load, "bind_on_load", counted_bind)
+    return calls
+
+
+@pytest.mark.parametrize("derived", [{"file": None, "sha256": "0" * 64}, {"sha256": "0" * 64},
+                                     {"file": "x.json"}, "not-a-dict"])
+def test_list_runs_refuses_only_the_run_with_malformed_derived_words(client, runs_dir, derived):
+    # Warm the cache for both runs first, so the malformed run is met on the cache-hit path.
+    client.get("/api/runs").raise_for_status()
+    run_path = runs_dir / "sample" / "run.json"
+    run = json.loads(run_path.read_text())
+    run["sources"][0]["pages"][0]["derived_words"] = derived
+    run_path.write_text(json.dumps(run, indent=1) + "\n")
+    for _ in range(2):  # the first call after the change, then a second (warm) call
+        r = client.get("/api/runs")
+        assert r.status_code == 200
+        listed = {item["id"]: item for item in r.json()}
+        assert set(listed) == {"demo", "sample"}
+        assert listed["sample"] == {"id": "sample",
+                                    "refused": "The page's derived words artifact has no file or hash recorded."}
+        assert "refused" not in listed["demo"] and listed["demo"]["counts"]["cells"]["kept"] == 69
+
+
+def test_decision_post_then_list_rebinds_only_that_run(client, runs_dir, monkeypatch):
+    calls = _count_binds(monkeypatch)
+    client.get("/api/runs").raise_for_status()
+    assert sorted(calls) == ["demo", "sample"]
+    client.get("/api/runs").raise_for_status()
+    assert len(calls) == 2
+    assert post(client, "e1", "keep").status_code == 200
+    before_list = len(calls)
+    listed = {item["id"]: item for item in client.get("/api/runs").json()}
+    assert calls[before_list:] == ["sample"]
+    assert listed["sample"]["counts"]["rows"]["kept"] >= 1 and "refused" not in listed["demo"]
+    before_warm = len(calls)
+    client.get("/api/runs").raise_for_status()
+    assert len(calls) == before_warm
+
+
 def test_list_runs_keeps_other_runs_available_when_state_refuses_one(client, monkeypatch):
     import server.app as app_module
 

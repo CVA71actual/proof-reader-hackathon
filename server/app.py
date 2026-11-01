@@ -118,7 +118,42 @@ class RunStore:
         return {page[key]: page.get(f"{key}_sha256") for src in run.get("sources", [])
                 for page in src.get("pages", []) for key in ("image", "words") if page.get(key)}
 
-    def decisions(self, run_id: str, *, refresh_rechecks: bool = True) -> list:
+    def list_stamp(self, run_id: str) -> str:
+        """Verify saved evidence, then fingerprint the run-list inputs without re-running checks."""
+        d = self.run_dir(run_id)
+        if (d / "id_repairs.pending.json").exists():
+            raise HTTPException(409, "This run has an interrupted ID repair and is not served until repair completes.")
+        run_path = d / "run.json"
+        run_bytes = run_path.read_bytes()
+        run = json.loads(run_bytes)
+        try:
+            require_unique_target_ids(run)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        # A cache hit still validates the exact saved bytes, but avoids parsing each page.
+        # A miss goes through run(), which performs the full verified-artifact load.
+        for source in run.get("sources", []):
+            for page in source.get("pages", []):
+                try:
+                    if page.get("image"):
+                        sources.load_page_image_evidence(d, page)
+                    if page.get("words"):
+                        sources.load_page_artifact_bytes(d, page["words"], page.get("words_sha256"))
+                    if page.get("derived_words"):
+                        derived = page["derived_words"]
+                        # Same refusal as sources.load_page_evidence: refuse this run only.
+                        if not isinstance(derived, dict) or not derived.get("file") or not derived.get("sha256"):
+                            raise sources.SourcesError("The page's derived words artifact has no file or hash recorded.")
+                        sources.load_page_artifact_bytes(d, derived["file"], derived["sha256"])
+                except sources.SourcesError as exc:
+                    raise HTTPException(409, str(exc)) from exc
+        decisions_path = d / "decisions.jsonl"
+        with DECISIONS_LOCK:
+            decisions_bytes = decisions_path.read_bytes() if decisions_path.is_file() else b""
+        from runs.check_load import list_input_stamp
+        return list_input_stamp(run_bytes, run, decisions_bytes)
+
+    def decisions(self, run_id: str, *, refresh_rechecks: bool = True, run: dict | None = None) -> list:
         f = self.run_dir(run_id) / "decisions.jsonl"
         if not f.is_file():
             return []
@@ -126,7 +161,8 @@ class RunStore:
         if not refresh_rechecks:
             return decisions
         from runs.check_load import bind_decisions_on_load
-        return bind_decisions_on_load(self.run(run_id), decisions, self.run_dir(run_id))
+        return bind_decisions_on_load(run if run is not None else self.run(run_id), decisions,
+                                      self.run_dir(run_id))
 
     def append(self, run_id: str, lines: list[dict]) -> None:
         f = self.run_dir(run_id) / "decisions.jsonl"
@@ -219,6 +255,7 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     transcriber = transcriber or voice.transcribe
     voice_locks: dict[str, asyncio.Lock] = {}   # one lock per run_id: voice calls on a run go one at a time
     store = RunStore(runs_dir)
+    list_cache: dict[str, tuple[str, dict]] = {}
     # A production second reader carries mutable routing flags and the current
     # job's fallback callback. Never share it across independently started jobs.
     default_second_for_job = second_reader == "default" and reader is None
@@ -253,23 +290,32 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         out = []
         for run_id in store.ids():
             try:
+                stamp = store.list_stamp(run_id)
+                cached = list_cache.get(run_id)
+                if cached and cached[0] == stamp:
+                    out.append(dict(cached[1]))
+                    continue
                 run = store.run(run_id)
             except HTTPException as refused:
                 out.append({"id": run_id, "refused": refused.detail})
                 continue
             meta = run.get("run", {})
             with DECISIONS_LOCK:
-                decisions = store.decisions(run_id)
+                decisions = store.decisions(run_id, run=run)
             try:
                 state = current_state(run, decisions)
             except ValueError as refused:
                 out.append({"id": run_id, "refused": str(refused)})
                 continue
-            out.append({"id": run_id, "number": meta.get("number"), "label": meta.get("label"),
-                        "sample": meta.get("sample"), "started_at": meta.get("started_at"),
-                        "finished_at": meta.get("finished_at"), "status": meta.get("status"),
-                        "as_of_note": as_of_note(run), "counts": state["counts"],
-                        "unresolved": state["unresolved"]})
+            item = {"id": run_id, "number": meta.get("number"), "label": meta.get("label"),
+                    "sample": meta.get("sample"), "started_at": meta.get("started_at"),
+                    "finished_at": meta.get("finished_at"), "status": meta.get("status"),
+                    "as_of_note": as_of_note(run), "counts": state["counts"],
+                    "unresolved": state["unresolved"]}
+            list_cache[run_id] = (stamp, item)
+            out.append(item)
+        for stale_id in set(list_cache) - set(store.ids()):
+            list_cache.pop(stale_id, None)
         return out
 
     @app.post("/api/runs/new", status_code=202)
