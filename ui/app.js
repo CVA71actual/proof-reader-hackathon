@@ -3750,7 +3750,8 @@
       return v >= 0.01 ? '$' + Number(v).toFixed(2) : money(v);
     }
     if (meta.spend_usd !== null && meta.spend_usd !== undefined) {
-      kv('Spend', usd2(meta.spend_usd));
+      var spendMark = unpricedMark(meta, detail.run.unknown_cost_accepted);
+      kv('Spend', usd2(meta.spend_usd) + (spendMark ? ' (' + spendMark + ')' : ''));
     }
     if (st.cost_per_kept_row_usd !== null && st.cost_per_kept_row_usd !== undefined) {
       kv('Cost per kept row', usd2(st.cost_per_kept_row_usd));
@@ -3921,7 +3922,7 @@
     // the stop sentence wears the warm box only when it needs you; a done
     // run's 'Read N pages' summary is plain text
     if (meta.status_reason) {
-      host.append(el('div', JOB_PAUSABLE.indexOf(st) >= 0 ? 'jb-stop' : 'jb-sub', jobReason(st, meta)));
+      host.append(el('div', JOB_PAUSABLE.indexOf(st) >= 0 ? 'jb-stop' : 'jb-sub', jobReason(st, meta, detail.run.unknown_cost_accepted)));
     }
     if (JOB_PAUSABLE.indexOf(st) >= 0) {
       var limitInput = null;
@@ -3970,16 +3971,29 @@
   // turn-limit pause can coincide with spend at the limit; neither is a limit
   // stop and both pass through untouched.
   var JOB_LIMIT_STOP = 'Stopped at the spending limit. Raise the limit and press Resume to read more.';
-  function jobReason(st, meta) {
+  // Job 51e: the unpriced-call marker, the same two strings as server/jobs.py
+  // unpriced_marker — 'cost unknown' until the person accepts every unpriced
+  // call, then 'limit bounds counted spend'. '' when no call is unpriced.
+  // `accepted`: GET /api/runs/{id}'s unknown_cost_accepted (from job.json).
+  function unpricedMark(meta, accepted) {
+    var n = meta.unpriced_calls;
+    if (typeof n !== 'number' || !(n > 0)) return '';
+    var acc = typeof accepted === 'number' && accepted > 0 ? accepted : 0;
+    return n + ' unpriced call(s); ' + (acc >= n ? 'limit bounds counted spend' : 'cost unknown');
+  }
+  function jobReason(st, meta, accepted) {
     var sr = meta.status_reason;
     if (JOB_PAUSABLE.indexOf(st) >= 0 &&
         typeof sr === 'string' && sr.indexOf('Stopped at the spending limit') === 0) {
-      return JOB_LIMIT_STOP;
+      sr = JOB_LIMIT_STOP;      // Job 51e: no early return — the unpriced marker still follows
+    } else {
+      // G8-5: 'Read 114 pages: 96 rows, 0 values.' — the values count is a code
+      // word to a first-time reader; the plain summary is 'Read N pages · M rows'
+      var m = /^Read ([\d,]+) pages?: ([\d,]+) rows?, [\d,]+ values\.(.*)$/.exec(sr || '');
+      if (m) sr = 'Read ' + m[1] + ' pages · ' + m[2] + ' rows' + m[3];
     }
-    // G8-5: 'Read 114 pages: 96 rows, 0 values.' — the values count is a code
-    // word to a first-time reader; the plain summary is 'Read N pages · M rows'
-    var m = /^Read ([\d,]+) pages?: ([\d,]+) rows?, [\d,]+ values\.(.*)$/.exec(sr || '');
-    if (m) return 'Read ' + m[1] + ' pages · ' + m[2] + ' rows' + m[3];
+    var mark = unpricedMark(meta, accepted);
+    if (mark && typeof sr === 'string' && sr.indexOf(mark) < 0) sr += ' (' + mark + ')';
     return sr;
   }
 

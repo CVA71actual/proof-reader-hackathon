@@ -29,10 +29,46 @@ Both files are replaced whole (write a temp file, then rename), so a read never 
 of run.json also appends one line to job.json's log (status, turn_count, spend_usd, the reason if there is one).
 
 Legacy category/window choices remain readable but do not narrow new research or remove proposals.
+
+The source set is frozen when a run starts (Job 51f). The first time the job drives a run it records in job.json
+`source_freeze`: the SHA-256 of the sources index file it reads (for the built-in index, of its records as canonical
+JSON) and, for every page of the chosen companies, the SHA-256 of the page file and of the words file as they are on
+disk. The index is the run's own (Job 51g): `source_freeze.index` records its absolute path, file name and hash, and
+a resume (resume_run, and the job itself before it reads) reads that file, never the server's default index; if the
+file is gone the resume is refused with that reason. It refuses when the index hash, the set of pages, or any file's
+bytes differ: "source set changed; historical replay would not be the same run". Nothing is re-fetched and no page
+is added on a resume. A run started before Job 51f has no `source_freeze`; its resume is refused until a person
+records one with `record_source_freeze` (python -m server.run_steps, or POST /api/runs/{id}/source-freeze), which
+takes the index file the run was read from and the hash the Operator checked by hand, and records the index's path
+and the current files only if they match it.
+
+Any call that could not be priced and that a person has not accepted (unpriced_calls > unknown_cost_accepted) stops a
+resume until a person sends accept_unknown_cost true (Job 51g: also on a run with no spending limit); the acceptance is
+the Person step "Unknown cost accepted".
+
+A run left "running" by a worker that was stopped from outside (a SIGTERM) is put right by `record_operator_stop`
+(python -m server.run_steps, or POST /api/runs/{id}/operator-stop; the same function). It reads
+runs/<id>/OPERATOR_STOP.json, a JSON object with exactly these fields:
+    stopped_at                 required: when the worker was stopped, ISO 8601 with a time zone ("2026-10-31T21:31:44Z")
+    signal                     required: the signal it was stopped with ("SIGTERM"), SIG followed by capitals/digits
+    potentially_billed_calls   optional, default 1: the calls that were in flight and may have been billed, a whole
+                               number from 0 (0 only when the provider's own record shows nothing was billed)
+    note                       optional: one line of text, or null
+Any other field, a wrong type, or a stop time in the future is refused with the reason. It refuses a run that is not
+"running", one that is driven by this process, one whose job.json was written after stopped_at (the worker may still
+be going), and one already recorded (it is never applied twice). It adds potentially_billed_calls to job.json
+`unpriced_calls`, writes a Person step "Operator stop recorded" naming the stop and the unknown cost, and sets the
+status to needs_input, "stopped by the Operator; N potentially billed call(s), cost unknown". It never resumes the
+run and never accepts the cost: a resume then goes through the unknown-cost gate (accept_unknown_cost true from a
+person, and a higher limit if the run has one); `unknown_cost_accepted` is left as it was. It writes job.json (the
+counters and `operator_stop`) and then run.json; a crash between the two leaves job.json with `operator_stop` and
+run.json "running", and running it again completes the run.json write without touching a counter (Job 51g). It is
+refused as applied twice only when both are written.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -123,9 +159,11 @@ def reserve_voice(runs_dir: Path, run_id: str, limit, worst: float) -> int | Non
 
 
 class JobError(Exception):
-    def __init__(self, status: int, message: str):
+    """`field`: the request field the refusal is about, when the request lacks a value only the caller can supply
+    (the server answers such a refusal 422, not 409). None for a refusal about the run's state."""
+    def __init__(self, status: int, message: str, field: str | None = None):
         super().__init__(message)
-        self.status, self.message = status, message
+        self.status, self.message, self.field = status, message, field
 
 
 def now_utc() -> str:
@@ -358,15 +396,327 @@ def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None, run
         return run
 
 
+def unpriced_count(job: dict) -> int:
+    n = job.get("unpriced_calls")
+    return int(n) if isinstance(n, (int, float)) and not isinstance(n, bool) and n > 0 else 0
+
+
+def accepted_count(job: dict) -> int:
+    """How many unpriced calls the person accepted on a resume (`unknown_cost_accepted`); 0 when none. job.json keeps
+    it; GET /api/runs/{id} carries it to the UI beside the run (run.json's schema is not widened for it)."""
+    n = job.get("unknown_cost_accepted")
+    return n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else 0
+
+
+def unpriced_marker(n: int, accepted: int = 0) -> str:
+    """The one marker every consumer prints (run card status_reason, report Summary) while a call is unpriced.
+    Before the person accepts every unpriced call the cost is unknown; once accepted, the limit bounds counted
+    spend only. ui/app.js `unpricedMark` prints the same two strings."""
+    if accepted >= n:
+        return f"{n} unpriced call(s); limit bounds counted spend"
+    return f"{n} unpriced call(s); cost unknown"
+
+
+def unknown_unaccepted(job: dict) -> bool:
+    """True when the run holds a call that could not be priced which the person has not accepted (Job 51g: with or
+    without a spending limit, a resume then needs accept_unknown_cost true)."""
+    return unpriced_count(job) > accepted_count(job)
+
+
 def limit_unpriced(limit, job: dict) -> bool:
-    """True when a run has a spending limit but a call that could not be priced: its spend total is not reliable."""
-    unpriced = job.get("unpriced_calls")
-    return limit is not None and isinstance(unpriced, (int, float)) and not isinstance(unpriced, bool) and unpriced > 0
+    """True when a run has a spending limit and a call that could not be priced which the person has not accepted:
+    its spend total is not reliable. `unknown_cost_accepted` is how many unpriced calls the person accepted."""
+    return limit is not None and unknown_unaccepted(job)
 
 
-def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None) -> dict:
+# ---------------------------------------------------------------- Job 51f: the source set is frozen at the start
+
+SOURCE_SET_CHANGED = "source set changed; historical replay would not be the same run"
+NO_SOURCE_FREEZE = ("This run started before its source set was recorded (Job 51f), so a resume cannot show it reads "
+                    "the same sources. Record it with record_source_freeze after checking the sources index hash by "
+                    "hand, or start a new run.")
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+# the runs this process is driving now (run_job); a run listed here is not stale, whatever its run.json says
+ACTIVE_RUNS: set[str] = set()
+
+
+def _file_sha(path) -> str | None:
+    p = Path(path)
+    return hashlib.sha256(p.read_bytes()).hexdigest() if p.is_file() else None
+
+
+def index_fingerprint(index: sources.Index) -> dict:
+    """The sources index a run reads: {"path", "sha256"}. A file index is hashed by its bytes; the built-in one (no
+    file) by its records written as canonical JSON."""
+    if index.path is not None and Path(index.path).is_file():
+        p = Path(index.path).resolve()      # absolute, so a resume finds the run's own index from any working directory
+        return {"path": str(p), "name": p.name, "sha256": _file_sha(p)}
+    canon = json.dumps(index.by_ticker, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return {"path": None, "name": None, "sha256": hashlib.sha256(canon.encode()).hexdigest()}
+
+
+def frozen_index(frozen: dict, given: sources.Index | None = None) -> sources.Index:
+    """Job 51g: the sources index a run was frozen with, which is the run's own, never the server's default. A run
+    frozen on an index file reads that file (path recorded in source_freeze); `given` is not used for it. A run frozen
+    on an index with no file (the built-in one, or one held in memory) reads `given`, else the built-in index; its
+    canonical hash is compared all the same. JobError 409 with a plain reason when the recorded file is not on disk."""
+    path = (frozen.get("index") or {}).get("path")
+    if not path:
+        return given if given is not None else sources.builtin_index()
+    p = Path(path)
+    if not p.is_file():
+        raise JobError(409, f"The sources index this run was frozen with, {p.name}, is not on disk at {p}, so a "
+                            f"resume cannot show it reads the same sources. Put that file back, or start a new run.")
+    try:
+        return sources.load_index(p)
+    except sources.SourcesError as e:
+        raise JobError(409, f"{SOURCE_SET_CHANGED}: {e}") from None
+
+
+def source_set(index: sources.Index, companies: list[str]) -> dict:
+    """What a run reads, as hashes: the index and, for each page of the chosen companies, its two files' bytes."""
+    pages = []
+    for ticker in companies:
+        for page in index.pages(ticker):
+            r = page["record"]
+            pages.append({"source_id": page["source_id"], "ticker": r["ticker"],
+                          "page_file": r["page_path"], "page_sha256": _file_sha(r["page_path"]),
+                          "words_file": r["words_path"], "words_sha256": _file_sha(r["words_path"])})
+    return {"index": index_fingerprint(index), "pages": pages}
+
+
+def source_set_changes(frozen: dict, index: sources.Index, companies: list[str]) -> list[str]:
+    """How the current source set differs from the frozen one, one plain phrase each; [] when it is the same."""
+    now = source_set(index, companies)
+    out = []
+    was, is_ = frozen.get("index") or {}, now["index"]
+    if was.get("sha256") != is_["sha256"]:
+        name = Path(is_["path"]).name if is_["path"] else "the built-in index"
+        out.append(f"the sources index ({name}) hashes to {is_['sha256']}, recorded {was.get('sha256')}")
+    old = {p["source_id"]: p for p in frozen.get("pages") or []}
+    new = {p["source_id"]: p for p in now["pages"]}
+    added, gone = [s for s in new if s not in old], [s for s in old if s not in new]
+    if added:
+        out.append(f"pages not in the recorded set: {', '.join(added)}")
+    if gone:
+        out.append(f"recorded pages no longer listed: {', '.join(gone)}")
+    for sid in (s for s in old if s in new):
+        for what in ("page", "words"):
+            if old[sid][f"{what}_sha256"] != new[sid][f"{what}_sha256"]:
+                out.append(f"the {what} file of {sid} has changed bytes")
+    return out
+
+
+def source_set_refusal(changes: list[str]) -> str:
+    return (f"{SOURCE_SET_CHANGED}: {'; '.join(changes)}. Nothing was re-fetched; start a new run to read the "
+            f"current sources.")
+
+
+def _check_source_freeze(job: dict, index: sources.Index | None, companies: list[str]) -> None:
+    """Raise JobError 409 unless the run has a recorded source set and the run's own frozen index (frozen_index) and
+    its files are still that set."""
+    frozen = job.get("source_freeze")
+    if not frozen:
+        raise JobError(409, NO_SOURCE_FREEZE)
+    index = frozen_index(frozen, index)
+    changes = source_set_changes(frozen, index, companies)
+    if changes:
+        raise JobError(409, source_set_refusal(changes))
+
+
+def record_source_freeze(runs_dir: Path, run_id: str, index: sources.Index, index_sha256) -> dict:
+    """For a run started before Job 51f: record its source set now, from the files on disk, once a person has checked
+    the sources index hash by hand and gives it here (`index_sha256`). Refused if the run already has one, is done or
+    is driven by this process, the index is the built-in one, the index file does not hash to `index_sha256`, a file
+    does not match the hash the index lists for it, or a page the run has read is not in the index or not the same
+    words. Writes job.json `source_freeze` and a Person step "Source set recorded"; the status is left as it is."""
+    if not isinstance(index_sha256, str) or not _HEX64.match(index_sha256):
+        raise JobError(422, "index_sha256 must be the 64 lower-case hex digits of the hash you checked by hand.",
+                       field="index_sha256")
+    run_dir = Path(runs_dir) / run_id
+    with RUN_LOCK:
+        run = json.loads((run_dir / "run.json").read_text())
+        meta = run["run"]
+        job = json.loads((run_dir / "job.json").read_text())
+        if job.get("source_freeze"):
+            raise JobError(409, f"This run's source set was recorded at {job['source_freeze'].get('recorded_at')}; "
+                                f"it is never recorded again.")
+        if meta.get("status") in (None, "done"):
+            raise JobError(409, "A finished run (or one saved before run controls) is never resumed; nothing to "
+                                "record.")
+        if run_id in ACTIVE_RUNS:
+            raise JobError(409, "This run is being driven by this server now; its source set was recorded when it "
+                                "started.")
+        if index.path is None:
+            raise JobError(409, "The built-in sources index has no file to check by hand; record a run's source set "
+                                "only from an index file.")
+        found = index_fingerprint(index)
+        if found["sha256"] != index_sha256:
+            raise JobError(409, f"The sources index {Path(index.path).name} hashes to {found['sha256']}, not the "
+                                f"{index_sha256} you checked; nothing was recorded.")
+        companies = meta["choices"]["companies"]
+        frozen = source_set(index, companies)
+        records = {p["source_id"]: p["record"] for t in companies for p in index.pages(t)}
+        problems = []
+        for p in frozen["pages"]:
+            r = records[p["source_id"]]
+            for what in ("page", "words"):
+                if p[f"{what}_sha256"] != r[f"{what}_sha256"]:
+                    problems.append(f"the {what} file of {p['source_id']} "
+                                    f"{'is missing' if p[what + '_sha256'] is None else 'does not match the index'}")
+        listed = {p["source_id"]: p for p in frozen["pages"]}
+        for s in run.get("sources", []):
+            if s["id"] not in listed:
+                problems.append(f"the run has read {s['id']}, which this index does not list")
+            elif any(pg.get("words_sha256") not in (None, listed[s["id"]]["words_sha256"])
+                     for pg in s.get("pages", [])):
+                problems.append(f"the words the run copied for {s['id']} differ from the words file now")
+        if problems:
+            raise JobError(409, f"{SOURCE_SET_CHANGED}: {'; '.join(problems)}. Nothing was recorded.")
+        at = now_utc()
+        job["source_freeze"] = {"recorded_at": at, "by": "record_source_freeze",
+                                "checked_index_sha256": index_sha256, **frozen}
+        text = (f"Source set recorded after the sources index hash was checked by hand: "
+                f"{frozen['index']['name']} ({frozen['index']['path']}) sha256 {index_sha256}; this run's resumes read "
+                f"that index, not the server's. {len(frozen['pages'])} page(s) of "
+                f"{len(companies)} companies, each file's hash recorded. A resume is refused if any of them changes.")
+        meta.setdefault("trail", []).append({"step": "Source set recorded", "tag": "Person", "who": "person",
+                                             "at": at, "text": text})
+        job["log"].append({"at": at, "note": text})
+        _write(run_dir / "job.json", job)
+        _write(run_dir / "run.json", run)
+        return run
+
+
+# ---------------------------------------------------------------- Job 51f: a stop from outside, recorded
+
+OPERATOR_STOP_FILE = "OPERATOR_STOP.json"
+OPERATOR_STOP_FIELDS = ("stopped_at", "signal", "potentially_billed_calls", "note")
+_SIGNAL = re.compile(r"^SIG[A-Z0-9]+$")
+
+
+def operator_stop_reason(n: int) -> str:
+    if n == 0:      # the provider's record showed nothing in flight was billed: nothing is unknown
+        return "stopped by the Operator; no potentially billed call"
+    return f"stopped by the Operator; {n} potentially billed call(s), cost unknown"
+
+
+def _parse_time(text) -> datetime | None:
+    if not isinstance(text, str):
+        return None
+    try:
+        t = datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
+    except ValueError:
+        return None
+    return t if t.tzinfo is not None else None
+
+
+def read_operator_stop(path: Path) -> dict:
+    """OPERATOR_STOP.json, checked (see the module notes for its fields); JobError with a plain reason otherwise."""
+    name = OPERATOR_STOP_FILE
+    if not path.is_file():
+        raise JobError(409, f"There is no {name} in this run's folder; the Operator writes it first.")
+    try:
+        doc = json.loads(path.read_text())
+    except (ValueError, UnicodeDecodeError):
+        raise JobError(422, f"{name} is not valid JSON.") from None
+    if not isinstance(doc, dict):
+        raise JobError(422, f"{name} must be a JSON object.")
+    extra = sorted(set(doc) - set(OPERATOR_STOP_FIELDS))
+    if extra:
+        raise JobError(422, f"{name} has a field it does not take: {', '.join(extra)}. "
+                            f"It takes {', '.join(OPERATOR_STOP_FIELDS)}.")
+    stopped = _parse_time(doc.get("stopped_at"))
+    if stopped is None:
+        raise JobError(422, f"{name}: stopped_at must be a time written ISO 8601 with a time zone, "
+                            f"such as 2026-10-31T21:31:44Z.")
+    if stopped > datetime.now(timezone.utc):
+        raise JobError(422, f"{name}: stopped_at is in the future.")
+    if not isinstance(doc.get("signal"), str) or not _SIGNAL.match(doc["signal"]):
+        raise JobError(422, f"{name}: signal must be the name of a signal, such as SIGTERM.")
+    n = doc.get("potentially_billed_calls", 1)
+    if not _number(n, integer=True) or n < 0:
+        raise JobError(422, f"{name}: potentially_billed_calls must be a whole number from 0 (default 1).")
+    note = doc.get("note")
+    if note is not None and (not isinstance(note, str) or "\n" in note):
+        raise JobError(422, f"{name}: note must be one line of text, or null.")
+    return {"stopped_at": doc["stopped_at"], "signal": doc["signal"], "potentially_billed_calls": n,
+            "note": (note.strip() or None) if isinstance(note, str) else None, "_stopped": stopped}
+
+
+def record_operator_stop(runs_dir: Path, run_id: str) -> dict:
+    """Put right a run left "running" by a worker stopped from outside, from runs/<id>/OPERATOR_STOP.json. The one code
+    path for the command line (server.run_steps) and the API. Returns run.json. See the module notes."""
+    run_dir = Path(runs_dir) / run_id
+    path = run_dir / OPERATOR_STOP_FILE
+    with RUN_LOCK:
+        run = json.loads((run_dir / "run.json").read_text())
+        meta = run["run"]
+        job = json.loads((run_dir / "job.json").read_text())
+        done = job.get("operator_stop")
+        if done:
+            if _operator_stop_half_applied(done, meta) and run_id not in ACTIVE_RUNS:
+                return _finish_operator_stop(run_dir, run, job)
+            raise JobError(409, f"The Operator's stop of this run was recorded at "
+                                f"{done.get('recorded_at')}; it is never applied twice.")
+        status = meta.get("status")
+        if status != "running":
+            raise JobError(409, f"Only a run left \"running\" by a stopped worker can be recorded as stopped; this "
+                                f"run is {status or 'saved before run controls'}.")
+        if run_id in ACTIVE_RUNS:
+            raise JobError(409, "This run is still going in this server; it is not a stale \"running\".")
+        stop = read_operator_stop(path)
+        written = [t for t in (_parse_time(e.get("at")) for e in job.get("log", []) if isinstance(e, dict)) if t]
+        last = max(written, default=None)
+        if last is not None and last > stop["_stopped"]:
+            raise JobError(409, f"job.json was written at {last.isoformat()}, after the stop at {stop['stopped_at']}: "
+                                f"the worker may still be going. Nothing was recorded.")
+        at = now_utc()
+        job["unpriced_calls"] = unpriced_count(job) + stop["potentially_billed_calls"]
+        job["operator_stop"] = {"recorded_at": at, "file_sha256": _file_sha(path),
+                                **{k: stop[k] for k in OPERATOR_STOP_FIELDS}}
+        job["log"].append(snapshot({**meta, "status": "needs_input"},
+                                   operator_stop_reason(stop["potentially_billed_calls"])))
+        _write(run_dir / "job.json", job)       # the counters: written once, here
+        return _finish_operator_stop(run_dir, run, job)
+
+
+def _operator_stop_half_applied(done: dict, meta: dict) -> bool:
+    """job.json carries the Operator's stop but run.json was never rewritten (a crash between the two writes): run.json
+    is still "running" and has no "Operator stop recorded" step."""
+    return meta.get("status") == "running" and not any(
+        t.get("step") == "Operator stop recorded" for t in meta.get("trail", []) if isinstance(t, dict))
+
+
+def _finish_operator_stop(run_dir: Path, run: dict, job: dict) -> dict:
+    """The run.json half of record_operator_stop, from job.json's operator_stop alone: never touches a counter, so it
+    may be done again after a crash (Job 51g)."""
+    meta, stop = run["run"], job["operator_stop"]
+    n = stop["potentially_billed_calls"]
+    meta["unpriced_calls"] = unpriced_count(job)
+    unknown = (f"{n} call(s) in flight may have been billed; their cost is unknown and is not in the spend, so a "
+               f"resume needs a person's acceptance of the unknown cost (and a higher limit, if the run has one)."
+               if n else "The provider's record shows no call in flight was billed.")
+    text = (f"Stopped by the Operator at {stop['stopped_at']} ({stop['signal']}) while the run was going. {unknown} "
+            f"Recorded from {OPERATOR_STOP_FILE}." + (f" Note: {stop['note']}" if stop.get("note") else ""))
+    meta.setdefault("trail", []).append({"step": "Operator stop recorded", "tag": "Person", "who": "person",
+                                         "at": stop["recorded_at"], "text": text})
+    meta["status"], meta["status_reason"] = "needs_input", operator_stop_reason(n)
+    _write(run_dir / "run.json", run)
+    return run
+
+
+def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None, accept_unknown_cost=False,
+               index: sources.Index | None = None) -> dict:
     """Give a stopped run a fresh budget of turns and queue it again. Raises JobError if it cannot go on.
-    `spending_limit_usd`: a new limit, higher than the old one; the only way past a spending-limit stop."""
+    `spending_limit_usd`: a new limit, higher than the old one; the only way past a spending-limit stop.
+    `accept_unknown_cost`: the person accepts that calls which could not be priced are not in the spend; without it a
+    run holding such a call is refused, with or without a spending limit (Job 51g; an unknown cannot be counted at a
+    worst case by code).
+    `index`: used only for a run frozen on an index with no file (frozen_index). A run frozen on an index file is
+    compared with that file, its own, never the server's default (Job 51g); it must still be the run's frozen source
+    set (Job 51f), else 409."""
     run_dir = Path(runs_dir) / run_id
     with RUN_LOCK:
         run = json.loads((run_dir / "run.json").read_text())
@@ -380,6 +730,7 @@ def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None) -> dict:
             raise JobError(409, what.get(status, f"A run that is {status} cannot be resumed."))
         job = json.loads((run_dir / "job.json").read_text())
         choices = meta["choices"]
+        _check_source_freeze(job, index, choices["companies"])
         limit = choices["spending_limit_usd"]
         if spending_limit_usd is not None:
             if not _finite_limit(spending_limit_usd):
@@ -388,18 +739,38 @@ def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None) -> dict:
                 raise JobError(409, "This run has no spending limit to raise.")
             if spending_limit_usd <= limit:
                 raise JobError(409, f"The new spending limit must be higher than the old one ({money(limit)}).")
+        accepting = False
         if limit_unpriced(limit, job):
-            raise JobError(409, "A spending limit cannot be kept on this run: the cost of a call could not be "
-                                "counted. Start a new run.")
+            if spending_limit_usd is None or accept_unknown_cost is not True:
+                raise JobError(409, "A spending limit cannot be kept on this run: the cost of a call could not be "
+                                    "counted. To go on, resume with a higher spending_limit_usd and "
+                                    "accept_unknown_cost true (the limit then bounds counted spend only), or start "
+                                    "a new run.", field="accept_unknown_cost")
+            accepting = True
+        elif unknown_unaccepted(job):       # Job 51g: no limit, and still an unknown nobody has accepted
+            if accept_unknown_cost is not True:
+                raise JobError(409, f"{unpriced_count(job)} call(s) on this run could not be priced; their cost is "
+                                    f"unknown and not in the spend. To go on, resume with accept_unknown_cost true, "
+                                    f"or start a new run.", field="accept_unknown_cost")
+            accepting = True
         if limit is not None and spending_limit_usd is None and (meta["spend_usd"] or 0) >= limit:
             raise JobError(409, "The spending limit stops this run. Resume with a higher spending limit to "
                                 "read more.")
+        if accepting:
+            n = unpriced_count(job)
+            bound = (f"the limit of {money(spending_limit_usd)} bounds counted spend only" if limit is not None else
+                     "the run has no spending limit; its spend counts priced calls only")
+            meta.setdefault("trail", []).append({
+                "step": "Unknown cost accepted", "tag": "Person", "who": "person", "at": now_utc(),
+                "text": f"Unknown cost accepted: {n} call(s) could not be priced; {bound}"})
+            job["unknown_cost_accepted"] = n      # unpriced_calls itself is never zeroed
         if spending_limit_usd is not None:
             text = f"Spending limit raised by you from {money(limit)} to {money(spending_limit_usd)}."
             meta.setdefault("trail", []).append({"step": "Spending limit raised", "tag": "Person", "who": "person",
                                                  "text": text, "at": now_utc()})
             job.setdefault("limit_changes", []).append({"at": now_utc(), "from": limit, "to": spending_limit_usd})
             choices["spending_limit_usd"] = spending_limit_usd
+        meta["unpriced_calls"] = unpriced_count(job)
         meta.update(status="queued", turn_count=0, resumes=meta.get("resumes", 0) + 1,
                     status_reason=f"Resuming with a fresh budget of {meta['turn_limit']} turns.")
         job["log"].append(snapshot(meta, meta["status_reason"]))
@@ -418,11 +789,15 @@ def run_job(runs_dir: Path, run_id: str, reader, second=None, as_of: date | None
     `as_of`: must equal the run's persisted as_of (else refused); if the run has none it is persisted. Coverage counts
     dates after the run's reference date (runs.state.run_reference_date) only."""
     job = Job(Path(runs_dir) / run_id, reader, second, as_of, wonder, sam, index)
+    with RUN_LOCK:
+        ACTIVE_RUNS.add(job.dir.name)
     try:
         job.drive()
     except Exception as e:  # the type only: nothing that could carry request details
         job.stop("failed", f"The job stopped on an unexpected error ({type(e).__name__}). Resume to try again.")
     finally:
+        with RUN_LOCK:
+            ACTIVE_RUNS.discard(job.dir.name)
         release_budget(job.dir.name, job._held)
         job.remove_unrecorded_pages()
 
@@ -434,6 +809,7 @@ class Job:
         self.sam = sam
         if second is not None and hasattr(second, "before_fallback"):
             second.before_fallback = self._before_fallback
+        self.given_index = index                  # Job 51g: a frozen run reads its own index, not this one
         self.index = index or sources.load_index()
         self._held: int | None = None             # the budget reservation of the call in flight (count_turn releases it)
         self.current_page: str | None = None      # the page being worked on, so a failed stop is charged to it
@@ -458,6 +834,7 @@ class Job:
             if refresh:      # a voice call may have raised the persisted spend since this worker last wrote
                 self.refresh_spend()      # (count_turn passes False: it refreshed in this lock and has unsaved spend)
             self._merge_voice_from_disk()
+            self.meta["unpriced_calls"] = unpriced_count(self.job)
             self.job["log"].append(snapshot(self.meta, reason))
             _write(self.dir / "job.json", self.job)
             _write(self.dir / "run.json", self.run)
@@ -481,6 +858,10 @@ class Job:
             failures = self.job.setdefault("page_failures", {})
             failures[self.current_page] = failures.get(self.current_page, 0) + 1
             self.job.setdefault("page_failure_reasons", {})[self.current_page] = reason
+        n = unpriced_count(self.job)
+        mark = unpriced_marker(n, accepted_count(self.job))
+        if n and mark not in reason:
+            reason = f"{reason} ({mark})"
         self.meta["status"], self.meta["status_reason"] = status, reason
         self.save(reason)
 
@@ -519,21 +900,15 @@ class Job:
 
     def _before_fallback(self, silent_reply) -> bool:
         """The second reader's Baseten call got no answer and OpenRouter is next. Count the silent turn now (unpriced
-        under a limit), then put the fallback call through the budget gate. False: the fallback is not made."""
+        under a limit), then put the fallback call through the one gate (_stopped_before_a_call). False: the fallback is not made."""
         with RUN_LOCK:
             self.refresh_spend()
             self._count_turn(silent_reply)
             release_budget(self.dir.name, self._held)
             self._held = None
             self.save(refresh=False)
-            limit = self.choices["spending_limit_usd"]
-            if limit is None:
-                return True
-            if not _finite_limit(limit) or (self.meta["spend_usd"] or 0) >= limit:
-                return False
-            self._held = reserve_budget(self.dir.name, self.meta["spend_usd"], limit, MODEL_CALL_UNBOUNDED,
-                                        alone_may_cross=True)
-            return self._held is not None
+            # the SAME gate every other paid attempt passes: unknown cost counted, limit, reservation
+            return not self._stopped_before_a_call(self.second or self.reader)
 
     def count_turn(self, reply) -> None:
         if (reply.extra or {}).get("already_counted"):      # counted before the fallback gate; nothing more to add
@@ -552,7 +927,7 @@ class Job:
             cost = prices.image_cost_usd(price_name(reply.model), reply.images)
         else:
             cost = prices.cost_usd(price_name(reply.model), reply.prompt_tokens, reply.completion_tokens)
-        if cost is None and self.choices["spending_limit_usd"] is not None and not reply.error:
+        if cost is None and not reply.error:      # Job 51k: limit or not
             models = self.job.setdefault("unpriced_models", [])      # the model the REPLY names, not the one asked for
             if reply.model not in models:
                 models.append(reply.model)
@@ -564,10 +939,14 @@ class Job:
             if (reply.extra or {}).get("route") == "openrouter":   # the fallback route has its own $20 cap
                 self.job["openrouter_spend_usd"] = round(self.job.get("openrouter_spend_usd", 0.0) + cost,
                                                          prices.ROUND_TO)
-        elif self.choices["spending_limit_usd"] is not None and (not reply.error or (
-                reply.timed_out and (reply.extra or {}).get("may_have_been_billed", True))):
-            # a call that got no answer cost an unknown amount, unless every failure was connect-only (nothing was sent)
+        counted = False
+        if cost is None and ((reply.error and reply.timed_out and (reply.extra or {}).get("may_have_been_billed", True))
+                             or not reply.error):
+            # a call that got no answer cost an unknown amount, unless every failure was connect-only (nothing was sent);
+            # Job 51h: a possibly-billed failure is counted whether or not the run has a spending limit;
+            # Job 51k: so is a successful reply whose cost cannot be priced (no usage, or a returned model with no price)
             self.job["unpriced_calls"] += 1
+            counted = True
         if (reply.extra or {}).get("retried_after_timeout") and not reply.timed_out:
             # answered only on a second try that followed a possibly-billed timeout: the first try's cost is unknown, but
             # it is bounded: the same prompt and the longest answer the call may ask for (max_tokens), or the same image cost
@@ -584,8 +963,8 @@ class Job:
                 total = round(self.job.get("retry_worst_case_usd", 0.0) + bound, prices.ROUND_TO)
                 self.job["retry_worst_case_usd"] = self.meta["retry_worst_case_usd"] = total
                 self.job["retries_charged"] = self.job.get("retries_charged", 0) + 1
-            elif self.choices["spending_limit_usd"] is not None:      # no bound can be computed: an unpriced call
-                if cost is not None:      # (a reply with no cost was already counted above)
+            else:      # no bound can be computed: an unpriced call, limit or not (Job 51j)
+                if not counted:      # (counted once: a reply with no cost may already be counted above)
                     self.job["unpriced_calls"] += 1
                 for key in ("unpriced_models", "retried_models"):
                     models = self.job.setdefault(key, [])
@@ -623,12 +1002,15 @@ class Job:
                                            f"Resume to continue with a fresh budget of turns.")
             return True
         if limit is None:
+            if unknown_unaccepted(self.job):      # Job 51h: no limit, an unknown cost nobody accepted: pause
+                self.stop("needs_input", self.unknown_cost_reason())
+                return True
             return False
         if not _finite_limit(limit):
             self.stop("needs_input", "The spending limit stored for this run is not a finite number of dollars, "
                                      "so it cannot be kept. Nothing more was read.")
             return True
-        if self.job["unpriced_calls"] or not prices.has_price(price_name(reader.model)):
+        if limit_unpriced(limit, self.job) or not prices.has_price(price_name(reader.model)):
             self.stop("needs_input", self.unpriced_reason(limit, reader))
             return True
         if (meta["spend_usd"] or 0) >= limit:
@@ -640,6 +1022,12 @@ class Job:
         # G4-R1/GLASS 7: the figures ride the turn/spend line; the sentence is
         # plain words, shown once
         return "Stopped at the spending limit. Raise the limit and press Resume to read more."
+
+    def unknown_cost_reason(self) -> str:
+        """Job 51h: the pause on a run with no spending limit when a possibly-billed call could not be priced."""
+        # Job 51j: plain words on screen; the field name stays in the API error detail only
+        return ("A call may have been billed but could not be priced. A person must accept the unknown cost before "
+                "this run can resume.")
 
     def unpriced_reason(self, limit: float, reader=None) -> str:
         retried = self.job.get("retried_models") or []
@@ -659,9 +1047,12 @@ class Job:
         counted (the reply named a model with no price) cannot be shown to have stayed inside."""
         limit = self.choices["spending_limit_usd"]
         if limit is None:
+            if unknown_unaccepted(self.job):      # Job 51h: the last call's cost is unknown; a person accepts it first
+                self.stop("needs_input", self.unknown_cost_reason())
+                return True
             return False
         self.refresh_spend()
-        if self.job["unpriced_calls"]:
+        if limit_unpriced(limit, self.job):
             self.stop("needs_input", self.unpriced_reason(limit))
             return True
         if (self.meta["spend_usd"] or 0) > limit:
@@ -671,7 +1062,34 @@ class Job:
 
     # ------------------------------------------------------------ the run
 
+    def source_set_holds(self) -> bool:
+        """Job 51f. On the run's first start, record its source set (job.json source_freeze); afterwards, the index and
+        files of the run's own frozen index (frozen_index; Job 51g: never the index this job was given, unless the run
+        was frozen on one with no file) must be that set. False (and the run is stopped, needs_input) when they are
+        not, when that index file is gone, or when a run that has already gone has no recorded set."""
+        companies = self.choices["companies"]
+        frozen = self.job.get("source_freeze")
+        if not frozen:
+            if self.meta.get("resumes") or self.meta.get("turns_total"):
+                self.stop("needs_input", NO_SOURCE_FREEZE)
+                return False
+            self.job["source_freeze"] = {"recorded_at": now_utc(), "by": "run start",
+                                         **source_set(self.index, companies)}
+            return True
+        try:
+            self.index = frozen_index(frozen, self.given_index)
+        except JobError as e:
+            self.stop("needs_input", e.message)
+            return False
+        changes = source_set_changes(frozen, self.index, companies)
+        if changes:
+            self.stop("needs_input", source_set_refusal(changes))
+            return False
+        return True
+
     def drive(self) -> None:
+        if not self.source_set_holds():
+            return
         self.meta["status"], self.meta["status_reason"] = "running", "Reading the captured sources."
         selected_pages = [page for ticker in self.choices["companies"] for page in self.index.pages(ticker)]
         self.meta["pages_total"] = len(selected_pages)

@@ -95,6 +95,7 @@
                                         "rereads": {"type": "integer"}, "failed_answers": {"type": "integer"}}},
         "turns_total": {"type": "integer", "minimum": 0, "description": "Every model call in the run."},
         "resumes": {"type": "integer", "minimum": 0},
+        "unpriced_calls": {"type": "integer", "minimum": 0, "description": "Optional. Calls under a spending limit whose cost could not be priced (job.json keeps the count); while above 0 the limit bounds counted spend only."},
         "pages_total": {"type": "integer", "minimum": 0, "description": "Pages selected from the source index for this run, when recorded."},
         "pages_read": {"type": "integer", "minimum": 0, "description": "Selected pages successfully read into this run, when recorded."},
         "skipped_pages": {"type": "array", "description": "Optional. Pages the job left undone and why: a page whose files no longer match the index, or one that stopped the run twice (server/jobs.py). What was read of them before stays.",

@@ -144,18 +144,19 @@ class FirstSilentOnPtgx(FakeReader):
         return super().call(prompt, image)
 
 
-def test_a_silent_first_reader_sends_the_page_to_a_person_and_the_run_goes_on(runs_dir):
+def test_a_silent_first_reader_sends_the_page_to_a_person_and_the_run_pauses_on_the_unknown_cost(runs_dir):
     rid = start(runs_dir, FirstSilentOnPtgx())
     run, job = run_of(runs_dir, rid), job_of(runs_dir, rid)
-    assert run["run"]["status"] == "done"
+    # Job 51h: the silent call may have been billed, so even with no limit the run pauses on the unknown cost
+    assert run["run"]["status"] == "needs_input" and job["unpriced_calls"] == 1
     reason = "The Muse Spark service did not answer in time."
     row = next(r for r in run["rows"] if r["source_id"] == PTGX_SID)
     assert row["status"] == "unreadable" and row["group"] == "open" and row["reason"] == reason
     steps = [t["step"] for t in row["trail"]]
     assert steps[-2:] == ["No answer from the model", "Sent to a person"]
     assert next(t for t in row["trail"] if t["step"] == "No answer from the model")["text"] == reason
-    assert len(run["sources"]) == 2 and run["tables"]        # the next page was read
-    assert run["run"]["turns_total"] >= 2 and not job.get("page_failures")
+    assert len(run["sources"]) == 1        # Job 51h: the gate pauses before the next page is read
+    assert run["run"]["turns_total"] == 1 and not job.get("page_failures")
 
 
 def test_a_silent_call_under_a_limit_is_a_counted_turn_with_unknown_cost(runs_dir):
@@ -176,7 +177,7 @@ def test_a_silent_second_reader_does_not_lose_the_first_readers_rows(runs_dir):
     good_rows = run_of(runs_dir, ok)["rows"]
     rid = start(runs_dir, FakeReader(), SecondSilent(), companies=["PTGX"])
     run, job = run_of(runs_dir, rid), job_of(runs_dir, rid)
-    assert run["run"]["status"] == "done"
+    assert run["run"]["status"] == "needs_input" and job["unpriced_calls"] == 1     # Job 51h: unknown cost, no limit
     first_rows = [r for r in run["rows"] if r["proposed_by"] == good_rows[0]["proposed_by"]]
     assert first_rows and all(r["status"] != "unreadable" for r in first_rows)
     sec = job["second"][PTGX_SID]
@@ -227,9 +228,11 @@ def test_a_sam_retry_is_charged_the_same_image_cost_again(runs_dir):
     assert one and job["retry_worst_case_usd"] == one == run["run"]["retry_worst_case_usd"]
 
 
-def test_a_silent_sam_call_with_no_limit_counts_no_unpriced_call(runs_dir):
+def test_a_silent_sam_call_with_no_limit_is_counted_and_pauses_the_run(runs_dir):
+    # Job 51h: a possibly-billed failure is counted whether or not the run has a limit
     client, rid = test_scan.start(runs_dir, FakeReader(), SamSilentOnTable(test_scan.TWO_BOXES))
-    assert job_of(runs_dir, rid)["unpriced_calls"] == 0
+    assert job_of(runs_dir, rid)["unpriced_calls"] == 1      # the silent SAM call still fails the run, as before
+    assert "1 unpriced call(s); cost unknown" in run_of(runs_dir, rid)["run"]["status_reason"]
 
 
 class BasetenSilentOpenRouterAnswers(SecondReader):
@@ -249,43 +252,57 @@ def both_keys(monkeypatch, tmp_path):
     monkeypatch.setenv("OPENROUTER_API_KEY", "or")
 
 
-def test_a_silent_baseten_turn_is_counted_before_the_openrouter_fallback(runs_dir, both_keys):
+class BasetenConnectFailsOpenRouterAnswers(BasetenSilentOpenRouterAnswers):
+    def _ask(self, route, prompt, image=None):
+        if route == "baseten":
+            self.routes.append(route)
+            return Reply(None, "baseten-m", error="did not answer", timed_out=True,
+                         extra={"route": "baseten", "may_have_been_billed": False})
+        return super()._ask(route, prompt, image)
+
+
+def test_a_possibly_billed_timeout_under_a_limit_stops_the_run_and_makes_no_fallback(runs_dir, both_keys):
     second, first = BasetenSilentOpenRouterAnswers(), FakeReader()
     second.routes = []
     rid = start(runs_dir, first, second, companies=["PTGX"], spending_limit_usd=50)
     run, job = run_of(runs_dir, rid), job_of(runs_dir, rid)
-    assert second.routes == ["baseten", "openrouter"]
-    assert len(first.prompts) == 1 and run["run"]["turns_total"] == 3      # first reader + silent Baseten + OpenRouter
-    assert job["unpriced_calls"] == 1                                       # the silent Baseten turn, unknown cost
-    assert job["second"][PTGX_SID]["status"] == "read"
-
-
-def test_the_fallback_is_skipped_when_the_budget_gate_refuses(runs_dir, both_keys, monkeypatch):
-    from server import jobs
-    real, n = jobs.reserve_budget, []
-
-    def reserve(*a, **k):
-        n.append(1)
-        return None if len(n) == 3 else real(*a, **k)      # 1 first reader, 2 Baseten, 3 the fallback
-
-    monkeypatch.setattr(jobs, "reserve_budget", reserve)
-    second, first = BasetenSilentOpenRouterAnswers(), FakeReader()
-    second.routes = []
-    rid = start(runs_dir, first, second, companies=["PTGX"], spending_limit_usd=50)
-    run, job = run_of(runs_dir, rid), job_of(runs_dir, rid)
-    assert second.routes == ["baseten"] and len(n) >= 3
-    assert run["run"]["turns_total"] == 2 and job["unpriced_calls"] == 1       # the silent turn is counted once
+    assert second.routes == ["baseten"]                                     # no OpenRouter call
+    assert run["run"]["turns_total"] == 2                                   # first reader + the silent Baseten turn
+    assert job["unpriced_calls"] == 1                                       # counted, cost unknown
+    assert run["run"]["status"] == "needs_input"
+    assert "unknown" in run["run"]["status_reason"].lower() or "price" in run["run"]["status_reason"].lower()
     sec = job["second"][PTGX_SID]
     assert sec["status"] == "unreadable" and sec["reason"] == "The Muse Spark Open service did not answer in time."
 
 
-def test_the_fallback_without_a_limit_is_made_and_both_turns_are_counted(runs_dir, both_keys):
+def test_a_known_unbilled_connect_failure_under_a_limit_goes_on_to_the_fallback(runs_dir, both_keys):
+    second, first = BasetenConnectFailsOpenRouterAnswers(), FakeReader()
+    second.routes = []
+    rid = start(runs_dir, first, second, companies=["PTGX"], spending_limit_usd=50)
+    run, job = run_of(runs_dir, rid), job_of(runs_dir, rid)
+    assert second.routes == ["baseten", "openrouter"]
+    assert run["run"]["turns_total"] == 3 and job["unpriced_calls"] == 0    # nothing unpriced
+    assert job["second"][PTGX_SID]["status"] == "read"
+
+
+def test_a_possibly_billed_timeout_without_a_limit_is_counted_and_makes_no_fallback(runs_dir, both_keys):
+    # Job 51h (was: the fallback without a limit is made): the unknown cost is counted and the one gate pauses the run
     second = BasetenSilentOpenRouterAnswers()
     second.routes = []
     rid = start(runs_dir, FakeReader(), second, companies=["PTGX"])
     run = run_of(runs_dir, rid)
-    assert second.routes == ["baseten", "openrouter"]
-    assert run["run"]["turns_total"] == 3 and job_of(runs_dir, rid)["unpriced_calls"] == 0
+    assert second.routes == ["baseten"]
+    assert run["run"]["turns_total"] == 2 and job_of(runs_dir, rid)["unpriced_calls"] == 1
+    assert run["run"]["status"] == "needs_input" and "accept the unknown cost" in run["run"]["status_reason"]
+    assert "accept_unknown_cost" not in run["run"]["status_reason"]
+
+
+def test_a_known_unbilled_connect_failure_without_a_limit_is_not_counted(runs_dir, both_keys):
+    second = BasetenConnectFailsOpenRouterAnswers()
+    second.routes = []
+    rid = start(runs_dir, FakeReader(), second, companies=["PTGX"])
+    assert second.routes == ["baseten", "openrouter"] and job_of(runs_dir, rid)["unpriced_calls"] == 0
+    assert run_of(runs_dir, rid)["run"]["status"] == "done"
 
 
 # ---- the CLI readers and voice
@@ -445,7 +462,7 @@ def test_a_retry_with_no_bound_is_the_unpriced_stop_as_before(runs_dir):
     run, job = run_of(runs_dir, rid), job_of(runs_dir, rid)
     assert job["unpriced_calls"] == 1 and not job.get("retries_charged")
     assert run["run"]["status"] == "needs_input"
-    assert run["run"]["status_reason"].endswith(SENTENCE.format(m=reader.model))
+    assert SENTENCE.format(m=reader.model) in run["run"]["status_reason"]
 
 
 def test_a_retry_that_lands_the_charge_over_the_limit_stops_the_run_cleanly(runs_dir):

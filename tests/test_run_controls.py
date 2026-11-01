@@ -288,9 +288,13 @@ def test_a_spending_limit_with_no_price_stops_before_any_call(runs_dir):
 
 
 def test_no_spending_limit_runs_without_a_price_and_records_no_spend(runs_dir):
-    client, _ = make(runs_dir, FakeReader(priced=False))
+    # Job 51k: with no limit an unpriced reply is counted and pauses the run before the next call
+    client, reader = make(runs_dir, FakeReader(priced=False))
     m = run_json(runs_dir, start(client)["id"])["run"]
-    assert m["status"] == "done" and m["spend_usd"] is None
+    m_reason = m["status_reason"]
+    assert m["status"] == "needs_input" and m["unpriced_calls"] == 1 and len(reader.prompts) == 1
+    assert m_reason.startswith("A call may have been billed but could not be priced. A person must accept the unknown "
+                               "cost before this run can resume.")
 
 
 # ---------------------------------------------------------------- no key

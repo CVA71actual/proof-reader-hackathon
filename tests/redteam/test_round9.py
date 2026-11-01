@@ -127,12 +127,15 @@ def test_a_call_with_no_token_count_does_not_erase_the_priced_calls(runs_dir):
         _final(events),
     )
     doc = _run(runs_dir, reader)
-    priced = 2 * CALL_TOKENS * PRICE_IN / 1_000_000
+    # Job 51k: a successful reply with no token count is counted and pauses the run (no limit set) before the next call;
+    # the priced call before it stays in the spend
+    priced = CALL_TOKENS * PRICE_IN / 1_000_000
+    m_reason = doc["run"]["status_reason"]
+    assert doc["run"]["status"] == "needs_input" and doc["run"]["unpriced_calls"] == 1
+    assert m_reason.startswith("A call may have been billed but could not be priced. A person must accept the unknown "
+                               "cost before this run can resume.")
     assert doc["run"]["spend_usd"] == pytest.approx(priced)
-    recorded = [s.get("cost_usd") for row in doc["rows"] for s in row["trail"]
-                if s.get("tag") == "Model" and s.get("step") == "Proposed"]
-    assert recorded and all(c is not None for c in recorded)
-    assert sum(recorded) == pytest.approx(priced)
+    assert len(reader.script) == 1                                   # the final call was never dispatched
 
 
 @tools

@@ -614,7 +614,16 @@ def test_a_fallback_call_with_no_token_counts_cannot_stay_under_the_cap_so_the_r
     refused instead, with no user spending limit set."""
     calls = openrouter_only
     _stub_ask(monkeypatch, calls, (None, None))
-    _, rid = start(runs_dir, FakeReader(), SecondReader(), companies=["PTGX", "IONS"])
+    client, rid = start(runs_dir, FakeReader(), SecondReader(), companies=["PTGX", "IONS"])
+    run, job = run_of(runs_dir, rid), job_of(runs_dir, rid)
+    # Job 51k: the unpriced fallback reply is also counted for the run, which pauses on the unknown cost (no limit set);
+    # once a person accepts it, the next fallback call is still refused
+    m_reason = run["run"]["status_reason"]
+    assert run["run"]["status"] == "needs_input" and calls == ["openrouter"] and job["unpriced_calls"] == 1
+    assert m_reason.startswith("A call may have been billed but could not be priced. A person must accept the unknown "
+                               "cost before this run can resume.")
+    r = client.post(f"/api/runs/{rid}/resume", json={"accept_unknown_cost": True})
+    assert r.status_code == 202, r.text
     run, job = run_of(runs_dir, rid), job_of(runs_dir, rid)
     assert run["run"]["status"] == "done" and calls == ["openrouter"]
     assert job["openrouter_unpriced_calls"] == 1 and job["openrouter_spend_usd"] == 0.0

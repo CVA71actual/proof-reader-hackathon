@@ -255,13 +255,152 @@ def test_a_reply_naming_a_priced_model_is_priced_by_that_model_not_the_advertise
 
 
 def test_an_unpriced_reply_without_a_limit_is_not_a_problem(runs_dir):
+    # Job 51k: without a limit an unpriced reply is still counted, and the run pauses for a person on the unknown cost
     calls = []
     _, rid = start(runs_dir, Names("muse-spark-1.3", "not-a-priced-model", calls), spending_limit_usd=None)
     m = meta(runs_dir, rid)
-    assert m["status"] == "done" and m["spend_usd"] is None
+    m_reason = m["status_reason"]
+    assert m["status"] == "needs_input" and m["unpriced_calls"] == 1
+    assert m_reason.startswith("A call may have been billed but could not be priced. A person must accept the unknown "
+                               "cost before this run can resume.")
 
 
 def test_resume_refuses_an_unpriced_run_even_with_a_higher_limit(runs_dir):
     client, rid = start(runs_dir, Names("muse-spark-1.3", "not-a-priced-model", []))
     r = client.post(f"/api/runs/{rid}/resume", json={"spending_limit_usd": 99})
-    assert r.status_code == 409 and "could not be counted" in r.json()["detail"]
+    assert r.status_code == 422 and "could not be counted" in r.json()["detail"]
+    assert "accept_unknown_cost" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------- Job 51d: the person accepts an unknown cost
+
+
+def _paused_on_unknown(runs_dir, calls=None):
+    client, rid = start(runs_dir, Names("muse-spark-1.3", "not-a-priced-model", [] if calls is None else calls),
+                        companies=["PTGX", "IONS"])
+    assert meta(runs_dir, rid)["status"] == "needs_input"
+    return client, rid
+
+
+def test_resume_at_the_same_limit_is_refused_on_an_unknown_cost(runs_dir):
+    client, rid = _paused_on_unknown(runs_dir)
+    limit = meta(runs_dir, rid)["choices"]["spending_limit_usd"]
+    r = client.post(f"/api/runs/{rid}/resume", json={"spending_limit_usd": limit, "accept_unknown_cost": True})
+    assert r.status_code == 409
+    assert client.post(f"/api/runs/{rid}/resume").status_code == 422
+    assert meta(runs_dir, rid)["status"] == "needs_input"
+
+
+def test_acceptance_without_a_higher_limit_is_refused(runs_dir):
+    client, rid = _paused_on_unknown(runs_dir)
+    r = client.post(f"/api/runs/{rid}/resume", json={"accept_unknown_cost": True})
+    assert r.status_code == 422 and "spending_limit_usd" in r.json()["detail"]
+
+
+def test_the_marker_before_acceptance_says_the_cost_is_unknown(runs_dir):
+    # Job 51e: before the person accepts, the reason already says the limit cannot be kept; the marker must not
+    # claim the limit bounds anything
+    client, rid = _paused_on_unknown(runs_dir)
+    m = meta(runs_dir, rid)
+    assert "(1 unpriced call(s); cost unknown)" in m["status_reason"] and m["unpriced_calls"] == 1
+    assert "limit bounds counted spend" not in m["status_reason"]
+    assert client.get(f"/api/runs/{rid}").json()["unknown_cost_accepted"] == 0
+
+
+class UnpricedThenPriced:
+    """The first reply names a model with no price; every later one is priced at `cost` dollars."""
+
+    def __init__(self, cost, calls):
+        self.model, self.cost, self.calls = "muse-spark-1.3", cost, calls
+
+    def ready(self):
+        return None
+
+    def call(self, prompt, image=None):
+        from tests.test_run_controls import MODEL, PRICE_IN
+        self.calls.append(prompt)
+        if len(self.calls) == 1:
+            return Reply(FakeReader.default(prompt), "not-a-priced-model", prompt_tokens=10, completion_tokens=10)
+        return Reply(FakeReader.default(prompt), MODEL, prompt_tokens=round(self.cost * 1_000_000 / PRICE_IN),
+                     completion_tokens=0)
+
+
+def test_the_marker_after_acceptance_says_the_limit_bounds_counted_spend_and_survives_a_limit_stop(runs_dir):
+    calls = []
+    client, rid = start(runs_dir, UnpricedThenPriced(5.0, calls), companies=["PTGX", "IONS"])
+    assert "(1 unpriced call(s); cost unknown)" in meta(runs_dir, rid)["status_reason"]
+    r = client.post(f"/api/runs/{rid}/resume", json={"spending_limit_usd": 1.0, "accept_unknown_cost": True})
+    assert r.status_code == 202
+    m = meta(runs_dir, rid)
+    assert m["status"] == "needs_input" and m["status_reason"].startswith("Stopped at the spending limit")
+    assert "(1 unpriced call(s); limit bounds counted spend)" in m["status_reason"]
+    assert "cost unknown" not in m["status_reason"]
+    assert m["unpriced_calls"] == 1 and client.get(f"/api/runs/{rid}").json()["unknown_cost_accepted"] == 1
+
+
+def test_the_marker_wording_follows_acceptance():
+    assert jobs.unpriced_marker(2) == "2 unpriced call(s); cost unknown"
+    assert jobs.unpriced_marker(2, 1) == "2 unpriced call(s); cost unknown"      # a later call is not accepted
+    assert jobs.unpriced_marker(2, 2) == "2 unpriced call(s); limit bounds counted spend"
+
+
+def test_accepting_the_unknown_cost_writes_a_person_step_and_runs_under_the_gate(runs_dir):
+    calls = []
+    client, rid = _paused_on_unknown(runs_dir, calls)
+    assert len(calls) == 1
+    r = client.post(f"/api/runs/{rid}/resume", json={"spending_limit_usd": 99, "accept_unknown_cost": True})
+    assert r.status_code == 202 and len(calls) == 2      # the run went on: the next page was read
+    m = meta(runs_dir, rid)
+    job = json.loads((runs_dir / rid / "job.json").read_text())
+    step = [t for t in m["trail"] if t["step"] == "Unknown cost accepted"]
+    assert len(step) == 1 and step[0]["tag"] == "Person"
+    assert step[0]["text"] == ("Unknown cost accepted: 1 call(s) could not be priced; the limit of $99.00 bounds "
+                               "counted spend only")
+    assert job["unpriced_calls"] >= 1 and m["unpriced_calls"] == job["unpriced_calls"]      # never zeroed
+    assert job["unknown_cost_accepted"] == 1            # covers the call the person saw, not the one made after
+    assert m["status"] == "needs_input" and "2 unpriced call(s)" in m["status_reason"]    # the new unknown is refused
+    assert m["choices"]["spending_limit_usd"] == 99
+
+
+def test_acceptance_itself_writes_the_step_and_leaves_unpriced_calls_unchanged(runs_dir):
+    _, rid = _paused_on_unknown(runs_dir)
+    jobs.resume_run(runs_dir, rid, 99, True)        # the resume alone, the run not started again
+    m = meta(runs_dir, rid)
+    job = json.loads((runs_dir / rid / "job.json").read_text())
+    assert job["unpriced_calls"] == 1 and m["unpriced_calls"] == 1 and job["unknown_cost_accepted"] == 1
+    assert [t["tag"] for t in m["trail"] if t["step"] == "Unknown cost accepted"] == ["Person"]
+    assert m["status"] == "queued"
+
+
+def test_a_stale_running_run_is_refused_even_with_acceptance(runs_dir):
+    client, rid = _paused_on_unknown(runs_dir)
+    path = runs_dir / rid / "run.json"
+    run = json.loads(path.read_text())
+    run["run"]["status"] = "running"            # a worker that died mid-run left this behind
+    path.write_text(json.dumps(run))
+    r = client.post(f"/api/runs/{rid}/resume", json={"spending_limit_usd": 99, "accept_unknown_cost": True})
+    assert r.status_code == 409 and "still going" in r.json()["detail"]
+    assert "Unknown cost accepted" not in [t["step"] for t in meta(runs_dir, rid).get("trail", [])]
+
+
+@pytest.mark.parametrize("value", ["true", 1, 0, None, "yes"])
+def test_accept_unknown_cost_must_be_a_json_boolean(runs_dir, value):
+    client, rid = _paused_on_unknown(runs_dir)
+    r = client.post(f"/api/runs/{rid}/resume", json={"spending_limit_usd": 99, "accept_unknown_cost": value})
+    assert r.status_code == 422 and r.json()["detail"] == "accept_unknown_cost must be true or false."
+    assert meta(runs_dir, rid)["status"] == "needs_input"
+
+
+def test_the_422_is_carried_by_the_refusal_field_not_its_words(runs_dir, monkeypatch):
+    # Job 51e: the server maps a refusal to 422 by JobError.field, never by searching the message
+    client, rid = _paused_on_unknown(runs_dir)
+
+    def refuse(*a, **k):
+        raise jobs.JobError(409, "Some words that do not name the field.", field="accept_unknown_cost")
+    monkeypatch.setattr(jobs, "resume_run", refuse)
+    assert client.post(f"/api/runs/{rid}/resume", json={"spending_limit_usd": 99}).status_code == 422
+
+    def refuse_naming(*a, **k):
+        raise jobs.JobError(409, "A message that says accept_unknown_cost but carries no field.")
+    monkeypatch.setattr(jobs, "resume_run", refuse_naming)
+    assert client.post(f"/api/runs/{rid}/resume", json={"spending_limit_usd": 99}).status_code == 409

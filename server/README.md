@@ -151,6 +151,34 @@ Without it, a run stopped by its spending limit gets 409. 409 also for a run tha
 before run controls existed. `run.json` is rewritten only by the job, and only while the run is going; once it is `done` it is never
 written again (the job refuses). Both files are replaced whole (temp file, rename).
 
+**Source set frozen (Job 51f).** On its first start a run records in `job.json` `source_freeze` the SHA-256 of the
+sources index file and of every chosen page's page and words files. The index is the run's own (Job 51g):
+`source_freeze.index` records its absolute path and file name with the hash, and a resume (and the job) compares with
+that file, never the server's default index, so a run read from `sources_index.fourteen-1013.json` resumes on a server
+whose default is another index. If that file is no longer on disk the resume is refused, 409, saying so. A resume whose
+index or any file differs is refused, 409, "source set changed; historical replay would not be the same run"; nothing
+is re-fetched. A run started before this has no record and is refused until the Operator, after checking the index
+hash by hand, runs `python -m server.run_steps record_source_freeze <id> --index FILE --index-sha256 HEX` (or `POST
+/api/runs/{id}/source-freeze` `{"index_sha256": HEX}`, which uses the server's index), which records FILE's path and
+the current files only if they match.
+
+**An unknown cost needs a person (Job 51g).** Whenever a run holds calls that could not be priced which no person has
+accepted (`unpriced_calls` > `unknown_cost_accepted`), a resume is refused, 422 naming `accept_unknown_cost`, until it
+carries `"accept_unknown_cost": true`, with or without a spending limit (with one, a higher `spending_limit_usd` too).
+The acceptance is a Person step "Unknown cost accepted".
+
+**A stop from outside (Job 51f).** A worker stopped by a signal leaves `run.json` "running". The Operator writes
+`runs/<id>/OPERATOR_STOP.json` `{"stopped_at": "2026-10-31T21:31:44Z", "signal": "SIGTERM",
+"potentially_billed_calls": 1, "note": null}` (the last two optional; no other field) and runs `python -m
+server.run_steps record_operator_stop <id>` (or `POST /api/runs/{id}/operator-stop`, the same function). It refuses a
+run that is not "running", is driven by this server, or was written after `stopped_at`, and is never applied twice.
+It adds the calls to `unpriced_calls`, writes a Person step "Operator stop recorded", and sets `needs_input`,
+"stopped by the Operator; N potentially billed call(s), cost unknown". A resume then needs `accept_unknown_cost: true`
+from a person (and a higher limit, if the run has one). It writes `job.json` and then `run.json`; if it is stopped
+between the two, running it again finishes `run.json` without counting the calls twice (Job 51g). The command line
+for both steps is `server/run_steps.py`; `runs/twelve.py` always creates a new run, and `run_steps` never resumes a run
+or accepts an unknown cost.
+
 **The second reader.** Unless the server was given none, every page the first reader has read is read again by the
 second reader (`capture/second_reader.py`, Muse Spark Open) and compared by code (`runs/compare.py`; see
 `runs/README.md`, "The second reader"). The second read is one more turn for that page: it counts against the turn

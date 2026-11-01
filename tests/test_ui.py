@@ -581,7 +581,7 @@ def test_u19_export_glass5_rows():
     assert js.count("No report is saved for this run yet.") == 2
     assert "python -m report.build" not in js and "currentRunId() + '\n" not in js
     # G5-3: spend and cost per kept row in the summary
-    for word in ("kv('Spend', usd2(meta.spend_usd))", "kv('Cost per kept row', usd2(st.cost_per_kept_row_usd))",
+    for word in ("kv('Spend', usd2(meta.spend_usd)", "kv('Cost per kept row', usd2(st.cost_per_kept_row_usd))",
                  "Mistakes caught by you"):
         assert word in js, word
     # G5-5: the disagreement is stated once — the why box defers to the block
@@ -2118,8 +2118,8 @@ def test_u30_glass8_leftovers():
     assert "JOB_LIMIT_STOP" in js
     assert ("Stopped at the spending limit. Raise the limit and press Resume "
             "to read more.") in js
-    assert "function jobReason(st, meta)" in js
-    assert "jobReason(st, meta)" in js
+    assert "function jobReason(st, meta, accepted)" in js
+    assert "jobReason(st, meta, detail.run.unknown_cost_accepted)" in js
     assert "host.append(el('div', JOB_PAUSABLE.indexOf(st) >= 0 ? 'jb-stop' : 'jb-sub', meta.status_reason))" not in js
     # Codex P2 on #101: only a reason that STARTS 'Stopped at the spending
     # limit' is the limit stop. The unpriced-call pause also names the
@@ -2156,6 +2156,7 @@ def test_u30_glass8_leftovers():
     script = "\n".join([
         "var JOB_PAUSABLE = ['paused_turn_limit', 'needs_input', 'failed'];",
         f"var JOB_LIMIT_STOP = {json.dumps(limit_stop)};",
+        _grab_fn(js, "unpricedMark"),
         _grab_fn(js, "jobReason"),
         "var got;",
         *checks,
@@ -3348,6 +3349,116 @@ def test_r48c_unresolved_window_renders_without_date_arithmetic():
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
     assert got.returncode == 0, got.stdout + got.stderr
     assert "Timing unresolved" in js and "w.unresolved ? w.reason" in js
+
+
+def _grab_var(js: str, name: str) -> str:
+    """A top-level `var NAME = ...;` from app.js (a literal: balanced brackets, then the semicolon)."""
+    at = js.index(f"var {name} = ")
+    depth = 0
+    for j in range(at, len(js)):
+        if js[j] in "{[(":
+            depth += 1
+        elif js[j] in "}])":
+            depth -= 1
+        elif js[j] == ";" and depth == 0:
+            return js[at : j + 1]
+    raise AssertionError(f"{name} does not close")
+
+
+def _render_card_and_summary(meta: dict, accepted: int = 0) -> dict:
+    """Job 51e: the run card (updateRunCardJob) and the report Summary (renderExport), rendered by app.js's own
+    functions in node under the same mock element harness as the other UI tests; returns each one's text."""
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    consts = "\n".join(_grab_var(js, n) for n in ("GROUP_NAMES", "GROUP_ORDER", "JOB_STATUS_WORDS", "JOB_ACTIVE",
+                                                   "JOB_PAUSABLE", "JOB_LIMIT_STOP"))
+    fns = "\n".join(_grab_fn(js, n) for n in ("money", "cents", "costPerKeptRowWords", "unpricedMark", "jobReason",
+                                               "updateRunCardJob", "renderExport"))
+    script = f"""
+function make() {{
+  return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, hidden: false, value: '',
+    append: function () {{ for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); }},
+    addEventListener: function () {{}} }};
+}}
+function el(tag, cls, text) {{ var n = make(); n.tag = tag; if (cls) n.className = cls; if (text) n.textContent = text; return n; }}
+function btn(cls, text, onClick) {{ var b = el('button', cls, text); b._click = onClick; return b; }}
+function clear(node) {{ node.textContent = ''; node.children = []; return node; }}
+function textOf(node, out) {{
+  out = out || [];
+  if (node.textContent) out.push(node.textContent);
+  (node.children || []).forEach(function (c) {{ textOf(c, out); }});
+  return out;
+}}
+var nodes = {{}};
+global.document = {{ getElementById: function (id) {{ if (!nodes[id]) nodes[id] = make(); return nodes[id]; }} }};
+function reportFileNames() {{ return []; }}
+{consts}
+{fns}
+var counts = {{ kept: 0, corrected: 0, removed: 0, unverified: 0, open: 0 }};
+var detail = {{ id: 'r', run: {{ run: {json.dumps(meta)}, unknown_cost_accepted: {json.dumps(accepted)} }},
+  state: {{ cost_per_kept_row_usd: null, unresolved: 0, counts: {{ rows: counts }},
+            mistakes: {{ code: 0, second_reader: 0, person: 0 }}, excluded: {{ code: 0, person: 0 }} }} }};
+updateRunCardJob();
+renderExport();
+var card = nodes['runcard-job'];
+var stop = card.children.filter(function (c) {{ return c.className === 'jb-stop' || c.className === 'jb-sub'; }});
+var spend = [];
+(function walk(n) {{
+  if (n.className === 'kv' && n.children[0].textContent === 'Spend') spend.push(n.children[1].textContent);
+  (n.children || []).forEach(walk);
+}})(nodes['exp-det']);
+console.log(JSON.stringify({{ card: textOf(card), stop: stop.map(function (c) {{ return c.textContent; }}),
+                             spend: spend }}));
+"""
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stderr
+    return json.loads(got.stdout)
+
+
+LIMIT_STOP_STORED = ("Stopped at the spending limit: $1.04 of $1.00 used (run-0007). "
+                     "Raise the limit and press Resume to read more. (1 unpriced call(s); limit bounds counted spend)")
+
+
+def test_51e_the_marker_survives_a_limit_stop_after_acceptance_on_card_and_summary():
+    # Job 51e defect 1: acceptance + a raised limit + a limit stop — jobReason returned the plain limit sentence
+    # early and the card lost the marker. Rendered, not grepped.
+    meta = {"status": "needs_input", "status_reason": LIMIT_STOP_STORED, "spend_usd": 1.04, "turn_count": 3,
+            "turn_limit": 40, "choices": {"spending_limit_usd": 1.0}, "unpriced_calls": 1}
+    got = _render_card_and_summary(meta, accepted=1)
+    mark = "(1 unpriced call(s); limit bounds counted spend)"
+    assert got["stop"][-1] == ("Stopped at the spending limit. Raise the limit and press Resume to read more. " + mark)
+    assert got["spend"] == ["$1.04 " + mark]
+    assert not any("cost unknown" in t for t in got["card"] + got["spend"])
+
+
+def test_51e_before_acceptance_the_card_and_summary_say_the_cost_is_unknown():
+    # Job 51e defect 2: before the person accepts, the marker never says the limit bounds anything
+    stored = ("The cost of a call could not be counted (runs/prices.py has no price for not-a-priced-model), so the "
+              "spending limit of $0.50 cannot be kept. Nothing more was read. (1 unpriced call(s); cost unknown)")
+    meta = {"status": "needs_input", "status_reason": stored, "spend_usd": 0.2, "turn_count": 1, "turn_limit": 40,
+            "choices": {"spending_limit_usd": 0.5}, "unpriced_calls": 1}
+    got = _render_card_and_summary(meta, accepted=0)
+    assert got["stop"][-1] == stored                         # the marker once, not twice
+    assert got["spend"] == ["$0.20 (1 unpriced call(s); cost unknown)"]
+    assert not any("limit bounds counted spend" in t for t in got["card"] + got["spend"])
+
+
+def test_51e_a_later_unaccepted_call_turns_the_marker_back_to_cost_unknown():
+    meta = {"status": "needs_input", "status_reason": "The cost of a call could not be counted.", "spend_usd": 0.3,
+            "choices": {"spending_limit_usd": 99}, "unpriced_calls": 2}
+    got = _render_card_and_summary(meta, accepted=1)
+    assert got["stop"][-1] == "The cost of a call could not be counted. (2 unpriced call(s); cost unknown)"
+    assert got["spend"] == ["$0.30 (2 unpriced call(s); cost unknown)"]
+
+
+def test_51e_no_unpriced_call_no_marker():
+    meta = {"status": "needs_input", "status_reason": LIMIT_STOP_STORED.split(" (1 unpriced")[0], "spend_usd": 1.04,
+            "choices": {"spending_limit_usd": 1.0}, "unpriced_calls": 0}
+    got = _render_card_and_summary(meta)
+    assert got["stop"][-1] == "Stopped at the spending limit. Raise the limit and press Resume to read more."
+    assert got["spend"] == ["$1.04"]
 
 
 def test_job50b_the_409_clears_key_sealed_and_planted_and_shows_the_plain_reason(tmp_path):

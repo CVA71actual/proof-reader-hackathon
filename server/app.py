@@ -42,7 +42,7 @@ from capture import voice
 from capture.sam import SamReader
 from capture.second_reader import SecondReader
 from capture.wonder import WonderReader
-from runs import prices
+from runs import prices, sources
 from runs.calendar import calendar_entries, run_interval_partition
 from runs.ids import require_unique_target_ids
 from runs.recheck import recheck_cell, recheck_row
@@ -297,13 +297,44 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     def resume_run(run_id: str, body: dict | None = Body(None)) -> dict:
         store.run_dir(run_id)
         body = body or {}
-        if set(body) - {"spending_limit_usd"}:
-            raise HTTPException(422, "A resume takes only spending_limit_usd.")
+        if set(body) - {"spending_limit_usd", "accept_unknown_cost"}:
+            raise HTTPException(422, "A resume takes only spending_limit_usd and accept_unknown_cost.")
+        if not isinstance(body.get("accept_unknown_cost", False), bool):
+            raise HTTPException(422, "accept_unknown_cost must be true or false.")
         try:
-            jobs.resume_run(store.runs_dir, run_id, body.get("spending_limit_usd"))
+            # Job 51g: the run is compared with its OWN frozen index (job.json source_freeze), never this server's
+            # default; `index` is used only for a run frozen on an index with no file
+            jobs.resume_run(store.runs_dir, run_id, body.get("spending_limit_usd"),
+                            body.get("accept_unknown_cost", False), index)
         except jobs.JobError as e:
+            if e.field is not None:
+                raise HTTPException(422, e.message) from None      # a field only the caller can supply is missing
             raise HTTPException(e.status, e.message) from None
         start_job(run_id)
+        return jobs_view(store, run_id)
+
+    @app.post("/api/runs/{run_id}/operator-stop")
+    def operator_stop(run_id: str) -> dict:
+        """Job 51f: a run left "running" by a worker stopped from outside, put right from runs/<id>/OPERATOR_STOP.json
+        (jobs.record_operator_stop, the same step as python -m server.run_steps). It never resumes the run."""
+        store.run_dir(run_id)
+        try:
+            jobs.record_operator_stop(store.runs_dir, run_id)
+        except jobs.JobError as e:
+            raise HTTPException(e.status, e.message) from None
+        return jobs_view(store, run_id)
+
+    @app.post("/api/runs/{run_id}/source-freeze")
+    def source_freeze(run_id: str, body: dict = Body(...)) -> dict:
+        """Job 51f: record the source set of a run started before it was recorded, from this server's sources index,
+        once a person has checked the index hash by hand (`index_sha256`)."""
+        store.run_dir(run_id)
+        if set(body) != {"index_sha256"}:
+            raise HTTPException(422, "A source freeze takes only index_sha256.")
+        try:
+            jobs.record_source_freeze(store.runs_dir, run_id, index or sources.load_index(), body["index_sha256"])
+        except (jobs.JobError, sources.SourcesError) as e:
+            raise HTTPException(getattr(e, "status", 409), getattr(e, "message", str(e))) from None
         return jobs_view(store, run_id)
 
     @app.get("/api/checks/source")
@@ -333,7 +364,10 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
             decisions = store.decisions(run_id)
         state = current_state(run, decisions)
         partition, window_start, window_end = run_interval_partition(run, state)
-        return {**run, "state": state, "calendar_partition": partition,
+        job_path = store.run_dir(run_id) / "job.json"
+        # Job 51e: how many unpriced calls the person accepted, so the UI's marker reads 'cost unknown' until then
+        accepted = jobs.accepted_count(json.loads(job_path.read_text())) if job_path.exists() else 0
+        return {**run, "state": state, "unknown_cost_accepted": accepted, "calendar_partition": partition,
                 "calendar_window": ({"start": window_start, "end": window_end} if window_start else
                                     {"start": None, "end": None, "unresolved": True,
                                      "reason": UNRESOLVED_REASON}),
