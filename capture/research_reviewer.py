@@ -143,7 +143,11 @@ class OneShotChat:
             bill = read_table.failure_billing(e)
             return ChatReply(self.model, error=read_table._plain_error(e), http_status=bill["http_status"],
                              may_have_been_billed=bill["may_have_been_billed"])
-        return parse_chat_response(resp, self.model)
+        try:
+            return parse_chat_response(resp, self.model)
+        except Exception as e:   # never raises: an unreadable success envelope is a possibly-billed failure
+            return ChatReply(self.model, may_have_been_billed=True,
+                             error=f"The reply could not be read ({type(e).__name__}), so it could not be used.")
 
 
 def parse_chat_response(resp, requested_model: str) -> ChatReply:
@@ -164,13 +168,41 @@ def parse_chat_response(resp, requested_model: str) -> ChatReply:
     if msg is None:
         return ChatReply(model, prompt_tokens=p, completion_tokens=c, may_have_been_billed=True,
                          error="The reply had no message, so it could not be used.")
+    raw_calls = get(msg, "tool_calls")
+    if raw_calls is not None and not isinstance(raw_calls, (list, tuple)):
+        return ChatReply(model, prompt_tokens=p, completion_tokens=c, may_have_been_billed=True,
+                         error="The reply's tool calls were not a list, so it could not be used.")
     calls = []
-    for tc in get(msg, "tool_calls") or []:
-        fn = get(tc, "function")
-        calls.append({"id": get(tc, "id"), "name": get(fn, "name"), "arguments": get(fn, "arguments")})
+    for tc in raw_calls or []:
+        fn = get(tc, "function") if isinstance(tc, dict) or hasattr(tc, "function") else None
+        name = get(fn, "name") if fn is not None else None
+        args = get(fn, "arguments") if fn is not None else None
+        cid = get(tc, "id") if fn is not None else None
+        if not isinstance(name, str) or not isinstance(cid, str) or not isinstance(args, (str, dict)):
+            return ChatReply(model, prompt_tokens=p, completion_tokens=c, may_have_been_billed=True,
+                             error="A tool call in the reply had no readable id, name or arguments, so the reply "
+                                   "could not be used.")
+        calls.append({"id": cid, "name": name, "arguments": args})
     content = get(msg, "content")
     return ChatReply(model, content=content if isinstance(content, str) else None, tool_calls=calls,
                      finish_reason=get(choices[0], "finish_reason"), prompt_tokens=p, completion_tokens=c)
+
+
+def _chat(model, messages, **kw) -> ChatReply:
+    """model.chat, contained: an exception or a non-ChatReply answer is a typed possibly-billed failure, so the
+    admitted request is still settled exactly once."""
+    name = getattr(model, "model", None) or "unknown"
+    try:
+        reply = model.chat(messages, **kw)
+    except Exception as e:
+        return ChatReply(name, may_have_been_billed=True,
+                         error=f"The model call failed unexpectedly ({type(e).__name__}).")
+    if not isinstance(reply, ChatReply):
+        return ChatReply(name, may_have_been_billed=True, error="The model call returned no readable reply.")
+    return reply
+
+
+TRUNCATED = "length"
 
 
 def reviewer_model() -> OneShotChat:
@@ -381,17 +413,21 @@ class ReviewResult:
     fetches: list[dict]
     usage: dict
     summary: str | None = None
+    limitations: list = field(default_factory=list)
     settings: dict = field(default_factory=dict)
 
     @property
     def clean(self) -> bool:
         # A rejected attempt is a concern code could not confirm, not an absence of concerns.
-        return self.status == COMPLETE and not self.findings and not self.rejected
+        # Retrieval that failed and was not covered later leaves part of the attack unperformed.
+        return self.status == COMPLETE and not self.findings and not self.rejected and not self.limitations
 
     def to_record(self) -> dict:
         return {"stage": "independent_review", "status": self.status, "reason": self.reason, "clean": self.clean,
                 "findings": self.findings, "rejected": self.rejected,
-                "reviewed": {"sources": self.reviewed_sources, "rows": self.reviewed_rows},
+                "reviewed": {"sources": self.reviewed_sources, "rows": self.reviewed_rows,
+                             "not_reviewed": self.limitations},
+                "limitations": self.limitations,
                 "model": self.model, "requested_model": self.requested_model, "provider": self.provider,
                 "turns": self.turns, "searches": self.searches, "fetches": self.fetches, "usage": self.usage,
                 "summary": self.summary, "settings": self.settings}
@@ -412,21 +448,33 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
     gate = _Gate(spend_gate, "independent_review")
     srcs = _Sources(sources)
     rows: dict[tuple[str, str], dict] = {}
-    for p in proposals:
-        rid, rev = p.get("row_id", p.get("id")), p.get("revision_id", p.get("revision"))
+    malformed = 0      # a proposal without a row id and revision id cannot be bound, so the draft is not reviewable
+    for p in proposals if isinstance(proposals, (list, tuple)) else []:
+        rid = p.get("row_id", p.get("id")) if isinstance(p, dict) else None
+        rev = p.get("revision_id", p.get("revision")) if isinstance(p, dict) else None
         if rid is not None and rev is not None:
             rows[_row_key(rid, rev)] = {**p, "row_id": rid, "revision_id": rev}
+        else:
+            malformed += 1
     findings: list[dict] = []
     rejected: list[dict] = []
     searches: list[dict] = []
     fetches: list[dict] = []
     state = {"turns": 0, "model": None, "summary": None}
+    # Retrieval the reviewer asked for that did not complete, keyed by what was asked. A later successful search of
+    # the same query or capture of the same url covers it; otherwise it stays a specific limitation.
+    open_retrieval: dict[tuple[str, str], dict] = {}
+
+    def retrieval_failed(kind: str, target: str, reason: str) -> None:
+        open_retrieval[(kind, target)] = {"kind": kind, ("query" if kind == "search" else "url"): target,
+                                          "reason": reason}
     settings = {"max_turns": max_turns, "max_searches": max_searches, "max_fetches": max_fetches}
 
     def result(status: str, reason: str) -> dict:
         return ReviewResult(
             status=status, reason=reason, findings=findings, rejected=rejected,
             reviewed_sources={"given": list(srcs.given), "fetched": list(srcs.fetched)},
+            limitations=list(open_retrieval.values()),
             reviewed_rows=[{"row_id": r["row_id"], "revision_id": r["revision_id"]} for r in rows.values()],
             model=state["model"], requested_model=getattr(model, "model", None), provider=REVIEWER_PROVIDER,
             turns=state["turns"], searches=searches, fetches=fetches, usage=gate.usage(),
@@ -435,9 +483,13 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
     problem = model.ready()
     if problem:
         return result(INCOMPLETE, problem)
-    if not rows:
-        return result(INCOMPLETE, "No draft proposals with a row id and revision id were given, so nothing was "
-                                  "reviewed.")
+    # A valid EMPTY draft is reviewed: the omission attack matters most when the researcher proposed nothing. Only
+    # malformed input (not a list, or a proposal without row id and revision id) stops before any call.
+    if not isinstance(proposals, (list, tuple)):
+        return result(INCOMPLETE, "The draft proposals were not a list, so nothing was reviewed.")
+    if malformed:
+        return result(INCOMPLETE, f"{malformed} draft proposal{'s' if malformed != 1 else ''} had no row id and "
+                                  f"revision id, so the draft could not be bound and nothing was reviewed.")
 
     messages: list[dict] = [{"role": "system", "content": REVIEWER_INSTRUCTIONS},
                             {"role": "user", "content": _review_input(company, assignment, list(rows.values()), srcs)}]
@@ -447,6 +499,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         if not isinstance(q, str) or not q.strip():
             return {"status": "error", "message": "search needs a non-empty query."}
         if max_searches is not None and len(searches) >= max_searches:
+            retrieval_failed("search", q, "The search limit a person set had been reached, so it was not run.")
             return {"status": "error", "message": "The search limit a person set has been reached."}
         ticket = gate.reserve("search", "search", "search", _bytes(q), None, 1)
         try:
@@ -454,6 +507,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         except Exception as e:
             gate.settle(ticket, "search", "search", "search", None, None, None, type(e).__name__, True)
             searches.append({"query": q, "status": "error", "results": 0})
+            retrieval_failed("search", q, f"The search did not succeed ({type(e).__name__}).")
             return {"status": "error", "message": "The search did not succeed."}
         n = None
         if isinstance(out, dict):
@@ -464,6 +518,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         results = out if isinstance(out, list) else []
         gate.settle(ticket, "search", "search", "search", None, None, n, None, None)
         searches.append({"query": q, "status": "ok", "results": len(results)})
+        open_retrieval.pop(("search", q), None)
         return {"status": "ok", "note": "Leads only. Fetch a source before citing it.", "results": results}
 
     def do_fetch(args: dict) -> dict:
@@ -471,17 +526,21 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         if not isinstance(url, str) or not url.strip():
             return {"status": "error", "message": "fetch needs a url."}
         if max_fetches is not None and len(fetches) >= max_fetches:
+            retrieval_failed("fetch", url, "The fetch limit a person set had been reached, so it was not captured.")
             return {"status": "error", "message": "The fetch limit a person set has been reached."}
         try:
             src = fetch_capture(url)
         except Exception as e:
             fetches.append({"url": url, "status": "error", "error": type(e).__name__})
+            retrieval_failed("fetch", url, f"The source could not be captured ({type(e).__name__}).")
             return {"status": "error", "message": "The source could not be captured, so it cannot be cited."}
         sid = srcs.add_fetched(src) if src else None
         if sid is None:
             fetches.append({"url": url, "status": "not_captured"})
+            retrieval_failed("fetch", url, "The source could not be captured.")
             return {"status": "error", "message": "The source could not be captured, so it cannot be cited."}
         fetches.append({"url": url, "status": "captured", "source_id": sid})
+        open_retrieval.pop(("fetch", url), None)
         return {"status": "ok", "source_id": sid, "text": srcs.by_id[sid]["text"]}
 
     def do_finding(args: dict) -> dict:
@@ -542,16 +601,19 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                                   http.MAX_COMPLETION_TOKENS, 0)
         except GateRefused as e:
             return result(INCOMPLETE, f"The spend gate refused the next reviewer call: {e}")
-        reply = model.chat(messages, tools=REVIEWER_TOOLS)
+        reply = _chat(model, messages, tools=REVIEWER_TOOLS)
         state["turns"] += 1
         state["model"] = reply.model or state["model"]
         gate.settle(ticket, "model", reply.model, REVIEWER_NAME, reply.prompt_tokens, reply.completion_tokens, 0,
                     reply.error, reply.may_have_been_billed if reply.error else None)
         if reply.error:
             return result(INCOMPLETE, reply.error)
+        if reply.finish_reason == TRUNCATED:
+            # Classified before any tool in it runs: a cut-off reply establishes nothing, even a parseable
+            # finish_review. Findings recorded in earlier turns are kept.
+            return result(INCOMPLETE, "The reviewer's reply was cut off at the output limit, so the review did not "
+                                      "finish; nothing in that reply was used.")
         if not reply.tool_calls:
-            if reply.finish_reason == "length":
-                return result(INCOMPLETE, "The reviewer's reply was cut off at the output limit before it finished.")
             return result(INCOMPLETE, "The reviewer stopped without calling finish_review, so the review is not "
                                       "complete; its text was not taken as a result.")
         messages.append({"role": "assistant", "content": reply.content,
@@ -587,8 +649,12 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                              "content": json.dumps(out, ensure_ascii=False, default=str)})
         if finished:
             n = len(findings)
-            return result(COMPLETE, "The reviewer finished: " + (f"{n} finding{'s' if n != 1 else ''}." if n else
-                                                                 "no findings."))
+            reason = "The reviewer finished: " + (f"{n} finding{'s' if n != 1 else ''}." if n else "no findings.")
+            if open_retrieval:
+                k = len(open_retrieval)
+                reason += (f" {k} search or capture step{'s' if k != 1 else ''} did not complete and "
+                           f"{'were' if k != 1 else 'was'} not covered, so that part was not reviewed.")
+            return result(COMPLETE, reason)
 
 
 # --------------------------------------------------------------------------------------------- adjudicate
@@ -630,6 +696,7 @@ def adjudicate(*, disputes: list[dict], sources: list[dict], spend_gate: Callabl
     srcs = _Sources(sources)
     outcomes: list[dict] = []
     skipped: list[dict] = []
+    failed: list = []
 
     def unresolved(d: dict, reason: str, reply_model: str | None = None, raw: str | None = None) -> dict:
         return {"dispute_id": d.get("dispute_id"), "row_revision_ids": d.get("row_revision_ids") or [],
@@ -674,10 +741,16 @@ def adjudicate(*, disputes: list[dict], sources: list[dict], spend_gate: Callabl
         except GateRefused as e:
             outcomes.extend(unresolved(x, f"Not adjudicated: the spend gate refused the call: {e}") for x in real[i:])
             return done(INCOMPLETE, f"The spend gate refused an adjudication call: {e}")
-        reply = model.chat(messages, json_mode=True)
+        reply = _chat(model, messages, json_mode=True)
         gate.settle(ticket, "model", reply.model, ADJUDICATOR_NAME, reply.prompt_tokens, reply.completion_tokens, 0,
                     reply.error, reply.may_have_been_billed if reply.error else None)
         outcomes.append(_verdict(d, reply, srcs, cited, unresolved))
+        if reply.error or reply.finish_reason == TRUNCATED:
+            failed.append(d.get("dispute_id"))
+    if failed:
+        return done(INCOMPLETE, f"{len(failed)} adjudication request{'s' if len(failed) != 1 else ''} failed or "
+                                f"{'were' if len(failed) != 1 else 'was'} cut off: {', '.join(map(str, failed))}; "
+                                f"{'they stay' if len(failed) != 1 else 'it stays'} unresolved.")
     return done(COMPLETE, f"{len(real)} disput{'es' if len(real) != 1 else 'e'} sent to {ADJUDICATOR_NAME}.")
 
 
@@ -685,6 +758,9 @@ def _verdict(d: dict, reply: ChatReply, srcs: _Sources, cited: list[str], unreso
     """Fail closed: anything but a well-formed, evidence-backed "resolved" verdict is unresolved."""
     if reply.error:
         return unresolved(d, reply.error, reply.model)
+    if reply.finish_reason == TRUNCATED:   # before parsing: a cut-off verdict is never accepted, however readable
+        return unresolved(d, "The verdict was cut off at the output limit, so the dispute stays unresolved.",
+                          reply.model, reply.content)
     raw = reply.content
     try:
         v = json.loads(raw) if isinstance(raw, str) else None

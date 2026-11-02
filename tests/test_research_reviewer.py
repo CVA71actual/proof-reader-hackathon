@@ -399,3 +399,146 @@ def test_adjudication_usage_and_optional_call_limit():
     assert [o["outcome"] for o in rec["outcomes"]] == ["unresolved", "unresolved"]
     assert "call limit" in rec["outcomes"][1]["reason"] and rec["status"] == "incomplete"
     assert rec["usage"]["prompt_tokens"] == 50 and rec["usage"]["model_requests"] == 1
+
+
+# ------------------------------------------------------------------ Manus 15:12 PT: truncation, retrieval, envelope
+
+def test_truncated_reply_with_parseable_finish_is_incomplete_and_earlier_findings_kept():
+    lost = call("report_finding", {"kind": "lost_condition", "row_revision_ids": [{"row_id": "r1", "revision_id": 2}],
+                                   "evidence": [{"source_id": "S1", "quote": "contingent on a Type B meeting"}],
+                                   "text": "lost"})
+    cut = tools(call("report_finding", {"kind": "unsupported_claim",
+                                        "row_revision_ids": [{"row_id": "r2", "revision_id": 1}],
+                                        "evidence": [], "text": "in the cut-off reply"}), finish())
+    cut.finish_reason = "length"
+    rec, model, gate = run([tools(lost), cut])
+    assert rec["status"] == "incomplete" and rec["clean"] is False and "cut off" in rec["reason"]
+    assert [f["text"] for f in rec["findings"]] == ["lost"]          # earlier finding kept, cut-off one not used
+    assert rec["summary"] is None and model.replies == []           # no retry
+    assert [e["phase"] for e in gate.events] == ["reserve", "settle"] * 2
+
+
+def test_truncated_but_readable_verdict_stays_unresolved():
+    reply = ChatReply("muse-wonder-1.0", finish_reason="length", prompt_tokens=50, completion_tokens=12288,
+                      content=json.dumps({"verdict": "resolved", "reading": 1, "resolution": "potential H1 2027",
+                                          "evidence": [{"source_id": "S2", "quote": "potential H1 2027"}]}))
+    rec, model = adj(reply)
+    o = rec["outcomes"][0]
+    assert o["outcome"] == "unresolved" and "cut off" in o["reason"] and o["human_accepted"] is False
+    assert rec["status"] == "incomplete" and model.replies == []
+
+
+def test_failed_search_then_finish_is_not_clean():
+    def broken(q):
+        raise TimeoutError("slow")
+    rec, _, _ = run([tools(call("search", {"query": "MIRM omission search"})), tools(finish("No findings."))],
+                    search=broken)
+    assert rec["status"] == "complete" and rec["clean"] is False
+    assert rec["limitations"] == [{"kind": "search", "query": "MIRM omission search",
+                                   "reason": "The search did not succeed (TimeoutError)."}]
+    assert rec["reviewed"]["not_reviewed"] == rec["limitations"] and "not reviewed" in rec["reason"]
+
+
+def test_uncaptured_fetch_then_finish_is_not_clean():
+    rec, _, _ = run([tools(call("fetch", {"url": "https://public.example/missing"})), tools(finish("No findings."))])
+    assert rec["clean"] is False
+    assert rec["limitations"] == [{"kind": "fetch", "url": "https://public.example/missing",
+                                   "reason": "The source could not be captured."}]
+
+
+def test_retrieval_failure_covered_later_by_the_same_capture_is_clean():
+    attempts = []
+
+    def flaky(url):
+        attempts.append(url)
+        return None if len(attempts) == 1 else FETCHED["https://example.com/newer"]
+    rec, _, _ = run([tools(call("fetch", {"url": "https://example.com/newer"})),
+                     tools(call("fetch", {"url": "https://example.com/newer"})), tools(finish())], fetch=flaky)
+    assert rec["limitations"] == [] and rec["clean"] is True
+    assert len(attempts) == 2           # the model asked twice; the module itself never retries
+
+
+def test_wrong_shaped_tool_calls_is_a_billed_failure_settled_once():
+    env = {"model": "fake-open", "choices": [{"message": {"content": None, "tool_calls": 1},
+                                              "finish_reason": "tool_calls"}],
+           "usage": {"prompt_tokens": 100, "completion_tokens": 50}}
+    r = rv.parse_chat_response(env, "req")
+    assert r.error and r.may_have_been_billed and (r.prompt_tokens, r.completion_tokens) == (100, 50)
+    bad_item = {"model": "m", "choices": [{"message": {"tool_calls": [{"id": "c1", "function": 3}]}}]}
+    assert rv.parse_chat_response(bad_item, "req").error
+
+    class Client:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kw):
+                    return env
+
+    class Model(rv.OneShotChat):
+        def ready(self):
+            return None
+    import capture.research_reviewer as mod
+    orig = mod.http.openai_client
+    mod.http.openai_client = lambda base, key: Client
+    try:
+        gate = FakeGate()
+        rec = rv.review_draft(company="X", assignment="a", proposals=PROPOSALS, sources=SOURCES,
+                              search=lambda q: [], fetch_capture=lambda u: None, spend_gate=gate,
+                              model=Model("Muse Spark Open", "https://x", "m", "NO_SUCH_KEY_ENV"))
+    finally:
+        mod.http.openai_client = orig
+    assert [e["phase"] for e in gate.events] == ["reserve", "settle"]
+    s = gate.settles()[0]
+    assert s["usage"]["prompt_tokens"] == 100 and s["usage"]["completion_tokens"] == 50
+    assert s["may_have_been_billed"] is True and s["error"]
+    assert rec["status"] == "incomplete" and rec["clean"] is False and rec["turns"] == 1
+
+
+def test_injected_model_that_raises_is_still_settled_once():
+    class Raises(FakeModel):
+        def chat(self, *a, **k):
+            raise TypeError("bad envelope")
+    gate = FakeGate()
+    rec = rv.review_draft(company="X", assignment="a", proposals=PROPOSALS, sources=SOURCES, search=lambda q: [],
+                          fetch_capture=lambda u: None, spend_gate=gate, model=Raises([]))
+    assert [e["phase"] for e in gate.events] == ["reserve", "settle"]
+    assert gate.settles()[0]["may_have_been_billed"] is True and rec["status"] == "incomplete"
+
+
+# ------------------------------------------------------------------ Manus section 4: an empty draft is still reviewed
+
+def _review(proposals, replies, gate=None):
+    gate = gate or FakeGate()
+    model = FakeModel(replies)
+    rec = rv.review_draft(company="MIRM", assignment="Research catalysts.", proposals=proposals, sources=SOURCES,
+                          search=lambda q: [{"url": "https://example.com/newer"}],
+                          fetch_capture=lambda url: FETCHED.get(url), spend_gate=gate, model=model)
+    return rec, model, gate
+
+
+def test_empty_draft_gets_the_rowless_omission_review():
+    rec, model, _ = _review([], [
+        tools(call("search", {"query": "MIRM upcoming"})),
+        tools(call("fetch", {"url": "https://example.com/newer"})),
+        tools(call("report_finding", {"kind": "omission", "row_revision_ids": [],
+                                      "evidence": [{"source_id": "S3", "quote": "expected October 12"}],
+                                      "text": "EXPAND topline Oct 12 is missing."}),
+              call("report_finding", {"kind": "stale_guidance", "row_revision_ids": [{"row_id": "r1", "revision_id": 2}],
+                                      "evidence": [{"source_id": "S2", "quote": "potential H1 2027"}],
+                                      "text": "names a row that does not exist"})),
+        tools(finish())])
+    assert rec["status"] == "complete" and [f["kind"] for f in rec["findings"]] == ["omission"]
+    assert rec["reviewed"]["rows"] == [] and len(rec["rejected"]) == 1      # no placeholder row was created
+    sent = json.loads(model.sent[0][1]["content"])
+    assert sent["draft_proposals"] == [] and {s["source_id"] for s in sent["captured_sources"]} == {"S1", "S2"}
+
+
+def test_empty_draft_complete_with_no_findings_is_clean():
+    rec, _, _ = _review([], [tools(finish())])
+    assert rec["status"] == "complete" and rec["clean"] is True
+
+
+@pytest.mark.parametrize("bad", [[{"title": "no ids"}], [PROPOSALS[0], {"row_id": "r3"}], "not a list", None])
+def test_malformed_draft_is_incomplete_before_any_call(bad):
+    rec, model, gate = _review(bad, [])
+    assert rec["status"] == "incomplete" and rec["clean"] is False and gate.events == [] and model.sent == []
