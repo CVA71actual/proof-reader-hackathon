@@ -4499,10 +4499,13 @@
       newrunWrap.hidden = true;
       var id = res.body.id;
       toast((res.body.label || 'Run ' + res.body.number) + ' — started.');
+      // PRE-REVIEW-001: open the accepted run by its returned id — a failed
+      // saved-runs refresh afterwards is refresh housekeeping, never a
+      // failed start, and never re-opens the door to a second paid run
+      switchRun(id);
       return A.runs().then(function (list) {
         runs = list;
-        switchRun(id);
-      });
+      }).catch(function () { /* the list refresh failed; the run stays open */ });
     }, function () { done(); nrError('The server is not reachable.'); });
   }
   document.getElementById('nr-intake-go').addEventListener('click', startIntake);
@@ -4564,10 +4567,12 @@
       newrunWrap.hidden = true;
       var id = res.body.id;
       toast((res.body.label || 'Run ' + res.body.number) + ' — started.');
+      // PRE-REVIEW-001: the accepted run opens by its returned id even when
+      // the saved-runs refresh fails afterwards — that is never a failed start
+      switchRun(id);
       return A.runs().then(function (list) {
         runs = list;
-        switchRun(id);
-      });
+      }).catch(function () { /* the list refresh failed; the run stays open */ });
     }, function () { done(); nrError('The server is not reachable.'); });
   }
   // NEWRUN-ONE-START-001: the one start button — 'Continue with N ready' once

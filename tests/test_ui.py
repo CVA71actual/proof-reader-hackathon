@@ -1412,6 +1412,42 @@ def test_newrun_one_start_ruling():
     ]))
 
 
+def test_newrun_accepted_run_survives_a_failed_runs_refresh():
+    # PRE-REVIEW-001 (Manus overwatch): POST /api/runs/new is accepted (202)
+    # and then the saved-runs refresh fails — the accepted run still opens by
+    # its returned id, the dialog stays closed, and no second paid start is
+    # invited, on both the Run-now and the intake path
+    _run_node(_new_run_sheet_script([
+        "A.runs = function () { return Promise.reject(new Error('refresh down')); };",
+        # Run-now path
+        "boxes[0].checked = true;",
+        "nrStartClick();",
+        "later().then(function () {",
+        "  if (posts.length !== 1) fail(2, 'posts: ' + posts.length);",
+        "  if (switched !== 'run9') fail(3, 'accepted run not opened: ' + switched);",
+        "  if (!newrunWrap.hidden) fail(4, 'dialog open after the 202');",
+        "  return later();",
+        "}).then(function () {",
+        "  if (posts.length !== 1) fail(5, 'a second start was invited');",
+        "  if (els['nr-go'].disabled) fail(6, 'button stuck disabled');",
+        # the intake path carries the same protection
+        "  posts = []; switched = null; newrunWrap.hidden = false;",
+        "  els['nr-tickers'].value = 'PTGX QUIET'; syncPasteMode();",
+        "  return startIntake().then(later);",
+        "}).then(function () {",
+        "  nrStartClick();",
+        "  return later();",
+        "}).then(function () {",
+        "  if (posts.length !== 1 || switched !== 'run9') fail(7, 'intake accepted run not opened: ' + switched);",
+        "  if (!newrunWrap.hidden) fail(8, 'dialog open after the intake 202');",
+        "  return later();",
+        "}).then(function () {",
+        "  if (posts.length !== 1) fail(9, 'intake second start invited');",
+        "  console.log('ok');",
+        "}).catch(function (err) { fail(99, err && err.stack); });",
+    ]))
+
+
 def test_ticker_intake_pins():
     # TICKER-INTAKE-001: the New run sheet intakes pasted tickers through the
     # server — no hard-coded list, plain words, inline errors (the red line)
