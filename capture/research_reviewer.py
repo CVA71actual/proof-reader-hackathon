@@ -385,7 +385,7 @@ class ReviewResult:
 
     @property
     def clean(self) -> bool:
-        # A rejected attempt is a concern code could not verify, not an absence of concerns.
+        # A rejected attempt is a concern code could not confirm, not an absence of concerns.
         return self.status == COMPLETE and not self.findings and not self.rejected
 
     def to_record(self) -> dict:
