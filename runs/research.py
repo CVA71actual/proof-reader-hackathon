@@ -1043,11 +1043,12 @@ def make_job_class():
                         "conditions_state": ("not_established" if ev["conditions"] is None else
                                              "none_stated" if ev["conditions"] == [] else "stated"),
                         "near_duplicates": [], "revisions": [], "evidence_key": rc.evidence_key(ev)}
-            timing_snap = (row.get("research") or {}).get("timing")
+            timing_ctx = row.get("research") or {}
             row["research"] = research
             research["timing_span_index"] = timing_k
-            if timing_snap is not None:
-                research["timing"] = timing_snap      # the date check is bound to it (claim_assessment)
+            if timing_ctx.get("timing") is not None:
+                research["timing"] = timing_ctx["timing"]      # the date check is bound to it (claim_assessment)
+                research["timing_release_day"] = timing_ctx["timing_release_day"]
             research["issues"] = rc.research_issues(row, spans, words_by_span, k, timing_k)
             if existing is None:
                 research["feedback"] = {"repair_open": bool(research["issues"]),
@@ -1078,21 +1079,15 @@ def make_job_class():
             span = ev["evidence"][timing]
             tsrc = self.state[row["ticker"].upper()]["sources"][span["source_id"]]
             words = words_by_span[timing]["words"]
-            date_res = event_checks.date_match(
-                row.get("date_text"), recheck.as_iso(row.get("date")), span["quote"],
-                date_end=recheck.as_iso(row.get("date_end")), event_type=row.get("event_type"), title=row.get("title"),
-                program=row.get("program"), filed=tsrc.get("published_date"),
-                today=(event_checks.release_day(words, tsrc.get("published_date")) or (None,))[0])
-            from dataclasses import replace
-            date_res = replace(date_res, reason=f"Date compared against timing span {span['source_id']} p"
-                                                f"{span['page_number']} (“{span['quote'][:120]}”): {date_res.reason}")
-            results = recheck.row_checks(row, one_page, words_by_span[k], consumed_artifact=consumed)
-            from runs.claim_assessment import bind_checks, timing_snapshot
+            # date_match on the timing span runs inside recheck.row_checks, shared with every later re-check
+            from runs.claim_assessment import timing_snapshot
             tpage = next(p for p in tsrc["pages"] if p["page_number"] == span["page_number"])
             _, t_consumed = sources.load_page_evidence(self.dir, tpage)
-            row["research"] = {"timing": timing_snapshot(tsrc, tpage, span["quote"], t_consumed)}
-            bound = bind_checks([date_res], row, one_page, consumed_artifact=consumed)[0]
-            results = [bound if r.check == event_checks.DATE_ID else r for r in results]
+            today = event_checks.release_day(words, tsrc.get("published_date"))
+            row["research"] = {"timing": timing_snapshot(tsrc, tpage, span["quote"], t_consumed),
+                               "timing_release_day": today[0].isoformat() if today else None}
+            results = recheck.row_checks(row, one_page, words_by_span[k], consumed_artifact=consumed)
+            bound = next(r for r in results if r.check == event_checks.DATE_ID)
             status = event_checks.row_status(results)
             row.update({"status": status, "group": build_entry.START_GROUP.get(status, "unverified"),
                         "reason": build_entry.row_reason(status, results, row),

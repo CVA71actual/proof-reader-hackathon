@@ -966,13 +966,13 @@ def test_csp_comes_first_without_a_head_and_escaped_css_urls_do_not_survive():
 TP2 = "https://ir.example.com/timing-note"
 
 
-def _two_source_timing_run(runs_dir):
+def _two_source_timing_run(runs_dir, program=None, client_out=None):
     spans = [{"source_id": "src-r1-ptgx", "page_number": 1, "quote": "plans to report topline data from ICARUS.",
               "word_ids": None, "roles": ["action", "program"]},
              {"source_id": "src-r2-ptgx", "page_number": 1, "quote": "These topline results are expected in Q1 2027.",
               "word_ids": None, "roles": ["timing"]}]
     ev = F.event("ICARUS topline", spans[0]["quote"], date_text="Q1 2027", date="2027-01-01", date_end="2027-03-31",
-                 spans=spans)
+                 spans=spans, program=program)
     pages = {TP: (200, "text/html", F.html("Protagonist plans to report topline data from ICARUS.")),
              TP2: (200, "text/html", F.html("These topline results are expected in Q1 2027."))}
     reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": TP, "purpose": "x"}, "c0")]),
@@ -981,7 +981,9 @@ def _two_source_timing_run(runs_dir):
                               F.body([F.call("finish_draft", {"dispositions": [
                                   {"row_id": "e1", "disposition": "proposal", "related_row_id": None,
                                    "reason": "x"}], "limitations": []}, "c3")])])
-    _, rid, _ = start(runs_dir, reader, pages=pages)
+    client, rid, _ = start(runs_dir, reader, pages=pages)
+    if client_out is not None:
+        client_out.update(client=client, rid=rid)
     return run_json(runs_dir, rid)
 
 
@@ -1006,3 +1008,39 @@ def test_the_date_check_goes_stale_when_the_timing_evidence_changes(runs_dir, mu
         row["research"]["timing"]["quote"] = "These topline results are expected in Q3 2027."
     st = current_state(run, [])["targets"]["e1"]
     assert st["checks_stale"] is True and st["effective_checks"] == []
+
+
+# ---------------------------------------------------------------- Manus 15:54: a person's fix re-checks the timing span
+
+
+def _fix(client, rid, field, frm, to):
+    r = client.post(f"/api/runs/{rid}/decisions", json={"target": "e1", "action": "fix", "note": None,
+                                                        "fix": {"field": field, "from": frm, "to": to}})
+    assert r.status_code == 200, r.text
+    return client.get(f"/api/runs/{rid}").json()["state"]["targets"]["e1"]
+
+
+def test_a_program_fix_on_a_timing_span_row_keeps_the_date_check_on_the_timing_span(runs_dir):
+    box = {}
+    _two_source_timing_run(runs_dir, program="ICARUS", client_out=box)
+    st = _fix(box["client"], box["rid"], "program", "ICARUS", "ICARUS Phase 3")
+    date = {c["name"]: c for c in st["effective_checks"]}["date_match"]
+    assert date["result"] == "pass", date["reason"]
+    assert date["reason"].startswith("Date compared against timing span src-r2-ptgx p1")
+    assert st["checks_stale"] is False
+    line = [json.loads(l) for l in (runs_dir / box["rid"] / "decisions.jsonl").read_text().splitlines()][-1]
+    assert line["action"] == "recheck" and line["recheck"]["result"] != "fail"
+
+
+def test_a_date_fix_is_rechecked_against_the_timing_span(runs_dir):
+    box = {}
+    _two_source_timing_run(runs_dir, program="ICARUS", client_out=box)
+    st = _fix(box["client"], box["rid"], "date_text", "Q1 2027", "Q3 2027")
+    date = {c["name"]: c for c in st["effective_checks"]}.get("date_match")
+    line = [json.loads(l) for l in (runs_dir / box["rid"] / "decisions.jsonl").read_text().splitlines()][-1]
+    checks = {c["name"]: c for c in line["recheck"]["after"]["checks"]}
+    assert checks["date_match"]["result"] == "fail"
+    assert checks["date_match"]["reason"].startswith("Date compared against timing span src-r2-ptgx p1")
+    assert line["recheck"]["result"] == "fail"
+    before = {c["name"]: c for c in line["recheck"]["before"]["checks"]}
+    assert before["date_match"]["result"] == "pass"       # the old value checked against the same timing span
