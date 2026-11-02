@@ -70,6 +70,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import copy
 import hashlib
 import math
 import os
@@ -206,23 +207,17 @@ def window_reason(row: dict, now: date, last: date, months: int) -> str | None:
 
 
 def past_reason(row: dict, run_date: date, source: dict | None = None) -> str | None:
-    """Code exclusion only when the event's full period ended strictly before the run date."""
-    # A parsed value is only a proposal until the date check supports it. In
-    # particular, a failed or uncheckable date must remain reviewable.
-    date_check = next((c for c in row.get("checks", [])
-                       if c.get("name") == "date_match" or c.get("id") == "date_match"
-                       or c.get("label") == "Date read as written"), None)
-    if not date_check or date_check.get("result") != "pass":
-        return None
-    if source is not None:
-        from runs.claim_assessment import check_current
-        if not check_current(date_check, row, source):
-            return None
-    return past_candidate_reason(row, run_date)
+    """Compatibility entry point: a printed date cannot justify excluding an event.
+
+    PIVOT leaves every interpretation for review. After explicit acceptance,
+    the shared calendar partition places past dates in Past, without dropping
+    the source or pretending that date comparison established the event.
+    """
+    return None
 
 
 def past_candidate_reason(row: dict, run_date: date) -> str | None:
-    """The date-only past rationale, used as a proposal when date_match is not pass."""
+    """A date-only note, never proof that the proposed event is historical."""
     try:
         start = date.fromisoformat(row["date"]) if row.get("date") else None
     except (TypeError, ValueError):
@@ -233,8 +228,8 @@ def past_candidate_reason(row: dict, run_date: date) -> str | None:
     if end >= run_date:
         return None
     if end != start:
-        return f"Already past: the event period ended {end.isoformat()} before this run began ({run_date.isoformat()})."
-    return f"Already past: the event date {start.isoformat()} was before this run began ({run_date.isoformat()})."
+        return f"Proposed period ended {end.isoformat()} before this run began ({run_date.isoformat()})."
+    return f"Proposed date {start.isoformat()} was before this run began ({run_date.isoformat()})."
 
 
 def today() -> date:
@@ -833,10 +828,12 @@ def run_job(runs_dir: Path, run_id: str, reader, second=None, as_of: date | None
 class Job:
     def __init__(self, run_dir: Path, reader, second=None, as_of: date | None = None, wonder=None, sam=None,
                  index: sources.Index | None = None):
-        self.dir, self.reader, self.second, self.as_of, self.wonder = run_dir, reader, second, as_of, wonder
+        # The injected reader may be reused by concurrent jobs. Its gate and
+        # fallback allowance belong to this job, never to the shared template.
+        self.dir, self.reader, self.second, self.as_of, self.wonder = run_dir, reader, copy.copy(second), as_of, wonder
         self.sam = sam
-        if second is not None and hasattr(second, "before_fallback"):
-            second.before_fallback = self._before_fallback
+        if self.second is not None and hasattr(self.second, "before_fallback"):
+            self.second.before_fallback = self._before_fallback
         self.given_index = index                  # Job 51g: a frozen run reads its own index, not this one
         self.index = index or sources.load_index()
         self._held: int | None = None             # the budget reservation of the call in flight (count_turn releases it)
@@ -957,8 +954,9 @@ class Job:
         self.meta["turns_total"] += 1
         classification = (reply.extra or {}).get("billing_classification_reason")
         if classification:
-            self.job["log"].append({"at": now_utc(), "note": classification,
-                                    "model": price_name(reply.model)})
+            extra = reply.extra or {}
+            self.job["log"].append({"at": now_utc(), "note": classification, "model": price_name(reply.model),
+                                    **{k: extra[k] for k in ("route", "http_status") if k in extra}})
         if reply.images is not None:      # a model priced per image (SAM 3.1)
             cost = prices.image_cost_usd(price_name(reply.model), reply.images)
         else:
@@ -1376,38 +1374,17 @@ class Job:
         return [e.get("quote") for e in evs if isinstance(e, dict)] if isinstance(evs, list) else []
 
     def apply_window(self, rows: list[dict], at: str, *, source: dict | None = None) -> None:
-        """Mark only events whose full period ended before this run as code exclusions.
-
-        Future proposals remain available; the calendar presents those beyond its six-month window in Later.
-        """
+        """Keep dated history as proposals; an accepted past event is placed in Past."""
         run_date = run_reference_date({"run": self.meta})
-        exclusions = self.run.setdefault("exclusions", [])
-        sources_by_id = {s.get("id"): s for s in self.run.get("sources", [])}
-        if source is not None:
-            sources_by_id[source.get("id")] = source
         for row in rows:
             if row.get("group") == "removed" or not row.get("date"):
                 continue
-            reason = past_reason(row, run_date, sources_by_id.get(row.get("source_id"), {}))
-            if reason is None:
-                candidate = past_candidate_reason(row, run_date)
-                date_check = next((c for c in row.get("checks", []) if c.get("name") == "date_match"), None)
-                if candidate and (not date_check or date_check.get("result") != "pass"):
-                    proposal = (f"{candidate} Proposed exclusion not applied because Date read as written is "
-                                f"{(date_check or {}).get('result') or 'unavailable'}.")
+            if candidate := past_candidate_reason(row, run_date):
+                proposal = candidate + " The date-to-event relationship needs your review; the proposal was not excluded."
+                if row.get("past_exclusion_proposal") != proposal:
                     row["past_exclusion_proposal"] = proposal
-                    row.setdefault("trail", []).append({"step": "Past exclusion not applied", "tag": "Code",
+                    row.setdefault("trail", []).append({"step": "Past date kept for review", "tag": "Code",
                         "who": "server.jobs", "at": at, "text": proposal})
-                continue
-            prior = row.get("reason")
-            if prior:
-                reason += " " + prior
-            row["group"] = "removed"
-            row["reason"] = reason
-            row.setdefault("trail", []).append({"step": "Left out as already past", "tag": "Code",
-                "who": "server.jobs", "at": at, "text": reason})
-            exclusions.append({"id": f"x{len(exclusions) + 1}", "target": row["id"],
-                               "rule": "event_in_past", "reason": reason, "by": "code"})
 
     def coverage_date(self, source: dict) -> date:
         """A dated sentence counts when its date is after the run's reference date: the persisted
@@ -1775,7 +1752,7 @@ class Job:
                 return True
             trig = escalate.trigger(row, escalate.SENT_FOR)
             y_range = escalate.band(row, words_doc)
-            text = escalate.prompt(entry, trig, y_range, words_doc, types, self.choices["note_for_agent"])
+            text = escalate.prompt(entry, trig, y_range, words_doc, types, self.choices["note_for_agent"], row=row)
             region = escalate.region_png(image, words_doc, y_range)
             if self.wonder_would_cross(escalate.estimate_usd(text, region)):
                 done[sid] = "budget"
@@ -1861,8 +1838,9 @@ class Job:
         """One send-back per row whose date text is not in its quote: the reader that wrote the row is asked once (one
         counted, priced turn per page and reader, for all its rows) for the sentence that states the date. `phase`
         "first": the first reader's rows, right after it read the page; "second": the second reader's rows, asked of the
-        second reader once it has read. The new quote is taken only if it is printed on the page; the checks then decide
-        the row (runs/build_entry.build_row). True when the page is finished with; False when the run stopped."""
+        second reader once it has read. A repair may correct timing on the unchanged event passage. A different
+        timing sentence is retained as a proposal for a person; it never replaces the event quotation.
+        True when the page is finished with; False when the run stopped."""
         sid = page["source_id"]
         key = sid if phase == "first" else f"{sid}#second"
         done = self.job.setdefault("sent_back", {})
@@ -1931,6 +1909,15 @@ class Job:
                              "text": prompt, "tokens": {"prompt": pt, "completion": None} if isinstance(pt, int) else None})
         quote = (answer or {}).get("quote")
         date_text = (answer or {}).get("date_text")
+        if answer is not None:
+            row["timing_proposal"] = {"model": price_name(reading["model"]), "at": at,
+                                      "source_id": source.get("id"), "page_number": words_doc.get("page_number"),
+                                      "proposal": copy.deepcopy(answer)}
+        if source.get("id") != row.get("source_id") or words_doc.get("page_number") != row.get("page_number"):
+            row["trail"].append({"step": "Send-back result", "tag": "Code", "who": who, "at": at,
+                                 "text": "The timing answer belongs to a different source or page. "
+                                         "The event evidence stays unchanged; a person must review the relationship."})
+            return
         if not (isinstance(quote, str) and quote.strip() and isinstance(date_text, str) and date_text.strip()):
             row["trail"].append({"step": "Send-back result", "tag": "Code", "who": who, "at": at,
                                  "text": "The reader gave no sentence for the date. The row stays as it was."})
@@ -1942,7 +1929,9 @@ class Job:
             return
         event = {k: row.get(k) for k in ("ticker", "company", "event_type", "title", "date", "date_end", "program",
                                          "indication")}
-        event.update(quote=quote, date_text=date_text, box=None)
+        # This is a code-built timing proposal, not a raw legacy reader event.
+        # Its copied controlled category must not become a reader type hint.
+        event.update(quote=quote, date_text=date_text, box=None, type_hint=None)
         proposal = build_entry.build_row(0, event, reading, source, words_doc, at, share=share,
                                          model_name=price_name(reading["model"]),
                                          consumed_artifact=consumed_artifact)
@@ -1956,6 +1945,13 @@ class Job:
             row["trail"].append({"step": "Send-back result", "tag": "Code", "who": who, "at": at,
                                  "text": "The sentence the reader gave is not printed on the page. The row stays as "
                                          "it was."})
+            return
+        if " ".join(quote.split()) != " ".join((row.get("quote") or "").split()):
+            row["trail"].append({"step": "Send-back result", "tag": "Code", "who": who, "at": at,
+                                 "text": "The timing sentence is printed on this page, but it differs from the "
+                                         "event quotation. Both are retained; code does not establish their relationship. "
+                                         "The event quotation and qualifications stay unchanged. No mistake is counted. "
+                                         "Proposed timing sentence: " + quote})
             return
         old = next(c for c in row["checks"] if c["name"] == "date_match")
         held = _real_disagreement(row.get("disagreement"))
@@ -1973,7 +1969,9 @@ class Job:
         row["trail"].append({"step": "Send-back result", "tag": "Code", "who": who, "at": at,
                              "text": f"The sentence is printed on the page. The row takes it; the checks decide: "
                                      f"{proposal['status']}."})
-        if proposal["status"] == "matched":
+        repaired_date = next(c for c in proposal["checks"] if c["name"] == "date_match")
+        if (proposal["status"] == "matched" and old["result"] == "fail"
+                and repaired_date["result"] == "pass"):
             ids = [int(m["id"][1:]) for m in self.run["mistakes"] if m["id"][1:].isdigit()]
             self.run["mistakes"].append({
                 "id": f"m{max(ids, default=0) + 1}", "target": row["id"], "caught_by": "code",

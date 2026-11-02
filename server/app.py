@@ -73,6 +73,19 @@ DECISIONS_LOCK = threading.Lock()
 ACCURACY_UNBOUND_REASON = ("This Accuracy result was saved before the inputs it scored were recorded. "
                            "Re-score to show it.")
 ACCURACY_MISMATCH_REASON = "This Accuracy result does not match the run's current inputs. Re-score to show it."
+REPORT_STALE_REASON = "Saved report is out of date. Rebuild it to show the current results."
+
+
+def report_status(report_dir: Path, run: dict, decisions: list[dict]) -> dict:
+    """Read-only presentation derived from the same binding that gates report serving."""
+    from report.manifest import report_is_current
+    number = run.get("run", {}).get("number")
+    saved = isinstance(number, int) and any((report_dir / name).is_file()
+                                            for name in report_filenames(number))
+    # A verified current bundle answers for itself; the run's report_stale flag
+    # only means "a rebuild failed" and matters while no valid bundle exists.
+    stale = bool((saved or run.get("report_stale")) and not report_is_current(report_dir, run, decisions))
+    return {"report_stale": stale, "report_stale_reason": REPORT_STALE_REASON if stale else None}
 
 
 class RunStore:
@@ -185,22 +198,11 @@ class RunStore:
 
 
 def verify_page_files(run_dir: Path, run: dict) -> None:
-    """Refuse the run (409) if any page image or words file it names is missing or differs from its hash."""
-    for src in run.get("sources", []):
-        for page in src.get("pages", []):
-            try:
-                if page.get("words") and not page.get("words_sha256"):
-                    raise HTTPException(409, f"This run is not served: its file {page['words']} has no hash recorded in run.json.")
-                if page.get("image") and not page.get("image_sha256"):
-                    raise HTTPException(409, f"This run is not served: its file {page['image']} has no hash recorded in run.json.")
-                if page.get("words") or page.get("derived_words"):
-                    sources.load_page_evidence(run_dir, page)
-                elif page.get("image"):
-                    sources.load_page_image_evidence(run_dir, page)
-            except HTTPException:
-                raise
-            except sources.SourcesError as exc:
-                raise HTTPException(409, str(exc)) from exc
+    """Translate the shared saved-page boundary into the API's refusal response."""
+    try:
+        sources.verify_page_files(run_dir, run)
+    except sources.SourcesError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 def _find_target(run: dict, target: str) -> tuple[str, dict, dict | None, object] | None:
@@ -415,7 +417,8 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         job_path = store.run_dir(run_id) / "job.json"
         # Job 51e: how many unpriced calls the person accepted, so the UI's marker reads 'cost unknown' until then
         accepted = jobs.accepted_count(json.loads(job_path.read_text())) if job_path.exists() else 0
-        return {**run, "state": state, "unknown_cost_accepted": accepted, "calendar_partition": partition,
+        return {**run, **report_status(store.run_dir(run_id) / "report", run, decisions),
+                "state": state, "unknown_cost_accepted": accepted, "calendar_partition": partition,
                 "calendar_window": ({"start": window_start, "end": window_end} if window_start else
                                     {"start": None, "end": None, "unresolved": True,
                                      "reason": UNRESOLVED_REASON}),
@@ -548,18 +551,19 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         number = run.get("run", {}).get("number")
         if not isinstance(number, int) or name not in report_filenames(number):
             raise HTTPException(404, "No such report file.")
-        if run.get("report_stale"):
-            raise HTTPException(404, run.get("report_stale_reason") or
-                                "This run's report is out of date after a state change and has not been rebuilt.")
-        from report.manifest import report_is_current
         with DECISIONS_LOCK:
             decisions = store.decisions(run_id)
-        if not report_is_current(store.run_dir(run_id) / "report", run, decisions):
-            raise HTTPException(404, "This saved report is not verified against the current run state.")
-        f = store.run_dir(run_id) / "report" / name
-        if not f.is_file():
+        report_dir = store.run_dir(run_id) / "report"
+        # One verification: the exact bytes read and hashed here are the bytes served.
+        # Same rule as report_status: any saved artifact makes an unbound bundle stale.
+        from report.manifest import verified_report_bytes
+        saved = any((report_dir / n).is_file() for n in report_filenames(number))
+        data = verified_report_bytes(report_dir, run, decisions, name)
+        if data is None and (saved or run.get("report_stale")):
+            raise HTTPException(404, REPORT_STALE_REASON, headers={"X-Report-Reason": REPORT_STALE_REASON})
+        if data is None:
             raise HTTPException(404, "This run has no saved report file with that name.")
-        return Response(f.read_bytes(), media_type=REPORT_TYPES[Path(name).suffix])
+        return Response(data, media_type=REPORT_TYPES[Path(name).suffix])
 
     if Path(ui_dir).is_dir():
         app.mount("/", StaticFiles(directory=ui_dir, html=True), name="ui")
@@ -574,6 +578,14 @@ def jobs_view(store: RunStore, run_id: str) -> dict:
 def _decide(store: RunStore, run_id: str, run: dict, line: dict) -> dict:
     """Check the decision against the current state, re-check a fix, append. The caller holds DECISIONS_LOCK."""
     decisions = store.decisions(run_id)
+    if line["action"] == "keep":
+        before = current_state(run, decisions)
+        target = before["targets"].get(line.get("target"))
+        if target and target["kind"] == "row":
+            # This value is always server-computed; never trust a supplied hash
+            # or stamp legacy Keeps during load. Preserve the exact effective
+            # proposal/evidence accepted at this decision's write boundary.
+            line = {**line, "review_basis": target["review_basis"]}
     state = current_state(run, decisions + [line])
     refused = [x for x in state["ignored"] if x["index"] == len(decisions)]
     if refused:

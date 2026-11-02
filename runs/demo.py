@@ -47,10 +47,11 @@ def list_lines(runs_dir: Path) -> list[str]:
     for rid in run_ids(runs_dir):
         run, state = _load(Path(runs_dir) / rid)
         m = run["run"]
-        rows = state["counts"]["rows"]
+        review = state["counts"]["review"]
         what = "sample" if m.get("sample") else (m.get("status") or "saved")
-        lines.append(f"  {rid:<12} #{m['number']:<2} {m['label']}  [{what}]  rows: kept {rows['kept']}, corrected "
-                     f"{rows['corrected']}, open {rows['open']}")
+        lines.append(f"  {rid:<12} #{m['number']:<2} {m['label']}  [{what}]  rows: "
+                     f"Accepted by you {review['accepted']}, Proposed — needs review {review['proposed']}, "
+                     f"Excluded {review['excluded']}")
     return lines
 
 

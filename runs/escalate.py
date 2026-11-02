@@ -1,27 +1,15 @@
-"""Escalation to Muse Wonder: when a row fails a check or the two readers disagree, one row's page region goes to a
-stronger model for a re-read, and whatever it answers goes through the same checks.
+"""One bounded mechanical date repair, never a replacement interpretation.
 
-    candidates(rows)                  the event rows to send: a failed check, or a disagreement between the readers
-    trigger(row)                      why: the first failed check's label and reason, or the disputed field
-    region_png(row, page_png, words_doc, page_pt)   (PNG bytes of the band of the page around the row, its y range)
-    prompt(entry, trigger, band, page_pt, types, note)   what Wonder is asked
-    apply(row, ...)                   record the escalation on the row; replace its values only if the re-read passes
-                                      every check
-
-Muse Wonder is never trusted on its own. Its answer is a new proposal, built with the same builder as every other
-row, so the same five checks run on it (quote on the page, box on the quote, date as printed, the source, the kind
-of event). If it passes every check and the row had failed one, the row takes its values (group `corrected`, status
-`matched`) and the failure is recorded as a mistake the CODE caught, repaired by the escalation. If it does not pass,
-the row stays as it was. If the row was sent because the readers disagree, nothing is replaced: only a person's fix
-settles a disagreement, and Wonder's reading is added to the trail as evidence.
-
-The trail, one actor per step: Code "Sent to Muse Wonder because <check> failed" (runs.escalate), Code "Instructions
-sent to Muse Wonder" (capture.wonder), Model "Muse Wonder" (its tokens and cost), Code "Checked" for each check on its
-proposal, Code "Escalation result" (runs.escalate). A row that is sent and not replaced carries the same steps; its
-result says "the row stays as it was" and why.
+Muse Wonder proposes date fields against the unchanged original quote and page.
+Code compares the same mechanical check before/after. Alternate passages or
+interpretations stay evidence for a person, and every repaired row still needs
+human acceptance. The runner owns the existing one-attempt and spending gates.
 """
 
 from __future__ import annotations
+
+from copy import deepcopy
+import json
 
 from accuracy import types as T
 from capture import read_events, read_table
@@ -29,14 +17,15 @@ from checks import event_checks
 from checks.common import normalize
 from checks.selector_match import _quote_run
 from runs import build_entry, prices
-from runs.state import _real_disagreement, derive_status
+from runs.proposal import CONTEXT_FIELDS, context_steps, normalized_context
+from runs.state import _real_disagreement
 
 WONDER = "Muse Wonder"
 WHO = "runs.escalate"
 WONDER_WHO = "capture.wonder"
 MAX_PER_PAGE = 1     # rows sent to Wonder from one page: each is a counted, priced turn
 WONDER_SHARE = 0.25  # Wonder's part of a limited run's spending limit: past it nothing more is sent
-SENT_FOR = ("Date read as written", "Event type matches the quote")   # the failures worth Wonder's price
+SENT_FOR = (event_checks.DATE_LABEL,)   # the failures worth Wonder's price
 PAD_PT = 60.0        # how far above and below the row the region reaches, in PDF points
 CHARS_PER_TOKEN = 4  # a rough count of prompt tokens from text, for the estimate made before a call
 BYTES_PER_IMAGE_TOKEN = 750  # the same for an image, from its PNG size
@@ -49,7 +38,8 @@ def estimate_usd(prompt_text: str, image: bytes | None) -> float:
     return tokens * prices.PRICES_PER_1M_USD["Muse Wonder"]["input"] / 1_000_000
 
 
-FIELDS = ("event_type", "title", "date_text", "date", "date_end", "quote", "program", "indication", "box")
+
+FIELDS = ("event_type", "title", "date_text", "date", "date_end", "quote", "program", "indication", "box") + CONTEXT_FIELDS
 
 
 def candidates(rows: list[dict]) -> list[dict]:
@@ -64,7 +54,7 @@ def candidates(rows: list[dict]) -> list[dict]:
 
 
 def budgeted(rows: list[dict]) -> list[dict]:
-    """The candidates Wonder is worth sending: a failed date or event type check. A box or quote failure is mended by
+    """The candidates Wonder is worth sending: a failed literal date check. A box or quote failure is mended by
     code (runs.build_entry.locate_box) or is a paraphrase Wonder cannot cure; a disagreement is settled only by a person,
     so Wonder's reading would be evidence only."""
     return [r for r in candidates(rows) if event_checks.row_status(r.get("checks") or []) == event_checks.FAILED
@@ -116,22 +106,42 @@ def region_png(page_png: bytes, words_doc: dict, y_range: tuple[float, float]) -
 
 
 def prompt(entry: dict, trig: dict, y_range: tuple[float, float], words_doc: dict,
-           types: tuple[str, ...] = read_events.EVENT_TYPES, note: str | None = None) -> str:
-    head = (f"You are re-reading one region of a page. The image is a horizontal band of the page, from {y_range[0]:.0f} "
-            f"to {y_range[1]:.0f} points down a page {words_doc['page_width']:.0f} points wide and "
-            f"{words_doc['page_height']:.0f} tall; it is not the whole page.\n"
-            f"An earlier reading of an event printed in this band was stopped by a code check: "
-            f"{trig['label']}. {trig['why']}\n"
-            f"Read the band again, carefully, from the image alone. Boxes are on a 0 to 1000 grid over this band image.\n\n")
-    return head + read_events.build_image_prompt(entry, types, note)
+           types: tuple[str, ...] = read_events.EVENT_TYPES, note: str | None = None,
+           *, row: dict | None = None) -> str:
+    target = {key: (row or {}).get(key) for key in
+              ("id", "source_id", "page_number", "quote", "date_text", "date", "date_end")}
+    return (f"Repair only the date fields of this existing proposal. Do not rewrite the event.\n"
+            f"The image is a horizontal band from {y_range[0]:.0f} to {y_range[1]:.0f} points down a page "
+            f"{words_doc['page_width']:.0f} points wide and {words_doc['page_height']:.0f} tall; "
+            f"it is not the whole page.\n"
+            f"The mechanical check was {trig['label']}: {trig['why']}\n"
+            "Read the printed date in the ORIGINAL quotation from the image. Copy the id, source_id, "
+            "page_number and quote exactly. Keep printed words in order; line breaks may become spaces. "
+            "Do not use a neighboring sentence or infer which event a date belongs to. "
+            "If the original passage does not supply a usable date, return an empty events list.\n"
+            "Return JSON only: {\"events\": [{\"id\": \"...\", \"source_id\": \"...\", "
+            "\"page_number\": 1, \"quote\": \"original passage\", \"date_text\": \"printed date wording\", "
+            "\"date\": \"YYYY-MM-DD\", \"date_end\": null, \"box\": [x0,y0,x1,y1]}]}. "
+            "date is the exact day, or the first day of a period; date_end is its last day (null for an exact day). "
+            "For a quarter use its first day through its last day, never an invented day inside it. "
+            "If bounds cannot be resolved, use null. Boxes use a 0 to 1000 grid over this band image, "
+            "ordered left, top, right, bottom; null if unavailable. The box is a proposal, not a geometry check. "
+            "Do not return title, type, program, indication, relevance, conditions, subject or relationship.\n"
+            f"Filing reference date: {entry.get('filing_date') or entry.get('published_date')}.\n"
+            "Original proposal: " + json.dumps(target, ensure_ascii=False))
 
 
 def pick(row: dict, events: list[dict]) -> dict | None:
-    """The event in Wonder's answer that is this row's: the one whose quote overlaps the row's quote (the band may hold
-    other events too). Overlap is the only identity: with none, the row has no answer (never "the only event")."""
-    from runs.compare import _same_quote
+    """Explicit target or exact passage only. Ambiguous answers never pick the first.
 
-    return next((e for e in events if _same_quote(row.get("quote"), e.get("quote"))), None)
+    An explicitly targeted different passage reaches apply as retained evidence,
+    never as permission to replace the original event quote.
+    """
+    matches = [e for e in events if
+               (e.get("id") == row.get("id") and row.get("id") is not None)
+               or ("id" not in e and isinstance(e.get("quote"), str)
+                   and e["quote"].split() == (row.get("quote") or "").split())]
+    return matches[0] if len(matches) == 1 else None
 
 
 def to_page_points(event: dict, y_range: tuple[float, float], words_doc: dict) -> dict:
@@ -145,7 +155,7 @@ def to_page_points(event: dict, y_range: tuple[float, float], words_doc: dict) -
 def _changes(old: dict, new: dict) -> list[str]:
     return [f"{build_entry.plain_field(f)} from {build_entry.plain_value(f, old.get(f))} to "
             f"{build_entry.plain_value(f, new.get(f))}" for f in FIELDS
-            if f != "box" and normalize(None if old.get(f) is None else str(old.get(f)))
+            if f != "box" and f not in CONTEXT_FIELDS and normalize(None if old.get(f) is None else str(old.get(f)))
             != normalize(None if new.get(f) is None else str(new.get(f)))]
 
 
@@ -174,62 +184,94 @@ def record_unused_call(row: dict, reply, at: str, why: str) -> None:
 
 def apply(row: dict, event: dict | None, reading: dict, source: dict, words_doc: dict, at: str, trig: dict,
           run: dict, share: tuple, prompt_text: str, consumed_artifact: dict | None = None) -> str:
-    """Record the escalation on `row` (and its replacement and mistake on `run`). Returns what happened:
-    "replaced", "kept" (the re-read did not pass every check), "evidence" (a disagreement: nothing replaced) or
-    "unreadable" (no event in the answer)."""
-    pt = (reading.get("usage") or {}).get("prompt_tokens")
-    record_sent(row, pt, at, trig, prompt_text)
+    """Apply date fields only after the same current comparison fails then passes.
+
+    Raw model output stays separate from the copied proposal used for checking.
+    A new or changed interpretation is never applied or credited as a mistake.
+    """
+    from runs import recheck
+    from runs.build_run import to_contract_check
+
+    record_sent(row, (reading.get("usage") or {}).get("prompt_tokens"), at, trig, prompt_text)
+    row["escalation_proposal"] = {"model": WONDER, "at": at, "source_id": source.get("id"),
+        "page_number": row.get("page_number"),
+        "proposal": deepcopy(event if event is not None else {"events": reading.get("events")}),
+        "raw_response": reading.get("raw_response")}
+    row["trail"].append({"step": WONDER, "tag": "Model", "who": WONDER, "at": at,
+        "text": ("No unambiguous date repair proposal was returned." if event is None else
+                 f"Proposed date wording: {event.get('date_text') or 'not supplied'}; "
+                 f"date: {event.get('date') or 'not supplied'}; "
+                 f"end date: {event.get('date_end') or 'not supplied'}. "
+                 f"Quotation: {event.get('quote') or 'not supplied'}"),
+        **prices.model_cost_fields(WONDER, (reading.get("usage") or {}).get("prompt_tokens"),
+                                  (reading.get("usage") or {}).get("completion_tokens"))})
+
+    def hold(reason, outcome="kept"):
+        row["trail"].append({"step": "Escalation result", "tag": "Code", "who": WHO, "at": at,
+            "text": reason + " The row stays as it was; a person must review it. No mistake is counted."})
+        return outcome
+
     if event is None:
-        row["trail"].append({"step": WONDER, "tag": "Model", "who": WONDER, "at": at,
-                             "text": "Answered with no event for this row.",
-                             **prices.model_cost_fields(WONDER, reading.get("usage", {}).get("prompt_tokens"),
-                                                        reading.get("usage", {}).get("completion_tokens"))})
-        row["trail"].append({"step": "Escalation result", "tag": "Code", "who": WHO, "at": at,
-                             "text": f"{WONDER}'s answer held no event for this row. The row stays as it was."})
-        return "unreadable"
-    proposal = build_entry.build_row(0, event, reading, source, words_doc, at, share=share, model_name=WONDER,
-                                     instructions_who=WONDER_WHO, consumed_artifact=consumed_artifact)
-    model_step = next((t for t in proposal["trail"] if t["tag"] == "Model"),
-                      next(t for t in proposal["trail"] if t["step"] == "Proposed"))
-    row["trail"].append({**model_step, "step": WONDER})
-    row["trail"] += [t for t in proposal["trail"] if t["step"] == "Checked"]
-    passed = proposal["status"] == "matched"
-    if trig["kind"] == "disagreement":
-        d = row["disagreement"]
-        value = proposal.get(d["field"])
-        agrees = [who for who, v in (("Muse Spark", d["first_reader"]), ("Muse Spark Open", d["second_reader"]))
-                  if v is not None and normalize(str(v)).lower() == normalize(str(value)).lower()]
-        row["trail"].append({"step": "Escalation result", "tag": "Code", "who": WHO, "at": at,
-                             "text": (f"{WONDER} read {build_entry.plain_field(d['field'])} as "
-                                      f"{build_entry.plain_value(d['field'], value) if value is not None else 'nothing'}"
-                                      + (f", as {' and '.join(agrees)} did" if agrees else ", as neither reader did")
-                                      + f"; its reading {'passed' if passed else 'did not pass'} every check. A "
-                                        f"disagreement is settled only by a person's fix, so nothing was replaced.")})
-        return "evidence"
-    if not passed:
-        failed = next((c for c in proposal["checks"] if c["result"] == "fail"), None)
-        why = (f"{failed['label']} failed: {failed['reason']}" if failed
-               else "a check could not run on it")
-        row["trail"].append({"step": "Escalation result", "tag": "Code", "who": WHO, "at": at,
-                             "text": f"{WONDER}'s reading did not pass every check ({why}). The row stays as it was."})
-        return "kept"
+        return hold("No unambiguous answer for this row.", "unreadable")
+    if trig.get("kind") == "disagreement" or _real_disagreement(row.get("disagreement")):
+        return hold("A model repair cannot settle the readers' disagreement.", "evidence")
+    if trig.get("label") not in SENT_FOR:
+        return hold("This is not an applicable mechanical date repair.")
+    if source.get("id") != row.get("source_id") or not any(
+            p.get("page_number") == row.get("page_number") for p in source.get("pages", [])):
+        return hold("The checked source/page is not the original row's source/page.")
+    for field in ("id", "source_id", "page_number"):
+        if field in event and (type(event[field]) is not type(row.get(field)) or event[field] != row.get(field)):
+            return hold(f"The answer changes {field}; it is alternative evidence only.")
+    if not isinstance(event.get("quote"), str) or not event["quote"].strip() or (
+            event["quote"].split() != (row.get("quote") or "").split()):
+        return hold("The answer uses a different passage; a timing sentence cannot replace the event quotation.")
+
+    # Omitted fields were not requested. Explicit changes (including malformed
+    # values) are retained, not silently joined onto the original interpretation.
+    interpretation = ("event_type", "title", "program", "indication", "ticker", "company") + CONTEXT_FIELDS
+    changes = [{"field": f, "before": deepcopy(row.get(f)), "after": deepcopy(event[f])}
+               for f in interpretation if f in event
+               and normalized_context(event[f]) != normalized_context(row.get(f))]
+    row["escalation_context_changes"] = changes
+    row["trail"] += context_steps(event, at)
+    if changes:
+        return hold("The answer changes interpretation (" + "; ".join(
+            f"{c['field']}: {c['before']!r} -> {c['after']!r}" for c in changes) + ").")
+    if any(f not in event or (event[f] is not None and not isinstance(event[f], str))
+           for f in recheck.DATE_FIELDS):
+        return hold("The answer did not supply all requested date fields in usable shapes.")
+    proposal = deepcopy(row)
+    for field in recheck.DATE_FIELDS:
+        proposal[field] = event[field]
     changed = _changes(row, proposal)
-    old_check = next(c for c in row["checks"] if c["result"] == "fail")
-    for f in FIELDS:
-        row[f] = proposal[f]
-    row["checks"] = proposal["checks"]
-    if _real_disagreement(row.get("disagreement")):
-        # a two-sided disagreement is settled only by a person: the proposal is replaced, the hold stays
-        row["status"], row["group"], _ = derive_status(row)
-    else:
-        row["status"], row["group"] = "matched", "corrected"
-        row["reason"] = (f"Re-read by {WONDER} after {trig['label']} failed; its reading passed every check.")
+    if not changed:
+        return hold("The answer changes no requested date value.")
+
+    before = [to_contract_check(c.to_dict()) for c in recheck.row_checks(
+        row, source, words_doc, consumed_artifact=consumed_artifact)]
+    after = [to_contract_check(c.to_dict()) for c in recheck.row_checks(
+        proposal, source, words_doc, consumed_artifact=consumed_artifact)]
+    old_check = next(c for c in before if c["name"] == "date_match")
+    new_check = next(c for c in after if c["name"] == "date_match")
+    row["escalation_proposal"]["comparison"] = {"before": old_check, "after": new_check}
+    row["trail"] += [{"step": "Checked", "tag": "Code", "who": WHO, "at": at,
+                      "text": f"{c['label']}: {c['result']}. {c['reason']}"} for c in after]
+    if old_check["result"] != "fail" or new_check["result"] != "pass":
+        return hold("The same current date comparison did not change from fail to pass.")
+    if event_checks.row_status(after) != event_checks.MATCHED:
+        return hold("The proposed repair did not satisfy the remaining mechanical checks.")
+    for field in recheck.DATE_FIELDS:
+        row[field] = proposal[field]
+    row["checks"] = after
+    row["status"], row["group"] = "matched", "corrected"
+    row["reason"] = f"{WONDER} repaired a printed date comparison. Event meaning still needs your review."
     row["trail"].append({"step": "Escalation result", "tag": "Code", "who": WHO, "at": at,
-                         "text": f"{WONDER}'s reading passed every check. The row takes it"
-                                 + (f" ({'; '.join(changed)})" if changed else "") + "."})
-    ids = [int(m["id"][1:]) for m in run["mistakes"] if m["id"][1:].isdigit()]
-    run["mistakes"].append({"id": f"m{max(ids, default=0) + 1}", "target": row["id"], "caught_by": "code",
-                            "what_changed": (f"{WONDER} re-read the row after {trig['label']} failed: "
-                                             + ("; ".join(changed) if changed else "the box") + "."),
-                            "type": T.mistake_type(old_check, T.WRONG_VALUE)})
+        "text": "Applied only the date repair (" + "; ".join(changed)
+                + "). The original event quotation and interpretation are unchanged. Human acceptance is still required."})
+    mistakes = run.setdefault("mistakes", [])
+    ids = [int(m["id"][1:]) for m in mistakes if m["id"][1:].isdigit()]
+    mistakes.append({"id": f"m{max(ids, default=0) + 1}", "target": row["id"], "caught_by": "code",
+        "what_changed": f"{WONDER} repaired the same failed date comparison: " + "; ".join(changed) + ".",
+        "type": T.mistake_type(old_check, T.WRONG_VALUE)})
     return "replaced"

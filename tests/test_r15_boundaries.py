@@ -9,13 +9,16 @@ from capture import read_table
 from checks.event_checks import date_match
 from tests.test_escalation import FakeWonder, job_of, reread_right, run_of, start, wrong_date_events
 from tests.test_run_controls import FakeReader
+from tests.pivot_assertions import assert_proposal_held
 
 
 @pytest.mark.parametrize("word", ["data_code", "data2", "_data", "2data"])
-def test_an_event_word_is_not_part_of_a_longer_word_of_digits_or_underscores(word):
-    got = date_match("Q4 2027", "2027-10-01", f"The company expects {word} in Q4 2027.", "2027-12-31",
+def test_literal_date_ignores_event_word_boundaries_without_accepting_meaning(word):
+    quote = f"The company expects {word} in Q4 2027."
+    got = date_match("Q4 2027", "2027-10-01", quote, "2027-12-31",
                      event_type="trial_results")
-    assert got.result == "could_not_run"
+    assert got.result == "pass" and "date bounds only" in got.reason
+    assert_proposal_held(quote, "trial_results", date_text="Q4 2027", start="2027-10-01", end="2027-12-31")
 
 
 def _run(tmp_path, monkeypatch, tokens):

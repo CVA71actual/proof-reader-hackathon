@@ -50,18 +50,21 @@ def test_a_character_prefix_is_not_a_run_of_words():
     assert sentence_covered("See May 1", [quote]) is False
 
 
-def test_an_event_word_needs_the_same_trailing_boundary_as_the_event_type():
-    """'reported' is not 'report', and 'database' is not 'data'. Gap 8: the date belongs to the event's clause.
-
-    With a trailing boundary the year has no event word (could not run), Q3 is not the event's date (fail),
-    and Q4 is the one clause that names the data (pass).
-    """
+def test_printed_dates_do_not_establish_the_event_type():
+    """DATE-LITERAL-001: original keyword traps stay intact; meaning stays held."""
+    from tests.pivot_assertions import assert_proposal_held
     reported = date_match("2026", "2026-01-01", "The company reported cash on hand in 2026.", "2026-12-31",
                           event_type="trial_results")
     quote = "The database locks in Q3 2026. Topline data are expected in Q4 2027."
     q3 = date_match("Q3 2026", "2026-07-01", quote, "2026-09-30", event_type="trial_results")
     q4 = date_match("Q4 2027", "2027-10-01", quote, "2027-12-31", event_type="trial_results")
-    assert (reported.result, q3.result, q4.result) == ("could_not_run", "fail", "pass")
+    assert (reported.result, q3.result, q4.result) == ("pass", "pass", "pass")
+
+    assert_proposal_held("The company reported cash on hand in 2026.", "trial_results",
+                         date_text="2026", start="2026-01-01", end="2026-12-31")
+    for text, start, end in (("Q3 2026", "2026-07-01", "2026-09-30"),
+                             ("Q4 2027", "2027-10-01", "2027-12-31")):
+        assert_proposal_held(quote, "trial_results", date_text=text, start=start, end=end)
 
 
 def test_october_is_not_the_date_printed_as_sept_slash_oct():

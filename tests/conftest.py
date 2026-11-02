@@ -108,6 +108,10 @@ def check37_evidence_baseline():
                     "note": "Retain this proposed period for the rendering fixture; no passing date check is claimed."}
             kept_dir = saved(keep_root, rows, decisions=[keep])
             kept_run, kept_decisions = load_run_dir(kept_dir)
+            from tests.pivot_assertions import fresh_keep
+            # Add a NEW bound decision; retain the unbound line as history.
+            kept_decisions.append(fresh_keep(kept_run, kept_decisions, "e1"))
+            (kept_dir / "decisions.jsonl").write_text("".join(json.dumps(d) + "\n" for d in kept_decisions))
             kept_view = build_view(kept_run, kept_decisions, generated_at=generated_at)
             kept_target = kept_view["state"]["targets"]["e1"]
             assert kept_target["status"] != "matched"
@@ -120,3 +124,24 @@ def check37_evidence_baseline():
             return _r34_bound_baseline(run_dir, run, text)
 
     return Baseline()
+
+
+def rebuilt_source_view(run: dict) -> dict:
+    """Compare a fresh build to a loaded historical run without rewriting history.
+
+    Current checks (including every result, reason and binding) remain exact.
+    Only the historical check/trail/summary presentation and absent legacy
+    proposal fields differ legitimately from a build made with today's code.
+    """
+    view = copy.deepcopy(run)
+    for row in view.get("rows", []):
+        for field in ("conditions", "relation", "relevance", "subject_company"):
+            row.setdefault(field, None)
+        row.pop("check_history", None)
+        row.pop("trail", None)
+        row.pop("reason", None)  # original verdict summary, retained in the saved file
+    for table in view.get("tables", []):
+        for row in table.get("rows", []):
+            for cell in row.get("cells", []):
+                cell.pop("check_history", None)
+    return view

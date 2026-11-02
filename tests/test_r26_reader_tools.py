@@ -177,8 +177,12 @@ def test_the_cap_of_three_calls_per_event_and_thirty_per_page(runs_dir):
     assert got[3]["reason"] == reader_tools.OVER_EVENT and box.summary()["tool_calls"] == 4
     assert box.summary()["tool_calls_run"] == 3
     page = reader_tools.ToolBox(read_events.load_words()["words"], "2026-08-05")
-    last = [page.call("event_type_for_words", {"quote": f"quote number {i}"})[0] for i in range(31)]
+    # PIVOT: exercise the real mechanical tool, not the retired type oracle.
+    # Distinct synthetic quotes keep the per-event cap separate from the page cap.
+    last = [page.call("date_as_written", {"quote": f"Item {i}: Q1 2027", "date_text": "Q1 2027",
+                 "date": "2027-01-01", "date_end": "2027-03-31"})[0] for i in range(31)]
     assert [a["result"] for a in last[:30]] == ["pass"] * 30 and last[30]["reason"] == reader_tools.OVER_PAGE
+    assert page.summary()["tool_calls_run"] == 30
     # through the job: the fourth ask about one event is answered with the refusal, not run
     reader = ToolReader(ask(*[tool_call("quote_on_page", quote=q) for _ in range(4)]), final())
     doc = run(runs_dir, reader)
@@ -187,7 +191,7 @@ def test_the_cap_of_three_calls_per_event_and_thirty_per_page(runs_dir):
     assert doc["run"]["reader_tools"]["tool_calls"] == 4 and doc["run"]["reader_tools"]["tool_calls_run"] == 3
 
 
-def test_date_and_type_tools_use_the_real_checks(runs_dir):
+def test_date_tool_uses_literal_check_and_retired_type_tool_cannot_accept_meaning(runs_dir):
     e = EVENTS[1]
     args = dict(date_text=e["date_text"], date=e["date"], date_end=e["date_end"], quote=e["quote"],
                 event_type=e["event_type"], program=e["program"])
@@ -195,9 +199,21 @@ def test_date_and_type_tools_use_the_real_checks(runs_dir):
                         final())
     doc = run(runs_dir, reader)
     answers = [json.loads(m["content"]) for m in reader.sent[1]["messages"] if m["role"] == "tool"]
-    assert answers[0]["result"] == "pass" and answers[1]["found"] == "milestone"
+    # PIVOT / DATE-LITERAL-001: source-date comparison survives; type inference does not.
+    assert answers[0]["result"] == "pass" and "date bounds only" in answers[0]["reason"]
+    assert answers[1]["result"] == "could_not_run" and answers[1]["found"] is None
+    assert "does not infer event meaning" in answers[1]["reason"]
+    assert "event_type_for_words" not in {t["function"]["name"] for t in reader_tools.TOOLS}
     names = [t["step"] for t in doc["rows"][1]["trail"] if t["step"].startswith("Called")]
-    assert names == ["Called the check: Date read as written", "Called the check: Event type matches the quote"]
+    assert names == ["Called the check: Date period found in quote", "Called the check: Event meaning needs review"]
+    refusal = next(t for t in doc["rows"][1]["trail"]
+                   if t["step"].startswith("Check answered: Code does not infer event meaning"))
+    assert refusal["tag"] == "Code" and refusal["who"] == "capture.reader_tools"
+    from runs.state import current_state
+    from runs.calendar import calendar_entries
+    state = current_state(doc, [])
+    assert all(not state["targets"][r["id"]]["accepted"] for r in doc["rows"])
+    assert calendar_entries(doc, state) == []
 
 
 def test_the_json_request_path_when_the_tools_parameter_is_rejected(runs_dir):

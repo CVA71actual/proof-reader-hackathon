@@ -133,6 +133,15 @@
     if (t && t.date_text_cleared === true) return '';
     return shownField(t, row, 'date_text');
   }
+  // item 38 (adviser ruling): the trail is the historical record — the reader
+  // step quotes the reader's ORIGINAL date words verbatim and attributed. The
+  // row is the filed record and is never mutated by a person's later clear or
+  // edit, so row.date_text is always the reader's own wording; every
+  // current-state surface keeps wearing the server's date_display instead.
+  function readerDateWords(row) {
+    var w = row && row.date_text;
+    return (typeof w === 'string' && w.trim() !== '') ? w : null;
+  }
   // #52 type provenance (server: runs/proposal.py type_presentation). Labels
   // render as the server sends them; values read in plain words — a known id
   // becomes its word, freeform reader wording passes through untouched.
@@ -2135,21 +2144,32 @@
   function daySpanWords(a, b) {
     var ya = (a || '').slice(0, 4), yb = (b || '').slice(0, 4);
     if (!dayMonth(a) || !dayMonth(b)) return '';
-    // '1 Jan – 31 Mar 2027' (the start's year omitted when it matches the end's)
-    return dayMonth(a) + ' – ' + dayMonth(b) + ' ' + yb + (ya === yb ? '' : '');
+    // '1 Jan – 31 Mar 2027' (the start's year omitted when it matches the
+    // end's); a cross-year span keeps the start year: '1 Nov 2026 – 28 Feb 2027'
+    return (ya === yb ? dayMonth(a) + ' – ' : dayMonth(a) + ' ' + ya + ' – ') +
+           dayMonth(b) + ' ' + yb;
+  }
+  // F1 (item 38, second pass): the Reader step's sentence is the reader's
+  // historical record — the READER's own date: the row's words (the row is
+  // filed and never mutated by decisions) with the row period's day-span
+  // words, never the current state, and no ISO dates
+  function readerWhen(row) {
+    var dt = readerDateWords(row) || '';
+    var d1 = row.date, d2 = row.date_end;
+    var span = (d1 && d2 && daySpanWords(d1, d2)) || '';
+    if (dt && span) return dt + ' (' + span + ')';
+    if (dt) return dt;
+    if (span) return span;
+    if (d1 && dayMonth(d1)) return dayMonth(d1) + ' ' + String(d1).slice(0, 4);
+    return 'no date on the page';
   }
   function plainProposal(row, t, s) {
-    var dt = shownDateText(t, row);
-    // L4: the server's date_display is complete (wording + period) — no local
-    // day-span suffix after it, and no ISO dates invented on the trail
-    var when;
-    if (t && typeof t.date_display === 'string') when = dt;
-    else {
-      var d1 = shownField(t, row, 'date'), d2 = shownField(t, row, 'date_end');
-      if (dt && d2 && d1 && daySpanWords(d1, d2)) when = dt + ' (' + daySpanWords(d1, d2) + ')';
-      else when = dt || d1 || 'no date on the page';
-    }
-    var quote = shownField(t, row, 'quote');
+    // after a clear or an edit the sentence still wears the reader's own date
+    // — no date_display, no person wording, no ISO dates on the trail
+    var when = readerWhen(row);
+    // the quote is the reader's own too — a person's later quote edit is
+    // never credited to the reader (third pass)
+    var quote = (typeof row.quote === 'string' && row.quote.trim() !== '') ? row.quote : '';
     // H1: the proposal sentence quotes what the READER proposed — a person's
     // later type edit is never credited to the model (runs/proposal.py:108)
     var said = eventWord(row.event_type) + ' · ' + when;
@@ -2240,6 +2260,16 @@
                        /\bon\b/.test(s.text || '');
       var text = isProposal ? plainProposal(row, t, s) : (s.text || '');
       body.append(el('div', 'tx', text));
+      if (isProposal) {
+        // item 38 (third pass): the attribution rides ONLY when the wording
+        // was cleared or fixed — never on an untouched row, whose trail is
+        // byte-identical to the pre-item-38 render
+        var rw = readerDateWords(row);
+        var touched = t && (t.date_text_cleared === true ||
+                            (t.fixes || []).some(function (f) { return f && f.field === 'date_text'; }));
+        if (rw !== null && touched)
+          body.append(el('div', 'meta', "Reader's words: '" + rw + "'"));
+      }
       if (s.tag === 'Model' && s.tokens) {
         var parts = [];
         if (s.tokens.prompt !== null && s.tokens.prompt !== undefined) parts.push(num(s.tokens.prompt) + ' tokens in');

@@ -24,7 +24,7 @@ VISIBLE_NOT_CHECKED = {
 CHECK_INPUTS = {
     event_checks.QUOTE_ID: ("quote", "box"),
     "selector_match": ("quote", "box"),
-    event_checks.DATE_ID: ("date_text", "quote", "event_type", "title", "program"),
+    event_checks.DATE_ID: ("date_text", "quote"),
     event_checks.SOURCE_ID: (),
     event_checks.TYPE_ID: ("event_type", "quote"),
     "text_layer_match": ("value",),

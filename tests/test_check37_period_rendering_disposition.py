@@ -2,6 +2,8 @@
 An explicit person Keep admits the proposed period; no automatic evidence claim.
 """
 import pytest
+import json
+from tests.pivot_assertions import fresh_keep
 from tests.redteam.test_round8 import _saved, _row, FIXED, _pdf_text, _docx_text
 from report.data import load_run_dir, build_view
 from report.build import build
@@ -15,6 +17,8 @@ def _kept_view(tmp_path):
     run, decisions = load_run_dir(d)
     before = build_view(run, [], generated_at=FIXED)
     assert not before['calendar']
+    decisions.append(fresh_keep(run, decisions, 'e1'))
+    (d / 'decisions.jsonl').write_text(''.join(json.dumps(x) + '\n' for x in decisions))
     view = build_view(run, decisions, generated_at=FIXED)
     t = view['state']['targets']['e1']
     assert t['status'] != 'matched' and t['decided_by_person']
@@ -38,7 +42,9 @@ def test_person_kept_unchecked_period_preserves_original_rendering_assertions(tm
 
 
 def test_first_day_only_mutation_is_caught(tmp_path, monkeypatch):
-    monkeypatch.setattr(data, '_date_display', lambda values: values.get('date') or '—')
+    # RED 2: the display is derived once in the state (runs.calendar); mutate it there.
+    from runs import calendar as runs_calendar
+    monkeypatch.setattr(runs_calendar, 'effective_date_display', lambda values, timing: values.get('date') or '—')
     _, view = _kept_view(tmp_path)
     with pytest.raises(AssertionError):
         _assert_period(view)

@@ -1,5 +1,5 @@
-"""Job 14: "today" read from the release dateline (or the filing date), one event-type word table shared by the reader
-prompts and type_match, and more date forms (calendar year, late/early/mid year, 1Q27)."""
+"""Dateline/date forms and the retained coverage classifier. PIVOT-001 retires
+keyword certification of reader meaning; the original word examples remain."""
 
 from datetime import date
 
@@ -10,6 +10,7 @@ from checks import event_checks
 from checks.event_checks import (EVENT_WORDS, date_match, dateline_date, event_type_for, expand_short_year,
                                  is_today_word, parse_period, release_day, type_match, vague_period_window)
 from runs import build_entry
+from tests.pivot_assertions import assert_proposal_held
 
 SOURCE = {"id": "s", "kind": "filing", "published_date": "2026-08-06", "pages": [{"page_number": 1}]}
 READING = {"prompt_text": "p", "usage": {}, "fake": False}
@@ -115,13 +116,15 @@ WORD_TYPE = [
 
 
 @pytest.mark.parametrize("word,kind", WORD_TYPE)
-def test_each_word_gives_its_type_and_a_wrong_type_still_fails(word, kind):
+def test_coverage_word_category_does_not_certify_either_reader_type(word, kind):
     quote = f"The company expects the {word} in 2027."
     assert event_type_for(quote) == kind
     assert word.lower() in EVENT_WORDS[kind]
-    assert type_match(kind, quote).result == "pass"
+    assert type_match(kind, quote).result == "not_needed"
     wrong = next(t for t in ("trial_results", "regulatory_decision", "launch", "conference", "filing") if t != kind)
-    assert type_match(wrong, quote).result == "fail"
+    assert type_match(wrong, quote).result == "not_needed"
+    assert_proposal_held(quote, kind)
+    assert_proposal_held(quote, wrong)
 
 
 def test_a_sentence_with_none_of_the_words_is_unknown():
@@ -129,15 +132,16 @@ def test_a_sentence_with_none_of_the_words_is_unknown():
     assert event_type_for(None) == "unknown"
 
 
-def test_code_assigns_the_type_from_quote_and_retains_an_arbitrary_reader_hint():
+def test_code_preserves_arbitrary_reader_hint_without_keyword_type_assignment():
     words = page(QUOTE)
     ev = {"ticker": "ACME", "company": "Acme", "event_type": "data_readout_thing", "title": "Study",
           "date_text": "today", "date": None, "date_end": None, "quote": "Topline data are expected in Q4 2027.",
           "program": "AC-1", "indication": None, "box": None, "word_ids": []}
     row = build_entry.build_row(1, ev, READING, SOURCE, words, "2026-10-13T00:00:00+00:00")
-    assert row["event_type"] == "trial_results"
+    assert row["event_type"] == "unknown"
     assert row["type_hint"] == "data_readout_thing"
-    assert any("Assigned trial results from the quoted words" in t["text"] for t in row["trail"])
+    assert not any("Assigned trial results from the quoted words" in t["text"] for t in row["trail"])
+    assert_proposal_held(ev["quote"], "data_readout_thing")
 
 
 def test_the_reader_prompts_print_the_same_table():
@@ -284,6 +288,7 @@ def test_nearby_regulator_is_not_regulatory(text):
 
 
 @pytest.mark.parametrize("text", _REGULATORY)
-def test_governed_decision_is_regulatory(text):
+def test_governed_decision_coverage_category_does_not_accept_reader_meaning(text):
     assert event_checks.event_type_for(text) == "regulatory_decision"
-    assert event_checks.type_match("regulatory_decision", text).result == event_checks.PASS
+    assert event_checks.type_match("regulatory_decision", text).result == event_checks.NOT_NEEDED
+    assert_proposal_held(text, "regulatory_decision")

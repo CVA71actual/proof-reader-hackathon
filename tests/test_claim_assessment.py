@@ -217,7 +217,7 @@ def test_unbound_saved_checks_are_history_after_zero_cost_load_recheck():
     assert target["check_history"] == old
 
 
-def test_bound_text_layer_and_box_pass_is_current_while_visibility_stays_not_checked():
+def test_bound_text_layer_and_box_pass_does_not_accept_a_proposal():
     run, row, source = _sample()
     page = source["pages"][0]
     words = json.loads((ROOT / "runs/sample" / page["words"]).read_text())
@@ -233,7 +233,14 @@ def test_bound_text_layer_and_box_pass_is_current_while_visibility_stays_not_che
     assert target["effective_checks"]
     assert target["claim_assessments"]["visible_passage"]["result"] == "not_checked"
     assert target["group"] == "kept"
-    assert target["on_calendar"] is True
+    # GROUP-AXIS-001: a mechanical pass is not human acceptance.
+    assert target["on_calendar"] is False
+    assert target["needs_attention"] and not target["accepted"]
+    keep = {"target": row["id"], "action": "keep", "by": "person", "at": "2026-11-01T13:00:00Z",
+            "review_basis": target["review_basis"]}
+    accepted = current_state(run, [keep])["targets"][row["id"]]
+    assert accepted["on_calendar"] is True
+    assert accepted["effective_checks"] == target["effective_checks"]
 
 
 def test_timing_labels_keep_absent_unresolved_and_explicit_dependency_distinct():
@@ -273,3 +280,17 @@ def test_one_contract_serializer_preserves_near_miss_and_assessment_to_report_vi
     [reported] = _check_rows([saved])
     assert reported["near_match"] == "19," and reported["differs"] == [["9,", "19,"]]
     assert reported["assessment"] == assessment
+
+
+def test_literal_date_binding_ignores_semantics_but_tracks_quote_wording_and_source():
+    # DATE-LITERAL-001: interpretation edits expire Keep, not the literal date comparison.
+    _, row, source = _sample()
+    original = claim_assessment.assessment_for("date_match", row, source)
+    for field in ("event_type", "title", "program"):
+        edited = claim_assessment.assessment_for("date_match", {**row, field: "changed meaning"}, source)
+        assert edited == original
+    for field in ("date_text", "quote"):
+        edited = claim_assessment.assessment_for("date_match", {**row, field: "different wording"}, source)
+        assert edited["input_sha256"] != original["input_sha256"]
+    edited = claim_assessment.assessment_for("date_match", row, {**source, "published_date": "2027-01-01"})
+    assert edited["input_sha256"] != original["input_sha256"]

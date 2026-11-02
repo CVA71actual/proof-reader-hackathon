@@ -18,7 +18,7 @@ from checks import event_checks
 from runs import build_entry
 from runs.state import current_state
 from server.app import create_app
-from tests.conftest import without_trails
+from tests.conftest import without_trails, rebuilt_source_view
 
 REPO = Path(__file__).resolve().parent.parent
 FIXTURES = REPO / "fixtures"
@@ -185,7 +185,15 @@ def test_the_run_build_is_current(run, reading, tmp_path):
     if reading["fake"]:
         pytest.skip("the committed run is built from the live reading")
     fresh = build_entry.build_entry_run(reading, tmp_path / "ptgx-r4a", finished_at=run["run"]["finished_at"])
-    assert without_trails(fresh) == without_trails(run)
+    assert rebuilt_source_view(fresh) == rebuilt_source_view(run)
+    # The parity projection deliberately omits historical reason prose. Check
+    # fresh summaries independently so that omission cannot hide a regression.
+    row = by_program(fresh, "PN-8047")
+    assert "Date period found in quote" in row["reason"]
+    assert "not a day" in row["reason"] and "Q1 2027" in row["reason"]
+    target = current_state(fresh, [])["targets"][row["id"]]
+    assert "The event remains a proposal; a person must decide whether to keep it." in target["reason"]
+    assert not target["accepted"] and target["needs_attention"]
 
 
 def test_the_pn8047_row(run):
@@ -198,9 +206,11 @@ def test_the_pn8047_row(run):
     if row["status"] == "matched":
         assert (row["date"], row["date_end"]) == ("2027-01-01", "2027-03-31")
         assert row["group"] == "kept"
-        assert {c["result"] for c in row["checks"]} == {"pass"}
-        assert "Checks passed:" in row["reason"] and "Every check passed" not in row["reason"]
-        assert "keeps the period as stated" in row["reason"]
+        assert {c["name"]: c["result"] for c in row["checks"]} == {"quote_match": "pass", "selector_match": "pass", "date_match": "pass", "source_rule": "pass", "type_match": "not_needed"}
+        # The saved summary remains history; the effective view uses current checks.
+        target = current_state(run, [])["targets"][row["id"]]
+        assert target["needs_attention"] and not target["accepted"]
+        assert "event meaning needs your review" in target["reason"]
 
 
 def test_period_rows_are_handled_as_periods(run):
@@ -283,8 +293,8 @@ def test_a_program_code_is_not_a_year():
     assert r.result == "could_not_run"
 
 
-def test_initiation_is_a_milestone_word():
-    assert "initiation" in event_checks.event_anchors("milestone")
+def test_initiation_date_compares_without_event_anchors():
+    # DATE-LITERAL-001: initiation is a proposal, not a required code keyword.
     r = event_checks.date_match("Q1 2027", "2027-01-01", "Phase 1 initiation is anticipated in Q1 2027.",
                                 "2027-03-31", event_type="milestone")
     assert r.result == "pass", r.reason
@@ -374,8 +384,12 @@ def test_remove_on_the_real_row(client, run):
     assert client.get("/api/runs/ptgx-r4a").json()["state"]["counts"]["excluded_by_person"] == 1
 
 
-def test_state_rule_with_no_decisions_leaves_the_run_as_it_was(run):
+def test_state_rule_without_decisions_preserves_mechanics_but_requires_review(run):
     st = current_state(run, [])
     for row in run["rows"]:
         target = st["targets"][row["id"]]
         assert target["group"] == row["group"]
+        # GROUP-AXIS-001: a mechanical group never accepts a model proposal.
+        assert not target["accepted"] and not target["on_calendar"]
+        if row["group"] != "removed":
+            assert target["needs_attention"]

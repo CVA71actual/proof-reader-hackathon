@@ -65,6 +65,7 @@ from runs.prices import cost_per_kept_row_usd
 from runs.ids import require_unique_target_ids
 from runs.claim_assessment import checks_current as bound_checks_current, page_evidence, row_source, visible_passage_assessment
 from runs.page_outcomes import read_view as page_outcomes_view
+from runs.proposal import CONTEXT_FIELDS, type_presentation
 from datetime import date
 
 
@@ -121,7 +122,7 @@ EXCLUDED_BY = ("code", "person")
 UNRESOLVED = ("open", "unverified")
 
 ROW_FIELDS = ("ticker", "company", "event_type", "title", "date_text", "date", "date_end", "quote", "program",
-              "indication")
+              "indication") + CONTEXT_FIELDS
 CELL_FIELDS = ("value",)
 # The fields the checks compare. A fix to any other field cannot be shown right or wrong by a re-check.
 ROW_CHECKED_FIELDS = ("quote", "date_text", "date", "date_end", "event_type")
@@ -137,11 +138,17 @@ def _empty(v) -> bool:
 def _real_disagreement(d) -> dict | None:
     """A disagreement exists only when both readers gave a value for a field; a reader that read nothing (None or
     empty) is not a disagreement. Each field (the main one and every "also") is judged on its own: the first one
-    with two values becomes the main disagreement and the rest stay in "also"."""
+    with two values becomes the main disagreement and the rest stay in "also".
+    Proposal context is an exception: a missing qualification versus a supplied
+    one, or [] versus a condition list, must remain a review hold. Neither
+    missing context nor an empty list is semantic confirmation."""
     if not d:
         return None
     entries = [{k: v for k, v in x.items() if k != "also"} for x in [d, *(d.get("also") or [])]]
-    real = [x for x in entries if not _empty(x.get("first_reader")) and not _empty(x.get("second_reader"))]
+    real = [x for x in entries
+            if (x.get("field") in CONTEXT_FIELDS and x.get("first_reader") != x.get("second_reader"))
+            or (x.get("field") not in CONTEXT_FIELDS
+                and not _empty(x.get("first_reader")) and not _empty(x.get("second_reader")))]
     if not real:
         return None
     return {**real[0], **({"also": real[1:]} if real[1:] else {})}
@@ -186,7 +193,9 @@ def derive_status(row: dict, checks: list | None = None, disagreement=None) -> t
 
 
 def _derived_reason(row: dict, status: str, group: str, checks: list) -> str | None:
-    """A new reason only when the derivation changed the row's status or group; else None (keep the saved one)."""
+    """Do not present a saved verdict summary as current after checks were refreshed."""
+    if status == "matched" and row.get("check_history"):
+        return "The current mechanical checks have no failures; event meaning needs your review."
     if (status, group) == (row["status"], row["group"]):
         return None
     if status == "failed":
@@ -416,6 +425,13 @@ def _why_not(d, targets: dict, stacks: dict) -> str | None:
         allowed = ROW_FIELDS if targets[target]["kind"] == "row" else CELL_FIELDS
         if fx["field"] not in allowed:
             return f"The field {fx['field']!r} cannot be fixed here."
+        if fx["field"] in CONTEXT_FIELDS:
+            value = fx["to"]
+            if fx["field"] == "conditions":
+                if value is not None and not (isinstance(value, list) and all(isinstance(x, str) for x in value)):
+                    return "Conditions must be a list of source excerpts or null."
+            elif value is not None and not isinstance(value, str):
+                return "A proposal description must be text or null."
         current = _apply(targets[target], stacks[target])["values"][fx["field"]]
         if fx["from"] != current:
             return f"The fix starts from {fx['from']!r} but the current value is {current!r}."
@@ -430,28 +446,6 @@ def _waiting_fix(stack: list[dict]) -> int | None:
         if stack[i]["action"] == "fix":
             return i if stack[i].get("recheck") is None else None
     return None
-
-
-def _needs_attention(s: dict) -> bool:
-    """Open or unverified; or corrected with a pending/could-not-run re-check, or an open disagreement.
-    A later keep or remove is the person's answer, so it no longer needs attention."""
-    if s["group"] in UNRESOLVED:
-        return True
-    if s["group"] != "corrected":
-        return False
-    return (s.get("needs_recheck", False)
-            or (s["recheck"] or {}).get("result") in ("could_not_run", "unresolved")
-            or s["status"] == "undecided")
-
-
-def _on_calendar(s: dict) -> bool:
-    """The one placement rule; consumers use this state result rather than re-deriving it."""
-    if s["group"] not in {"kept", "corrected"}:
-        return False
-    if s["group"] == "kept" or not s["fixes"]:
-        return True
-    return ((s["recheck"] or {}).get("result") == "pass" and not s["needs_recheck"]
-            and s["status"] != "undecided")
 
 
 def _exclusions(run: dict, states: dict) -> list[dict]:
@@ -478,16 +472,16 @@ def current_state(run: dict, decisions: list) -> dict:
                 recorded_in ("run" or "decisions")
     excluded    {code, person}: rows left out under a rule, by who left them out
     exclusions  one entry per excluded row: target, rule, reason, by
-    unresolved  rows now "open" or "unverified", plus rows now "corrected" whose fix is awaiting a re-check,
-                whose re-check could not run, or that are still "undecided" (the one "Needs attention" number); a later keep or
-                remove takes a row out
-    cost_per_kept_row_usd  run.spend_usd divided by the rows now in "kept" or "corrected"; null when the spend
+    unresolved  event rows whose derived review_bucket is proposed (counts.review.proposed).
+                Passing checks or a field fix do not accept a proposal. A current bound Keep or
+                an exclusion takes it out; an expired Keep returns it to review.
+    cost_per_kept_row_usd  run.spend_usd divided by event rows explicitly accepted for the calendar; null when the spend
                 was not recorded or no row is kept
     """
     require_unique_target_ids(run)
     # Delayed import breaks the state/calendar cycle: calendar imports the
     # shared reference-date contract from this module.
-    from runs.calendar import explicit_dependency, timing_state
+    from runs.calendar import date_text_cleared, effective_date_display, explicit_dependency, timing_state
 
     # Historical check outcomes must not establish today's status. Validate the
     # saved candidate before any check can derive status or timing; load paths
@@ -578,16 +572,48 @@ def current_state(run: dict, decisions: list) -> dict:
         display_current = {**current, "date": state["values"].get("date"),
                            "date_end": state["values"].get("date_end")}
         state["timing_state"] = timing_state(display_current)
+        # One effective date display from the complete effective tuple, shared
+        # by the API row, calendar entries and the report (never recomputed there).
+        state["date_display"] = effective_date_display(state["values"], state["timing_state"])
+        state["date_text_cleared"] = date_text_cleared(state["values"], state.get("fixes"))
         state["contingent"] = explicit_dependency(display_current)
         state.pop("candidate", None)
         state.pop("candidate_values", None)
         state.pop("check_status", None)
-        state["needs_attention"] = _needs_attention(state)
-        state["on_calendar"] = _on_calendar(state)
+        # A mechanical assessment and a person's acceptance answer different
+        # questions. Derive review state from the existing decision log, not
+        # from a pass, model agreement, or a code-corrected value. A field edit
+        # still needs an explicit Keep of the resulting proposal.
+        from runs.review import review_basis, matches_review_basis, review_projection
+        basis = review_basis(run, base["candidate"], state["values"])
+        state["review_basis"] = basis
+        active = stacks[target]
+        latest = active[-1] if active else {}
+        action = state.get("last_action")
+        accepted = action == "keep" and matches_review_basis(latest.get("review_basis"), basis)
+        state["review_history"] = [
+            {**copy.deepcopy(d), "history_reason": (
+                "This Keep has no recorded proposal/evidence basis; review is required."
+                if d.get("review_basis") is None else
+                "The proposal or evidence changed after this Keep; review is required.")}
+            for d in active if d["action"] == "keep" and not matches_review_basis(d.get("review_basis"), basis)]
+        state["semantic_status"] = ("human_accepted" if accepted else
+                                    "human_removed" if action == "remove" else "unresolved")
+        if action == "keep" and not accepted:
+            state["reason"] = state["review_history"][-1]["history_reason"]
+        if state["semantic_status"] == "unresolved" and state["group"] != "removed":
+            state["reason"] = ((state.get("reason") or "Checks recorded.")
+                               + " The event remains a proposal; a person must decide whether to keep it.")
+        state.update(review_projection(state))
+        state["type_presentation"] = type_presentation(base["candidate"], state["values"], state["fixes"])
 
     counts = {"rows": {g: 0 for g in GROUPS}, "cells": {g: 0 for g in GROUPS}}
     for s in states.values():
         counts["rows" if s["kind"] == "row" else "cells"][s["group"]] += 1
+
+    counts["review"] = {key: sum(1 for st in states.values()
+                                      if st["kind"] == "row" and st["review_bucket"] == key)
+                        for key in ("accepted", "proposed", "excluded")}
 
     mistakes = {k: 0 for k in CAUGHT_BY}
     for m in run.get("mistakes", []):
@@ -605,15 +631,15 @@ def current_state(run: dict, decisions: list) -> dict:
     exclusions = _exclusions(run, states)
     excluded = {k: sum(1 for x in exclusions if x["by"] == k) for k in EXCLUDED_BY}
     counts["excluded_by_person"] = excluded["person"]
-    unresolved = sum(1 for s in states.values() if s["kind"] == "row" and s["needs_attention"])
+    unresolved = counts["review"]["proposed"]
 
     spend = (run.get("run") or {}).get("spend_usd")
-    kept_rows = counts["rows"]["kept"] + counts["rows"]["corrected"]
+    kept_rows = counts["review"]["accepted"]
 
     return {"view_version": 1, "targets": states, "page_outcomes": page_outcomes_view((run.get("run") or {}).get("page_outcomes")),
             "counts": counts, "mistakes": mistakes, "mistake_list": mistake_list,
             "excluded": excluded, "exclusions": exclusions, "unresolved": unresolved, "ignored": ignored,
-            "cost_per_kept_row_usd": cost_per_kept_row_usd(spend, kept_rows)}
+            "kept_rows": kept_rows, "cost_per_kept_row_usd": cost_per_kept_row_usd(spend, kept_rows)}
 
 
 def _target_models(run: dict) -> dict:

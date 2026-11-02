@@ -8,8 +8,9 @@ A reader has three parts:
                     the plain sentence for why the call did not succeed). `image`: PNG bytes of a page or a region,
                     sent beside the prompt as a data-URI image_url (the form Muse Spark Open and Muse Wonder accepted)
 
-LiveReader is Muse Spark with the same call pattern as capture/read_table.py (strict JSON, retry once without
-response_format on a 400 or 422). The key comes from the environment (MODEL_API_KEY) or ~/.config/proof-reader/env
+LiveReader is Muse Spark with the same call pattern as capture/read_table.py (strict JSON). A 400 or 422 is never
+retried automatically (PIVOT RED 3): the failed request is returned with its status and may_have_been_billed, and
+any further request is a new attempt through the job's gate. The key comes from the environment (MODEL_API_KEY) or ~/.config/proof-reader/env
 through read_table.load_env_file, and is never printed, logged or saved. Cost is never decided here: the job
 computes it from the token counts with runs/prices.py (a model not in that table has no cost, so no spend).
 """
@@ -96,18 +97,11 @@ class LiveReader:
         http.take_billed()
         try:
             resp = create(client, self.model, messages, json_mode=True)
-        except Exception as e:  # some endpoints reject response_format; retry once without it
+        except Exception as e:  # no automatic retry on 400/422: one request, one auditable attempt
             if http.is_silent(e):
                 return timeout_reply(self.name, self.model, exc=e)
-            if read_table._status(e) not in (400, 422):
-                return Reply(None, self.model, error=read_table._plain_error(e))
-            response_format = "none"
-            try:
-                resp = create(client, self.model, messages, json_mode=False)
-            except Exception as e2:
-                if http.is_silent(e2):
-                    return timeout_reply(self.name, self.model, exc=e2)
-                return Reply(None, self.model, error=read_table._plain_error(e2))
+            return Reply(None, self.model, error=read_table._plain_error(e),
+                         extra={"route": "meta", **read_table.failure_billing(e)})
         raw = resp.choices[0].message.content if resp.choices else None
         usage = getattr(resp, "usage", None)
         extra = {"base_url": read_table.BASE_URL, "requested_model": self.model,
@@ -136,8 +130,11 @@ class LiveReader:
             if http.is_silent(e):
                 return timeout_reply(self.name, self.model, exc=e)
             rejected = bool(tools) and read_table._status(e) in (400, 422)
+            # The rejected request is itself a possibly-billed attempt; the JSON tool
+            # request that may follow is a new call through the job's gate.
             return Reply(None, self.model, error=read_table._plain_error(e),
-                         extra={"tools_rejected": rejected, "status": read_table._status(e)})
+                         extra={"tools_rejected": rejected, "status": read_table._status(e), "route": "meta",
+                                **read_table.failure_billing(e)})
         msg = resp.choices[0].message if resp.choices else None
         calls = None
         if msg is not None and getattr(msg, "tool_calls", None):

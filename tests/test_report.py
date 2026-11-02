@@ -40,6 +40,30 @@ def _docx_text(path: Path) -> str:
     return "\n".join(parts)
 
 
+def _new_keep(run, decisions, target, note=None):
+    """New human acceptance in a unit fixture; never back-fill a historical Keep."""
+    return {"at": "2026-11-01T22:30:00Z", "target": target, "action": "keep",
+            "note": note, "fix": None, "by": "person",
+            "review_basis": current_state(run, decisions)["targets"][target]["review_basis"]}
+
+
+def _copy_and_keep(source, tmp_path, target):
+    """Exercise normal server acceptance against disposable saved evidence."""
+    import shutil
+    from fastapi.testclient import TestClient
+    from server.app import create_app
+
+    root = tmp_path / "runs"
+    destination = root / source.name
+    shutil.copytree(source, destination, ignore=shutil.ignore_patterns("report"))
+    with TestClient(create_app(runs_dir=root)) as client:
+        response = client.post(f"/api/runs/{source.name}/decisions",
+                               json={"target": target, "action": "keep"})
+        assert response.status_code == 200, response.text
+        assert response.json()["state"]["accepted"]
+    return destination
+
+
 def _mask_timestamp(data: bytes, stamp: str) -> bytes:
     return data.replace(stamp.encode("utf-8"), b"TIMESTAMP_MASKED")
 
@@ -59,19 +83,17 @@ def test_sample_builds_both_files(sample_out):
     assert result["docx"].stat().st_size > 500
 
 
-def test_sample_summary_matches_state(sample_out):
+def test_sample_summary_matches_review_state_not_mechanical_groups(sample_out):
     run, decisions = load_run_dir(SAMPLE)
     state = current_state(run, decisions)
     result = build("sample", out=sample_out, generated_at=FIXED_TIME)
     text = _pdf_text(result["pdf"]) + "\n" + _docx_text(result["docx"])
     for group, label in (
-        ("kept", "Checked and kept"),
-        ("corrected", "Corrected"),
-        ("removed", "Checked and removed"),
-        ("unverified", "Unverified"),
-        ("open", "Still open"),
+        ("accepted", "Accepted by you"),
+        ("proposed", "Proposed — needs review"),
+        ("excluded", "Excluded"),
     ):
-        n = state["counts"]["rows"][group]
+        n = state["counts"]["review"][group]
         assert f"{label}: {n}" in text
     m = state["mistakes"]
     excluded = state["excluded"]["code"] + state["excluded"]["person"]
@@ -154,9 +176,10 @@ def test_report_keeps_unresolved_and_fix_history_after_keep():
         {"at": "2026-10-27T16:05:00+00:00", "target": "e7", "action": "recheck", "note": None,
          "fix": None, "by": "code", "recheck": {"result": "could_not_run", "reason": "No source",
          "checks": [], "before": None, "after": None}},
-        {"at": "2026-10-27T16:10:00+00:00", "target": "e7", "action": "keep",
-         "note": "Keep despite unavailable check", "fix": None, "by": "person"},
     ]
+    # FIX-THEN-KEEP-001: an edit and unavailable check do not imply acceptance.
+    assert not current_state(run, decisions)["targets"]["e7"]["accepted"]
+    decisions.append(_new_keep(run, decisions, "e7", "Keep despite unavailable check"))
     view = build_view(run, decisions, generated_at=FIXED_TIME)
     history = [c for c in view["edits"] if c["id"] == "e7"]
     assert history and history[-1]["latest_recheck"] == "could_not_run"
@@ -197,10 +220,14 @@ def test_report_uses_current_recheck_for_evidence_and_separates_ordinary_edits(s
     ]
     from runs.check_load import bind_decisions_on_load
     fixed = bind_decisions_on_load(run, fixed, SAMPLE)
+    assert not current_state(run, fixed)["targets"]["e7"]["accepted"]
+    fixed.append(_new_keep(run, fixed, "e7"))
     view = build_view(run, fixed, generated_at=FIXED_TIME)
     e7 = next(row for row in view["later"] if row["id"] == "e7")
     current = e7["check_limitations"]
-    assert all(c["result"] == "pass" for c in current[:-1])
+    # Type is a proposal, not a second keyword verdict. Literal checks still pass.
+    assert all(c["result"] == ("not_needed" if c["name"] == "Event meaning needs review" else "pass")
+               for c in current[:-1])
     assert [(c["name"], c["result"]) for c in current[-1:]] == [
         ("Claimed words visible on the rendered page", "not_checked")]
     assert any(c["result"] == "fail" for c in e7["check_history"])
@@ -226,8 +253,9 @@ def test_report_uses_current_recheck_for_evidence_and_separates_ordinary_edits(s
         assert "caught by person" in text and "Other edits · no mistake demonstrated" in text
 
 
-def test_sample_calendar_omits_removed(sample_out):
-    result = build("sample", out=sample_out, generated_at=FIXED_TIME)
+def test_sample_calendar_omits_removed(sample_out, tmp_path):
+    run_dir = _copy_and_keep(SAMPLE, tmp_path, "e2")
+    result = build("sample", run_dir=run_dir, out=sample_out, generated_at=FIXED_TIME)
     text = _pdf_text(result["pdf"]) + "\n" + _docx_text(result["docx"])
     # e6 is removed (third-party calendar); e10 removed by person — must not appear in calendar table as kept events
     view = result["view"]
@@ -235,7 +263,7 @@ def test_sample_calendar_omits_removed(sample_out):
     assert "e6" not in cal_ids
     assert "e10" not in cal_ids
     assert "e9" not in cal_ids  # unverified
-    # A bound re-check from the saved source makes the period current on load.
+    # A fresh human Keep admits this source-bound period; historical Keeps do not.
     e2 = next(r for r in view["later"] if r["id"] == "e2")
     assert e2["date_display"] == "Q3 2027"
     assert "Q3 2027" in text
@@ -297,7 +325,10 @@ def test_past_run_never_rebuilt(tmp_path):
 
 def test_ptgx_lists_pn8047_period_and_rendered_note(tmp_path):
     out = tmp_path / "ptgx-out"
-    result = build("ptgx-r4a", run_dir=PTGX, out=out, generated_at=FIXED_TIME)
+    run, _ = load_run_dir(PTGX)
+    target = next(r["id"] for r in run["rows"] if "PN-8047" in r["program"])
+    run_dir = _copy_and_keep(PTGX, tmp_path, target)
+    result = build("ptgx-r4a", run_dir=run_dir, out=out, generated_at=FIXED_TIME)
     text = _pdf_text(result["pdf"]) + "\n" + _docx_text(result["docx"])
     assert "PN-8047" in text
     assert "Q1 2027" in text
@@ -320,9 +351,12 @@ def test_view_uses_same_state_counts():
     run, decisions = load_run_dir(SAMPLE)
     state = current_state(run, decisions)
     view = build_view(run, decisions, generated_at=FIXED_TIME)
-    assert view["counts"] == {g: state["counts"]["rows"][g] for g in view["group_labels"]}
+    # GROUP-AXIS-001: summaries report acceptance; mechanical counts remain diagnostic.
+    assert view["counts"] == state["counts"]["review"]
+    assert view["mechanical_counts"] == state["counts"]["rows"]
     assert view["unresolved"] == state["unresolved"]
-    assert view["state"] is state or view["counts"]["kept"] == state["counts"]["rows"]["kept"]
+    assert view["state"] == state
+    assert view["counts"]["accepted"] == sum(t["accepted"] for t in state["targets"].values() if t["kind"] == "row")
 
 
 def _last_page_body(pdf_bytes: bytes) -> tuple[int, list[str]]:
@@ -369,3 +403,141 @@ def test_saved_reports_match_the_current_window_and_contingent_sections():
             assert f"Contingent · {len(view['contingent'])}" in text, rid
         if view["undated"]:
             assert f"Undated · no timing stated · {len(view['undated'])}" in text, rid
+
+
+def _rendered_texts(view):
+    """PDF text and DOCX text (paragraphs + table cells), whitespace-collapsed so wrapped lines still match."""
+    from report.docx_report import build_docx
+    from report.pdf_report import build_pdf
+    pdf = " ".join((p.extract_text() or "") for p in PdfReader(BytesIO(build_pdf(view))).pages)
+    doc = Document(BytesIO(build_docx(view)))
+    parts = [p.text for p in doc.paragraphs]
+    parts += [cell.text for table in doc.tables for row in table.rows for cell in row.cells]
+    docx = " ".join(parts)
+    return {"pdf": re.sub(r"\s+", " ", pdf), "docx": re.sub(r"\s+", " ", docx)}
+
+
+def _pivot_views():
+    """The four review states, each from a real decision log through the production projection."""
+    import copy
+
+    from tests.test_pivot_proposal_flow import AT, CASES, decision, kept_decision, make_run
+
+    _, run = make_run(CASES[1])
+    edit = {**decision("fix"), "fix": {"field": "title", "from": run["rows"][0]["title"], "to": "Revised proposed title"}}
+    keep = kept_decision(run, [edit])
+    expired_run = copy.deepcopy(run)
+    expired_run["rows"][0]["conditions"] = []  # the row changed after the Keep, so the Keep is history
+    logs = {
+        "proposed": (run, []),
+        "fix_only": (run, [edit]),
+        "accepted": (run, [edit, keep]),
+        "expired": (expired_run, [edit, keep]),
+    }
+    return {name: build_view(r, log, generated_at=AT) for name, (r, log) in logs.items()}, logs
+
+
+def test_renderer_prints_projected_review_labels_and_context():
+    views, logs = _pivot_views()
+    context = ("relevance: Synthetic qualified proposal; meaning needs review. · subject company: Cedar Bio · "
+               "relation: Assigned company; no other relationship proposed.")
+    # Every label comes from runs.review.review_projection via report/data.py for a real decision log
+    # (literal wording pinned in tests/test_pivot_review_projection.py); the renderer prints them verbatim.
+    targets = {name: current_state(run, log)["targets"]["e1"] for name, (run, log) in logs.items()}
+    assert len({t["review_label"] for t in targets.values()}) == 4
+    assert targets["fix_only"]["decision_label"] == "Fixed by you — not yet accepted"
+    assert targets["accepted"]["review_label"] == "Accepted by you"
+    assert targets["accepted"]["decision_label"] == "Kept by you"
+    expected_open = {}
+    for name in ("proposed", "fix_only", "expired"):
+        view, target = views[name], targets[name]
+        assert view["calendar"] == [] and len(view["open_rows"]) == 1, name
+        row = view["open_rows"][0]
+        assert (row["group_label"], row["decision_label"]) == (target["review_label"], target["decision_label"]), name
+        assert view["no_accepted_rows_text"] == "No rows accepted by you.", name
+        decision = target["decision_label"]
+        expected_open[name] = target["review_label"] + (f" · {decision}" if decision and decision != target["review_label"] else "")
+    assert expected_open["fix_only"] == "Corrected, awaiting your review · Fixed by you — not yet accepted"
+    for name, prefix in expected_open.items():
+        for fmt, text in _rendered_texts(views[name]).items():
+            where = f"{name}/{fmt}"
+            assert f"{prefix} · CEDR · Cedar Bio" in text, where
+            assert context in text, where
+            assert "No rows accepted by you." in text, where
+            # never shown as current acceptance
+            assert "Kept by you" not in text, where
+            assert "Accepted by you ·" not in text, where
+            assert "Accepted by you · Fixed by you" not in text, where
+            assert "Kept and corrected" not in text and "kept or corrected" not in text, where
+    accepted = views["accepted"]
+    assert accepted["open_rows"] == [] and len(accepted["calendar"]) == 1
+    assert accepted["no_accepted_rows_text"] is None
+    for fmt, text in _rendered_texts(accepted).items():
+        assert "Accepted by you · Contingent · Kept by you" in text, fmt
+        assert "Accepted by you — ordered by date." in text, fmt
+        assert "No rows accepted by you." not in text, fmt
+        assert f"conditions: if validation succeeds · {context}" in text, fmt
+    for name in ("proposed", "fix_only"):
+        for fmt, text in _rendered_texts(views[name]).items():
+            assert f"conditions: if validation succeeds · {context}" in text, f"{name}/{fmt}"
+    for fmt, text in _rendered_texts(views["expired"]).items():
+        assert f"conditions: none stated · {context}" in text, fmt
+    # the empty-calendar sentence is data.py's, not the renderer's
+    sentinel = dict(views["proposed"], no_accepted_rows_text="SENTINEL empty sentence")
+    for fmt, text in _rendered_texts(sentinel).items():
+        assert "SENTINEL empty sentence" in text and "No rows accepted by you." not in text, fmt
+
+
+@pytest.mark.parametrize("conditions, shown, absent", [
+    (None, "conditions: not stated", "conditions: none stated"),   # unknown: nobody established it
+    ([], "conditions: none stated", "conditions: not stated"),     # the reader said there are none
+])
+def test_renderer_separates_unknown_from_empty_conditions(conditions, shown, absent):
+    from tests.test_pivot_proposal_flow import AT, CASES, make_run
+
+    _, run = make_run(CASES[1])
+    run["rows"][0]["conditions"] = conditions
+    view = build_view(run, [], generated_at=AT)
+    assert [r["conditions"] for r in view["open_rows"]] == [conditions]
+    for fmt, text in _rendered_texts(view).items():
+        assert shown in text, fmt
+        assert absent not in text, fmt
+
+
+def test_renderer_prints_passing_date_check_as_neutral_finding():
+    """DATE-LITERAL-001: a passing date_match compares printed wording only; it is shown by its label, never as a pass."""
+    import copy
+
+    views, _ = _pivot_views()
+    with_pass = [name for name, view in views.items()
+                 if any(c.get("check_name") == "date_match" and c["result"] == "pass"
+                        for r in view["calendar"] + view["open_rows"]
+                        for c in r["check_limitations"] + r.get("check_history", []))]
+    assert {"proposed", "accepted"} <= set(with_pass), with_pass  # Fix-only has no checks on the new value; accepted keeps them as history
+    for name in with_pass:
+        for fmt, text in _rendered_texts(views[name]).items():
+            where = f"{name}/{fmt}"
+            assert "Date period found in quote" in text, where
+            assert "Date period found in quote: pass" not in text, where
+            assert "Quote found on page: pass" in text, where  # other checks keep their result word
+    failed = copy.deepcopy(views["proposed"])
+    for c in failed["open_rows"][0]["check_limitations"]:
+        if c.get("check_name") == "date_match":
+            c["result"] = "fail"
+    for fmt, text in _rendered_texts(failed).items():
+        assert "Date period found in quote: fail" in text, fmt
+
+
+def test_renderer_prints_server_action_with_legacy_provenance_verbatim():
+    """`action` is report/data.py's type_presentation summary; the renderer prints it as given, never rebuilt."""
+    from tests.test_pivot_proposal_flow import AT, CASES, kept_decision, make_run
+
+    _, run = make_run(CASES[1])
+    run["rows"][0].pop("type_hint", None)
+    run["rows"][0]["event_type"] = "trial_results"  # a legacy row: category from the old keyword rule
+    view = build_view(run, [kept_decision(run)], generated_at=AT)
+    row = view["calendar"][0]
+    assert row["action"] == row["type_presentation"]["summary"]
+    assert "Category (from old keyword rule): trial_results" in row["action"]
+    for fmt, text in _rendered_texts(view).items():
+        assert f"action {row['action']}" in text, fmt

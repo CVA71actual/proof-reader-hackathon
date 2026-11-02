@@ -7,6 +7,7 @@ from checks.event_checks import date_match, relative_period
 from report.data import build_view
 from runs.calendar import calendar_entries
 from runs.state import current_state
+from tests.pivot_assertions import fresh_keep
 
 VKTX_QUOTE = ("The company expects to complete the SAD study later this quarter and initiate a 4 week "
               "multiple ascending dose (MAD) study of VK3019 in 1Q27.")
@@ -46,13 +47,15 @@ def test_f1_one_sided_disagreement_with_a_check_that_could_not_run_stays_open():
     assert (t["status"], t["group"]) == ("undecided", "open")
 
 
-def test_f1_one_sided_disagreement_with_every_check_passed_or_not_needed_is_matched(tmp_path, check37_evidence_baseline):
+def test_f1_one_sided_disagreement_with_passing_checks_still_needs_acceptance(tmp_path, check37_evidence_baseline):
     text = "PN-881 Phase 2 initiation is anticipated in Q1 2027."
     row = _undecided([_check("quote_match", "pass"), _check("type_match", "not_needed")])
     row.update(date_text="Q1 2027", quote=text)
     run = check37_evidence_baseline.r34(tmp_path / "f1", _run(row), text)
     t = current_state(run, [])["targets"]["r1"]
     assert (t["status"], t["group"]) == ("matched", "kept")
+    # GROUP-AXIS-001: the mechanical result grants no semantic acceptance.
+    assert t["needs_attention"] and not t["accepted"] and not t["on_calendar"]
     from runs.claim_assessment import visible_passage_assessment
     assert visible_passage_assessment(run, run["rows"][0])["result"] == "not_checked"
 
@@ -67,6 +70,8 @@ def test_f2a_period_found_by_the_date_check_is_written_to_the_values(tmp_path, c
     state = current_state(run, [])
     v = state["targets"]["r1"]["values"]
     assert (v["date"], v["date_end"]) == ("2027-01-01", "2027-01-31")
+    assert not calendar_entries(run, state)
+    state = current_state(run, [fresh_keep(run, [], "r1")])
     entry = calendar_entries(run, state)[0]
     assert (entry["date"], entry["date_end"]) == ("2027-01-01", "2027-01-31")
 
@@ -128,8 +133,7 @@ def test_f9_a_fixed_program_appears_on_the_calendar(tmp_path, check37_evidence_b
     assert not state_before_keep["targets"]["r1"]["on_calendar"]
     assert decisions[-1]["recheck"]["result"] == "could_not_run"
     assert not state_before_keep["targets"]["r1"]["fixes"][-1]["mistake"]
-    decisions.append({"action": "keep", "target": "r1", "by": "person",
-                      "at": "2026-10-30T00:00:02Z", "note": "Keep the person-corrected program."})
+    decisions.append(fresh_keep(run, decisions, "r1", note="Keep the person-corrected program."))
     state = current_state(run, decisions)
     assert state["targets"]["r1"]["values"]["program"] == "PN-8047"
     assert calendar_entries(run, state)[0]["program"] == "PN-8047"
@@ -146,7 +150,6 @@ def test_f9_a_fixed_program_appears_in_the_export(tmp_path, check37_evidence_bas
     assert state_before_keep["targets"]["r1"]["values"]["program"] == "PN-8047"
     assert not state_before_keep["targets"]["r1"]["on_calendar"]
     assert decisions[-1]["recheck"]["result"] == "could_not_run"
-    decisions.append({"action": "keep", "target": "r1", "by": "person",
-                      "at": "2026-10-30T00:00:02Z", "note": "Keep the person-corrected program."})
+    decisions.append(fresh_keep(run, decisions, "r1", note="Keep the person-corrected program."))
     view = build_view(run, decisions, generated_at="2026-10-30T00:00:00Z")
     assert [r["program"] for r in view["calendar"]] == ["PN-8047"]

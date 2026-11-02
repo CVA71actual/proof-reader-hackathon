@@ -42,12 +42,14 @@ def test_an_unresolved_recheck_is_treated_like_could_not_run(result):
     assert st["counts"]["fixes_pending"] == 1
 
 
-def test_a_passing_bound_recheck_is_current_and_clears_attention():
+def test_a_passing_bound_recheck_is_current_but_does_not_accept_meaning():
     st = _corrected_state("pass")
     target = st["targets"]["e1"]
     assert target["recheck"]["result"] == "pass"
     assert st["counts"]["fixes_pending"] == 0
-    assert st["unresolved"] == 0
+    # GROUP-AXIS-001: the recheck finished; human review remains open.
+    assert st["unresolved"] == 1
+    assert target["needs_attention"] and not target["accepted"] and not target["on_calendar"]
 
 
 def test_report_text_says_unresolved():

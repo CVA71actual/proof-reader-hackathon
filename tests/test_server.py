@@ -310,13 +310,15 @@ def test_keep(client, runs_dir):
     # e9 could not be read (a scan); keeping it moves the group, never the status
     before = state_of(client, "e9")
     assert before["group"] == "unverified"
+    before_all = client.get("/api/runs/sample").json()["state"]
     n = len(lines(runs_dir))
     r = post(client, "e9", "keep", note="I read the scan myself.")
     assert r.status_code == 200
     st = r.json()["state"]
     assert st["group"] == "kept" and st["status"] == before["status"] == "unreadable"
     assert st["reason"] == "I read the scan myself."
-    assert r.json()["unresolved"] == 0
+    assert r.json()["unresolved"] == sum(t["needs_attention"] for k, t in before_all["targets"].items()
+                                        if k != "e9" and t["kind"] == "row")
     assert st["decided_by_person"] and st["last_action"] == "keep"
     assert len(lines(runs_dir)) == n + 1
     line = json.loads(lines(runs_dir)[-1])
@@ -349,7 +351,7 @@ def test_fix_the_quote_supports_is_rechecked_and_counted(client, runs_dir):
     assert st["recheck"]["result"] == "pass"
     assert {c["name"]: c["result"] for c in st["recheck"]["checks"]} == {
         "quote_match": "pass", "selector_match": "pass", "date_match": "pass", "source_rule": "pass",
-        "type_match": "pass"}
+        "type_match": "not_needed"}
     assert body["mistakes"]["person"] == person0 + 1
     assert body["counts"]["fixes_pending"] == 0
     assert len(lines(runs_dir)) == n + 6                       # each fix: the person's line + code's re-check
@@ -385,7 +387,8 @@ def test_fix_whose_recheck_could_not_run_stays_corrected_and_needs_attention(cli
     st = body["state"]
     assert st["group"] == "corrected" and st["status"] == "proposed" and st["decided_by_person"]
     assert st["recheck"]["result"] == "could_not_run" and not st["needs_recheck"]
-    assert st["reason"] == "No check compares title; the fix is recorded but not demonstrated."
+    assert st["reason"] == "No check compares title; the fix is recorded but not demonstrated. The event remains a proposal; a person must decide whether to keep it."
+    assert st["needs_attention"] and not st["accepted"]
     assert {c["name"]: c["result"] for c in st["recheck"]["checks"]}["selector_match"] == "could_not_run"
     assert body["mistakes"] == s0["mistakes"]                       # not a person mistake
     assert body["counts"]["fixes_pending"] == s0["counts"]["fixes_pending"] + 1
@@ -410,7 +413,8 @@ def test_fix_settles_the_readers_disagreement(client, runs_dir):
     assert st["recheck"]["result"] == "pass"
     assert st["recheck"]["reason"].startswith("Settles the readers' disagreement by the person's fix. ")
     assert st["recheck"]["before"]["result"] == "pass" and st["recheck"]["after"]["result"] == "pass"
-    assert st["reason"] == st["recheck"]["reason"] + " The value already passed its checks before the edit."
+    assert st["reason"] == st["recheck"]["reason"] + " The value already passed its checks before the edit. The event remains a proposal; a person must decide whether to keep it."
+    assert st["needs_attention"] and not st["accepted"]
     assert r.json()["mistakes"]["person"] == s0["mistakes"]["person"]
     assert r.json()["counts"]["edits_without_error"] == s0["counts"]["edits_without_error"] + 1
     # The edited row's saved checks no longer bind to its changed claim; the stale result remains unresolved.
@@ -528,6 +532,7 @@ def summary(client):
 
 def test_codex1_title_only_fix_on_e8_leaves_the_disagreement_open(client):
     # e8's readers disagree on event_type. Changing only its title settles nothing and shows no mistake.
+    assert post(client, "e8", "keep").status_code == 200  # fresh, bound acceptance
     s0 = summary(client)
     r = fix(client, "e8", "title", "Application filing", "Application filing date")
     assert r.status_code == 200
@@ -545,12 +550,14 @@ def test_codex1_title_only_fix_on_e8_leaves_the_disagreement_open(client):
     assert r2["state"]["status"] == "matched" and r2["state"]["recheck"]["reason"].startswith(SETTLES)
     assert r2["mistakes"]["person"] == s0["mistakes"]["person"]         # settled, but no old error shown
     assert r2["counts"]["edits_without_error"] == s0["counts"]["edits_without_error"] + 1
-    assert r2["unresolved"] == s0["unresolved"]
+    assert r2["unresolved"] == s0["unresolved"] + 1  # Fix still requires a new Keep
+    assert r2["state"]["needs_attention"] and not r2["state"]["accepted"]
 
 
 def test_codex1_checked_field_fix_on_e8_does_not_settle_the_disagreement(client):
     # A date fix is checked, but the readers did not disagree on the date: the row stays undecided even after
     # a fix that passes its re-check (here after a first fix that failed), and it stays under Needs attention.
+    assert post(client, "e8", "keep").status_code == 200  # fresh, bound acceptance
     s0 = summary(client)
     bad = fix(client, "e8", "date", "2027-08-02", "2027-08-03").json()["state"]
     assert (bad["group"], bad["status"]) == ("open", "failed")

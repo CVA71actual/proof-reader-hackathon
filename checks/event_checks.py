@@ -2,11 +2,10 @@
 
 The citation box is checked with the same selector_match used for table values. These add:
     quote_match    "Quote found on page"         the quote is printed on the cited page, word for word
-    date_match     "Date read as written"        the date the reader gave is the date printed in the quote;
-                                                  the date must sit in the part of the quote that names the
-                                                  event, not negated or replaced there; a period needs a year
-    type_match     "Event type matches the quote"    the row's event type is one the quote's own words fit
-                                                      (the fixed words in _ANCHORS), not another kind of event
+    date_match     "Date period found in quote"   the proposed date bounds match a date parsed from the quote;
+                                                  this does not establish which event the date belongs to;
+                                                  a period needs a year
+    type_match     "Event meaning needs review"  not a mechanical comparison; no keyword verdict
     source_rule    "Source is more than a calendar"  a third-party calendar is never a source on its own
 
 Row statuses (same words as table values, plus two):
@@ -28,9 +27,9 @@ from checks.common import COULD_NOT_RUN, FAIL, NOT_NEEDED, PASS, UNRESOLVED, Che
 from checks.selector_match import CHECK_ID as SELECTOR_ID, PICTURE_REASON, _valid_box, is_picture_at
 
 QUOTE_ID, QUOTE_LABEL = "quote_match", "Quote found on page"
-DATE_ID, DATE_LABEL = "date_match", "Date read as written"
+DATE_ID, DATE_LABEL = "date_match", "Date period found in quote"
 SOURCE_ID, SOURCE_LABEL = "source_rule", "Source is more than a calendar"
-TYPE_ID, TYPE_LABEL = "type_match", "Event type matches the quote"
+TYPE_ID, TYPE_LABEL = "type_match", "Event meaning needs review"
 
 THIRD_PARTY_CALENDAR = "third_party_calendar"
 
@@ -581,27 +580,8 @@ _YEARLESS = re.compile(
     rf"^(?:(?:(?:mid|early|late)[- ]?\s*)?(?:q[1-4]|[1-4]q|(?:{_ORD_WORDS}) quarter)|h[12]|[12]h|"
     rf"(?:{_ORD_WORDS}) half|mid|early|late|end of|"
     rf"beginning of|year[- ]end|{_MONTH_WORDS})$")
-# Words that say a date is not, or is no longer, the event's date, anywhere in its clause.
-_NEGATION = re.compile(r"\b(?:not|no longer|never|cannot|previous(?:ly)?|prior|superseded)\b|n't\b", re.I)
-# Words that move the event to the date that follows them ("now expected in Q4 2027"). They speak against a
-# date only when that date comes before them, or the date after them is a different one.
-_MOVED = re.compile(r"\b(?:now expected|moved to|delayed|pushed)\b", re.I)
-# A date "introduced" as the new one: now / to / until / into in the three words before it, or "instead" just
-# after it. A date after "instead of", "rather than" or "from" is the old one.
-_NEW_BEFORE = re.compile(r"\b(?:now|to|until|into)\b", re.I)
-_OLD_BEFORE = re.compile(r"\b(?:instead of|rather than|from)\s*$", re.I)
-_NEW_AFTER = re.compile(r"^\s*instead\b(?!\s+of)", re.I)
-
-# Clause boundaries: sentence ends, ; : , and the joining words below. A reference clause (one that begins
-# "follow", "compared with", "versus", "than", "relative to") names a comparison, never the event.
-_SPLIT_AFTER = re.compile(r"[.!?](?=\s)|[;:,]")
-_SPLIT_BEFORE = re.compile(r"(?<=\s)(?:that|which|and|but|while|follow(?:s|ed|ing)?|compared (?:with|to)|"
-                           r"versus|vs\.?|than|relative to)\b", re.I)
-_REFERENCE = re.compile(r"^(?:follow(?:s|ed|ing)?|compared (?:with|to)|versus|vs\.?|than|relative to)\b", re.I)
-
-# ---- The event-type words: ONE table, used by the reader prompt (capture/read_events.py, both readers), by type_match,
-# and for the anchors that find the clause naming the event. A quote holding a word of a type reads as that type;
-# a quote holding none of the words of the other types is a milestone ("else milestone"). Whole words only.
+# Candidate-discovery vocabulary retained for the coverage backstop. It does
+# not establish a reader proposal's meaning or the event attached to a date.
 EVENT_WORDS = {
     "trial_results": ("results", "data", "readout", "topline", "presentation of data", "report"),
     "regulatory_decision": ("pdufa", "chmp opinion", "crl", "action date"),
@@ -686,12 +666,6 @@ def _regulatory_extra(text: str) -> list[str]:
     return [*_bound_nouns(text), *(m.group(0).lower() for m in _INHERENT_RE.finditer(text))]
 
 
-_ANCHORS = {
-    **{t.replace("_", " "): w for t, w in EVENT_WORDS.items()},
-    "regulatory decision": (*EVENT_WORDS["regulatory_decision"], "approval", "decision"),
-    "earnings": ("results", "earnings", "revenue", "net loss", "quarter ended", "year ended"),
-    "other": (),
-}
 _GOVERNED = ("approval", "decision")
 
 
@@ -817,142 +791,6 @@ def type_guide(types: tuple[str, ...] | None = None) -> str:
     return "\n".join(lines)
 
 
-_TYPE_KEYS = (
-    (("trial", "readout", "result", "topline", "data"), "trial results"),
-    (("regulatory_decision", "decision", "approval", "pdufa", "crl"), "regulatory decision"),
-    (("launch",), "launch"),
-    (("conference", "presentation", "meeting_presentation"), "conference"),
-    (("filing", "submission"), "filing"),
-    (("milestone", "dosing", "enrollment", "initiation"), "milestone"),
-    (("earnings",), "earnings"),
-    (("other",), "other"),
-)
-_UNSURE = "Could not tell which date in the quote belongs to the event."
-
-
-def event_anchors(event_type: str | None, title: str | None = None, program: str | None = None) -> list[str]:
-    """The words that mark the part of a quote about this event: the fixed words for its event_type, plus the
-    longest word (4 letters or more) of the row's title and the drug or program name, if given."""
-    words: list[str] = []
-    et = (event_type or "").lower()
-    for keys, group in _TYPE_KEYS:
-        if any(k in et for k in keys):
-            words += [w for w in _ANCHORS[group] if w not in words]
-    longest = max(re.findall(r"[A-Za-z]{4,}", title or ""), key=len, default=None)
-    for extra in (longest, (program or "").strip() or None):
-        if extra and extra.lower() not in words:
-            words.append(extra.lower())
-    return words
-
-
-def _anchor_in(text: str, anchors: list[str]) -> str | None:
-    # An anchor only finds WHERE the event is named; a mentioned filing word (Job 52i) still locates its clause.
-    for a in anchors:
-        if _has_word(text, a) or (a in (*_FILING_NOUNS, "accepted for review") and _word_re(a).search(text or "")):
-            return a
-    return None
-
-
-def _clauses(q: str, mentions: list[re.Match]) -> list[tuple[int, int]]:
-    """Split the quote into clauses; a boundary never falls inside a date ('March 12, 2027' stays whole)."""
-    cuts = {m.end() for m in _SPLIT_AFTER.finditer(q)} | {m.start() for m in _SPLIT_BEFORE.finditer(q)}
-    cuts = sorted(c for c in cuts if 0 < c < len(q) and not any(m.start() < c < m.end() for m in mentions))
-    edges = [0, *cuts, len(q)]
-    return [(a, b) for a, b in zip(edges, edges[1:]) if q[a:b].strip()]
-
-
-def _is_new(q: str, m: re.Match, start: int) -> bool:
-    before = q[start:m.start()].split()[-3:]
-    return bool(_NEW_BEFORE.search(" ".join(before))) or bool(_NEW_AFTER.match(q[m.end():]))
-
-
-def _is_old(q: str, m: re.Match, start: int) -> bool:
-    return bool(_OLD_BEFORE.search(q[start:m.start()]))
-
-
-def _supporting_clause(dt: str, q: str, anchors: list[str],
-                       chosen: bool = False) -> tuple[str, str, str | None] | None:
-    """Which clause of the quote gives the event's date, and what it says about date_text.
-
-    Returns None when the clause supports date_text, else (result, reason, found).
-    `chosen`: a person typed this date as the event's date (a fix). Where the quote alone cannot say which of its
-    dates belongs to the event (no event word near the date, several event clauses), the person's choice settles
-    it; a clause that negates or replaces the date still counts against it."""
-    mentions = named_dates(q)
-    want = _canon(dt)
-    clauses = []
-    for a, b in _clauses(q, mentions):
-        text = q[a:b]
-        ms = [m for m in mentions if a <= m.start() < b]
-        clauses.append({"start": a, "text": text, "mentions": ms, "anchor": _anchor_in(text, anchors),
-                        "reference": bool(_REFERENCE.match(text.strip()))})
-    events = [c for c in clauses if c["anchor"] and not c["reference"] and c["mentions"]]
-    holding = [c for c in clauses if any(_canon(m[0]) == want for m in c["mentions"])]
-    if chosen and holding and not events:
-        events = [holding[0]]
-    if not events and holding and len({_canon(m[0]) for m in mentions}) == 1 and _anchor_in(q, anchors):
-        events = [holding[0]]       # the quote names one date only, and an event: no other date it could belong to
-    own = next((c for c in holding if c in events), holding[0])
-    if not events:
-        return COULD_NOT_RUN, _UNSURE, None
-    dates = {_canon(m[0]) for c in events for m in c["mentions"]}
-    if len(events) > 1 and dates != {want}:
-        if chosen and any(c in events for c in holding):
-            events = [c for c in events if c in holding]
-        else:
-            return COULD_NOT_RUN, _UNSURE, None
-    if chosen and own not in events and not own["reference"]:
-        events = [own]      # the person picked the date of a clause that continues the event's ("... and is now Q4 2027")
-    if own not in events:
-        event = events[0]
-        names = [m[0] for m in event["mentions"]]
-        new = [m[0] for m in event["mentions"] if _is_new(q, m, event["start"])] or names
-        other = " and ".join(dict.fromkeys(new))
-        if _NEGATION.search(own["text"]) or _MOVED.search(own["text"]):
-            return FAIL, f"The quote says {dt} is no longer the expected period; it now names {other}.", other
-        role = "a comparison" if own["reference"] else "not the date the quote gives for the event"
-        return FAIL, f"The quote attaches {other} to the {event['anchor']}; {dt} is {role}.", other
-    for c in events:
-        verdict = _judge_clause(dt, q, c, chosen)
-        if verdict is not None:
-            return verdict
-    return None
-
-
-def _judge_clause(dt: str, q: str, c: dict, chosen: bool = False) -> tuple[str, str, str | None] | None:
-    """The clause names the event and holds date_text: is date_text negated or replaced there?"""
-    want = _canon(dt)
-    start, text = c["start"], c["text"]
-    hit = next(m for m in c["mentions"] if _canon(m[0]) == want)
-    others = [m for m in c["mentions"] if _canon(m[0]) != want]
-    if others and _NEGATION.search(text):
-        # A denied move does not establish either endpoint as the event date.
-        # Resolve this before interpreting "from" / "to" as an actual transition.
-        return COULD_NOT_RUN, _UNSURE, None
-    if _is_old(q, hit, start):
-        names = " and ".join(dict.fromkeys(m[0] for m in others)) or None
-        reason = f"The quote says {dt} is no longer the expected period" + (f"; it now names {names}." if names
-                                                                             else ".")
-        return FAIL, reason, names or hit[0]
-    if others:
-        new_others = [m for m in others if _is_new(q, m, start) and not _is_old(q, m, start)]
-        dt_new = _is_new(q, hit, start)
-        if new_others and not dt_new:
-            names = " and ".join(dict.fromkeys(m[0] for m in new_others))
-            return FAIL, f"The quote says {dt} is no longer the expected period; it now names {names}.", names
-        if dt_new and not new_others:
-            return None
-        return None if chosen else (COULD_NOT_RUN, _UNSURE, None)
-    if _NEGATION.search(text):
-        return FAIL, f"The quote says the event is not in {dt}.", hit[0]
-    for mv in _MOVED.finditer(text):
-        if start + mv.start() > hit.start():
-            return FAIL, f"The quote says {dt} is no longer the expected period.", hit[0]
-    return None
-
-
-
-
 def vague_period_year(text: str | None) -> int | None:
     """The year a vague period names ('mid-2027' -> 2027), or None if it names no year."""
     s = normalize(text).rstrip(".").lower()
@@ -979,19 +817,20 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
                date_end: str | None = None, *, event_type: str | None = None, title: str | None = None,
                program: str | None = None, filed: date | str | None = None,
                today: date | str | None = None, chosen: bool = False) -> CheckResult:
-    """Pass if date_text is printed in the quote and the row's date says the same thing.
+    """Compare proposed date bounds with a date or period parsed from the quote.
 
     An exact day ('March 12, 2027'): the row's date must be that day and date_end must be empty.
     A period ('Q3 2027', 'second half of 2027', 'mid-2027'): there is no exact day to compare, so the
-    check passes when the period words are printed in the quote and the row's date and date_end, if
+    check passes when equivalent period wording occurs in the quote and the row's date and date_end, if
     given, are the first and last day of that period. A vague period ('mid-2027') has no first or
     last day, so date and date_end must fall inside its rough window: early = January to April,
     mid = May to August, late / end of = September to December.
-    The quote must state the date for the event itself: the date text must be a whole date or period in
-    the quote ('2027' inside 'Q3 2027' is not the year 2027), it must sit in the clause that names the event
-    (see _supporting_clause and runs/README.md, "Which date belongs to the event"), and that clause must not
-    negate or replace it ('Q3 2027 is no longer expected'). When the quote does not show which date belongs
-    to the event, the check could not run. The order of the dates in the quote is never evidence.
+    The date text must be a whole date or period in the quote ('2027' inside
+    'Q3 2027' is not the year 2027). This compares only the printed date and its
+    parsed bounds. Action, modality, negation, supersession and which event a
+    date belongs to are interpretations left to the separate human-review state.
+    event_type/title/program/chosen remain accepted for caller compatibility;
+    they do not change this literal comparison.
     A period with no year ('Q3') fails. A day with no year ('Friday, Sept. 4') is the first such day on or after
     `filed` (yearless_day); a weekday or time of day around a date is not part of it (clean_date_text).
     A relative period ('by year-end', 'this year', 'next quarter') takes its
@@ -1026,6 +865,9 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
         # value instead of trying to recover dates from the explanatory prose.
         timing = {"wording": date_text, "start": timing_start_text, "end": timing_end_text,
                   "precision": timing_precision}
+        if res == PASS:
+            reason += (f" Quote: “{quote}”. Parsed date/period: {found}."
+                       " This compares date bounds only; whether the date belongs to this event needs your review.")
         return CheckResult(DATE_ID, DATE_LABEL, res, reason,
                            {"value": looked_for, "found": found, "timing": timing})
 
@@ -1076,6 +918,19 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
     day = yearless_day(dt, filed)
     dt = clean_date_text(dt)                                 # no weekday or time of day; still printed in the quote
     q = _CAL_YEAR.sub("", fix_commas(q))
+    # Adjacent date phrases joined as a range cannot be checked by accepting
+    # just an endpoint. Multi-period ranges are not supported by this parser;
+    # retain the full printed span for review instead of assigning its bounds.
+    named = named_dates(q)
+    for left, right in zip(named, named[1:]):
+        gap = q[left.end():right.start()].strip().lower()
+        span = q[left.start():right.end()]
+        if gap in ("-", "–", "—", "to", "through", "until") and _canon(dt) in {
+            _canon(left[0]), _canon(right[0]), _canon(span)
+        }:
+            return result(COULD_NOT_RUN,
+                          "The quote prints a range; this check cannot establish its full bounds from this wording.",
+                          found=span)
     days = parse_day_range(dt)
     if days is not None:
         found = f"{days[0].isoformat()} to {days[1].isoformat()}"
@@ -1100,10 +955,6 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
             around = next((m[0] for m in named if dt in m[0]), None) or (named[0][0] if named else None)
             claim = f"the whole of {dt}" if parse_period(dt) and re.fullmatch(r"\d{4}", _canon(dt)) else dt
             return result(FAIL, f"The quote names {around}, the row claims {claim}.", found=around)
-        verdict = _supporting_clause(dt, q, event_anchors(event_type, title, program), chosen)
-        if verdict is not None:
-            res, reason, found = verdict
-            return result(res, reason, found=found)
     parsed = parse_exact_date(dt)
     if parsed is not None:
         if date_end is not None:
@@ -1158,76 +1009,16 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
 # ---------------------------------------------------------------- event type
 
 
-# The six kinds of event the reader may name (capture/read_events.py), each with the fixed words from _ANCHORS.
-TYPE_GROUPS = ("trial results", "regulatory decision", "launch", "conference", "filing", "milestone")
-
-
-def type_group(event_type: str | None) -> str | None:
-    """'trial_results' -> 'trial results'; None for a type with no fixed words (earnings, other, unknown)."""
-    et = (event_type or "").lower()
-    for keys, group in _TYPE_KEYS:
-        if any(k in et for k in keys):
-            return group if group in TYPE_GROUPS else None
-    return None
-
-
-# Two kinds of event that one sentence often has both kinds of words for ("Phase 1 initiation ... data"): when a quote
-# holds words of both, the quote does not say which the event is, and the type is not held against the reader.
-AMBIGUOUS_TYPES = ("milestone", "trial results")
-
-
-def group_key(group: str) -> str:
-    return group.replace(" ", "_")
-
-
-def _words_in(quote: str, group: str) -> list[str]:
-    found = [w for w in _ANCHORS[group] if _has_word(quote, w)]
-    if group == "regulatory decision":
-        found += [w for w in _INHERENT_RE.findall(quote.lower()) if w not in found]
-    return found
-
-
 def type_match(event_type: str | None, quote: str | None) -> CheckResult:
-    """The row's event type must be one the quote's words fit. pass: the quote holds a fixed word for the row's
-    type. fail: it holds none for that type but does for another ("results, data" in a quote saved as a
-    milestone). not_needed: the quote holds no fixed word for any kind of event (nothing to compare, and a row is
-    not held back for it), or the type has no fixed words (earnings, other), or the quote holds words of both milestone and trial results (it does not say
-    which; the quote's words decide only when they are one family's). could_not_run: the row has no quote."""
-    compared = {"value": event_type, "found": None}
+    """Compatibility slot: event interpretation is outside mechanical checking.
 
-    def result(res: str, reason: str, found: str | None = None) -> CheckResult:
-        return CheckResult(TYPE_ID, TYPE_LABEL, res, reason, {**compared, "found": found})
-
-    group = type_group(event_type)
-    if group is None:
-        return result(NOT_NEEDED, f"The event type {(event_type or '?').replace('_', ' ')} has no fixed words to compare the quote with.")
-    if not normalize(quote):
-        return result(COULD_NOT_RUN, "The row has no quote to compare the event type with.")
-    if group in AMBIGUOUS_TYPES and all(_words_in(quote, g) for g in AMBIGUOUS_TYPES):
-        both = "; ".join(f"{g}: {', '.join(_words_in(quote, g))}" for g in AMBIGUOUS_TYPES)
-        return result(NOT_NEEDED, f"The quote holds words of both milestone and trial results ({both}), so there is "
-                                  f"nothing decisive to compare the type with.", both)
-    own = _words_in(quote, group)
-    if not own and group == "filing" and _filing_scan(quote)[1]:
-        # Job 52i: a filing word is mentioned but does not end its phrase: no filing event established, unresolved
-        return result(UNRESOLVED, mentioned_sentence(quote), None)
-    if not own and group == "regulatory decision" and _scan_nouns(quote)[1]:
-        # a decision/approval event is named but no agency is bound to it: neither right nor wrong, unresolved
-        return result(UNRESOLVED, reason_words(AGENCY_NOT_ESTABLISHED, quote) + ".", None)
-    first = event_type_for(quote)
-    if own and first not in (group_key(group), "milestone") and _words_in(quote, first.replace("_", " ")):
-        return result(FAIL, f"The quote's words ({', '.join(_words_in(quote, first.replace('_', ' ')))}) put it first "
-                            f"under {first.replace('_', ' ')}, not {group}.",
-                      "; ".join(f"{g}: {', '.join(w)}" for g in (first.replace("_", " "), group) if (w := _words_in(quote, g))))
-    if own:
-        return result(PASS, f"The quote's words ({', '.join(own)}) fit {group}.", ", ".join(own))
-    other = {g: w for g in TYPE_GROUPS if g != group and (w := _words_in(quote, g))}
-    if other:
-        found = "; ".join(f"{g}: {', '.join(w)}" for g, w in other.items())
-        first_group, first_words = next(iter(other.items()))
-        return result(FAIL, f"The quote's words ({', '.join(first_words)}) point to {first_group}, not {group}.", found)
-    return result(NOT_NEEDED, f"{_REASON_WORDS[EVENT_TYPE_NOT_ESTABLISHED].capitalize()}: the quote holds no fixed word "
-                              f"for {group} or any other kind of event, so there is nothing to compare the type with.")
+    A quote containing "results" cannot establish a clinical result, and a filing
+    word cannot establish a filing event. No keyword verdict accepts or rejects the
+    reader's meaning. The separate human-review state remains unresolved.
+    """
+    return CheckResult(TYPE_ID, TYPE_LABEL, NOT_NEEDED,
+                       "Code does not check event meaning. The reader's interpretation needs your review.",
+                       {"value": event_type, "found": None})
 
 
 # ---------------------------------------------------------------- house rule

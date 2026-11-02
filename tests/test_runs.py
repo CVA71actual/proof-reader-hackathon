@@ -247,10 +247,15 @@ def test_demo_is_the_real_reading(demo):
     assert all(c["status"] == "matched" for c in cells)
 
 
-def test_demo_build_is_current(demo, tmp_path):
+def test_demo_current_checks_match_rebuild_without_rewriting_history(demo, tmp_path):
+    from tests.conftest import rebuilt_source_view
+    saved = RUNS / "demo" / "run.json"
+    before = saved.read_bytes()
     reading = json.loads(build_run.read_table.READING_PATH.read_text())
     fresh = build_run.build_demo_run(reading, tmp_path / "demo", finished_at=demo["run"]["finished_at"])
-    assert fresh == demo
+    assert rebuilt_source_view(fresh) == rebuilt_source_view(demo)
+    assert saved.read_bytes() == before
+    assert all(c["check_history"] for row in demo["tables"][0]["rows"] for c in row["cells"])
 
 
 def test_fake_reading_is_never_labelled_saved_demo(tmp_path):
@@ -264,11 +269,24 @@ def test_fake_reading_is_never_labelled_saved_demo(tmp_path):
     assert {c["status"] for c in items(run)} == {"matched", "failed", "proposed"}
 
 
-def test_sample_build_is_current(sample, tmp_path):
+def test_sample_current_checks_and_rechecks_match_rebuild_history_is_unchanged(sample, tmp_path):
+    from tests.conftest import rebuilt_source_view
+    from runs.check_load import bind_decisions_on_load
+    folder = RUNS / "sample"
+    before = {name: (folder / name).read_bytes() for name in ("run.json", "decisions.jsonl")}
     fresh, decisions = build_sample.build_sample_run(tmp_path / "sample")
-    assert fresh == sample
-    committed = (RUNS / "sample" / "decisions.jsonl").read_text()
-    assert committed == "".join(json.dumps(d) + "\n" for d in decisions)
+    assert rebuilt_source_view(fresh) == rebuilt_source_view(sample)
+    committed = [json.loads(line) for line in before["decisions.jsonl"].splitlines()]
+    # Historical human lines are identical. Only code rechecks are recomputed,
+    # in memory, by the same production loader used for the fresh build.
+    assert [d for d in committed if d["by"] == "person"] == [d for d in decisions if d["by"] == "person"]
+    assert all("review_basis" not in d for d in committed if d["action"] == "keep")
+    assert bind_decisions_on_load(sample, committed, folder) == bind_decisions_on_load(fresh, decisions, tmp_path / "sample")
+    for name, content in before.items():
+        assert (folder / name).read_bytes() == content
+    # Model steps in this generated sample have not been rewritten by the loader.
+    for old, new in zip(sample["rows"], fresh["rows"]):
+        assert [t for t in old["trail"] if t["tag"] == "Model"] == [t for t in new["trail"] if t["tag"] == "Model"]
 
 
 def test_sample_unreadable_row_without_box_uses_the_no_place_reason(sample):
@@ -406,7 +424,17 @@ def dec(target, action, note=None, fix=None, at="2026-10-27T16:00:00+00:00"):
     return {"at": at, "target": target, "action": action, "note": note, "fix": fix, "by": "person"}
 
 
-def test_no_decisions_leaves_the_run_as_it_was(sample):
+def assert_review_rows(st, excluded):
+    """GROUP-AXIS-001: verify each sample proposal, not just a replacement total."""
+    expected = {"e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9", "e10", "e11"} - set(excluded)
+    assert {key for key, target in st["targets"].items()
+            if target["kind"] == "row" and target["needs_attention"]} == expected
+    assert st["unresolved"] == len(expected)
+    assert all(not target["accepted"] and not target["on_calendar"]
+               for target in st["targets"].values() if target["kind"] == "row")
+
+
+def test_no_decisions_preserves_mechanics_but_requires_review_for_each_proposal(sample):
     st = current_state(sample, [])
     for r in sample["rows"]:
         assert st["targets"][r["id"]]["group"] == r["group"]
@@ -417,7 +445,17 @@ def test_no_decisions_leaves_the_run_as_it_was(sample):
     assert st["excluded"] == {"code": 1, "person": 0}
     assert st["counts"]["excluded_by_person"] == 0
     assert [(x["target"], x["rule"], x["by"]) for x in st["exclusions"]] == [("e6", "third_party_calendar_only", "code")]
-    assert st["unresolved"] == 4
+    # GROUP-AXIS-001: the old four mechanically unsettled rows remain recorded;
+    # every nonexcluded proposal now needs semantic review, even if checks pass.
+    recorded = json.loads((RUNS / "sample" / "run.json").read_text())
+    assert sum(r["group"] in {"open", "unverified"} for r in recorded["rows"]) == 4
+    expected_attention = {"e1": True, "e2": True, "e3": True, "e4": True, "e5": True,
+                          "e6": False, "e7": True, "e8": True, "e9": True, "e10": True, "e11": True}
+    for rid, attention in expected_attention.items():
+        target = st["targets"][rid]
+        assert target["needs_attention"] == attention
+        assert not target["accepted"] and not target["on_calendar"]
+    assert st["unresolved"] == sum(expected_attention.values())
     assert all(t["decided_by_person"] is False for t in st["targets"].values())
     assert st["ignored"] == []
 
@@ -455,7 +493,7 @@ def test_remove_uses_the_note_as_reason(sample):
     assert st["mistakes"]["person"] == 1
     assert st["counts"]["excluded_by_person"] == 1 and st["excluded"] == {"code": 1, "person": 1}
     assert {"target": "e10", "rule": "person_removed", "reason": "Not an event.", "by": "person"} in st["exclusions"]
-    assert st["unresolved"] == 3
+    assert_review_rows(st, {"e6", "e10"})
 
 
 @pytest.mark.parametrize("target, status", [("e7", "failed"), ("e8", "undecided"), ("e10", "proposed")])
@@ -551,7 +589,7 @@ def test_a_fix_whose_recheck_failed_is_not_counted_and_goes_back_to_open(sample)
     assert t["values"]["event_type"] == "regulatory_submission"
     assert t["needs_recheck"] is False and t["recheck"]["result"] == "fail"
     assert st["mistakes"]["person"] == 1 and st["counts"]["fixes_pending"] == 0
-    assert st["unresolved"] == 4
+    assert_review_rows(st, {"e6"})
     row = next(r for r in sample["rows"] if r["id"] == "e8")
     assert row["status"] == "undecided"  # the run itself is not touched
 
@@ -656,11 +694,13 @@ def test_a_person_can_take_a_row_out_of_a_code_exclusion(sample):
     assert st["excluded"] == {"code": 0, "person": 1}
 
 
-def test_unresolved_counts_open_and_unverified_rows_only(sample):
+def test_unresolved_counts_every_unaccepted_proposal_including_legacy_keeps(sample):
     st = current_state(sample, [dec("t1.0.0", "fix", fix={"field": "value", "from": "115,315", "to": "115,316"})])
-    assert st["unresolved"] == 4
+    assert_review_rows(st, {"e6"})
     st = current_state(sample, [dec("e7", "keep"), dec("e9", "remove")])
-    assert st["unresolved"] == 2
+    # This old unbound Keep remains history; it does not accept e7.
+    assert st["targets"]["e7"]["review_history"]
+    assert_review_rows(st, {"e6", "e9"})
 
 
 def test_undo_restores_the_state_before_the_last_decision(sample):
@@ -674,7 +714,10 @@ def test_undo_twice_goes_back_to_the_run(sample):
     ds = [dec("e8", "keep"), dec("e8", "remove", note="no"), dec("e8", "undo"), dec("e8", "undo")]
     st = current_state(sample, ds)
     assert st["targets"]["e8"]["group"] == "open"
-    assert st["targets"]["e8"]["reason"] == "The two readers named different event types. Waiting for you."
+    assert st["targets"]["e8"]["reason"] == (
+        "The two readers named different event types. Waiting for you. "
+        "The event remains a proposal; a person must decide whether to keep it.")
+    assert st["targets"]["e8"]["needs_attention"] and not st["targets"]["e8"]["accepted"]
     assert st["ignored"] == []
 
 
@@ -726,7 +769,8 @@ def test_sample_decisions_file(sample, sample_decisions):
     assert st["mistakes"] == {"code": 1, "second_reader": 1, "person": 1}
     assert st["excluded"] == {"code": 1, "person": 1}
     assert st["counts"]["excluded_by_person"] == 1
-    assert st["unresolved"] == 1
+    # Historical decisions and recorded checks above are unchanged; unbound Keeps are not current acceptance.
+    assert_review_rows(st, {"e6", "e10"})
 
 
 def test_state_does_not_change_its_inputs(sample, sample_decisions):
@@ -886,7 +930,7 @@ def test_a_positive_failure_stays_a_failure_in_an_incomplete_event_set():
     row = {"id": "e1", "status": event_checks.MATCHED, "group": "kept", "checks": incomplete}
     assert derive_status(row)[:2] == (event_checks.FAILED, "open")
     assert [item["id"] for item in candidates([row])] == ["e1"]
-    assert [item["id"] for item in budgeted([row])] == ["e1"]
+    assert budgeted([row]) == []  # retired semantic type failures never trigger a paid date repair
 
     complete = [{"name": name, "label": label, "result": "pass", "reason": "fixture"}
                 for name, label in ((event_checks.QUOTE_ID, event_checks.QUOTE_LABEL),
@@ -898,6 +942,12 @@ def test_a_positive_failure_stays_a_failure_in_an_incomplete_event_set():
     row["checks"] = complete
     row["status"], row["group"] = event_checks.FAILED, "open"
     assert [item["id"] for item in candidates([row])] == ["e1"]
+    assert budgeted([row]) == []  # retired semantic type failures never trigger a paid date repair
+
+    # Preserve the active positive control: a literal date failure is still repairable.
+    row["checks"] = [{"name": event_checks.DATE_ID, "label": event_checks.DATE_LABEL,
+                      "result": "fail", "reason": "Printed day differs."}]
+    assert derive_status(row)[:2] == (event_checks.FAILED, "open")
     assert [item["id"] for item in budgeted([row])] == ["e1"]
 
 
@@ -933,7 +983,9 @@ def test_before_could_not_run_and_after_pass_is_not_counted_and_flagged(sample):
     f = st["targets"]["e7"]["fixes"][-1]
     assert f["mistake"] is False and f["before_undemonstrated"] is True
     assert f["not_counted_reason"] == "The old value could not be assessed; no mistake was demonstrated."
-    assert st["targets"]["e7"]["reason"].endswith(f["not_counted_reason"])
+    assert st["targets"]["e7"]["reason"].endswith(
+        f["not_counted_reason"] + " The event remains a proposal; a person must decide whether to keep it.")
+    assert st["targets"]["e7"]["needs_attention"] and not st["targets"]["e7"]["accepted"]
     assert f["recheck"]["before"]["result"] == "could_not_run"
     assert f["recheck"]["after"]["result"] == "pass"
     assert st["counts"]["edits_without_error"] == 0
@@ -975,7 +1027,8 @@ def test_decision_schema_requires_before_and_after_on_a_recheck():
     assert list(v.iter_errors(rc))
 
 
-# ---------------------------------------------------------------- Codex PR9 review: which date belongs to the event
+# ---------------------------------------------------------------- Codex PR9 passages under DATE-LITERAL-001
+# Original adversarial sentences remain; code checks wording/bounds, human review owns meaning.
 
 Q3_27, Q4_27 = ("2027-07-01", "2027-09-30"), ("2027-10-01", "2027-12-31")
 BOUNDS = [pytest.param(True, id="with-bounds"), pytest.param(False, id="no-bounds")]
@@ -983,129 +1036,133 @@ BOUNDS = [pytest.param(True, id="with-bounds"), pytest.param(False, id="no-bound
 
 def _period(text, bounds, quote, with_bounds, **kw):
     start, end = bounds if with_bounds else (None, None)
-    return _dm(text, start, quote, date_end=end, **kw)
+    result = _dm(text, start, quote, date_end=end, **kw)
+    # DATE-LITERAL-001: a literal pass must never accept any of these adversarial interpretations.
+    from tests.test_pivot_proposal_flow import make_run
+    from runs.calendar import calendar_entries
+    _, run = make_run(("adversarial-date", quote, "proposed study timing", text, start, []),
+                      event_updates={"date_end": end})
+    state = current_state(run, [])
+    target = state["targets"]["e1"]
+    assert target["needs_attention"] and not target["accepted"]
+    assert calendar_entries(run, state) == []
+    assert target["values"]["quote"] == quote
+    assert next(c for c in run["rows"][0]["checks"] if c["name"] == "date_match")["result"] == result.result
+    return result
 
 
 @pytest.mark.parametrize("with_bounds", BOUNDS)
-def test_codex9_negation_after_the_date_fails(with_bounds):
+def test_codex9_negated_printed_date_matches_words_but_stays_held(with_bounds):
     r = _period("Q3 2027", Q3_27, "Q3 2027 is no longer the expected readout period.", with_bounds)
-    assert r.result == "fail", r.reason
-    assert "Q3 2027" in r.reason
+    assert r.result == "pass" and "date bounds only" in r.reason, r.reason
 
 
 @pytest.mark.parametrize("with_bounds", BOUNDS)
-def test_codex9_a_superseded_period_fails_and_names_the_new_one(with_bounds):
+def test_codex9_superseded_and_new_date_words_both_stay_held(with_bounds):
     q = "Q3 2027 was the previous target; results are now expected in Q4 2027."
     r = _period("Q3 2027", Q3_27, q, with_bounds)
-    assert r.result == "fail", r.reason
-    assert r.reason == "The quote says Q3 2027 is no longer the expected period; it now names Q4 2027."
+    assert r.result == "pass" and "date bounds only" in r.reason, r.reason
     assert _period("Q4 2027", Q4_27, q, with_bounds).result == "pass"
 
 
 @pytest.mark.parametrize("with_bounds", BOUNDS)
-def test_codex9_a_background_year_does_not_block_the_event_period(with_bounds):
+def test_codex9_background_year_and_event_period_are_literal_only(with_bounds):
     q = "In 2026 the company announced that results are expected in Q3 2027."
     assert _period("Q3 2027", Q3_27, q, with_bounds).result == "pass"
     r = _period("2026", ("2026-01-01", "2026-12-31"), q, with_bounds)
-    assert r.result == "fail", r.reason
-    assert r.reason == "The quote attaches Q3 2027 to the results; 2026 is not the date the quote gives for the event."
+    assert r.result == "pass" and "date bounds only" in r.reason, r.reason
 
 
 @pytest.mark.parametrize("with_bounds", BOUNDS)
-def test_codex9_a_comparison_period_fails_and_the_event_period_passes(with_bounds):
+def test_codex9_comparison_and_event_period_both_need_review(with_bounds):
     q = "Data in Q3 2027, compared with Q3 2026."
     r = _period("Q3 2026", ("2026-07-01", "2026-09-30"), q, with_bounds)
-    assert r.result == "fail", r.reason
-    assert r.reason == "The quote attaches Q3 2027 to the data; Q3 2026 is a comparison."
+    assert r.result == "pass" and "date bounds only" in r.reason, r.reason
     assert _period("Q3 2027", Q3_27, q, with_bounds).result == "pass"
 
 
 @pytest.mark.parametrize("with_bounds", BOUNDS)
-def test_codex9_two_event_clauses_with_different_dates_could_not_run(with_bounds):
+def test_codex9_two_event_clauses_match_words_without_choosing_event_date(with_bounds):
     q = "Topline data are expected in Q3 2027; results will be presented in Q4 2027."
     for text, bounds in (("Q3 2027", Q3_27), ("Q4 2027", Q4_27)):
         r = _period(text, bounds, q, with_bounds)
-        assert r.result == "could_not_run", r.reason
-        assert r.reason == "Could not tell which date in the quote belongs to the event."
+        assert r.result == "pass" and "date bounds only" in r.reason, r.reason
 
 
 @pytest.mark.parametrize("with_bounds", BOUNDS)
-def test_codex9_no_event_words_could_not_run(with_bounds):
+def test_codex9_date_words_without_event_words_remain_a_proposal(with_bounds):
     r = _period("Q3 2027", Q3_27, "The company expects Q3 2027.", with_bounds)
-    assert r.result == "could_not_run", r.reason
+    assert r.result == "pass" and "date bounds only" in r.reason, r.reason
 
 
-def test_codex9_exact_day_against_a_later_comparison():
+def test_codex9_exact_day_still_checks_bounds_and_comparison_stays_held():
     q = "Topline data on March 12, 2027 follow the Q4 2026 results."
     assert _dm("March 12, 2027", "2027-03-12", q).result == "pass"
     assert _dm("March 12, 2027", "2027-03-13", q).result == "fail"
     for with_bounds in (True, False):
         r = _period("Q4 2026", ("2026-10-01", "2026-12-31"), q, with_bounds)
-        assert r.result == "fail", r.reason
-        assert r.reason == "The quote attaches March 12, 2027 to the data; Q4 2026 is a comparison."
+        assert r.result == "pass" and "date bounds only" in r.reason, r.reason
 
 
 @pytest.mark.parametrize("with_bounds", BOUNDS)
-def test_codex9_prefix_negation_and_plain_cases_go_through_the_clause_rule(with_bounds):
+def test_codex9_negation_and_delay_remain_human_readings_of_literal_dates(with_bounds):
     neg = _period("Q3 2027", Q3_27, "Results are not expected in Q3 2027.", with_bounds)
-    assert neg.result == "fail" and neg.reason == "The quote says the event is not in Q3 2027."
+    assert neg.result == "pass" and "date bounds only" in neg.reason
     assert _period("Q3 2027", Q3_27, "Results are expected in Q3 2027.", with_bounds).result == "pass"
     assert _period("Q4 2027", Q4_27, "Results are now expected in Q4 2027.", with_bounds).result == "pass"
     moved = "Results moved from Q3 2027 to Q4 2027."
-    assert _period("Q4 2027", Q4_27, moved, with_bounds).result == "pass"
-    assert _period("Q3 2027", Q3_27, moved, with_bounds).result == "fail"
-    assert _period("Q3 2027", Q3_27, "The Q3 2027 readout has been delayed.", with_bounds).result == "fail"
+    assert _period("Q4 2027", Q4_27, moved, with_bounds).result == "could_not_run"
+    assert _period("Q3 2027", Q3_27, moved, with_bounds).result == "could_not_run"
+    assert _period("Q3 2027", Q3_27, "The Q3 2027 readout has been delayed.", with_bounds).result == "pass"
 
 
-def test_codex9_mention_order_is_not_evidence():
+def test_codex9_mention_order_never_grants_semantic_acceptance():
     # The same two dates in either order give the same answer.
     a = "Data in Q3 2027, compared with Q3 2026."
     b = "Compared with Q3 2026, data in Q3 2027."
     for q in (a, b):
-        assert _dm("Q3 2027", *Q3_27[:1], q, date_end=Q3_27[1]).result == "pass", q
-        assert _dm("Q3 2026", "2026-07-01", q, date_end="2026-09-30").result == "fail", q
+        assert _period("Q3 2027", Q3_27, q, True).result == "pass", q
+        assert _period("Q3 2026", ("2026-07-01", "2026-09-30"), q, True).result == "pass", q
 
 
-def test_codex9_event_words_come_from_the_type_title_and_program():
-    words = event_checks.event_anchors("regulatory_decision", "FDA target action date", "samplimab")
-    assert {"pdufa", "action date", "samplimab"} <= set(words)
-    assert event_checks.event_anchors("investor_day", "Investor day") == ["investor"]
+def test_literal_date_check_does_not_derive_event_words_from_type_title_or_program():
+    # DATE-LITERAL-001 supersedes the old semantic-anchor rule.
+    base = event_checks.date_match("Q1 2027", "2027-01-01", "Timing: Q1 2027.", "2027-03-31")
+    changed = event_checks.date_match("Q1 2027", "2027-01-01", "Timing: Q1 2027.", "2027-03-31",
+                                      event_type="regulatory_decision", title="Investor day", program="samplimab")
+    assert changed == base and base.result == "pass"
 
 
-# ---------------------------------------------------------------- Codex PR9 fix 0fa435e: a denied move dates nothing
+# ---------------------------------------------------------------- Codex PR9 fix 0fa435e passages: no semantic interpretation
 
 
 @pytest.mark.parametrize("with_bounds", BOUNDS)
-def test_codex9b_a_denied_move_could_not_run_for_either_date(with_bounds):
+def test_codex9b_denied_move_range_endpoints_stay_unresolved(with_bounds):
     q = "Results will not move from Q3 2027 to Q4 2027."
     for text, bounds in (("Q4 2027", Q4_27), ("Q3 2027", Q3_27)):
         r = _period(text, bounds, q, with_bounds)
         assert r.result == "could_not_run", (text, r.reason)
-        assert r.reason == "Could not tell which date in the quote belongs to the event."
 
 
 @pytest.mark.parametrize("with_bounds", BOUNDS)
-def test_codex9b_a_superseded_period_still_fails_and_the_new_one_still_passes(with_bounds):
+def test_codex9b_superseded_period_and_new_period_stay_proposed(with_bounds):
     q = "Q3 2027 was the previous target; results are now expected in Q4 2027."
     r = _period("Q3 2027", Q3_27, q, with_bounds)
-    assert r.result == "fail", r.reason
-    assert r.reason == "The quote says Q3 2027 is no longer the expected period; it now names Q4 2027."
+    assert r.result == "pass" and "date bounds only" in r.reason, r.reason
     assert _period("Q4 2027", Q4_27, q, with_bounds).result == "pass"
 
 
 @pytest.mark.parametrize("with_bounds", BOUNDS)
-def test_codex9b_now_q4_not_q3_passes_q4_and_fails_q3(with_bounds):
-    # The comma puts "not Q3 2027" in its own clause, so the denied-move rule does not apply:
-    # Q4 is the date given for the results and Q3 is the period the quote rejects.
+def test_codex9b_now_q4_not_q3_requires_human_interpretation(with_bounds):
+    # DATE-LITERAL-001: the quote retains its negation; no comma split certifies either claim.
     q = "Results are now expected in Q4 2027, not Q3 2027."
     assert _period("Q4 2027", Q4_27, q, with_bounds).result == "pass"
     r = _period("Q3 2027", Q3_27, q, with_bounds)
-    assert r.result == "fail", r.reason
-    assert r.reason == "The quote says Q3 2027 is no longer the expected period; it now names Q4 2027."
+    assert r.result == "pass" and "date bounds only" in r.reason, r.reason
 
 
 @pytest.mark.parametrize("with_bounds", BOUNDS)
-def test_codex9b_an_affirmed_move_still_passes_the_new_date(with_bounds):
+def test_codex9b_affirmed_move_does_not_pass_a_range_endpoint(with_bounds):
     moved = "Results moved from Q3 2027 to Q4 2027."
-    assert _period("Q4 2027", Q4_27, moved, with_bounds).result == "pass"
-    assert _period("Q3 2027", Q3_27, moved, with_bounds).result == "fail"
+    assert _period("Q4 2027", Q4_27, moved, with_bounds).result == "could_not_run"
+    assert _period("Q3 2027", Q3_27, moved, with_bounds).result == "could_not_run"

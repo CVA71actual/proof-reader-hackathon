@@ -1,13 +1,13 @@
 """The checks as tools the first reader can call while it reads one page (run choice "reader_tools").
 
-Three tools, each a thin wrapper over the real check function. They only answer: they never change the page, the
+Two tools, each a thin wrapper over the real check function. They only answer: they never change the page, the
 row or the reader's proposal. Each returns {"result", "reason", "found"}.
 
     quote_on_page(quote)                       checks.event_checks.quote_match on the page words
     date_as_written(date_text, date, date_end, quote, event_type, program)
                                                checks.event_checks.date_match, with the source's filing date and the
                                                release day (the dateline, else the filing date)
-    event_type_for_words(quote)                checks.event_checks.event_type_for (the type the quote's words stand for)
+    The retired event_type_for_words request answers could_not_run; keywords do not establish meaning.
 
 How the read goes (Job.read_with_tools in server/jobs.py drives it):
   1. The model gets the usual instructions plus a short note about the tools and may call them about its own proposals.
@@ -40,10 +40,10 @@ MAX_PER_PAGE = 30
 MAX_MODEL_CALLS = 12      # a stop for a model that never stops asking (each call is also a turn and priced)
 
 # plain names for the trail: "Called the check: <name>"
-PLAIN = {"quote_on_page": "Quote found on page", "date_as_written": "Date read as written",
-         "event_type_for_words": "Event type matches the quote"}
+PLAIN = {"quote_on_page": "Quote found on page", "date_as_written": event_checks.DATE_LABEL,
+         "event_type_for_words": "Event meaning needs review"}
 WHO = {"quote_on_page": "checks.event_checks.quote_match", "date_as_written": "checks.event_checks.date_match",
-       "event_type_for_words": "checks.event_checks.event_type_for"}
+       "event_type_for_words": "capture.reader_tools"}
 
 TOOLS = [
     {"type": "function", "function": {
@@ -59,16 +59,13 @@ TOOLS = [
             "date_end": {"type": ["string", "null"], "description": "YYYY-MM-DD or null"},
             "quote": {"type": "string"}, "event_type": {"type": ["string", "null"]},
             "program": {"type": ["string", "null"]}}, "required": ["date_text", "quote"]}}},
-    {"type": "function", "function": {
-        "name": "event_type_for_words",
-        "description": "Which event type do the words of this quote stand for? The answer's found is the type.",
-        "parameters": {"type": "object", "properties": {"quote": {"type": "string"}}, "required": ["quote"]}}},
+
 ]
 
 NOTE_NATIVE = """
 
 You may check your own proposals before you hand them over, by calling these tools: quote_on_page(quote),
-date_as_written(date_text, date, date_end, quote, event_type, program) and event_type_for_words(quote). They only
+date_as_written(date_text, date, date_end, quote, event_type, program). They only
 answer; they never change the page. At most {per_event} calls per event and {per_page} per page. If a tool answers
 fail, read the page again for that row, once, and fix it or leave it out. When you are done checking, answer
 with the JSON object of events only, in the shape above.
@@ -78,8 +75,8 @@ NOTE_JSON = """
 
 You may check your own proposals before you hand them over. To ask for checks, answer with this JSON object and
 nothing else: {{"tool_calls": [{{"name": "<tool>", "arguments": {{...}}}}, ...]}}. The tools are
-quote_on_page(quote), date_as_written(date_text, date, date_end, quote, event_type, program) and
-event_type_for_words(quote). They only answer; they never change the page. I will answer with
+quote_on_page(quote) and date_as_written(date_text, date, date_end, quote, event_type, program).
+They only answer; they never change the page. I will answer with
 {{"tool_answers": [{{"name": ..., "result": ..., "reason": ..., "found": ...}}]}}. At most {per_event} calls per event and
 {per_page} per page. If a tool answers fail, read the page again for that row, once, and fix it or leave it
 out. When you are done checking, answer with the JSON object of events only, in the shape above.
@@ -109,7 +106,7 @@ def _iso(v):
 
 
 class ToolBox:
-    """The three tools for one page, with the counts and the trail of the calls made on it."""
+    """The mechanical tools for one page, with the counts and the trail of the calls made on it."""
 
     def __init__(self, words: list[dict], filed: date | str | None):
         self.words, self.filed = words, filed
@@ -130,7 +127,7 @@ class ToolBox:
         """Call once per model turn that asks for tools, before answering its calls."""
         self.turn += 1
 
-    # ---- the three tools (thin wrappers; they never touch the page)
+    # ---- the mechanical tools (thin wrappers; they never touch the page)
 
     def run_tool(self, name: str, args) -> dict:
         try:
@@ -145,8 +142,9 @@ class ToolBox:
                     event_type=args.get("event_type"), program=args.get("program"), filed=self.filed, today=self.day)
                 return {"result": r.result, "reason": r.reason, "found": r.compared.get("found")}
             if name == "event_type_for_words":
-                t = event_checks.event_type_for(args["quote"])
-                return {"result": "pass", "reason": f"The words of the quote stand for the type {t}.", "found": t}
+                return {"result": "could_not_run",
+                        "reason": "Code does not infer event meaning from keywords. Preserve your proposed interpretation for human review.",
+                        "found": None}
         except (KeyError, TypeError):
             return {"result": "could_not_run", "reason": "The tool call was missing an argument or it was the wrong "
                                                          "kind.", "found": None}

@@ -446,7 +446,7 @@ def _caught(client):
 
 def test_a_correction_after_scoring_shows_in_the_saved_endpoint_and_not_in_the_model_score(served):
     client, runs = served
-    shutil.rmtree(runs / "sample" / "report", ignore_errors=True)    # saved reports make a decision rewrite run.json (refused: other test)
+    shutil.rmtree(runs / "sample" / "report", ignore_errors=True)    # no saved report; rebuild cases are tested separately
     exported(runs / "sample")
     before = client.get("/api/runs/sample/accuracy").json()
     _correct(client)
@@ -504,9 +504,37 @@ def test_the_model_score_is_the_same_with_or_without_a_person_fix(sample, tmp_pa
         assert a.get(k) == b.get(k)
 
 
-def test_a_decision_that_rewrites_run_json_leaves_the_saved_scoring_refused_as_stale(served):
-    client, runs = served                      # the sample has saved reports: a decision rewrites run.json
+def test_successful_report_rebuild_preserves_scoring_and_refreshes_person_counts(served):
+    # RED4b clears both temporary stale keys after a successful rebuild. A
+    # decision alone must not stale the unchanged extraction evidence.
+    client, runs = served
+    run_file = runs / "sample" / "run.json"
+    original = run_file.read_bytes()
+    before = client.get("/api/runs/sample/accuracy").json()
     _correct(client)
+    assert run_file.read_bytes() == original
+    r = client.get("/api/runs/sample/accuracy")
+    assert r.status_code == 200
+    after = r.json()
+    assert after["mistake_log"]["from_run_by_caught_by"]["person"] == before["mistake_log"]["from_run_by_caught_by"]["person"] + 1
+    for key in ("models", "planted", "agreement", "window"):
+        assert after.get(key) == before.get(key)
+    assert after["mistake_log"]["from_scoring"] == before["mistake_log"]["from_scoring"]
+    assert after["content_sha256"] == export.content_hash(after)
+
+
+def test_a_decision_that_rewrites_run_json_leaves_the_saved_scoring_refused_as_stale(served, monkeypatch):
+    # Preserve the original stale-refusal assertion on an actual rewrite:
+    # failed report generation leaves a stale marker in run.json.
+    from report import build as report_build
+    def fail_build(_view):
+        raise RuntimeError("deliberate report failure")
+    monkeypatch.setattr(report_build, "build_pdf", fail_build)
+    client, runs = served
+    original = (runs / "sample" / "run.json").read_bytes()
+    _correct(client)
+    assert (runs / "sample" / "run.json").read_bytes() != original
+    assert json.loads((runs / "sample" / "run.json").read_text())["report_stale"] is True
     r = client.get("/api/runs/sample/accuracy")
     assert r.status_code == 409 and "different version of run.json" in r.json()["detail"]
 

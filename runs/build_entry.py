@@ -33,13 +33,13 @@ from capture import read_events
 from capture.capture_source import FIXTURES, load_entry
 from capture.read_table import FAKE_MODEL, sha256_text
 from checks import event_checks
-from checks.common import CheckResult, normalize
+from checks.common import normalize
 from checks.selector_match import MIN_WORD_HEIGHT_PT, _quote_run, selector_match
 from runs import coverage, prices, recheck
 from runs.build_run import MUSE_SPARK, RUNS, SCHEMA_VERSION, now_utc, to_contract_check
 from runs.build_run import write_run
 from runs.page_outcomes import interpreted_page
-from runs.claim_assessment import bind_checks
+from runs.proposal import reader_event_type, reader_context_fields, reader_context_steps
 
 PIN = read_events.PIN
 RUN_ID = "ptgx-r4a"
@@ -133,7 +133,7 @@ def plain_type(event_type) -> str:
 
 def plain_value(field: str, value):
     """A field's value for a trail text: event types as words, anything else as it is."""
-    return plain_type(value) if field == "event_type" and isinstance(value, str) else value
+    return plain_type(value) if field in ("event_type", "type_hint") and isinstance(value, str) else value
 
 
 def when(row: dict) -> str:
@@ -195,8 +195,8 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         "id": f"e{i}",
         "ticker": _str(event.get("ticker")) or "",
         "company": _str(event.get("company")) or "",
-        "event_type": event_checks.event_type_for(quote),
-        "type_hint": _str(event.get("type_hint") or event.get("event_type")),
+        "event_type": reader_event_type(event),
+        **reader_context_fields(event),
         "title": _str(event.get("title")) or "",
         "date_text": tidy_date_text(printed, quote),
         "date": _str(event.get("date")),
@@ -231,8 +231,10 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
                       **prices.model_cost_fields(model_name, share[0], share[1], call_rows=share[2])})
         trail.append({"step": "Took the reading into the row", "tag": "Code", "who": BUILDER, "at": at,
                       "text": "Copied the reader's proposal and box into the row. Nothing is checked yet."})
-    trail.append({"step": "Assigned event type", "tag": "Code", "who": BUILDER, "at": at,
-                  "text": f"Assigned {plain_type(row['event_type'])} from the quoted words; retained the reader's type hint separately."})
+    trail += reader_context_steps(event, at)
+    trail.append({"step": "Preserved proposed type", "tag": "Code", "who": BUILDER, "at": at,
+                  "text": "Kept the reader's type hint as proposed. The display category uses an exact label only; "
+                          "unknown categories remain for your review."})
     trail += tool_steps or []     # the reader's own calls of the checks while it read (capture/reader_tools.py)
     if row["date_text"] != printed:
         trail.append({"step": "Tidied", "tag": "Code", "who": BUILDER,
@@ -269,18 +271,12 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         trail.append({"step": "Box located by code", "tag": "Code", "who": BUILDER,
                       "text": f"The quote is printed on the page, so the box is the words found there; "
                               f"{was} was only a hint.", "at": at})
-    if why := event_checks.event_type_reason(row["quote"]):    # carried on the row only when something is missing
-        row["type_reason"] = why
     results = recheck.row_checks(row, source, words_doc, consumed_artifact=consumed_artifact)
-    if tool_type and tool_type != row["event_type"]:
-        # The reader asked the type tool and handed over another type. The row keeps the hand-over; the tool's
-        # answer is not stored as the type and never replaces the code's own check, but the disagreement is held.
-        results = [CheckResult(r.check, r.label, event_checks.FAIL,
-                                            f"The reader's own check found the type {tool_type} for these words and "
-                                            f"it handed over {row['event_type']}: " + r.reason,
-                                            {**r.compared, "found": tool_type}, assessment=r.assessment)
-                   if r.check == event_checks.TYPE_ID and r.result != event_checks.FAIL else r for r in results]
-        results = bind_checks(results, row, source, consumed_artifact=consumed_artifact)
+    if tool_type:
+        # Older tool readings may contain a keyword classifier answer. It is
+        # historical context, never evidence that the reader's meaning is wrong.
+        trail.append({"step": "Historical type suggestion", "tag": "Code", "who": BUILDER, "at": at,
+                      "text": f"The old tool suggested {tool_type}; it was not applied or used as a check."})
     for r in results:
         trail.append({"step": "Checked", "tag": "Code", "who": r.check,
                       "text": f"{r.label}: {r.result.replace('_', ' ')}. {r.reason}", "at": at})

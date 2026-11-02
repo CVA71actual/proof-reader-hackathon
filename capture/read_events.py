@@ -284,15 +284,8 @@ def read_live(words_doc: dict, entry: dict) -> dict:
     http.take_billed()
     try:
         resp = read_table._call(client, messages, json_mode=True)
-    except Exception as e:  # some endpoints reject response_format; retry once without it
-        if _status(e) in (400, 422):
-            response_format_used = "none"
-            try:
-                resp = read_table._call(client, messages, json_mode=False)
-            except Exception as e2:
-                return _failed(prompt, entry, e2, {**base, "response_format": response_format_used})
-        else:
-            return _failed(prompt, entry, e, {**base, "response_format": response_format_used})
+    except Exception as e:  # PIVOT RED 3: no automatic retry on 400/422; the failed attempt is the outcome
+        return _failed(prompt, entry, e, {**base, "response_format": response_format_used})
 
     raw = resp.choices[0].message.content if resp.choices else None
     events, problem = parse_events(raw)
@@ -313,7 +306,8 @@ def _failed(prompt: str, entry: dict, e: Exception, extra: dict) -> dict:
     silent = http.is_silent(e)
     return _record(model=MODEL, prompt=prompt, raw=None, events=None,
                    problem=http.did_not_answer(read_table.SPARK_NAME) if silent else _plain_error(e), entry=entry,
-                   extra={**extra, "call_failed": True, **({"timed_out": True, "may_have_been_billed": http.may_have_been_billed(e)} if silent else {})})
+                   extra={**extra, "call_failed": True, **({"timed_out": True, "may_have_been_billed": http.may_have_been_billed(e)}
+                                                           if silent else read_table.failure_billing(e))})
 
 
 # ---------------------------------------------------------------- fake reading

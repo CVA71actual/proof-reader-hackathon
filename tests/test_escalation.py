@@ -142,8 +142,8 @@ def test_only_rows_with_a_failed_check_or_a_disagreement_are_candidates():
 
 def test_the_trigger_names_the_failed_check_or_the_disputed_field():
     failed = {"checks": [{"result": "pass", "label": "A", "reason": "x"},
-                         {"result": "fail", "label": "Date read as written", "reason": "The period differs."}]}
-    assert escalate.trigger(failed) == {"kind": "check", "label": "Date read as written",
+                         {"result": "fail", "label": "Date period found in quote", "reason": "The period differs."}]}
+    assert escalate.trigger(failed) == {"kind": "check", "label": "Date period found in quote",
                                         "why": "The period differs."}
     split = {"checks": [], "disagreement": {"field": "event_type", "first_reader": "milestone",
                                             "second_reader": "trial_results"}}
@@ -187,9 +187,9 @@ def test_a_grid_box_on_the_band_becomes_a_box_on_the_page(words_doc):
 
 def test_the_prompt_carries_the_failed_checks_label_and_reason_and_no_word_list(words_doc):
     entry = load_entry(PIN)
-    trig = {"kind": "check", "label": "Date read as written", "why": "The period in the row differs."}
+    trig = {"kind": "check", "label": "Date period found in quote", "why": "The period in the row differs."}
     text = escalate.prompt(entry, trig, (240.0, 390.0), words_doc)
-    assert "Date read as written" in text and "The period in the row differs." in text
+    assert "Date period found in quote" in text and "The period in the row differs." in text
     assert "not the whole page" in text and "240 to 390 points" in text
     assert "\nw0|" not in text and "id|text|x0|y0|x1|y1" not in text
 
@@ -206,8 +206,7 @@ def test_a_row_that_fails_a_check_is_sent_to_wonder_and_takes_a_reread_that_pass
     row = next(r for r in run["rows"] if r["date_text"] == "Q1 2027")
     assert (row["status"], row["group"]) == ("matched", "corrected")
     assert row["date"] == "2027-01-01" and all(c["result"] in ("pass", "not_needed") for c in row["checks"])
-    assert row["reason"] == ("Re-read by Muse Wonder after Date read as written failed; its reading passed every "
-                             "check.")
+    assert row["reason"] == "Muse Wonder repaired a printed date comparison. Event meaning still needs your review."
     steps = [(t["step"], t["tag"], t["who"]) for t in row["trail"] if t["step"] != "Checked"][-5:]
     assert steps[-4:] == [("Sent to Muse Wonder", "Code", "runs.escalate"),
                      ("Instructions sent to Muse Wonder", "Code", "capture.wonder"),
@@ -230,7 +229,7 @@ def test_wonder_is_sent_the_rows_region_and_the_checks_reason_not_the_whole_page
     wonder = FakeWonder(answer=reread_right(words_doc))
     _, rid = start(runs_dir, first, None, wonder)
     [prompt], [png] = wonder.prompts, wonder.images
-    assert "Date read as written" in prompt and "stopped by a code check" in prompt
+    assert "Date period found in quote" in prompt and "mechanical check was" in prompt
     page = (runs_dir / rid / "pages" / "p3.png").read_bytes()
     assert png[:4] == b"\x89PNG" and 0 < len(png) < len(page)
 
@@ -246,7 +245,7 @@ def test_a_reread_that_fails_a_check_changes_nothing(runs_dir, words_doc):
     assert (row["status"], row["group"], row["date"]) == ("failed", "open", "2027-02-01")
     assert run["mistakes"] == []
     result = next(t for t in row["trail"] if t["step"] == "Escalation result")
-    assert "did not pass every check" in result["text"] and result["text"].endswith("The row stays as it was.")
+    assert "changes no requested date value" in result["text"] and "No mistake is counted" in result["text"]
     assert run["run"]["escalation"]["rows_sent"] == 1 and run["run"]["escalation"]["rows_replaced"] == 0
 
 
@@ -256,7 +255,7 @@ def test_an_answer_with_no_event_changes_nothing(runs_dir):
     row = next(r for r in run_of(runs_dir, rid)["rows"] if r["date_text"] == "Q1 2027")
     assert row["status"] == "failed"
     assert next(t for t in row["trail"] if t["step"] == "Escalation result")["text"].startswith(
-        "Muse Wonder's answer held no event for this row.")
+        "No unambiguous answer for this row.")
 
 
 def test_a_row_the_readers_disagree_on_is_not_sent_to_wonder(runs_dir, words_doc):
@@ -272,18 +271,23 @@ def test_a_row_the_readers_disagree_on_is_not_sent_to_wonder(runs_dir, words_doc
     row = next(r for r in run["rows"] if r.get("disagreement"))
     assert (row["status"], row["group"]) == ("undecided", "open")
     assert not wonder.prompts and "Muse Wonder" not in json.dumps(row["trail"])
-    assert run["mistakes"] == [] and current_state(run, [])["unresolved"] == 1
+    # GROUP-AXIS-001: every unaccepted proposal needs review, not just the disagreement.
+    state = current_state(run, [])
+    assert run["mistakes"] == []
+    assert all(t["needs_attention"] and not t["accepted"] for t in state["targets"].values())
+    assert state["unresolved"] == len(state["targets"])
 
 
-def test_only_a_date_or_event_type_failure_is_sent(runs_dir):
+def test_only_a_mechanical_date_failure_is_sent(runs_dir):
     box = {"id": "e1", "status": "failed", "group": "open", "checks": [{"result": "fail", "label": "Citation located"}]}
     date = {"id": "e2", "status": "failed", "group": "open",
-            "checks": [{"result": "fail", "label": "Citation located"}, {"result": "fail", "label": "Date read as written", "reason": "x"}]}
+            "checks": [{"result": "fail", "label": "Citation located"}, {"result": "fail", "label": "Date period found in quote", "reason": "x"}]}
     kind = {"id": "e3", "status": "failed", "group": "open",
             "checks": [{"result": "fail", "label": "Event type matches the quote"}]}
     quote = {"id": "e4", "status": "failed", "group": "open", "checks": [{"result": "fail", "label": "Quote found on page"}]}
-    assert [r["id"] for r in escalate.budgeted([box, date, kind, quote])] == ["e2", "e3"]
-    assert escalate.trigger(date, escalate.SENT_FOR)["label"] == "Date read as written"
+    # PIVOT: type interpretation is no longer a mechanical repair trigger.
+    assert [r["id"] for r in escalate.budgeted([box, date, kind, quote])] == ["e2"]
+    assert escalate.trigger(date, escalate.SENT_FOR)["label"] == "Date period found in quote"
 
 
 def test_a_spent_wonder_budget_sends_no_more_rows(runs_dir, monkeypatch):
@@ -416,7 +420,7 @@ def test_several_events_none_of_them_this_rows_means_no_answer_for_it(runs_dir):
     _, rid = start(runs_dir, first, None, FakeWonder(answer=lambda p, i, n: elsewhere))
     row = next(r for r in run_of(runs_dir, rid)["rows"] if r["date_text"] == "Q1 2027")
     assert row["status"] == "failed"
-    assert "held no event for this row" in next(t for t in row["trail"] if t["step"] == "Escalation result")["text"]
+    assert "No unambiguous answer for this row" in next(t for t in row["trail"] if t["step"] == "Escalation result")["text"]
 
 
 def test_a_single_unrelated_result_cannot_replace_a_row(runs_dir):
@@ -427,7 +431,7 @@ def test_a_single_unrelated_result_cannot_replace_a_row(runs_dir):
     run = run_of(runs_dir, rid)
     row = next(r for r in run["rows"] if r["date_text"] == "Q1 2027")
     assert row["status"] == "failed" and row["group"] == "open"
-    assert not run["mistakes"] and "held no event for this row" in next(
+    assert not run["mistakes"] and "No unambiguous answer for this row" in next(
         t for t in row["trail"] if t["step"] == "Escalation result")["text"]
 
 
@@ -437,7 +441,8 @@ def test_a_single_unrelated_event_is_not_this_rows_answer_but_a_same_event_corre
     assert escalate.pick(row, [only]) is None
     assert escalate.pick(row, [only, {"quote": "Another one."}]) is None
     assert escalate.pick({"quote": "The real sentence."}, [{"quote": "Another one."}, only]) is only
-    assert escalate.pick({"quote": "The real sentence is here."}, [only]) is only
+    # ESCALATION-PATCH-001: containment is not event identity.
+    assert escalate.pick({"quote": "The real sentence is here."}, [only]) is None
 
 
 # ---------------------------------------------------------------- the saved live runs
@@ -509,14 +514,18 @@ def _held_row(runs_dir, words_doc):
     return client, rid, run, row, wonder
 
 
-def test_escalation_replaces_the_proposal_but_leaves_a_real_disagreement_held(runs_dir, words_doc):
+def test_escalation_records_evidence_without_replacing_a_disputed_proposal(runs_dir, words_doc):
     _, rid, run, row, wonder = _held_row(runs_dir, words_doc)
     assert row["disagreement"]["field"] == "date" and wonder.prompts
-    assert row["date"] == "2027-01-01"                                  # the proposal was replaced
-    assert (row["status"], row["group"]) == ("undecided", "open")        # and the hold stays
+    # ESCALATION-PATCH-001: model answer is evidence only when readers disagree.
+    assert row["date"] == "2027-02-01"
+    assert (row["status"], row["group"]) == ("failed", "open")
+    assert run["mistakes"] == []
+    assert row["escalation_proposal"]["proposal"]["date"] == "2027-01-01"
     st = current_state(run, [])
     t = st["targets"][row["id"]]
-    assert (t["status"], t["group"], t["decided_by_person"]) == ("undecided", "open", False)
+    assert (t["status"], t["group"], t["decided_by_person"]) == ("failed", "open", False)
+    assert t["needs_attention"] and not t["accepted"]
     assert st["unresolved"] >= 1
 
 
@@ -541,7 +550,8 @@ def test_a_fix_of_another_field_does_not_clear_the_hold_but_a_fix_of_the_dispute
                 {"by": "code", "target": basis_row["id"], "action": "recheck", "recheck": recheck, "at": "t"}]
 
     other = current_state(run, fix("title", row["title"], "A new title"))["targets"][row["id"]]
-    assert other["status"] == "undecided"                                # base held: date fix cannot settle it
+    # The original date remains mechanically failed; an unrelated edit cannot clear it.
+    assert other["status"] == "failed" and other["needs_attention"] and not other["accepted"]
     # Restore the first reader's out-of-period day. The bound re-check after the person's choice
     # must test the new date against the quoted Q1 period.
     row["date"] = "2027-02-01"
@@ -611,7 +621,9 @@ def test_a_two_field_disagreement_clears_only_when_both_fields_are_fixed(runs_di
     run, r = _two_field_run(runs_dir, words_doc)
     new = {"date": "2027-01-01", "program": "B"}
     t = current_state(run, [])["targets"][r["id"]]
-    assert (t["status"], t["group"]) == ("undecided", "open")
+    # The stored synthetic pass cannot hide the actual failed date comparison.
+    assert (t["status"], t["group"]) == ("failed", "open")
+    assert t["needs_attention"] and not t["accepted"]
     d1 = _fix_pair(r, first, new[first], run, words_doc, runs_dir, run["run"]["id"])
     st = current_state(run, d1)
     t = st["targets"][r["id"]]
@@ -620,12 +632,21 @@ def test_a_two_field_disagreement_clears_only_when_both_fields_are_fixed(runs_di
     else:
         assert t["status"] == "undecided" and f"still disputed: {second}" in t["reason"].lower()
     assert st["unresolved"] >= 1 and r["id"] not in [e["id"] for e in calendar_entries(run, st)]
-    st = current_state(run, d1 + _fix_pair({**r, first: new[first]}, second, new[second], run, words_doc,
-                                           runs_dir, run["run"]["id"]))
+    decisions = d1 + _fix_pair({**r, first: new[first]}, second, new[second], run, words_doc,
+                               runs_dir, run["run"]["id"])
+    st = current_state(run, decisions)
     t = st["targets"][r["id"]]
     assert (t["status"], t["group"]) == ("matched", "corrected")
+    # FIX-THEN-KEEP-001: fixing both values settles the disagreement, not publication.
+    assert not t["accepted"] and t["needs_attention"]
+    assert r["id"] not in [e["id"] for e in calendar_entries(run, st)]
+    decisions.append({"by":"person", "target":r["id"], "action":"keep", "at":"t",
+                      "review_basis":t["review_basis"]})
+    st = current_state(run, decisions)
     assert r["id"] in [e["id"] for e in calendar_entries(run, st)]
-    assert st["unresolved"] == 0
+    assert st["targets"][r["id"]]["accepted"]
+    assert not st["targets"][r["id"]]["needs_attention"]
+    assert st["unresolved"] == sum(t["needs_attention"] for t in st["targets"].values())
 
 
 def test_a_keep_clears_a_two_field_hold_and_a_single_field_hold_is_unchanged(runs_dir, words_doc):

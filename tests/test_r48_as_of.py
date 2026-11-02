@@ -38,11 +38,11 @@ def test_window_anchor_is_as_of():
     assert cal.run_interval_partition(_run(), current_state(_run(), []))[1] == "2026-10-31"
 
 
-def test_a_period_ending_20_oct_is_not_past_as_of_13_oct():
+def test_a_printed_past_period_is_not_automatically_excluded():
     row = {"date": "2026-10-15", "date_end": "2026-10-20", "date_text": "15-20 October 2026",
            "checks": [{"name": "date_match", "result": "pass"}]}
     assert jobs.past_reason(row, run_reference_date(_run("2026-10-13"))) is None
-    assert jobs.past_reason(row, run_reference_date(_run())) is not None
+    assert jobs.past_reason(row, run_reference_date(_run())) is None  # DATE-LITERAL-001
 
 
 def test_wording_only_when_they_differ():
@@ -107,7 +107,9 @@ def test_a_retained_exclusion_reason_with_another_date_does_not_move_the_referen
 def test_no_usable_date_is_unresolved_not_today():
     run = _run()
     run["run"]["started_at"] = "not a date"
-    parts, anchor, end = cal.run_interval_partition(run, current_state(run, []))
+    from tests.pivot_assertions import fresh_keep
+    state = current_state(run, [fresh_keep(run, [], "e1")])
+    parts, anchor, end = cal.run_interval_partition(run, state)
     assert (anchor, end) == (None, None)
     assert len(parts["contingent"]) > 0
     assert parts["calendar"] == [] and parts["past"] == [] and parts["later"] == []

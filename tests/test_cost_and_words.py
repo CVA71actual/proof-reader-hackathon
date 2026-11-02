@@ -9,7 +9,7 @@ from jsonschema import Draft202012Validator
 
 from capture import read_events
 from checks import event_checks
-from checks.event_checks import date_match, event_anchors, parse_period
+from checks.event_checks import date_match, parse_period
 from runs import build_entry, build_sample, prices
 from runs.state import current_state
 
@@ -151,15 +151,26 @@ def test_demo_has_no_recorded_spend():
     assert current_state(run, [])["cost_per_kept_row_usd"] is None
 
 
-def test_cost_per_kept_row_follows_the_decisions():
+def test_cost_per_accepted_row_follows_current_bound_decisions():
     run = load("sample")
     decisions = [json.loads(l) for l in (REPO / "runs" / "sample" / "decisions.jsonl").read_text().splitlines()]
     st = current_state(run, decisions)
-    kept = st["counts"]["rows"]["kept"] + st["counts"]["rows"]["corrected"]
+    # GROUP-AXIS-001: historical unbound Keeps and mechanical groups are not a denominator.
+    assert st["counts"]["review"]["accepted"] == 0
+    assert st["cost_per_kept_row_usd"] is None
+    original_log = copy.deepcopy(decisions)
+    for target, state in st["targets"].items():
+        if state["kind"] == "row" and state["group"] in ("kept", "corrected"):
+            decisions.append({"at": "2026-11-01T22:00:00+00:00", "target": target, "action": "keep",
+                              "note": "Explicit test acceptance", "fix": None, "by": "person",
+                              "review_basis": current_state(run, decisions)["targets"][target]["review_basis"]})
+    assert decisions[:len(original_log)] == original_log  # no retroactive stamping
+    st = current_state(run, decisions)
+    kept = st["counts"]["review"]["accepted"]
     assert kept > 0
     assert st["cost_per_kept_row_usd"] == pytest.approx(run["run"]["spend_usd"] / kept, abs=1e-6)
     # removing a kept row spreads the same spend over one row fewer
-    kept_id = next(t for t, s in st["targets"].items() if s["kind"] == "row" and s["group"] == "kept")
+    kept_id = next(t for t, s in st["targets"].items() if s["kind"] == "row" and s["accepted"])
     more = decisions + [{"at": "2026-10-27T17:00:00+00:00", "target": kept_id, "action": "remove",
                          "note": "x", "fix": None, "by": "person"}]
     assert current_state(run, more)["cost_per_kept_row_usd"] == pytest.approx(run["run"]["spend_usd"] / (kept - 1),
@@ -190,11 +201,12 @@ def test_schema_takes_and_bounds_the_cost_fields():
 # ---------------------------------------------------------------- 2. earnings event words
 
 
-def test_earnings_event_words():
-    assert event_anchors("earnings")[:6] == ["results", "earnings", "revenue", "net loss", "quarter ended",
-                                             "year ended"]
-    assert event_anchors("other") == []
-    assert event_anchors("other", title="Investor day", program=None) == ["investor"]
+def test_literal_dates_do_not_need_earnings_event_words():
+    # DATE-LITERAL-001 retires event_anchors; no earnings vocabulary is required.
+    for event_type in ("earnings", "other", None):
+        check = date_match("June 30, 2026", "2026-06-30", "The period ended June 30, 2026.",
+                           event_type=event_type, title="Investor day", program="CB-100")
+        assert check.result == "pass"
 
 
 def test_sample_e10_date_check_now_runs_and_passes():
@@ -209,11 +221,13 @@ def test_sample_e10_date_check_now_runs_and_passes():
     ("Net loss for the quarter ended June 30, 2026 was $12 million.", "June 30, 2026", "2026-06-30", "pass"),
     ("Revenue for the year ended December 31, 2025 grew.", "December 31, 2025", "2025-12-31", "pass"),
     ("Revenue for the year ended December 31, 2025 grew.", "December 31, 2025", "2025-12-30", "fail"),
-    ("The company will hold a call on August 5, 2026.", "August 5, 2026", "2026-08-05", "could_not_run"),
+    ("The company will hold a call on August 5, 2026.", "August 5, 2026", "2026-08-05", "pass"),
 ])
-def test_earnings_rows_use_the_earnings_words(quote, date_text, iso, result):
+def test_date_wording_does_not_require_earnings_vocabulary(quote, date_text, iso, result):
     r = date_match(date_text, iso, quote, event_type="earnings", title="Q2")
     assert r.result == result, r.reason
+    from tests.pivot_assertions import assert_proposal_held
+    assert_proposal_held(quote, "earnings", date_text=date_text, start=iso)
 
 
 # ---------------------------------------------------------------- 3. early / mid / late quarters
@@ -263,11 +277,13 @@ def test_whole_quarter_claim_on_early_q1_fails():
     "Initiation is no longer expected in late Q4 2027.",
     "Initiation was previously expected in mid-Q2 2027.",
 ])
-def test_quarter_part_not_affirmed_fails(quote):
+def test_quarter_part_wording_does_not_accept_negated_or_previous_event(quote):
     text = "late Q4 2027" if "late" in quote else "mid-Q2 2027"
     a, b = parse_period(text)
     r = date_match(text, a.isoformat(), quote, b.isoformat(), event_type="milestone", title="Initiation")
-    assert r.result == "fail", r.reason
+    assert r.result == "pass", r.reason  # DATE-LITERAL-001: wording only, not an affirmed event.
+    from tests.pivot_assertions import assert_proposal_held
+    assert_proposal_held(quote, "milestone", date_text=text, start=a.isoformat(), end=b.isoformat())
 
 
 def test_quarter_part_with_no_year_fails():

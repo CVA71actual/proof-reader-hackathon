@@ -24,6 +24,7 @@ never printed.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import sys
 from pathlib import Path
@@ -42,8 +43,10 @@ from server import jobs
 
 def summary(run: dict, state: dict, calendar: list[dict]) -> list[str]:
     m = run["run"]
-    rows, cells = state["counts"]["rows"], state["counts"]["cells"]
-    kept = rows["kept"] + rows["corrected"]
+    cells = state["counts"]["cells"]
+    review = state["counts"]["review"]
+    checks = Counter(target["status"] for target in state["targets"].values() if target["kind"] == "row")
+    kept = review["accepted"]
     who = state["mistakes"]
     cost = m.get("spend_usd")
     per = state["cost_per_kept_row_usd"]
@@ -54,13 +57,15 @@ def summary(run: dict, state: dict, calendar: list[dict]) -> list[str]:
              + (f" ({m['status_reason']})" if m.get("status_reason") else ""),
              f"  pages read: {pages_read}"
              + (f"; turns: {m['turns_total']}; resumes: {m.get('resumes', 0)}" if "turns_total" in m else ""),
-             "  rows: " + ", ".join(f"{g} {n}" for g, n in rows.items()),
+             "  check results: " + (", ".join(f"{status} {n}" for status, n in sorted(checks.items())) or "no rows"),
+             f"  rows: Accepted by you {review['accepted']}, Proposed — needs review {review['proposed']}, "
+             f"Excluded {review['excluded']}",
              "  values: " + ", ".join(f"{g} {n}" for g, n in cells.items()),
              f"  needs attention: {state['unresolved']}",
              f"  mistakes caught by code {who['code']}, second reader {who['second_reader']}, person {who['person']}; "
              f"excluded by code {state['excluded']['code']}, by person {state['excluded']['person']}",
-             f"  calendar: {len(calendar)} kept or corrected row{'s' if len(calendar) != 1 else ''}",
-             f"  cost: {'not recorded' if cost is None else '$%.4f' % cost}; kept rows: {kept}; cost per kept row: "
+             f"  calendar: {len(calendar)} accepted row{'s' if len(calendar) != 1 else ''}",
+             f"  cost: {'not recorded' if cost is None else '$%.4f' % cost}; accepted rows: {kept}; cost per accepted row: "
              f"{'not computed' if per is None else '$%.4f' % per}"]
     skipped = m.get("skipped_pages") or []
     if skipped:

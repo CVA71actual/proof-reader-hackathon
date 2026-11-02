@@ -39,7 +39,7 @@ OPENROUTER_MODEL = "meta/muse-spark-open"
 OPENROUTER_CAP_USD = 20.0
 # Authentication/permission refusal establishes no inference. Other 4xx
 # statuses are not sufficient here to establish pre-inference rejection.
-NO_INFERENCE_STATUSES = frozenset({401, 403})
+NO_INFERENCE_STATUSES = read_table.NO_INFERENCE_STATUSES
 CAP_REACHED = "The OpenRouter fallback has reached its $20 cap, so there was no second read."
 UNPRICED = ("The OpenRouter fallback returned no token counts, so its spend cannot be held under the $20 cap; no "
             "more fallback calls were made.")
@@ -58,7 +58,7 @@ class SecondReader:
     def __init__(self) -> None:
         self.openrouter_allowed = True   # the job turns this off once the $20 cap is reached (or a call went unpriced)
         self.openrouter_blocked: str | None = None   # and says why, in one plain sentence
-        self.before_fallback = None   # the job's gate: every failed Baseten Reply; False = no fallback call
+        self.before_fallback = None   # the job's gate: every failed Baseten Reply; False or no gate = no fallback call
 
     def _key(self, name: str) -> str:
         read_table.load_env_file()
@@ -93,11 +93,15 @@ class SecondReader:
             # let the ordinary job gate account for the unknown cost.
             reply.extra = {"may_have_been_billed": True, **(reply.extra or {})}
         if reply.error and route == "baseten" and self._key("OPENROUTER_API_KEY") and self.openrouter_allowed:
-            if self.before_fallback is not None:
-                # Count the failed primary attempt before admitting the fallback.
-                if not self.before_fallback(reply):
-                    reply.extra = {**(reply.extra or {}), "already_counted": True, "fallback_skipped": True}
-                    return reply
+            if self.before_fallback is None:
+                # PIVOT RED 3b: fail closed. A paid fallback is a second attempt and
+                # needs an installed gate that admits it; no gate, no second request.
+                reply.extra = {**(reply.extra or {}), "fallback_skipped": True}
+                return reply
+            # Count the failed primary attempt before admitting the fallback.
+            if not self.before_fallback(reply):
+                reply.extra = {**(reply.extra or {}), "already_counted": True, "fallback_skipped": True}
+                return reply
             reply = self._ask("openrouter", prompt, image)   # Baseten did not answer: the fallback, under its cap
         return reply
 
@@ -108,28 +112,13 @@ class SecondReader:
         messages = messages_for(prompt, image)
         response_format = "json_object"
         http.take_billed()
-        def failed(exc, *, prior_unknown=False):
-            status = read_table._status(exc)
-            unknown = http.take_billed() or prior_unknown or status not in NO_INFERENCE_STATUSES
-            reason = ("A failed attempt may have been billed; cost is unknown." if unknown else
-                      f"HTTP {status}: authentication or permission rejected before inference.")
-            return Reply(None, model, error=read_table._plain_error(exc), extra={
-                "route": route, "http_status": status, "may_have_been_billed": unknown,
-                "billing_classification_reason": reason})
         try:
             resp = self._create(client, model, messages, json_mode=True)
-        except Exception as e:  # some endpoints reject response_format; retry once without it
+        except Exception as e:  # PIVOT RED 3: no automatic retry on 400/422; one request, one attempt
             if http.is_silent(e):
                 return timeout_reply(NAME, model, extra={"route": route}, exc=e)
-            if read_table._status(e) not in (400, 422):
-                return failed(e)
-            response_format = "none"
-            try:
-                resp = self._create(client, model, messages, json_mode=False)
-            except Exception as e2:
-                if http.is_silent(e2):
-                    return timeout_reply(NAME, model, extra={"route": route}, exc=e2)
-                return failed(e2, prior_unknown=True)
+            return Reply(None, model, error=read_table._plain_error(e),
+                         extra={"route": route, **read_table.failure_billing(e)})
         raw = resp.choices[0].message.content if resp.choices else None
         usage = getattr(resp, "usage", None)
         extra = {"route": route, "base_url": base, "requested_model": model, "response_format": response_format,

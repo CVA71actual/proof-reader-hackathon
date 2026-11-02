@@ -1,7 +1,9 @@
-"""Job 52h: "of" never binds an agency; by/from bind only when the agency ends its phrase."""
+"""Historical phrase diagnostics remain tested. PIVOT does not use either
+diagnostic outcome as evidence that a human has accepted the proposed event."""
 import pytest
 from checks import event_checks as ec
-from checks.common import PASS
+from checks.common import NOT_NEEDED
+from tests.pivot_assertions import assert_proposal_held
 
 POS = ["A decision by the FDA.", "The decision by the U.S. FDA expected in Q1 2027.",
        "Approval from the EMA in Q1 2027.", "Approval from Health Canada.", "FDA approval is expected.",
@@ -13,11 +15,13 @@ NEG = ["The board's approval of the FDA submission budget is expected in Q1 2027
 @pytest.mark.parametrize("t", POS)
 def test_positive(t):
     assert ec.event_type_for(t) == "regulatory_decision"
-    assert ec.type_match("regulatory_decision", t).result == PASS
+    assert ec.type_match("regulatory_decision", t).result == NOT_NEEDED
+    assert_proposal_held(t, "regulatory_decision")
 
 @pytest.mark.parametrize("t", NEG)
 def test_negative(t):
     # sentence 1 reads as "filing" (its own word "submission"), never regulatory_decision; the rest are unknown
     assert ec.event_type_for(t) in ("unknown", "filing")
     r = ec.type_match("regulatory_decision", t)
-    assert r.result == "unresolved"
+    assert r.result == NOT_NEEDED
+    assert_proposal_held(t, "regulatory_decision")

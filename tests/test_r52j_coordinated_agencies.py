@@ -1,3 +1,6 @@
+# PIVOT-001: original classifier probes are retained as diagnostics; type_match
+# is retired. Both positive and negative interpretations require human review.
+from tests.pivot_assertions import assert_proposal_held
 """Job 52j: coordinated agencies are not an actor; a comma after an agency ends it only before a listed word."""
 import pytest
 
@@ -7,7 +10,8 @@ from checks.common import PASS
 
 def test_a_comma_then_a_listed_word_ends_the_agency_phrase():
     q = "Approval by the MHRA, expected in 2027."
-    assert ec.event_type_for(q) == "regulatory_decision" and ec.type_match("regulatory_decision", q).result == PASS
+    assert ec.event_type_for(q) == "regulatory_decision" and ec.type_match("regulatory_decision", q).result == "not_needed"
+    assert_proposal_held(q, "regulatory_decision")
 
 
 @pytest.mark.parametrize("agencies", ["FDA and EMA", "FDA or EMA", "FDA, EMA and MHRA"])
@@ -19,4 +23,5 @@ def test_coordinated_agency_feedback_is_unknown_agency_not_established(agencies)
 
 def test_approval_from_two_coordinated_agencies_is_unresolved():
     check = ec.type_match("regulatory_decision", "Approval from the FDA and EMA is expected in 2027.")
-    assert check.result == "unresolved" and "agency not named" in check.reason
+    assert check.result == "not_needed"
+    assert_proposal_held("Approval from the FDA and EMA is expected in 2027.", "regulatory_decision")

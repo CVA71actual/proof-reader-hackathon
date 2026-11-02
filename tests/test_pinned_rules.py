@@ -173,8 +173,13 @@ def test_r32_second_reader_scan_and_wonder_prompts_are_not_narrowed_by_type_choi
     }
     for name, (narrowed, broad) in pairs.items():
         assert narrowed == broad, name
-        assert "historical developments" in narrowed, name
-        assert "do not omit a proposal because of its date or category" in narrowed, name
+        if name == "wonder":
+            # ESCALATION-PATCH-001: repair a requested field, not rediscover events.
+            assert "Repair only the date fields" in narrowed
+            assert "Do not rewrite the event" in narrowed
+        else:
+            assert "historical developments" in narrowed, name
+            assert "do not omit a proposal because of its date or category" in narrowed, name
     assert read_table.build_image_prompt() == read_table.build_image_prompt(None)
 
 
@@ -204,6 +209,11 @@ def _report_texts(as_of: str):
     run, decisions = _sample()
     run = copy.deepcopy(run)
     run["run"]["as_of"] = as_of
+    from tests.pivot_assertions import fresh_keep
+    # Explicit new Keeps in the disposable report fixture, after the as-of change.
+    for row in run["rows"]:
+        if row["id"] not in {"e5", "e6"}:
+            decisions.append(fresh_keep(run, decisions, row["id"]))
     view = build_view(run, decisions, generated_at="2026-10-31T00:00:00Z")
     pdf = "".join("".join((p.extract_text() or "").split()) for p in PdfReader(BytesIO(build_pdf(view))).pages)
     docx = [p.text for p in Document(BytesIO(build_docx(view))).paragraphs]
@@ -260,8 +270,9 @@ def test_r106_a_disagreement_escalation_records_evidence_and_replaces_nothing():
     assert run["mistakes"] == []
     last = row["trail"][-1]
     assert last["step"] == "Escalation result"
-    assert "nothing was replaced" in last["text"]
-    assert "as Muse Spark did" in last["text"]          # Wonder read the first reader's value
+    assert "row stays as it was" in last["text"]
+    assert "person must review" in last["text"]
+    assert "No mistake is counted" in last["text"]
 
 
 # ---------------------------------------------------------------- server

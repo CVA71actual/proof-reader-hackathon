@@ -122,13 +122,15 @@ def _row(rid="e1", **kw):
     return {**base, **kw}
 
 
-def test_recheck_dates_excludes_a_past_period_and_leaves_a_decided_row_alone(tmp_path):
+def test_recheck_dates_preserves_past_proposals_and_leaves_decisions_alone(tmp_path):
     from runs import recheck_dates as rd
     from pathlib import Path
     run = _run_with(_row(), tmp_path)
     rd.recheck_dates(run, tmp_path, set(), "t")
-    assert rd.exclude_again(run, set(), "t")["out"] == ["e1"]
-    assert run["rows"][0]["group"] == "removed" and run["exclusions"][0]["rule"] == "event_in_past"
+    assert rd.exclude_again(run, set(), "t")["out"] == []
+    assert run["rows"][0]["group"] != "removed" and run["exclusions"] == []
+    from runs.state import current_state
+    assert current_state(run, [])["targets"]["e1"]["needs_attention"]
     run = _run_with(_row(), tmp_path)
     assert rd.exclude_again(run, {"e1"}, "t")["out"] == []
     assert rd.recheck_dates(run, tmp_path, {"e1"}, "t")["person"] == 1 and run["rows"][0]["group"] == "kept"
@@ -147,7 +149,9 @@ def test_date_migration_respects_the_replayed_decision_and_rechecks_after_undo(t
 
     after_undo = rd.person_decisions_in_effect(run, [keep, undo])
     assert after_undo == set()
-    assert rd.exclude_again(run, after_undo, "t")["out"] == ["e1"]
+    assert rd.exclude_again(run, after_undo, "t")["out"] == []
+    from runs.state import current_state
+    assert current_state(run, [keep, undo])["targets"]["e1"]["needs_attention"]
 
 
 def test_recheck_dates_keeps_a_period_that_contains_today():
@@ -184,8 +188,8 @@ def test_write_saves_a_same_result_new_reason_change(tmp_path):
     from runs import recheck_dates as rd
     row = _row(date_text="August 2026", quote="topline results in August 2026.", date="2026-08-01",
                date_end="2026-08-31")
-    row["checks"][0]["reason"] = "an older reason"
     run = _run_with(row)
+    row["checks"][0]["reason"] = "an older reason"
     run["run"]["choices"] = {}                       # no window: only the date check can change
     d = tmp_path / "r1"
     pages = d / "pages"
@@ -205,11 +209,19 @@ def test_write_saves_a_same_result_new_reason_change(tmp_path):
         "words": words_name, "words_sha256": hashlib.sha256(words_bytes).hexdigest(),
         "width_pt": 612.0, "height_pt": 792.0}]}]
     (d / "run.json").write_text(json.dumps(run))
-    assert rd.recheck_dates(json.loads((d / "run.json").read_text()), d, set(), "t")["changed"] == []
+    direct = json.loads((d / "run.json").read_text())
+    assert rd.recheck_dates(direct, d, set(), "t")["changed"] == []
     assert rd.main(["r1", "--runs-dir", str(tmp_path), "--write"]) == 0
     saved = json.loads((d / "run.json").read_text())["rows"][0]
-    assert saved["checks"][0]["result"] == "pass" and saved["checks"][0]["reason"] != "an older reason"
+    date_check = next(c for c in saved["checks"] if c["name"] == "date_match")
+    assert date_check["result"] == "pass" and date_check["reason"] != "an older reason"
     assert saved["trail"][-1]["step"] == "Date re-checked"
+    original_trail = saved["trail"]
+    assert rd.main(["r1", "--runs-dir", str(tmp_path), "--write"]) == 0
+    assert json.loads((d / "run.json").read_text())["rows"][0]["trail"] == original_trail
+    # PIVOT L3: the CLI now loads through the same bound loader as the API.
+    # Its refresh retains the original result as history before the date pass.
+    assert any(c["reason"] == "an older reason" for c in saved["check_history"])
 
 
 def _sample_copy(tmp_path, tamper=True, reports=True):

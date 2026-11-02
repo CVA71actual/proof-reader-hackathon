@@ -112,11 +112,13 @@ def test_a_one_sided_disagreement_with_a_missing_check_does_not_become_matched()
     assert t["status"] == "undecided" and t["group"] == "open"
 
 
-def test_a_one_sided_disagreement_with_every_check_passing_is_matched():
+def test_a_one_sided_disagreement_with_passing_checks_still_needs_acceptance():
     one_sided = {"field": "program", "first_reader": "Drug A", "second_reader": None}
     run = _run(_row("undecided", "open", _five(), one_sided))
     t = current_state(run, [])["targets"]["e1"]
     assert t["status"] == "matched" and t["group"] == "kept"
+    # GROUP-AXIS-001: preserve mechanical assertions, require human acceptance.
+    assert t["needs_attention"] and not t["accepted"] and not t["on_calendar"]
 
 
 # ---- Job 49b: one shared derivation (runs.state.derive_status) from the CURRENT effective checks
@@ -146,10 +148,12 @@ def test_saved_pass_rechecked_fail_is_not_matched_and_not_on_the_calendar():
     assert not on_calendar(t)
 
 
-def test_saved_fail_rechecked_pass_is_matched_and_kept():
+def test_saved_fail_rechecked_pass_is_mechanically_matched_but_not_accepted():
     run = _run(_row("failed", "open", _five("fail")))
     t = _rechecked(run, "pass")["targets"]["e1"]
     assert (t["status"], t["group"]) == ("matched", "kept")
+    # GROUP-AXIS-001: rechecking a value never accepts the interpretation.
+    assert t["needs_attention"] and not t["accepted"] and not t["on_calendar"]
 
 
 def test_saved_fail_rechecked_pass_with_a_disagreement_stays_for_a_person():

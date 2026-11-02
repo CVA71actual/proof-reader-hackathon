@@ -77,7 +77,9 @@ RECORDED = Path(os.environ.get("TWELVE2_DIR", Path.home() / "proof-reader-docs" 
 
 @pytest.mark.skipif(not (RECORDED / "run.json").is_file(), reason="twelve-2 is kept out of git")
 def test_twelve_2_rows_that_failed_for_a_missing_year_are_checked_now():
-    run = json.loads((RECORDED / "run.json").read_text())
+    saved = RECORDED / "run.json"
+    before = saved.read_bytes()
+    run = json.loads(before)
     published = {s["id"]: s["published_date"] for s in run["sources"]}
     rows = [r for r in run["rows"] if any(c["name"] == "date_match" and "no day and no period" in c["reason"]
                                           for c in r["checks"])]
@@ -88,7 +90,12 @@ def test_twelve_2_rows_that_failed_for_a_missing_year_are_checked_now():
     # Job 18: "today at 8:00 a.m. ET" is a today-word now, so four more rows (e86, e186, e206, e255) go from fail to
     # could not run for the same reason
     # Job 21: date_match takes a person's chosen date and clause continuation, so 13 rows go from could not run to pass
-    assert after.count("pass") == 37 and after.count("fail") == 8 and after.count("could_not_run") == 15
+    # DATE-LITERAL-001 retires semantic clause inference (old snapshot: 37/8/15).
+    # These are literal-date outcomes only, not accepted event counts.
+    assert after.count("pass") == 44 and after.count("fail") == 7 and after.count("could_not_run") == 9
+    assert saved.read_bytes() == before
+    from runs.state import current_state
+    assert current_state(run, [])["counts"]["review"]["accepted"] == 0
 
 
 # ---------------------------------------------------------------- send-back for the second reader

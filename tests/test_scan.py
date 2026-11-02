@@ -20,7 +20,7 @@ from checks.selector_match import region_match
 from runs import prices, recheck, scan
 from server import jobs
 from server.app import create_app
-from tests.conftest import FIXTURES, REPO, without_trails
+from tests.conftest import FIXTURES, REPO, without_trails, rebuilt_source_view
 from tests.test_run_controls import FakeReader
 
 RUN_SCHEMA = Draft202012Validator(json.loads((REPO / "runs" / "schema" / "run.schema.json").read_text()))
@@ -266,7 +266,7 @@ def test_two_regions_are_read_one_by_one_and_each_row_is_checked_against_its_own
     for row in run["rows"]:
         got = {c["name"]: c["result"] for c in row["checks"]}
         assert got == {"quote_match": "could_not_run", "selector_match": "pass", "date_match": "pass",
-                       "source_rule": "pass", "type_match": "pass"}
+                       "source_rule": "pass", "type_match": "not_needed"}
         assert (row["status"], row["group"]) == ("proposed", "unverified"), "missing word support still prevents matched"
         assert "The page is a scan" in row["reason"]
     assert "box lies inside r1" in run["rows"][0]["checks"][1]["reason"]
@@ -425,12 +425,16 @@ def test_the_saved_live_sam_answers_on_the_scanned_ptgx_page():
 
 def test_the_committed_scan_run_is_what_the_builder_makes(tmp_path):
     entry = load_entry(PIN)
-    run = json.loads((REPO / "runs" / "ptgx-scan" / "run.json").read_text())
+    from runs.check_load import load_bound_run
+    saved = REPO / "runs" / "ptgx-scan" / "run.json"
+    before = saved.read_bytes()
+    run = load_bound_run(saved.parent)
     sam_record = json.loads((FIXTURES / f"{PIN}.sam.json").read_text())
     read_record = json.loads((FIXTURES / f"{PIN}.scan_reading.json").read_text())
     fresh = scan.assemble(entry, tmp_path / "ptgx-scan", sam_record, read_record,
                           finished_at=run["run"]["finished_at"])
-    assert without_trails(fresh) == without_trails(run)
+    assert rebuilt_source_view(fresh) == rebuilt_source_view(run)
+    assert saved.read_bytes() == before
     RUN_SCHEMA.validate(run)
 
 

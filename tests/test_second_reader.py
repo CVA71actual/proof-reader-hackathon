@@ -22,7 +22,7 @@ from runs import build_entry, compare, prices
 from runs.state import current_state
 from server import jobs
 from server.app import create_app
-from tests.conftest import FIXTURES, REPO, without_trails
+from tests.conftest import FIXTURES, REPO, without_trails, rebuilt_source_view
 from tests.test_cost_and_words import LEGACY_PRICES_BEFORE_2026_10_29
 from tests.test_run_controls import FakeReader
 
@@ -125,7 +125,13 @@ def test_a_failed_baseten_call_falls_back_only_when_the_fallback_is_allowed(monk
             else Reply('{"events": []}', OPENROUTER_MODEL, extra={"route": "openrouter"})
 
     monkeypatch.setattr(SecondReader, "_ask", ask)
-    assert SecondReader().call("p").extra == {"route": "openrouter"} and calls == ["baseten", "openrouter"]
+    # PIVOT RED 3b: with no gate installed the fallback fails closed.
+    ungated = SecondReader().call("p")
+    assert ungated.error and ungated.extra["fallback_skipped"] and calls == ["baseten"]
+    calls.clear()
+    gated = SecondReader()
+    gated.before_fallback = lambda reply: True
+    assert gated.call("p").extra == {"route": "openrouter"} and calls == ["baseten", "openrouter"]
     calls.clear()
     capped = SecondReader()
     capped.openrouter_allowed = False
@@ -175,17 +181,20 @@ def test_events_are_matched_by_overlapping_quote_and_a_shared_name():
 
 
 def test_every_compared_field_is_a_difference_when_it_differs():
-    base = {**ROW}
-    assert compare.differences(ROW, base) == []
+    # Explicit supplied hint: a legacy row's derived event_type cannot stand
+    # in for evidence of what the first reader actually proposed.
+    first = {**ROW, "type_hint": "milestone"}
+    base = {**first}
+    assert compare.differences(first, base) == []
     for field, new in (("date", "2027-02-01"), ("date_end", "2027-04-30"),
                        ("program", "PN-9999"), ("indication", "Polycythemia vera")):
-        diffs = compare.differences(ROW, {**base, field: new})
+        diffs = compare.differences(first, {**base, field: new})
         assert [(d["field"], d["second_reader"]) for d in diffs] == [(field, new)]
-    assert compare.differences(ROW, {**base, "event_type": "trial_results"}) == [], "code assigns type from quote"
-    assert compare.differences(ROW, {**base, "event_type": " Milestone "}) == [], "model type hint is not the controlled type"
+    assert compare.differences(first, {**base, "event_type": "trial_results"}) == [], "code assigns type from quote"
+    assert compare.differences(first, {**base, "event_type": " Milestone "}) == [], "model type hint is not the controlled type"
     longer = {**base, "quote": base["quote"] + " Further text."}
-    assert compare.differences(ROW, longer) == [], "a quote that runs longer is not a disagreement"
-    assert [d["field"] for d in compare.differences(ROW, {**base, "date": "x", "event_type": "y"})] == ["date"]
+    assert compare.differences(first, longer) == [], "a quote that runs longer is not a disagreement"
+    assert [d["field"] for d in compare.differences(first, {**base, "date": "x", "event_type": "y"})] == ["date"]
 
 
 def test_the_table_comparison_marks_only_the_values_that_differ():
@@ -216,13 +225,15 @@ def test_two_readers_that_agree_change_nothing_and_say_agreement_is_not_a_check(
     assert [(r["status"], r["group"]) for r in run["rows"]] == [(r["status"], r["group"]) for r in plain["rows"]]
     assert all("disagreement" not in r for r in run["rows"])
     for row in run["rows"]:
-        steps = [(t["step"], t["tag"], t["who"]) for t in row["trail"][-4:]]
+        # The explicit legacy-field adaptation is a separate Code actor step.
+        steps = [(t["step"], t["tag"], t["who"]) for t in row["trail"][-5:]]
         assert steps == [("Sent the page image to Muse Spark Open", "Code", "capture.second_reader"),
                          ("Instructions sent to the second reader", "Code", "capture.second_reader"),
                          ("Second reading", "Model", "Muse Spark Open"),
+                         ("Legacy reader type", "Code", "runs.proposal"),
                          ("Compared the two readings", "Code", "runs.compare")]
         assert "Agreement is not a check" in row["trail"][-1]["text"]
-        model_step = row["trail"][-2]
+        model_step = row["trail"][-3]
         assert model_step["tokens"]["prompt"] > 0 and model_step["cost_usd"] > 0
     assert run["run"]["turn_count"] == 2 and len(first.prompts) == len(second.prompts) == 1
 
@@ -303,7 +314,9 @@ def test_a_disagreement_on_the_date_makes_the_row_undecided_and_goes_to_a_person
     assert "end date: Muse Spark read 2027-03-31" in compared["text"]
     assert next(r for r in run["rows"] if r["date_text"] != "Q1 2027")["status"] == "matched", "the other row agrees"
     state = current_state(run, [])
-    assert state["targets"][row["id"]]["group"] == "open" and state["unresolved"] == 1
+    assert state["targets"][row["id"]]["group"] == "open"
+    assert all(t["needs_attention"] and not t["accepted"] for t in state["targets"].values())
+    assert state["unresolved"] == len(run["rows"])  # agreement is not acceptance
 
 
 def test_model_type_hints_do_not_change_the_controlled_event_type(runs_dir):
@@ -312,9 +325,16 @@ def test_model_type_hints_do_not_change_the_controlled_event_type(runs_dir):
     other[0]["event_type"] = "trial_results"
     _, rid = start(runs_dir, FakeReader(), FakeSecond(answer=events_answer(other)))
     run = run_of(runs_dir, rid)
-    assert not any(r.get("disagreement") for r in run["rows"])
-    assert run["rows"][0]["event_type"] == "milestone"
-    assert run["rows"][0]["type_hint"] == "milestone"
+    # Legacy reader event_type is evidence of its proposal, not a code label.
+    # Retain both differing hints and require judgment; never ignore them just
+    # because the quote classifier assigns the same controlled category.
+    row = run["rows"][0]
+    assert row["event_type"] == "milestone"
+    assert row["type_hint"] == "milestone"
+    assert row["disagreement"] == {"field": "type_hint", "first_reader": "milestone",
+                                   "second_reader": "trial_results"}
+    assert current_state(run, [])["targets"][row["id"]]["needs_attention"]
+    assert not run["mistakes"]
 
 
 def test_a_disagreement_on_the_program_or_indication_is_a_disagreement_too(runs_dir):
@@ -517,6 +537,12 @@ def test_a_second_reader_with_no_price_stops_a_run_that_has_a_spending_limit(run
 
 
 def test_openrouter_spend_is_recorded_in_job_json_and_stops_the_fallback_at_twenty_dollars(runs_dir, monkeypatch):
+    created = []
+    real_init = jobs.Job.__init__
+    def observe_job(self, *args, **kwargs):
+        real_init(self, *args, **kwargs)
+        created.append(self)
+    monkeypatch.setattr(jobs.Job, "__init__", observe_job)
     second = FakeSecond(route="openrouter", tokens=(10_000_000, 10_000_000), model=OPENROUTER_MODEL)
     _, rid = start(runs_dir, FakeReader(), second, companies=["PTGX", "IONS"])
     job = job_of(runs_dir, rid)
@@ -526,7 +552,8 @@ def test_openrouter_spend_is_recorded_in_job_json_and_stops_the_fallback_at_twen
     second2 = FakeSecond(route="openrouter", tokens=(10_000_000, 10_000_000), model=OPENROUTER_MODEL)
     _, rid2 = start(runs_dir, FakeReader(), second2, companies=["PTGX", "IONS"])
     assert job_of(runs_dir, rid2)["openrouter_spend_usd"] == pytest.approx(2 * one_call)
-    assert second2.openrouter_allowed is False, "the job switched the fallback off once the cap was reached"
+    assert created[-1].second.openrouter_allowed is False, "the job switched its own fallback off once the cap was reached"
+    assert second2.openrouter_allowed is True, "a completed job must not disable another job's reader template"
 
 
 # ---------------------------------------------------------------- the two-reader PTGX run, built from the saved live readings
@@ -537,10 +564,25 @@ def test_the_committed_two_reader_run_is_what_the_builder_makes(tmp_path, monkey
     monkeypatch.setattr(prices, "PRICES_PER_1M_USD", LEGACY_PRICES_BEFORE_2026_10_29)
     reading = json.loads(read_events.READING_PATH.read_text())
     second = json.loads((FIXTURES / f"{PIN}.events.second.json").read_text())
-    run = json.loads((RUNS / "ptgx-r5" / "run.json").read_text())
+    from runs.check_load import load_bound_run
+    saved = RUNS / "ptgx-r5" / "run.json"
+    before = saved.read_bytes()
+    run = load_bound_run(saved.parent)
     fresh = build_entry.build_entry_run(reading, tmp_path / "ptgx-r5", finished_at=run["run"]["finished_at"],
                                         second_reading=second)
-    assert without_trails(fresh) == without_trails(run)
+    new_view = rebuilt_source_view(fresh)
+    # New builds retain the second raw proposal structurally. The legacy run
+    # lacks that field; do not backfill it. Verify it against the saved answer.
+    for row in new_view["rows"]:
+        proposal = row.pop("second_reader_proposal")
+        assert proposal["model"] == "Muse Spark Open"
+        original = next(e for e in second["events"] if e["program"] == row["program"])
+        # The saved image answer uses a 0..1000 grid; the row uses PDF points.
+        expected = {**original, "box": [round(v * scale / 1000, 2)
+                                       for v, scale in zip(original["box"], (612, 792, 612, 792))]}
+        assert proposal["proposal"] == expected
+    assert new_view == rebuilt_source_view(run)
+    assert saved.read_bytes() == before
     RUN_SCHEMA.validate(run)
     assert run["run"]["label"] == "PTGX · two readers" and run["run"]["second_reader"]["status"] == "read"
     both = (reading["usage"]["prompt_tokens"] + second["usage"]["prompt_tokens"],

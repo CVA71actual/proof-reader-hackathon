@@ -90,7 +90,8 @@ def test_http_exception_passes_through_real_ask_into_gate(keys, monkeypatch, sta
     reader.before_fallback = lambda reply: seen.append(reply) or False
     reply = reader.call('synthetic')
     assert len(seen) == 1 and reply.extra['fallback_skipped']
-    assert client.calls == (2 if status in (400, 422) else 1)
+    # PIVOT RED 3 (Operator ruling item 32): no automatic 400/422 retry; one request per attempt.
+    assert client.calls == 1
     assert reply.extra['may_have_been_billed'] is (status not in (401, 403))
     assert reply.extra['billing_classification_reason']
 

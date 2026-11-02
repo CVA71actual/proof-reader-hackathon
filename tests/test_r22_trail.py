@@ -71,7 +71,12 @@ def test_a_second_reader_row_trail_has_the_same_shape(runs_dir):
         ("Second reading", "Model"),
         ("Compared the two readings", "Code")]
     compared = second[-1]["text"]
-    assert "same date, event type" in compared
+    assert "readers differ on 1 field" in compared and "type hint" in compared
+    assert row["disagreement"]["field"] == "type_hint"
+    assert row["type_hint"] == "milestone"
+    assert row["second_reader_proposal"]["proposal"]["event_type"] == "regulatory_decision"
+    from runs.state import current_state
+    assert current_state(run, [])["targets"][row["id"]]["needs_attention"]
     assert_plain(run, "second reader")
 
 
@@ -101,11 +106,15 @@ def test_a_row_sent_to_wonder_and_not_replaced_carries_the_wonder_steps(runs_dir
                     ("Muse Wonder", "Model", "Muse Wonder"),
                     ("Escalation result", "Code", "runs.escalate")]
     sent = next(t for t in row["trail"] if t["step"] == "Sent to Muse Wonder")
-    assert sent["text"].startswith("Date read as written failed.")
+    assert sent["text"].startswith("Date period found in quote failed.")
     model = next(t for t in row["trail"] if t["step"] == "Muse Wonder")
     assert model["tokens"]["prompt"] == 4000 and model["cost_usd"] > 0
     result = next(t for t in row["trail"] if t["step"] == "Escalation result")
-    assert result["text"].endswith("The row stays as it was.") and "did not pass every check" in result["text"]
+    assert "changes no requested date value" in result["text"]
+    assert "row stays as it was" in result["text"] and "No mistake is counted" in result["text"]
+    assert row["date"] == "2027-02-01"
+    assert row["escalation_proposal"]["proposal"]["event_type"] == first_event()["event_type"]
+    assert json.loads(row["escalation_proposal"]["raw_response"])["events"][0]["box"] == [10, 10, 900, 60]
     assert_plain(run, "wonder kept")
 
 

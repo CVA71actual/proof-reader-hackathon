@@ -1,8 +1,8 @@
 """R6: run controls on the server. No network and no key: every run here is read by a fake reader.
 
 Gap 10 and "checks cannot be skipped" (docs: orders/TWELVE_GAPS.md): a note cannot remove a check, the run stops at
-its turn and spending limits with a plain reason, three unreadable answers go to a person, and only rows the state
-rule puts in kept or corrected reach the calendar.
+its turn and spending limits with a plain reason, three unreadable answers go to a person, and only proposals
+with a current human acceptance reach the calendar.
 """
 
 import hashlib
@@ -417,14 +417,28 @@ def calendar(client, run_id):
     return r.json()["entries"]
 
 
-def test_the_calendar_holds_only_kept_and_corrected_rows(runs_dir):
+def keep_proposal(client, target, run_id="sample"):
+    """Record a real server-bound Keep in the test's disposable run, never restamp history."""
+    response = client.post(f"/api/runs/{run_id}/decisions", json={"target": target, "action": "keep"})
+    assert response.status_code == 200, response.text
+    assert response.json()["state"]["accepted"]
+
+
+def test_the_calendar_holds_only_current_human_acceptances(runs_dir):
     client, _ = make(runs_dir)
+    # GROUP-AXIS-001: historical unbound Keeps are history, not current acceptance.
+    assert calendar(client, "sample") == []
+    expected = {"e1", "e2", "e3", "e4", "e5", "e7", "e8", "e11"}
+    before = client.get("/api/runs/sample").json()["state"]["targets"]
+    for target in expected:
+        keep_proposal(client, target)
     entries = calendar(client, "sample")
     state = client.get("/api/runs/sample").json()["state"]["targets"]
-    # e7 and e8 are in because the sample's decisions keep them: a person's keep, shown as such
-    assert {e["id"] for e in entries} == {"e1", "e2", "e3", "e4", "e5", "e7", "e8", "e11"}
-    assert {e["group"] for e in entries} == {"kept", "corrected"}
-    off = {i for i, t in state.items() if t["kind"] == "row" and t["group"] in ("removed", "unverified", "open")}
+    assert {e["id"] for e in entries} == expected
+    assert all(state[i]["accepted"] for i in expected)
+    # Keep does not convert a failed or unresolved check to a pass.
+    assert all(state[i]["status"] == before[i]["status"] for i in expected)
+    off = {i for i, t in state.items() if t["kind"] == "row" and not t["accepted"]}
     assert off == {"e6", "e9", "e10"} and not off & {e["id"] for e in entries}
     e7 = next(e for e in entries if e["id"] == "e7")
     assert (e7["status"], e7["decided_by_person"], e7["last_action"]) == ("failed", True, "keep")
@@ -441,6 +455,10 @@ def test_the_calendar_follows_the_decisions(runs_dir):
                                                            "fix": None})
         assert r.status_code == 200, r.text
 
+    # PIVOT: accept the two initial rows through the same API used by the person.
+    assert ids() == set()
+    keep_proposal(client, "e1")
+    keep_proposal(client, "e7")
     assert "e1" in ids() and "e9" not in ids()
     decide("e1", "remove")
     assert "e1" not in ids()
@@ -458,6 +476,9 @@ def test_the_calendar_follows_the_decisions(runs_dir):
 
 def test_the_calendar_values_are_the_current_ones_and_dated_rows_come_first(runs_dir):
     client, _ = make(runs_dir)
+    assert calendar(client, "sample") == []
+    for target in ("e1", "e2", "e3", "e4", "e5", "e7", "e8", "e11"):
+        keep_proposal(client, target)
     entries = calendar(client, "sample")
     dates = [e["date"] for e in entries]
     assert dates == sorted(dates, key=lambda d: (d is None, d or ""))
@@ -468,12 +489,17 @@ def test_the_calendar_values_are_the_current_ones_and_dated_rows_come_first(runs
     assert any(r["id"] == "e3" for r in run["rows"])
 
 
-def test_a_new_runs_calendar_has_only_rows_the_state_keeps(runs_dir):
+def test_a_new_runs_calendar_holds_every_proposal_until_explicit_acceptance(runs_dir):
     client, _ = make(runs_dir)
     meta = start(client)
     run = run_json(runs_dir, meta["id"])
     state = client.get(f"/api/runs/{meta['id']}").json()["state"]["targets"]
-    expected = {r["id"] for r in run["rows"] if state[r["id"]]["group"] in ("kept", "corrected")}
+    # GROUP-AXIS-001: a new run has no human acceptances, even if checks pass.
+    assert run["rows"]
+    for row in run["rows"]:
+        assert not state[row["id"]]["accepted"]
+    expected = {r["id"] for r in run["rows"] if state[r["id"]]["accepted"]}
+    assert expected == set()
     assert {e["id"] for e in calendar(client, meta["id"])} == expected
     # a row that failed a check starts open and stays off the calendar until a person acts
     off = {r["id"] for r in run["rows"] if r["group"] in ("open", "unverified")}
@@ -582,16 +608,25 @@ def test_future_events_survive_legacy_window_choices(runs_dir, monkeypatch):
     late, early = by_date["2027-07-01"], by_date["2027-01-01"]
     assert late["group"] != "removed" and early["group"] != "removed"
     assert run["exclusions"] == []
+    assert calendar(client, meta["id"]) == []
+    keep_proposal(client, late["id"], meta["id"])
     assert late["id"] in {e["id"] for e in calendar(client, meta["id"])}
 
 
-def test_a_period_ending_before_the_run_date_is_a_code_exclusion(runs_dir, monkeypatch):
+def test_a_printed_past_period_needs_acceptance_before_past_placement(runs_dir, monkeypatch):
     with_today(monkeypatch, 2027, 4, 1)                # Q1 2027 ENDS 2027-03-31: before today
     client, _ = make(runs_dir)
-    run = run_json(runs_dir, start(client, time_window_months=6)["id"])
+    run_id = start(client, time_window_months=6)["id"]
+    run = run_json(runs_dir, run_id)
     by_date = {r["date"]: r for r in run["rows"]}
-    assert by_date["2027-01-01"]["group"] == "removed"
-    assert run["exclusions"] and run["exclusions"][0]["rule"] == "event_in_past"
+    row = by_date["2027-01-01"]
+    # DATE-LITERAL-001: code cannot decide this past date belongs to the event.
+    assert row["group"] != "removed" and run["exclusions"] == []
+    assert calendar(client, run_id) == []
+    keep_proposal(client, row["id"], run_id)
+    data = client.get(f"/api/runs/{run_id}").json()
+    assert [r["id"] for r in data["calendar_partition"]["past"]] == [row["id"]]
+    assert data["calendar_partition"]["calendar"] == []
 
 
 def test_fixed_window_keeps_undated_rows_and_excludes_only_past_periods(runs_dir, monkeypatch):
@@ -611,7 +646,7 @@ def test_fixed_window_keeps_undated_rows_and_excludes_only_past_periods(runs_dir
     assert all(x["target"] != undated["id"] and x["rule"] == "event_in_past" for x in run["exclusions"])
 
 
-def test_past_rule_uses_period_end_and_is_strictly_before_run_date():
+def test_literal_past_period_check_never_authorizes_automatic_exclusion():
     job = object.__new__(jobs.Job)
     job.meta = {"started_at": "2026-10-13T12:00:00+00:00"}
     source = {"id": "s1", "kind": "filing", "published_date": "2026-08-01", "pages": [{
@@ -636,8 +671,11 @@ def test_past_rule_uses_period_end_and_is_strictly_before_run_date():
     job.run = {"exclusions": [], "sources": [source]}
     job.apply_window(rows, "2026-10-13T12:00:00+00:00")
     assert rows[0]["group"] == "kept"
-    assert rows[1]["group"] == "removed"
-    assert [x["target"] for x in job.run["exclusions"]] == ["sep"]
+    # DATE-LITERAL-001 retires the semantic exclusion; the literal check remains.
+    assert result.result == "pass"
+    assert rows[1]["group"] == "kept"
+    assert rows[1]["past_exclusion_proposal"]
+    assert job.run["exclusions"] == []
 
 
 def test_past_rule_never_excludes_a_failed_or_unchecked_date():

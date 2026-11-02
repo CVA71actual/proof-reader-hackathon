@@ -1,7 +1,7 @@
 """Job 4 (R4c): the event-type check, dated-sentence coverage, program + indication on rows.
 
-Gap 3 and the "no model judging a model" line: both checks are plain code. The coverage scan shows a person what the
-reader skipped; the type check says when a row's kind of event does not fit its own quote.
+The coverage scan shows a person possible omissions. Under PIVOT-001 the type
+compatibility slot never establishes meaning; proposals require human acceptance.
 """
 
 import copy
@@ -28,6 +28,7 @@ from server import jobs
 from server.app import create_app
 from tests.conftest import FIXTURES, REPO, without_trails
 from tests.test_run_controls import FakeReader
+from tests.pivot_assertions import assert_proposal_held
 
 RUNS = REPO / "runs"
 RUN_SCHEMA = Draft202012Validator(json.loads((RUNS / "schema" / "run.schema.json").read_text()))
@@ -62,10 +63,11 @@ def page(text):
 # ---------------------------------------------------------------- Event type matches the quote
 
 
-def test_a_quote_with_the_types_own_words_passes():
+def test_a_types_own_words_never_certify_the_proposed_meaning():
     r = type_match("milestone", "Phase 1 initiation is anticipated in Q1 2027.")
-    assert (r.result, r.check, r.label) == (PASS, "type_match", "Event type matches the quote")
-    assert r.reason == "The quote's words (initiation) fit milestone."
+    assert (r.result, r.check, r.label) == (NOT_NEEDED, "type_match", "Event meaning needs review")
+    assert r.compared["found"] is None and "does not check event meaning" in r.reason
+    assert_proposal_held("Phase 1 initiation is anticipated in Q1 2027.", "milestone")
 
 
 @pytest.mark.parametrize("event_type,quote,words,says", [
@@ -74,53 +76,72 @@ def test_a_quote_with_the_types_own_words_passes():
     ("regulatory_decision", "Phase 2 enrollment completed in Q4 2026.", "enrolled", "milestone"),
     ("launch", "The company will present at the ASH conference in December 2026.", "present, conference", "conference"),
 ])
-def test_a_quote_whose_words_point_to_another_kind_of_event_fails_with_a_plain_reason(event_type, quote, words, says):
+def test_conflicting_keyword_examples_preserve_the_proposal_for_review(event_type, quote, words, says):
     r = type_match(event_type, quote)
-    group = event_type.replace("_", " ")
-    assert r.result == FAIL
-    assert r.reason.startswith("The quote's words (") and f"point to {says}, not {group}." in r.reason
-    assert r.compared["value"] == event_type and says in r.compared["found"]
+    # PIVOT: keep these original counterexamples without inventing an alternative type.
+    assert r.result == NOT_NEEDED
+    assert r.compared == {"value": event_type, "found": None}
+    assert_proposal_held(quote, event_type)
 
 
-def test_a_type_is_not_failed_for_having_another_types_words_as_well():
-    assert type_match("conference", "The company will present; data follow in 2028.").result == FAIL      # data comes first in TYPE_PRIORITY
+def test_keyword_priority_cannot_settle_a_multi_action_quote():
+    assert type_match("conference", "The company will present; data follow in 2028.").result == NOT_NEEDED
     assert type_match("milestone", "Phase 1 initiation is expected; data follow in 2028.").result == NOT_NEEDED
+    assert_proposal_held("The company will present; data follow in 2028.", "conference")
+    assert_proposal_held("Phase 1 initiation is expected; data follow in 2028.", "milestone")
 
 
-def test_nothing_to_compare_is_not_a_tick_and_does_not_hold_a_row_back():
+def test_type_compatibility_slot_never_grants_clearance_even_with_no_quote():
     none = type_match("milestone", "The company expects growth in 2027.")
-    assert none.result == NOT_NEEDED and "nothing to compare" in none.reason
+    assert none.result == NOT_NEEDED and "needs your review" in none.reason
     assert type_match("earnings", "Net loss for the quarter ended June 30.").result == NOT_NEEDED
     assert type_match("unknown", "Anything at all.").result == NOT_NEEDED
-    assert type_match("milestone", None).result == COULD_NOT_RUN
-    assert type_match("milestone", "  ").result == COULD_NOT_RUN
+    assert type_match("milestone", None).result == NOT_NEEDED
+    assert type_match("milestone", "  ").result == NOT_NEEDED
+    # The independent mechanical quote check still rejects absent evidence.
+    assert quote_match(None, []).result != PASS and quote_match("  ", []).result != PASS
+    assert_proposal_held("The company expects growth in 2027.", "milestone")
 
 
-def test_words_are_whole_words():
+def test_words_do_not_reactivate_the_retired_type_check():
     assert type_match("trial_results", "The datacenter opens in 2027.").result == NOT_NEEDED
-    assert type_match("filing", "We will submit an NDA.").result == PASS
+    assert type_match("filing", "We will submit an NDA.").result == NOT_NEEDED
+    assert_proposal_held("The datacenter opens in 2027.", "trial_results")
+    assert_proposal_held("We will submit an NDA.", "filing")
 
 
-def test_the_real_ptgx_rows_pass_the_type_check(ptgx_run):
+def test_the_real_ptgx_rows_have_no_semantic_type_pass(ptgx_run):
+    state = current_state(ptgx_run, [])
     for row in ptgx_run["rows"]:
         check = next(c for c in row["checks"] if c["name"] == "type_match")
-        assert check["result"] == "pass" and check["code_ref"] == {"file": "checks/event_checks.py",
+        assert check["result"] == "not_needed" and check["code_ref"] == {"file": "checks/event_checks.py",
                                                                     "function": "type_match"}
         assert row["status"] == "matched"
+        assert state["targets"][row["id"]]["needs_attention"]
+        assert not state["targets"][row["id"]]["accepted"]
+    assert calendar_entries(ptgx_run, state) == []
 
 
-def test_a_fix_to_the_wrong_kind_of_event_fails_its_recheck(ptgx_run, ptgx_words_doc):
+def test_a_type_edit_is_not_a_semantic_verdict_or_human_acceptance(ptgx_run):
     row = ptgx_run["rows"][0]
     source = ptgx_run["sources"][0]
+    from runs.sources import load_page_evidence
+    page_record = next(p for p in source["pages"] if p["page_number"] == row["page_number"])
+    words_doc, artifact = load_page_evidence(RUNS / "ptgx-r4a", page_record)
     line = recheck.recheck_row("2026-10-29T00:00:00+00:00", {**row, "event_type": "trial_results"}, source,
-                               ptgx_words_doc, field="event_type", before=row)
+                               words_doc, field="event_type", before=row, consumed_artifact=artifact)
     rc = line["recheck"]
-    assert rc["result"] == "pass" or rc["result"] == "fail"
-    failed = [c for c in rc["checks"] if c["result"] == "fail"]
-    assert [c["name"] for c in failed] == ([] if rc["result"] == "pass" else ["type_match"])
-    # the quote holds 'initiation', a milestone word and no results word: the new type does not fit it
-    assert rc["result"] == "fail" and "not trial results" in failed[0]["reason"]
+    assert rc["result"] == "pass"
+    assert next(c for c in rc["checks"] if c["name"] == "type_match")["result"] == "not_needed"
     assert rc["before"]["result"] == "pass"
+    edit = {"at": line["at"], "by": "person", "target": row["id"], "action": "fix", "note": None,
+            "fix": {"field": "event_type", "from": row["event_type"], "to": "trial_results"}}
+    state = current_state(ptgx_run, [edit, line])
+    assert not state["ignored"]
+    assert state["targets"][row["id"]]["values"]["event_type"] == "trial_results"
+    assert state["targets"][row["id"]]["needs_attention"]
+    assert state["mistakes"]["person"] == 0
+    assert calendar_entries(ptgx_run, state) == []
 
 
 # ---------------------------------------------------------------- Dated-sentence coverage
@@ -222,26 +243,42 @@ def test_a_skipped_dated_sentence_becomes_an_open_row_in_the_run(reading, tmp_pa
     assert quote_match(row["quote"], words).result == PASS
 
 
-def test_the_open_row_is_unresolved_never_on_the_calendar_and_a_person_can_decide_it(reading, tmp_path):
+def test_reader_and_coverage_proposals_stay_held_until_current_human_acceptance(reading, tmp_path):
     run = build_entry.build_entry_run(one_event_reading(reading), tmp_path / "x", finished_at="2026-10-29T00:00:00+00:00")
     state = current_state(run, [])
     cov = run["rows"][1]["id"]
-    assert state["targets"][cov]["group"] == "open" and state["unresolved"] == 1
+    assert state["targets"][cov]["group"] == "open"
+    # GROUP-AXIS-001: both the model proposal and the coverage candidate need review.
+    assert all(state["targets"][r["id"]]["needs_attention"] for r in run["rows"])
+    assert state["unresolved"] == len(run["rows"])
     assert cov not in {e["id"] for e in calendar_entries(run, state)}
-    keep = {"at": "2026-10-29T00:00:00+00:00", "target": cov, "action": "keep", "note": None, "fix": None,
-            "by": "person"}
-    after = current_state(run, [keep])
+    build_entry.write_run(run, tmp_path / "x")
+    with TestClient(create_app(runs_dir=tmp_path)) as client:
+        response = client.post("/api/runs/x/decisions", json={"target": cov, "action": "keep"})
+        assert response.status_code == 200, response.text
+        after = client.get("/api/runs/x").json()["state"]
     assert after["targets"][cov]["group"] == "kept" and after["targets"][cov]["decided_by_person"] is True
     assert cov in {e["id"] for e in calendar_entries(run, after)}
+    assert after["counts"]["review"]["accepted"] == 1
+    assert after["unresolved"] == len(run["rows"]) - 1
 
 
 def test_a_complete_reading_adds_no_open_rows(ptgx_run):
     assert [r.get("found_by") for r in ptgx_run["rows"]] == [None, None]
 
 
-def test_the_committed_run_is_what_the_builder_makes(reading, ptgx_run, tmp_path):
+def test_saved_proposal_and_current_checks_match_offline_rebuild(reading, ptgx_run, tmp_path):
+    from tests.conftest import rebuilt_source_view
+    saved = RUNS / "ptgx-r4a" / "run.json"
+    before = saved.read_bytes()
     fresh = build_entry.build_entry_run(reading, tmp_path / "ptgx-r4a", finished_at=ptgx_run["run"]["finished_at"])
-    assert without_trails(fresh) == without_trails(ptgx_run)
+    # Proposal values and all current checks/bindings agree. The saved trail
+    # and original verdict summary remain historical records, not regenerated.
+    assert rebuilt_source_view(fresh) == rebuilt_source_view(ptgx_run)
+    assert saved.read_bytes() == before
+    for old, new in zip(ptgx_run["rows"], fresh["rows"]):
+        assert old["check_history"]
+        assert [t for t in old["trail"] if t["tag"] == "Model"] == [t for t in new["trail"] if t["tag"] == "Model"]
 
 
 def test_the_open_row_carries_the_page_number_of_its_source_and_the_run_company(ptgx_words_doc, ptgx_run):
@@ -501,15 +538,18 @@ def test_a_quote_printed_twice_is_checked_against_the_run_the_box_covers():
     assert _sel("Results in Q3 2027.", _box(second), ws).result == PASS
 
 
-def test_milestone_and_trial_results_words_together_decide_nothing_and_one_family_decides():
+def test_single_and_mixed_keyword_families_never_accept_event_meaning():
     both = "Phase 1 initiation is expected and topline data follow in 2028."
     assert type_match("milestone", both).result == NOT_NEEDED and type_match("trial_results", both).result == NOT_NEEDED
-    assert "both milestone and trial results" in type_match("milestone", both).reason
+    assert "needs your review" in type_match("milestone", both).reason
     only_milestone = "Phase 1 initiation is anticipated in Q1 2027."
-    assert type_match("milestone", only_milestone).result == PASS
-    assert type_match("trial_results", only_milestone).result == FAIL
+    assert type_match("milestone", only_milestone).result == NOT_NEEDED
+    assert type_match("trial_results", only_milestone).result == NOT_NEEDED
     only_results = "Topline results are expected in Q3 2027."
-    assert type_match("trial_results", only_results).result == PASS and type_match("milestone", only_results).result == FAIL
+    assert type_match("trial_results", only_results).result == NOT_NEEDED and type_match("milestone", only_results).result == NOT_NEEDED
+    for quote in (both, only_milestone, only_results):
+        for hint in ("milestone", "trial_results"):
+            assert_proposal_held(quote, hint)
 
 
 def _key(events):

@@ -1,4 +1,4 @@
-"""Re-run already-past exclusion and "Date read as written" on every saved run, from the stored rows. $0.
+"""Refresh literal date checks and recover old date-only exclusions for review. $0.
 
     python -m runs.recheck_dates <run-id>|--all [--runs-dir runs] [--write]
 
@@ -8,10 +8,12 @@ date text, dates and quote, the source's filing date, the words of the cited pag
 1. "Date read as written" (checks.event_checks.date_match, which reads dates through parse_date_phrase) runs again on
    every row; the row's date_match check, its status and, if the status changed, its group are updated, with a trail
    step "Date re-checked" (Code).
-2. The past-event rule runs again: a past code exclusion is lifted when the period no longer ends before the run date;
-   an already-past row is excluded. Future rows beyond the six-month calendar stay available in Later.
+2. A past code exclusion is lifted for review when its literal date check is current.
+   Literal date comparison cannot establish that the date belongs to the proposed event.
+   No new date-only exclusion is applied. Explicitly accepted history stays in Past;
+   accepted future rows beyond the six-month calendar stay available in Later.
 
-A row a person has decided on is never touched. Per run it prints Excluded / Needs attention / Checked and kept before
+A row a person has decided on is never touched. Per run it prints Excluded / Proposed — needs review / Accepted by you before
 and after. Dry run unless --write (do not --write inside the repo's runs/: the saved runs are the record).
 """
 from __future__ import annotations
@@ -34,7 +36,7 @@ from server.jobs import past_candidate_reason, past_reason
 
 RULE = "event_in_past"
 STEP = {"step": "Put back", "tag": "Code", "who": "runs.rewindow",
-        "text": "the past-event rule now tests the period's end against the run date"}
+        "text": "A printed date does not establish which event it belongs to; the old date-only exclusion returns for review."}
 
 
 def rewindow(run: dict, decided: set[str], at: str) -> dict:
@@ -88,8 +90,14 @@ def person_decisions_in_effect(run: dict, decisions: list[dict]) -> set[str]:
             if state.get("decided_by_person")}
 
 
+def _record_date_recheck(row: dict, check: dict, at: str) -> None:
+    row.setdefault("trail", []).append({
+        "step": "Date re-checked", "tag": "Code", "who": "runs.recheck_dates", "at": at,
+        "text": f"{event_checks.DATE_LABEL}: {check['result'].replace('_', ' ')}. {check['reason']}"})
+
+
 def recheck_dates(run: dict, run_dir: Path, decided: set[str], at: str) -> dict:
-    """Run "Date read as written" again on every row not decided by a person. Changes `run` in place. Returns
+    """Run the literal date comparison again on every row not decided by a person. Changes `run` in place. Returns
     {"rows": rows re-run, "changed": [(row id, old result, new result)], "mutated": [row ids whose result, reason or
     trail changed], "person": rows skipped}."""
     source_by_id = {s["id"]: s for s in run.get("sources", [])}
@@ -130,44 +138,18 @@ def recheck_dates(run: dict, run_dir: Path, decided: set[str], at: str) -> dict:
         out["mutated"].append(row["id"])
         if new["result"] != old["result"]:
             out["changed"].append((row["id"], old["result"], new["result"]))
-        row.setdefault("trail", []).append({
-            "step": "Date re-checked", "tag": "Code", "who": "runs.recheck_dates", "at": at,
-            "text": f"Date read as written: {new['result'].replace('_', ' ')}. {new['reason']}"})
+        _record_date_recheck(row, new, at)
     return out
 
 
 def exclude_again(run: dict, decided: set[str], at: str) -> dict:
-    """Leave out, under the rule, the rows the window now excludes that are still in. Returns {"out": [row ids]}."""
-    months = ((run.get("run") or {}).get("choices") or {}).get("time_window_months")
-    out = {"out": []}
-    now = run_reference_date(run)
-    if months is None or now is None:
-        return out
-    for row in run.get("rows", []):
-        if row.get("group") == "removed" or row["id"] in decided:
-            continue
-        reason = past_reason(row, now)
-        if reason is None:
-            candidate = past_candidate_reason(row, now)
-            date_check = next((c for c in row.get("checks", []) if c.get("name") == "date_match"), None)
-            if candidate and (not date_check or date_check.get("result") != "pass"):
-                proposal = (f"{candidate} Proposed exclusion not applied because Date read as written is "
-                            f"{(date_check or {}).get('result') or 'unavailable'}.")
-                if row.get("past_exclusion_proposal") != proposal:
-                    row["past_exclusion_proposal"] = proposal
-                    row.setdefault("trail", []).append({"step": "Past exclusion not applied", "tag": "Code",
-                        "who": "runs.recheck_dates", "text": proposal, "at": at})
-            continue
-        row.pop("past_exclusion_proposal", None)
-        old = row.get("reason") or ""
-        note = old[old.find("Source note:"):] if "Source note:" in old else ""
-        row["group"], row["reason"] = "removed", f"{reason} {note}".strip()
-        row.setdefault("trail", []).append({"step": "Left out", "tag": "Code", "who": "runs.recheck_dates",
-                                            "text": reason, "at": at})
-        run.setdefault("exclusions", []).append({"id": f"x{len(run.get('exclusions', [])) + 1}", "target": row["id"],
-                                                 "rule": RULE, "reason": reason, "by": "code"})
-        out["out"].append(row["id"])
-    return out
+    """Compatibility no-op: date checks do not authorize semantic exclusions.
+
+    A current human Keep determines publication; the shared calendar partition
+    preserves accepted historical events in Past. Saved old exclusions are only
+    lifted by the explicit rewindow migration, never silently erased here.
+    """
+    return {"out": []}
 
 
 def keep_reports_honest(run_dir: Path, at: str) -> str:
@@ -195,16 +177,18 @@ def keep_reports_honest(run_dir: Path, at: str) -> str:
         run_file.write_text(json.dumps(run, indent=1, ensure_ascii=False) + "\n")
         return f"could not rebuild, moved to {dest.name}/ and marked stale"
     run = json.loads(run_file.read_text())
-    if run.pop("report_stale", None) is not None or run.pop("report_stale_reason", None) is not None:
+    stale = run.pop("report_stale", None)
+    reason = run.pop("report_stale_reason", None)
+    if stale is not None or reason is not None:
         run_file.write_text(json.dumps(run, indent=1, ensure_ascii=False) + "\n")
     return "rebuilt from the new state"
 
 
 def _counts(run: dict, decisions: list) -> dict:
     st = current_state(run, decisions)
-    rows = st["counts"]["rows"]
-    return {"Excluded": rows.get("removed", 0), "Needs attention": st["unresolved"],
-            "Checked and kept": rows.get("kept", 0) + rows.get("corrected", 0)}
+    review = st["counts"]["review"]
+    return {"Excluded": review["excluded"], "Proposed — needs review": review["proposed"],
+            "Accepted by you": review["accepted"]}
 
 
 def _line(c: dict) -> str:
@@ -226,18 +210,39 @@ def main(argv=None) -> int:
         if not f.is_file():
             print(f"{f.parent.name}: no run.json")
             return 1
-        run = json.loads(f.read_text())
+        from runs.check_load import bind_decisions_on_load, load_bound_run
+        stored = json.loads(f.read_text())
+        run = load_bound_run(f.parent)
         dec = f.parent / "decisions.jsonl"
         decisions = [json.loads(x) for x in dec.read_text().splitlines() if x.strip()] if dec.is_file() else []
+        decisions = bind_decisions_on_load(run, decisions, f.parent)
         # The JSONL is an immutable trail. Undo changes which decisions are in
         # effect; only the replayed state may suppress migration work.
         decided = person_decisions_in_effect(run, decisions)
         before = _counts(run, decisions)
         dates = recheck_dates(run, f.parent, decided, at)
+        # The shared loader may already have refreshed this date check. When
+        # the CLI persists that change, record it just as a direct recheck;
+        # unchanged checks and human-decided rows create no new trail step.
+        old_rows = {row["id"]: row for row in stored.get("rows", [])}
+        for row in run.get("rows", []):
+            if row["id"] in decided or row["id"] in dates["mutated"]:
+                continue
+            old_date = next((c for c in old_rows.get(row["id"], {}).get("checks", [])
+                             if c.get("name") == event_checks.DATE_ID), None)
+            new_date = next((c for c in row.get("checks", [])
+                             if c.get("name") == event_checks.DATE_ID), None)
+            if new_date is not None and new_date != old_date:
+                _record_date_recheck(row, new_date, at)
+                dates["mutated"].append(row["id"])
+                if old_date and old_date.get("result") != new_date["result"]:
+                    dates["changed"].append((row["id"], old_date["result"], new_date["result"]))
         back = rewindow(run, decided, at)
         out = exclude_again(run, decided, at)
         after = _counts(run, decisions)
-        changed = bool(dates["changed"] or dates["mutated"] or back["back"] or out["out"] or before != after)
+        # Loading may refresh checks before the date-specific migration runs.
+        # Persist that refresh only on --write; never rewrite decision history.
+        changed = run != stored
         print(f"{f.parent.name}: before {_line(before)} | after {_line(after)}")
         print(f"    date check re-run on {dates['rows']} rows, {len(dates['changed'])} changed result; "
               f"{len(back['back'])} put back, {len(out['out'])} newly left out; "

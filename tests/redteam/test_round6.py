@@ -94,19 +94,25 @@ def test_a_business_wire_credit_does_not_hide_the_dateline():
 # ---------------------------------------------------------------- event type
 
 
-def test_a_decision_on_a_filing_is_a_decision():
-    """Words of both a decision and a filing: the first listed type wins, and the filing label fails."""
+def test_decision_and_filing_labels_both_require_human_review():
+    """PIVOT: preserve the old classifier probe; neither label grants acceptance."""
+    from tests.pivot_assertions import assert_proposal_held
     quote = "The FDA approval follows the NDA submission."
     assert event_type_for(quote) == "regulatory_decision"
-    assert type_match("regulatory_decision", quote).result == "pass"
+    assert type_match("regulatory_decision", quote).result == "not_needed"
+    assert_proposal_held(quote, "regulatory_decision")
+    assert_proposal_held(quote, "filing")
     got = type_match("filing", quote)
-    assert got.result == "fail", got.reason
+    assert got.result == "not_needed", got.reason
 
 
-def test_presentation_of_data_is_trial_results():
-    """'presentation of data' is trial results. A conference label on that quote fails."""
+def test_presentation_labels_both_require_human_review():
+    """PIVOT: retain the original conflicting labels without keyword verdicts."""
+    from tests.pivot_assertions import assert_proposal_held
     quote = "The company expects the presentation of data in 2027."
     assert event_type_for(quote) == "trial_results"
-    assert type_match("trial_results", quote).result == "pass"
+    assert type_match("trial_results", quote).result == "not_needed"
+    assert_proposal_held(quote, "trial_results")
+    assert_proposal_held(quote, "conference")
     got = type_match("conference", quote)
-    assert got.result == "fail", got.reason
+    assert got.result == "not_needed", got.reason

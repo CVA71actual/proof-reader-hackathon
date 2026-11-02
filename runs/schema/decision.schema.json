@@ -19,12 +19,22 @@
           "required": ["field", "from", "to"],
           "properties": {
             "field": {"type": "string"},
-            "from": {"type": ["string", "null"]},
-            "to": {"type": ["string", "null"]}
-          }
+            "from": {"type": ["string", "array", "null"], "items": {"type": "string"}},
+            "to": {"type": ["string", "array", "null"], "items": {"type": "string"}}
+          },
+          "allOf": [{
+            "if": {"properties": {"field": {"const": "conditions"}}},
+            "then": {"properties": {"from": {"type": ["array", "null"]}, "to": {"type": ["array", "null"]}}},
+            "else": {"properties": {"from": {"type": ["string", "null"]}, "to": {"type": ["string", "null"]}}}
+          }]
         },
         {"type": "null"}
       ]
+    },
+    "review_basis": {
+      "type": "object", "additionalProperties": false, "required": ["version", "sha256"],
+      "properties": {"version": {"const": 1}, "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
+      "description": "Server-computed effective proposal/evidence identity at human Keep; never backfilled on load."
     },
     "by": {"enum": ["person", "code"]},
     "recheck": {

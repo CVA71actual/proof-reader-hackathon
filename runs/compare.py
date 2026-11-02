@@ -10,7 +10,9 @@ Events. A first-reader row and a second-reader event are the same event when one
 words of the other (after normalization: case, spacing and the punctuation at a word's edge ignored) and, when both
 name a program or an indication, they share a name. A handful of the same words in another order, or a bag of words
 that happens to overlap, never pairs two passages. Each second event pairs with at most one row. For a pair these fields are compared:
-date, date_end, event_type, program, indication (case and spacing ignored; none against a value is a difference).
+date, date_end, program, indication (case and spacing ignored; none against a value is a difference),
+plus type_hint, conditions, relevance, subject_company and relation (case/whitespace normalised; condition list items stay in order).
+An empty conditions list differs from missing context; neither establishes unconditionality.
 The quote is the match key: quotes that overlap but run to different lengths are not a disagreement.
 - Any difference: the row becomes `undecided` (`failed` if a check had failed), group `open`, and carries
   `disagreement` {field, first_reader, second_reader} for the first differing field in the order above (`also`
@@ -30,16 +32,20 @@ reading (Model, Muse Spark Open, with its share of the call's tokens and cost), 
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from checks import event_checks
 from checks.common import normalize
 from checks.event_checks import _norm_quote
 from checks.row_column_match import column_key
 from runs import build_entry, prices
+from runs.proposal import reader_event_type, CONTEXT_FIELDS, context_changes, context_fields, reader_context_fields, reader_context_steps
 
 SECOND = "Muse Spark Open"
 WHO = "runs.compare"
 SECOND_WHO = "capture.second_reader"
-FIELDS = ("date", "date_end", "event_type", "program", "indication")
+
+FIELDS = ("date", "date_end", "program", "indication")
 AGREEMENT_NOTE = "Agreement is not a check: the checks above decide."
 ONLY_REASON = ("Proposed by the second reader only: the first reader did not read it. Look at it: keep it as an "
                "event, fix it, or remove it.")
@@ -93,10 +99,20 @@ def differences(row: dict, ev: dict) -> list[dict]:
     out = []
     for f in FIELDS:
         a = _norm(row.get(f))
-        value = event_checks.event_type_for(ev.get("quote")) if f == "event_type" else ev.get(f)
+        value = ev.get(f)
         b = _norm(value)
         if a != b:
             out.append({"field": f, "first_reader": row.get(f), "second_reader": value})
+    # These are proposals, not classifications made by code. Compare supplied
+    # values without interpreting equivalence or treating [] as unknown.
+    first_context, second_context = context_fields(row), reader_context_fields(ev)
+    for change in context_changes(first_context, second_context):
+        if change["field"] == "type_hint" and "type_hint" not in row:
+            # An archived row did not record a reader hint. Missing evidence
+            # is not evidence that the two readers supplied different meanings.
+            continue
+        out.append({"field": change["field"], "first_reader": change["before"],
+                    "second_reader": change["after"]})
     return out
 
 
@@ -113,8 +129,8 @@ def _when(ev: dict) -> str:
 
 
 def _model_step(ev: dict, share: tuple, at: str) -> dict:
-    hint = ev.get("type_hint") or ev.get("event_type")
-    hint = hint.replace("_", " ") if isinstance(hint, str) else str(hint) if hint is not None else "none"
+    hint = reader_context_fields(ev)["type_hint"]
+    hint = hint.replace("_", " ") if hint is not None else "none"
     return {"step": "Second reading", "tag": "Model", "who": SECOND, "at": at,
             "text": (f"{ev.get('ticker') or ''} {ev.get('program') or ''} type hint "
                      f"{hint} on "
@@ -160,10 +176,15 @@ def apply_events(rows: list[dict], second_events: list[dict], second_reading: di
                                          f"{AGREEMENT_NOTE}"})
             continue
         ev, diffs = second_events[j], differences(row, second_events[j])
-        row["trail"] += [*_instructions_steps(second_reading, at), _model_step(ev, shares[j], at)]
+        # Preserve the actual answer separately from the first proposal. It is
+        # never a patch to the first reading or evidence of semantic correctness.
+        row["second_reader_proposal"] = {"model": SECOND, "at": at, "proposal": deepcopy(ev)}
+        row["trail"] += [*_instructions_steps(second_reading, at), _model_step(ev, shares[j], at),
+                         *reader_context_steps(ev, at)]
         if not diffs:
             row["trail"].append({"step": "Compared the two readings", "tag": "Code", "who": WHO, "at": at,
-                                 "text": f"Both readers read the same date, event type, program and indication. "
+                                 "text": "No differences were found in the compared date, controlled event type, program, "
+                                         "indication or supplied proposal context. Missing context remains unknown. "
                                          f"{AGREEMENT_NOTE}"})
             continue
         first = diffs[0]
@@ -214,15 +235,15 @@ def _uncheckable_row(index: int, ev: dict, source: dict | None, reading: dict, s
     a second-reader row, undecided and open, with no check run on it and the reason said plainly."""
     return {
         "id": f"e{index}", "ticker": ev.get("ticker") or "", "company": ev.get("company") or "",
-        "event_type": event_checks.event_type_for(ev.get("quote")),
-        "type_hint": build_entry._str(ev.get("type_hint") or ev.get("event_type")), "title": ev.get("title") or "",
+        "event_type": reader_event_type(ev),
+        **reader_context_fields(ev), "title": ev.get("title") or "",
         "date_text": ev.get("date_text"), "date": ev.get("date"), "date_end": ev.get("date_end"),
         "quote": ev.get("quote"), "program": ev.get("program"), "indication": ev.get("indication"),
         "source_id": (source or {}).get("id"), "page_number": None, "box": None, "proposed_by": SECOND,
         "found_by": "second_reader", "status": "undecided", "group": "open",
         "reason": f"{ONLY_REASON} The page was not captured, so no check could run on it.", "sample": False,
         "checks": [],
-        "trail": [*_instructions_steps(reading, at), _model_step(ev, share, at),
+        "trail": [*_instructions_steps(reading, at), _model_step(ev, share, at), *reader_context_steps(ev, at),
                   {"step": "Compared the two readings", "tag": "Code", "who": WHO, "at": at,
                    "text": f"No row from the first reader matches this event, and the page was not captured, so no "
                            f"check ran. {AGREEMENT_NOTE}"}],

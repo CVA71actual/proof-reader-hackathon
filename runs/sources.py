@@ -332,6 +332,25 @@ def load_page_evidence(run_dir: Path, page: dict) -> tuple[dict, dict]:
                     "kind": "derived" if derived else "captured"}
 
 
+def verify_page_files(run_dir: Path, run: dict) -> None:
+    """Verify every declared page and derive the same capabilities for all consumers.
+
+    Pages without a proposed row still contribute source evidence and report
+    identity. API and offline loaders must not produce different run views.
+    This mutates only the in-memory page capability, never an artifact file.
+    """
+    for source in run.get("sources", []):
+        for page in source.get("pages", []):
+            for key in ("words", "image"):
+                if page.get(key) and not page.get(f"{key}_sha256"):
+                    raise SourcesError(
+                        f"This run is not served: its file {page[key]} has no hash recorded in run.json.")
+            if page.get("words") or page.get("derived_words"):
+                load_page_evidence(run_dir, page)
+            elif page.get("image"):
+                load_page_image_evidence(run_dir, page)
+
+
 def visual_evidence(page: dict, words_doc: dict) -> dict:
     """Classify whether stored geometry can support ordinary visual citation overlays."""
     # The words artifact is authoritative too: picture transcriptions can have

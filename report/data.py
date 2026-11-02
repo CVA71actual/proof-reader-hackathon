@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import calendar as _calendar
 import json
 from datetime import date, datetime
 from pathlib import Path
 
 from runs.state import UNRESOLVED_REASON, as_of_note, current_state, run_reference_date
-from runs.calendar import run_interval_partition
+from runs.calendar import period_display, period_word, run_interval_partition, stated_date_display
+from runs.proposal import context_fields
 from runs.check_load import bind_decisions_on_load, load_bound_run
 from checks import event_checks
 
@@ -69,46 +69,16 @@ def _calendar_date_key(values: dict) -> tuple:
     return (d, end, values.get("date_text") or "")
 
 
-def _period_word(start: str, end: str) -> str | None:
-    """The word for a whole month, quarter, half or year ('Q1 2027'), or None when the period has no such name."""
-    try:
-        a, b = date.fromisoformat(start), date.fromisoformat(end)
-    except (TypeError, ValueError):
-        return None
-    if a.year != b.year or a.day != 1 or b.day != _calendar.monthrange(b.year, b.month)[1]:
-        return None
-    months = (a.month, b.month)
-    if a.month == b.month:
-        return f"{_calendar.month_name[a.month]} {a.year}"
-    if months == (1, 12):
-        return str(a.year)
-    if months in ((1, 6), (7, 12)):
-        return f"H{1 if a.month == 1 else 2} {a.year}"
-    if b.month - a.month == 2 and a.month % 3 == 1:
-        return f"Q{a.month // 3 + 1} {a.year}"
-    return None
-
-
-def _period_display(start: str | None, end: str) -> str:
-    """A period with no stated text: first day to last day, led by its word when the code can name it."""
-    if not start:
-        return end
-    span = f"{start} to {end}"
-    word = _period_word(start, end)
-    return f"{word} ({span})" if word else span
-
-
-def _date_display(values: dict) -> str:
-    """Period rows show the period as stated; never invent a day."""
-    text = (values.get("date_text") or "").strip()
-    if values.get("date_end"):
-        return text or _period_display(values.get("date"), values["date_end"])
-    if text:
-        return text
-    return values.get("date") or "—"
+# The date display is derived once in runs.state (from runs.calendar) and
+# carried on each row target and calendar entry; these names stay for callers.
+_period_word = period_word
+_period_display = period_display
+_date_display = stated_date_display
 
 
 def _person_tag(st: dict) -> str | None:
+    if "decision_label" in st:
+        return st["decision_label"]
     if not st.get("decided_by_person"):
         return None
     action = st.get("last_action")
@@ -263,20 +233,26 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         check_history = st.get("check_history") or []
         check_status_text = _check_status_text(st)
         calendar.append({
+            **context_fields(values),
+            "type_presentation": st["type_presentation"],
             "id": rid,
-            "date_display": _date_display(values),
+            "date_display": st["date_display"],
+            "date_text_cleared": st["date_text_cleared"],
             "sort_key": _calendar_date_key(values),
-            "ticker": values.get("ticker") or row.get("ticker") or "",
+            "ticker": _value(values, row, "ticker") or "",
             "program": _value(values, row, "program") or "",
             "event": _event_label(row, values),
             "source": _source_line(src),
             "status": st["status"],
             "group": st["group"],
-            "group_label": GROUP_LABEL[st["group"]],
+            "group_label": st["review_label"],
+            "semantic_status": st["semantic_status"],
+            "review_label": st["review_label"],
+            "decision_label": st["decision_label"],
             "person_tag": _person_tag(st),
             "bucket": bucket_for_id.get(rid, "calendar"),
             "indication": _value(values, row, "indication") or "",
-            "action": _value(values, row, "event_type") or "unknown",
+            "action": st["type_presentation"]["summary"],
             "source_document": (src or {}).get("title") or (src or {}).get("publisher") or row.get("source_id") or "—",
             "source_id": row.get("source_id") or "—",
             "page_number": row.get("page_number"),
@@ -313,13 +289,6 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
     calendar = [r for r in calendar if r["bucket"] == "calendar"]
     for row in undated:
         row["date_display"] = "Undated · no timing stated"
-    for row in timing_unresolved:
-        if row["date_display"] == "—":
-            row["date_display"] = "Timing unresolved"
-    for row in contingent:
-        if row["date_display"] == "—":
-            row["date_display"] = ("Timing unresolved" if row.get("timing_state") == "timing_unresolved"
-                                   else "Undated · no timing stated")
 
     corrections = []
     for m in run.get("mistakes", []):
@@ -335,7 +304,7 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
                 break
         corrections.append({
             "id": rid,
-            "ticker": (st.get("values") or {}).get("ticker") or row.get("ticker") or "",
+            "ticker": _value(st.get("values") or {}, row, "ticker") or "",
             "event": _event_label(row, st.get("values") or {}),
             "what": m.get("what_changed") or "",
             "caught_by": _caught_by_label(m.get("caught_by") or ""),
@@ -361,14 +330,14 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
                     break
             entry = {
                 "id": rid,
-                "ticker": (st.get("values") or {}).get("ticker") or rows_raw.get(rid, {}).get("ticker") or "",
+                "ticker": _value(st.get("values") or {}, rows_raw.get(rid, {}), "ticker") or "",
                 "event": _event_label(rows_raw.get(rid, {}), st.get("values") or {}),
                 "what": line,
                 "caught_by": _caught_by_label("second_reader" if fx.get("second_reader_value") else "person"),
                 "check": check,
                 "before_after": line,
                 "latest_recheck": rc.get("result") or "not run",
-                "override_reason": (st.get("reason") or "Kept by you") if st.get("decided_by_person") else None,
+                "override_reason": (st.get("reason") or "Kept by you") if st.get("accepted") else None,
             }
             if fx.get("mistake"):
                 if not any(c["id"] == rid and (line in (c.get("what") or "") or said in (c.get("what") or ""))
@@ -413,24 +382,33 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         row = rows_raw[rid]
         src = sources.get(row.get("source_id"))
         open_rows.append({
+            **context_fields(st["values"]),
+            "type_presentation": st["type_presentation"],
+            "action": st["type_presentation"]["summary"],
             "id": rid,
             "group": st["group"],
-            "group_label": GROUP_LABEL[st["group"]],
-            "ticker": st["values"].get("ticker") or row.get("ticker") or "",
-            "company": st["values"].get("company") or row.get("company") or "",
-            "program": st["values"].get("program") or row.get("program") or "",
-            "indication": st["values"].get("indication") or row.get("indication") or "",
+            "group_label": st["review_label"],
+            "semantic_status": st["semantic_status"],
+            "review_label": st["review_label"],
+            "decision_label": st["decision_label"],
+            "person_tag": _person_tag(st),
+            "ticker": _value(st["values"], row, "ticker") or "",
+            "company": _value(st["values"], row, "company") or "",
+            "program": _value(st["values"], row, "program") or "",
+            "indication": _value(st["values"], row, "indication") or "",
             "event": _event_label(row, st["values"]),
-            "date_text": st["values"].get("date_text") or row.get("date_text") or "",
+            "date_text": _value(st["values"], row, "date_text") or "",
+            "date_display": st["date_display"],
+            "date_text_cleared": st["date_text_cleared"],
             "source_document": (src or {}).get("title") or (src or {}).get("publisher") or row.get("source_id") or "—",
             "source_id": row.get("source_id") or "—",
             "page_number": row.get("page_number"),
             "page_evidence": st.get("page_evidence"),
             "page_evidence_note": _page_evidence_note(st.get("page_evidence")),
-            "quote": st["values"].get("quote") or row.get("quote") or "",
+            "quote": _value(st["values"], row, "quote") or "",
             "reason": st.get("reason") or row.get("reason") or "No reason recorded.",
             "latest_recheck": (st.get("recheck") or {}).get("result"),
-            "override_reason": st.get("reason") if st.get("decided_by_person") else None,
+            "override_reason": st.get("reason") if st.get("accepted") else None,
             "check_limitations": _effective_check_rows(st),
             "check_history": _check_rows(st.get("check_history") or []),
             "check_history_label": ("Saved checks · history (not current)" if st.get("checks_stale")
@@ -481,8 +459,9 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         "page_outcomes_by_company": per_company_outcomes,
         "companies": companies,
         "generated_at": built_on_words(generated_at),
-        "counts": {g: counts[g] for g in GROUP_LABEL},
-        "group_labels": GROUP_LABEL,
+        "counts": dict(state["counts"]["review"]),
+        "group_labels": {"accepted": "Accepted by you", "proposed": "Proposed — needs review", "excluded": "Excluded"},
+        "mechanical_counts": {g: counts[g] for g in GROUP_LABEL},
         "mistakes": mistakes,
         "excluded_total": excluded_n,
         "unresolved": state["unresolved"],
@@ -490,6 +469,7 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
             f"Mistakes caught by code {mistakes['code']} · by the second reader "
             f"{mistakes['second_reader']} · by a person {mistakes['person']} · Excluded {excluded_n}"
         ),
+        "no_accepted_rows_text": "No rows accepted by you." if state["counts"]["review"]["accepted"] == 0 else None,
         "calendar": calendar,
         "calendar_window": window_text if window_start is None else f"{window_anchor} – {window_end.isoformat()}",
         "past": past,

@@ -235,19 +235,15 @@ def read_live(words_doc: dict) -> dict:
     http.take_billed()
     try:
         resp = _call(client, messages, json_mode=True)
-    except Exception as e:  # some endpoints reject response_format; retry once without it
-        if _status(e) in (400, 422):
-            response_format_used = "none"
-            try:
-                resp = _call(client, messages, json_mode=False)
-            except Exception as e2:
-                if http.is_silent(e2):
-                    return _silent_record(prompt, e2)
-                raise SystemExit(_plain_error(e2)) from None
-        elif http.is_silent(e):
+    except Exception as e:  # PIVOT RED 3: no automatic retry on 400/422; the failed attempt is the outcome
+        if http.is_silent(e):
             return _silent_record(prompt, e)
-        else:
+        if _status(e) is None:
             raise SystemExit(_plain_error(e)) from None
+        return _reading_record(model=MODEL, prompt=prompt, raw=None, table=None, problem=_plain_error(e),
+                               extra={"base_url": BASE_URL, "requested_model": MODEL,
+                                      "response_format": response_format_used, "call_failed": True,
+                                      **failure_billing(e)})
 
     raw = resp.choices[0].message.content if resp.choices else None
     table, problem = parse_table(raw)
@@ -285,6 +281,23 @@ def _call(client, messages, json_mode: bool):
 
 def _status(e: Exception):
     return getattr(e, "status_code", None)
+
+
+# Authentication/permission refusal establishes no inference. No other status
+# (400/422 included) establishes that an attempt was free.
+NO_INFERENCE_STATUSES = frozenset({401, 403})
+
+
+def failure_billing(e: Exception, *, prior_unknown: bool = False) -> dict:
+    """The audit fields of one failed physical request: its status and whether it may have been billed.
+    Never the provider's response body. A 400/422 is not retried by any caller: one request, one attempt."""
+    from capture import http
+
+    status = _status(e)
+    unknown = http.take_billed() or prior_unknown or status not in NO_INFERENCE_STATUSES
+    reason = ("A failed attempt may have been billed; cost is unknown." if unknown else
+              f"HTTP {status}: authentication or permission rejected before inference.")
+    return {"http_status": status, "may_have_been_billed": unknown, "billing_classification_reason": reason}
 
 
 def _plain_error(e: Exception) -> str:

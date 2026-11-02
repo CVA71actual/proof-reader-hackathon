@@ -315,14 +315,19 @@ def test_future_rows_are_retained_for_the_later_section(runs_dir, index, monkeyp
     assert run["exclusions"] == []
 
 
-def test_the_calendar_holds_only_kept_or_corrected_rows_of_the_run(runs_dir, index):
+def test_the_calendar_requires_explicit_keeps_for_checked_rows(runs_dir, index):
     c, _ = client(runs_dir, index)
     rid = start(c)
     run = run_of(runs_dir, rid)
     state = c.get(f"/api/runs/{rid}").json()["state"]
     entries = c.get(f"/api/runs/{rid}/calendar").json()["entries"]
-    assert {e["id"] for e in entries} == {r["id"] for r in run["rows"]
-                                          if state["targets"][r["id"]]["group"] in ("kept", "corrected")}
+    assert entries == [] and all(state["targets"][r["id"]]["needs_attention"] for r in run["rows"])
+    accepted = {r["id"] for r in run["rows"] if state["targets"][r["id"]]["group"] in ("kept", "corrected")}
+    for target in accepted:
+        reply = c.post(f"/api/runs/{rid}/decisions", json={"target": target, "action": "keep"})
+        assert reply.status_code == 200, reply.text
+    entries = c.get(f"/api/runs/{rid}/calendar").json()["entries"]
+    assert {e["id"] for e in entries} == accepted
     assert entries and {e["ticker"] for e in entries} == {"AAA", "BBB"}
     assert all(e["group"] in ("kept", "corrected") for e in entries)
 
@@ -341,7 +346,7 @@ def readers():
     return FakeReader(answer=answer), FakeSecond(answer=answer), FakeWonder(), None
 
 
-def test_the_command_creates_and_runs_the_run_and_prints_the_audit_counts_cost_and_cost_per_kept_row(
+def test_the_command_prints_checks_separately_and_no_accepted_cost_until_a_human_keeps(
         runs_dir, index_file, capsys):
     code = twelve.main(["--companies", "all", "--window", "6", "--limit", "5.00", "--runs-dir", str(runs_dir),
                         "--index", str(index_file)], readers=readers())
@@ -353,11 +358,13 @@ def test_the_command_creates_and_runs_the_run_and_prints_the_audit_counts_cost_a
                                          "reader_tools": False}
     assert "Created run-1: 2 companies · 6 months (2 companies)" in out
     assert "run-1 · 2 companies · 6 months: done" in out and "pages read: 3" in out
-    assert re.search(r"rows: kept \d+, corrected \d+, removed \d+, unverified \d+, open \d+", out)
+    # GROUP-AXIS-001: every new row is a proposal, never accepted by checks.
+    assert "check results:" in out
+    assert re.search(r"rows: Accepted by you 0, Proposed — needs review \d+, Excluded \d+", out)
     assert re.search(r"values: kept \d+", out) and "needs attention:" in out
     assert re.search(r"mistakes caught by code \d+, second reader \d+, person \d+; excluded by code \d+", out)
-    assert re.search(r"calendar: \d+ kept or corrected rows?", out)
-    assert re.search(r"cost: \$\d+\.\d{4}; kept rows: \d+; cost per kept row: \$\d+\.\d{4}", out)
+    assert "calendar: 0 accepted rows" in out
+    assert re.search(r"cost: \$\d+\.\d{4}; accepted rows: 0; cost per accepted row: not computed", out)
     assert "second reader: read (image)" in out
     assert (runs_dir / "run-1" / "report").is_dir() and "report:" in out
     assert len(list((runs_dir / "run-1" / "report").glob("*.pdf"))) == 1

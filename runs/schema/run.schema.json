@@ -342,12 +342,12 @@
       "required": ["field", "first_reader", "second_reader"],
       "properties": {
         "field": {"type": "string"},
-        "first_reader": {"type": ["string", "null"]},
-        "second_reader": {"type": ["string", "null"]},
+        "first_reader": {"type": ["string", "array", "null"], "items": {"type": "string"}},
+        "second_reader": {"type": ["string", "array", "null"], "items": {"type": "string"}},
         "also": {"type": "array", "items": {
           "type": "object", "additionalProperties": false, "required": ["field", "first_reader", "second_reader"],
-          "properties": {"field": {"type": "string"}, "first_reader": {"type": ["string", "null"]},
-                         "second_reader": {"type": ["string", "null"]}}}}
+          "properties": {"field": {"type": "string"}, "first_reader": {"type": ["string", "array", "null"], "items": {"type": "string"}},
+                         "second_reader": {"type": ["string", "array", "null"], "items": {"type": "string"}}}}}
       }
     },
     "table": {
@@ -401,7 +401,44 @@
         "ticker": {"type": "string"},
         "company": {"type": "string"},
         "event_type": {"type": "string", "pattern": "^[a-z_]+$"},
+        "escalation_context_changes": {
+          "type": "array", "items": {
+            "type": "object", "additionalProperties": false, "required": ["field", "before", "after"],
+            "properties": {"field": {"type": "string"},
+                           "before": {},
+                           "after": {}}
+          },
+          "description": "Proposed interpretation differences retained for human review, not code-caught mistakes."
+        },
+        "escalation_proposal": {
+          "type": "object", "additionalProperties": false,
+          "required": ["model", "at", "source_id", "page_number", "proposal", "raw_response"],
+          "properties": {"model": {"type": "string"}, "at": {"type": "string"},
+                         "source_id": {"type": ["string", "null"]}, "page_number": {"type": ["integer", "null"]},
+                         "proposal": {"type": "object"}, "raw_response": {"type": ["string", "null"]},
+                         "comparison": {"type": "object", "additionalProperties": false,
+                                        "required": ["before", "after"],
+                                        "properties": {"before": {"$ref": "#/$defs/check"}, "after": {"$ref": "#/$defs/check"}}}},
+          "description": "Actual bounded repair answer, distinct from copied original context and never semantic acceptance."
+        },
+        "timing_proposal": {
+          "type": "object", "additionalProperties": false,
+          "required": ["model", "at", "source_id", "page_number", "proposal"],
+          "properties": {"model": {"type": "string"}, "at": {"type": "string"},
+                         "source_id": {"type": ["string", "null"]}, "page_number": {"type": ["integer", "null"]},
+                         "proposal": {"type": "object"}},
+          "description": "Raw timing answer retained beside the original event; not proof that two passages describe the same event."
+        },
+        "second_reader_proposal": {
+          "type": "object", "additionalProperties": false, "required": ["model", "at", "proposal"],
+          "properties": {"model": {"type": "string"}, "at": {"type": "string"}, "proposal": {"type": "object"}},
+          "description": "Unmodified matched second-reader proposal; retained separately, never a check result."
+        },
         "type_hint": {"type": ["string", "null"]},
+        "relevance": {"type": ["string", "null"], "description": "Reader's proposed relevance, not a check result."},
+        "conditions": {"type": ["array", "null"], "items": {"type": "string"}, "description": "Reader's extracted qualifications. Empty means none extracted, not unconditional."},
+        "subject_company": {"type": ["string", "null"]},
+        "relation": {"type": ["string", "null"], "description": "Proposed relationship or stated uncertainty, not established identity."},
         "type_reason": {"enum": ["agency_not_established", "event_type_not_established", "event_mentioned_not_established", null],
                         "description": "Why the type (or part of it) is not established, from the quote's words; null when nothing is missing."},
         "title": {"type": "string"},
@@ -411,7 +448,7 @@
         "date_end": {"oneOf": [{"$ref": "#/$defs/iso_date"}, {"type": "null"}],
                      "description": "Optional. The last day of the period when the source names a period (\"Q3 2027\"); null for an exact day."},
         "quote": {"type": ["string", "null"]},
-        "program": {"type": ["string", "null"], "description": "Optional. The drug or program name as printed (\"PN-8047\"); an event word for Date read as written."},
+        "program": {"type": ["string", "null"], "description": "Optional. The drug or program name as printed (\"PN-8047\"); not an input to the literal date check."},
         "indication": {"type": ["string", "null"], "description": "Optional. The disease or condition the program is for, as printed; the scorer and the key may alias it like the program."},
         "found_by": {"enum": ["reader", "coverage", "second_reader"], "description": "Optional. \"coverage\": code found the dated sentence the reader did not turn into a row (checks/coverage.py); no model proposed it. \"second_reader\": only the second reader read it (runs/compare.py)."},
         "raw_sentence": {"type": "string", "description": "Optional. On a coverage row: the sentence exactly as the page prints it; `quote` and the title hold it cleaned."},
@@ -430,7 +467,7 @@
         "status": {"enum": ["matched", "proposed", "failed", "unreadable", "undecided"]},
         "group": {"enum": ["kept", "corrected", "removed", "unverified", "open"]},
         "reason": {"type": "string"},
-        "past_exclusion_proposal": {"type": "string", "description": "Optional rationale for a past-date exclusion that code did not apply because Date read as written did not pass."},
+        "past_exclusion_proposal": {"type": "string", "description": "Optional past-date note for human review. A literal date match does not authorize exclusion."},
         "sample": {"type": "boolean"},
         "checks": {"type": "array", "items": {"$ref": "#/$defs/check"}},
         "check_history": {"type": "array", "items": {"$ref": "#/$defs/check"},

@@ -78,8 +78,8 @@ Every path inside `run.json` (page images, words files) is relative to the run's
 - `exclusions[]`: rows left out under a rule, not because they were wrong: `id`, `target`, `rule`
   (`third_party_calendar_only`, `event_in_past`, `person_removed`, `outside_time_window`: a run started with a time window: a row whose period ends before today or starts after today plus the window; an exact day is both its start and its end. Reason, for a period: "the period ends 2026-06-30, before today (2026-10-29)"), `reason`, `by` (`code` or `person`). A row
   removed by the house rule is an exclusion, never a mistake.
-  `event_in_past` is applied only after `date_match` passes; an unsupported old date stays reviewable with the proposed
-  exclusion rationale in the row and trail.
+  `event_in_past` is a legacy exclusion value. A printed past date never automatically excludes a new proposal;
+  its date note stays reviewable, and a human-accepted historical event goes into Past.
   A person may keep a row the house rule left out (decided by CVA, 2026-10-27). The row then shows
   "Kept by you" and still shows that its only source is a third-party calendar; the audit log never hides that.
 
@@ -103,58 +103,24 @@ December). Part of a quarter is one month: "early Q1 2027" is January 2027 (2027
 month, late = its last); like any month it has a first and last day, so `date`/`date_end`, if given, must be
 exactly those, and a row that claims the whole quarter ("Q1 2027") on a quote that says "early Q1 2027" fails. The
 date text must be a whole date or period in the quote ("2027" inside "Q3 2027" is not the year
-2027), and it must be the date the quote gives for the event (below). A period with no year ("Q3") fails. Vaguer
+2027). Its relationship to the event remains for human review (below). A period with no year ("Q3") fails. Vaguer
 still ("later this year") with no date given: `not_needed`.
 
-#### Which date belongs to the event
+#### Printed dates and event meaning
 
-Applies to every exact day and named period in `date_text` (`checks/event_checks.py` `_supporting_clause`). The
-order in which dates appear in the quote is never evidence.
+`date_match` compares the complete printed date/period wording and the proposed
+ISO bounds. A wrong day, wrong period, absent wording, partial year or missing
+reference date cannot pass. A pass does not establish that the date belongs to
+the proposed action, that the action is unconditional, or that guidance remains
+current. Commas, keyword proximity and sentence order are not semantic evidence.
+The model proposal and qualifications stay visible for human review. A passing
+mechanical check never accepts the event.
 
-1. Four digits joined to a code by a hyphen ("PN-8047") are a program name, never a year.
-   The quote is split into clauses at sentence ends, at `;` `:` `,`, and before "that", "which", "and", "but",
-   "while". A boundary never falls inside a date ("March 12, 2027" stays whole). A clause that begins "follow",
-   "compared with/to", "versus", "vs", "than" or "relative to" is a comparison clause and never names the event.
-2. Event words: the fixed words for the row's `event_type` (trial results: results, data, readout, topline,
-   report; regulatory decision: PDUFA, decision, approval, CRL, action date; launch: launch, commercial
-   availability; conference or presentation: present, presentation, conference, late-breaker; filing: submit,
-   submission, filing, NDA, BLA, MAA; milestone: dosed, enrolled, initiated, initiation, completed, first patient;
-   earnings: results, earnings, revenue, net loss, quarter ended, year ended; other: none), plus the
-   longest word of 4 letters or more in the row's title, plus the drug or program name if the row has one. Case
-   does not matter. The event clause is a clause that holds a date and an event word and is not a comparison.
-3. Decision:
-   - No event clause, or more than one with different dates: `could_not_run`, "Could not tell which date in the
-     quote belongs to the event." The row stays unresolved and goes to a person.
-   - One event clause, and it does not hold `date_text`: `fail`. "The quote attaches Q3 2027 to the data; Q3 2026
-     is a comparison." (or "...; 2026 is not the date the quote gives for the event."). If the clause holding
-     `date_text` negates or replaces it: "The quote says Q3 2027 is no longer the expected period; it now names
-     Q4 2027."
-   - One event clause holds multiple different dates and negation: `could_not_run` before interpreting
-     "from" / "to" as a transition. For example, "Results will not move from Q3 2027 to Q4 2027" does not
-     establish a new Q4 date or disprove the Q3 date. The check leaves both claims unresolved.
-   - Otherwise, one event clause, and it holds `date_text`: `fail` if the clause negates it (not, no longer, never, cannot,
-     n't, previous / previously, prior, superseded, anywhere in the clause), if it puts `date_text` after "from",
-     "instead of" or "rather than", or if it introduces a second, different date as the new one (now / to /
-     until / into in the three words before it, or "instead" just after it). "Now expected", "moved to",
-     "delayed" and "pushed" move the event to the date that follows them, so they fail `date_text` only when it
-     comes before them ("The Q3 2027 readout has been delayed"), not when it follows ("Results are now expected
-     in Q4 2027" passes). If the clause holds a second date and neither, or both, are introduced as the new one:
-     `could_not_run`. Otherwise the clause supports `date_text`, and the day or period comparison above applies.
-4. Worked cases (tests `test_codex9_*` in `tests/test_runs.py`, each with and without `date`/`date_end`):
-   "Q3 2027 is no longer the expected readout period." Q3 2027: fail. "Q3 2027 was the previous target; results
-   are now expected in Q4 2027." Q3 2027: fail naming Q4 2027; Q4 2027: pass. "In 2026 the company announced that
-   results are expected in Q3 2027." Q3 2027: pass; 2026: **fail** (the event clause attaches Q3 2027; chosen
-   over could_not_run because the quote does say which date the results have). "Data in Q3 2027, compared with
-   Q3 2026." Q3 2026: fail (comparison); Q3 2027: pass. "Topline data are expected in Q3 2027; results will be
-   presented in Q4 2027." either date: could_not_run. "Topline data on March 12, 2027 follow the Q4 2026
-   results." March 12, 2027: pass; Q4 2026: **fail** (the "follow" clause is a comparison; the event clause
-   attaches March 12, 2027).
-
-A row with no event words in the quote is `could_not_run` for this check. (In the sample, e10 is an earnings
-row quoting "Year Ended December 31, 2025": "year ended" is an earnings word, so its date check runs and passes;
-e10 stays `proposed` because it has no box, so Citation located could not run.)
-
-A tick on screen means `pass` and nothing else. `could_not_run` and `not_needed` are not ticks.
+A proposed past date does not automatically exclude a row. After a person Keeps
+that reviewed proposal, the same calendar/report partition places it in Past.
+The run retains historical context instead of discarding it through a keyword
+or clause-based interpretation. Existing persisted exclusions remain history
+until an explicit migration or human action changes their effective disposition.
 
 ### Groups (where a row sits)
 
@@ -334,25 +300,27 @@ cheap-first-pass item was dropped (the Operator's ruling, 2026-10-29). The cost 
 
 ### Escalation to Muse Wonder
 
-`runs/escalate.py`. When a row fails a check, or the two readers disagree on it, that one row's **page region** (a
-full-width band of the page image around its quote, 60 points above and below) and the **failing check's label and
-reason** go to Muse Wonder (`muse-wonder-1.0` on the Meta Model API, `capture/wonder.py`, key `MODEL_API_KEY`) for a
-re-read. Only for a failed **date** or **event type** check (a box or quote failure is mended by code or is a
-paraphrase Wonder cannot cure; a disagreement is settled only by a person, so Wonder's reading would be evidence
-only), at most **1 row a page**, and Wonder's spend stops at **25% of a limited run's spending limit**
-(`escalate.WONDER_SHARE`; the job log notes it). Each call is one counted, priced turn. Its answer is a new proposal, built with the same
-builder as every row, so the same five checks run on it:
+`runs/escalate.py` sends a failed **literal date comparison** and the original row identity/quotation to
+Muse Wonder (`muse-wonder-1.0`, `capture/wonder.py`). The image is a full-width band around the quote, padded by
+60 points. The answer requests only date wording, bounds and supporting region, not a replacement event.
+At most **1 row per page** is sent, including across resumes; the existing 25% Wonder share of a limited run's
+spending limit and the ordinary paid-call gate still apply.
 
-- A row sent for a failed check, whose re-read passes **every** check, takes the re-read's values (group `corrected`,
-  status `matched`), and the failure is added to `mistakes[]` as caught by `code` (the check) with its type.
-- A re-read that does not pass every check changes nothing: the row stays as it was and its trail says why.
-- (A row the readers disagree on is no longer sent. Older runs may hold Wonder's reading of one as evidence: "as Muse
-  Spark did" / "as neither reader did"; such a row is never replaced.)
+Only date_text/date/date_end may be patched. The answer must use the original passage and source/page;
+containment alone is insufficient. Explicit identity or interpretation changes are retained for a person,
+not applied. Omitted interpretation fields were not requested and remain unchanged on the original row.
+An incomplete or failed repair is recorded without a repeated attempt for that row.
 
-Trail, one actor per step: Code "Sent to Muse Wonder because <check> failed" (`runs.escalate`), Code "Instructions
-sent to Muse Wonder" (`capture.wonder`), Model "Muse Wonder" (tokens and cost), Code "Checked" for each of the five checks on its
-proposal, Code "Escalation result". `run.escalation` {model, status read / not_run, rows_sent, rows_replaced} summarises
-it. `fixtures/ptgx_..._p3.wonder.json` is one live escalation: the PTGX first reading was altered **on purpose** (one
+The same production date comparison must fail on the original values and pass on the candidate, with the other
+mechanical checks satisfied. The before/after comparison is stored with the actual answer in escalation_proposal.
+Only that demonstrated mechanical correction counts as a mistake caught by code. Title, program, indication,
+conditions, relevance, relationship and original quotation are never replaced by the repair. A reader disagreement
+remains held; the model answer is evidence only. A repaired row still needs explicit human acceptance, and a
+material repair expires an earlier Keep.
+
+The trail keeps separate Code send/instructions, Model answer, Code checks and Code application/refusal steps.
+`run.escalation` retains its existing rows_sent/rows_replaced summary (replaced now means a bounded date patch).
+The following is a historical full-event escalation example, not the current application contract: `fixtures/ptgx_..._p3.wonder.json` is one live escalation: the PTGX first reading was altered **on purpose** (one
 date moved) so a row fails; Wonder, shown that row's band and the failed check, read the right event and period
 (2027-01-01 to 2027-03-31), and the row stayed as it was because Wonder's box reached below the quote's last line and
 Citation located failed (976 prompt and 2,631 completion tokens).

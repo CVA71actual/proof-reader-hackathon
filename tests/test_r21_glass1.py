@@ -59,8 +59,8 @@ def test_a_today_row_is_rechecked_against_the_release_day():
     # e81 prints "today at 4:30 pm Eastern"; the release was filed 2026-10-28
     rc = recheck_of("e81", date="2026-10-28")
     assert by_name(rc["checks"])["date_match"]["result"] == "pass"
-    # the row's event type is a separate matter: its own check says so, and the re-check says what that check said
-    assert rc["result"] == "fail" and by_name(rc["checks"])["type_match"]["reason"] in rc["reason"]
+    # PIVOT: type interpretation is outside this mechanical re-check.
+    assert rc["result"] == "pass" and by_name(rc["checks"])["type_match"]["result"] == "not_needed"
     wrong = recheck_of("e81", date="2026-10-29")
     assert by_name(wrong["checks"])["date_match"]["result"] == "fail"
     assert wrong["result"] == "fail"
@@ -78,23 +78,25 @@ def test_the_recheck_reason_is_the_new_checks_reason_not_the_old_sentence():
     assert first["reason"] in rc["reason"]
 
 
-def test_a_person_who_picks_a_date_does_not_hide_a_negation():
+def test_a_literal_date_match_preserves_negation_for_review():
     q = "The launch is not expected in Q3 2027, and is now planned for Q4 2027."
     kw = dict(event_type="launch", title="Launch")
-    assert event_checks.date_match("Q3 2027", "2027-07-01", q, "2027-09-30", chosen=True, **kw).result != PASS
+    assert event_checks.date_match("Q3 2027", "2027-07-01", q, "2027-09-30", chosen=True, **kw).result == PASS
+    from tests.pivot_assertions import assert_proposal_held
+    assert_proposal_held(q, "launch", date_text="Q3 2027", start="2027-07-01", end="2027-09-30")
 
 
-def test_a_chosen_date_in_a_continuation_clause_is_the_events_date():
+def test_both_printed_continuation_dates_require_event_review():
     q = "The launch is not expected in Q3 2027, and is now planned for Q4 2027."
     kw = dict(event_type="launch", title="Launch")
     assert event_checks.date_match("Q4 2027", "2027-10-01", q, "2027-12-31", chosen=True, **kw).result == PASS
-    assert event_checks.date_match("Q3 2027", "2027-07-01", q, "2027-09-30", chosen=True, **kw).result == FAIL
+    assert event_checks.date_match("Q3 2027", "2027-07-01", q, "2027-09-30", chosen=True, **kw).result == PASS
 
 
 def test_the_old_value_is_still_judged_without_the_person_choice():
     row, source, words = twelve_row("e82")        # a replay date in a call-in sentence, event type unknown
     got = {c.check: c for c in row_checks(row, source, words)}
-    assert got["date_match"].result == COULD_NOT_RUN
+    assert got["date_match"].result == PASS  # literal support does not depend on a person choice
     got = {c.check: c for c in row_checks(row, source, words, chosen=True)}
     assert got["date_match"].result == PASS
 
@@ -120,15 +122,20 @@ def on_calendar(client):
     return {e["id"] for e in client.get("/api/runs/sample/calendar").json()["entries"]}
 
 
-def test_a_corrected_row_is_on_the_calendar_when_its_recheck_passed(client):
-    assert "e1" in on_calendar(client)
+def test_a_corrected_row_requires_keep_after_its_recheck_passes(client):
+    # FIX-THEN-KEEP-001: pass/fix is not publication; explicit Keep is.
+    assert "e1" not in on_calendar(client)
     out = decide(client, "e1", "fix", {"field": "date", "from": "2027-03-12", "to": "March 12, 2027"})
     assert out["written"][1]["recheck"]["result"] == "pass"
     assert out["state"]["group"] == "corrected"
+    assert out["state"]["needs_attention"] and not out["state"]["accepted"]
+    assert "e1" not in on_calendar(client)
+    decide(client, "e1", "keep")
     assert "e1" in on_calendar(client)
 
 
 def test_a_fixed_but_still_open_row_is_not_on_the_calendar(client):
+    decide(client, "e1", "keep")  # fresh acceptance before the invalidating edit
     assert "e1" in on_calendar(client)
     # a failing re-check: the day no longer matches the quote
     decide(client, "e1", "fix", {"field": "date", "from": "2027-03-12", "to": "2027-03-13"})
@@ -149,14 +156,16 @@ def test_a_fix_whose_recheck_could_not_run_or_whose_readers_are_undecided_stays_
     assert "e8" in on_calendar(client)
 
 
-def test_a_row_corrected_in_the_run_with_no_fix_by_a_person_stays_on_the_calendar():
+def test_a_row_corrected_by_code_stays_off_calendar_until_human_acceptance():
     run = STORE.run("sample")
     row = next(row for row in run["rows"] if row["id"] == "e3")
     state = current_state(run, [])
     target = state["targets"][row["id"]]
     assert target["group"] == "corrected" and target["status"] == "matched"
-    assert not target["decided_by_person"] and state_on_calendar(target)
-    assert row["id"] in [entry["id"] for entry in calendar_entries(run, state)]
+    # GROUP-AXIS-001: even a demonstrated code correction is not acceptance.
+    assert not target["decided_by_person"] and not state_on_calendar(target)
+    assert target["needs_attention"] and not target["accepted"]
+    assert row["id"] not in [entry["id"] for entry in calendar_entries(run, state)]
 
     pending = current_state(run, [{"by": "person", "target": row["id"], "action": "fix",
                                    "fix": {"field": "title", "from": row["title"], "to": row["title"] + " revised"},

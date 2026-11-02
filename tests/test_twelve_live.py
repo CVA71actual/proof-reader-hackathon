@@ -169,7 +169,8 @@ def test_a_few_companies_run_end_to_end_on_their_real_pages_with_a_fake_reader(t
                               wonder_reader=None, sam_reader=None))
     assert c.get("/api/runs/twelve-dry").status_code == 200, "every captured page file matches its hash in run.json"
     assert run["run"]["turns_total"] == len(pages), "one first read per page and nothing else was called"
-    assert "pages read:" in out and "cost per kept row" in out
+    # GROUP-AXIS-001: the denominator is explicit human acceptance.
+    assert "pages read:" in out and "cost per accepted row" in out
 
 
 @needs_index
@@ -221,6 +222,9 @@ def test_the_recorded_run_is_a_real_run_named_twelve_1_and_says_how_it_ended():
 def test_the_recorded_runs_numbers_are_the_ones_written_in_the_record():
     """What the live run of 2026-10-29 04:46-05:47 UTC made, pinned: a change here means the record changed."""
     from runs.check_load import load_bound_run
+    saved = RECORDED / "run.json"
+    before = saved.read_bytes()
+    recorded = json.loads(before)
     run = load_bound_run(RECORDED)
     m = run["run"]
     assert (len(run["sources"]), len(run["rows"]), m["turns_total"], m["resumes"]) == (105, 95, 245, 6)
@@ -231,10 +235,14 @@ def test_the_recorded_runs_numbers_are_the_ones_written_in_the_record():
     assert m["second_reader"] == {"model": "Muse Spark Open", "status": "read", "reason": None, "input": "image"}
     assert (m["escalation"]["rows_sent"], m["escalation"]["rows_replaced"]) == (35, 3)
     state = current_state(run, [])
-    assert state["counts"]["rows"] == {"kept": 19, "corrected": 2, "removed": 31, "unverified": 13, "open": 30}
+    # Saved outcomes stay unchanged; the current literal checker is a separate view.
+    assert sum(r["group"] in ("kept", "corrected") for r in recorded["rows"]) == 33
+    assert state["counts"]["rows"] == {"kept": 21, "corrected": 2, "removed": 31, "unverified": 14, "open": 27}
     assert (state["unresolved"], state["mistakes"], state["excluded"]) == (
-        43, {"code": 3, "second_reader": 0, "person": 0}, {"code": 35, "person": 0})
-    assert state["cost_per_kept_row_usd"] == pytest.approx(0.240716)
+        64, {"code": 3, "second_reader": 0, "person": 0}, {"code": 35, "person": 0})
+    assert state["counts"]["review"] == {"accepted": 0, "proposed": 64, "excluded": 31}
+    assert state["cost_per_kept_row_usd"] is None  # no current human acceptance
+    assert saved.read_bytes() == before
     read = {}
     for src in run["sources"]:
         read[src["id"].split("-")[1].upper()] = read.get(src["id"].split("-")[1].upper(), 0) + 1
@@ -270,9 +278,21 @@ def test_the_decisions_server_serves_the_recorded_run_with_every_page_hash_holdi
     cal = c.get("/api/runs/twelve-1/calendar").json()["entries"]
     assert [e["id"] for e in cal] == [e["id"] for e in calendar_entries(run, state)]
     assert all(e["group"] in ("kept", "corrected") for e in cal)
-    kept = state["counts"]["rows"]["kept"] + state["counts"]["rows"]["corrected"]
+    # GROUP-AXIS-001: preserve the recorded mechanical-group calculation,
+    # but do not present it as the current cost per human-accepted result.
+    recorded = json.loads((RECORDED / "run.json").read_text())
+    recorded_kept = sum(r["group"] in ("kept", "corrected") for r in recorded["rows"])
+    assert recorded_kept == 33  # 30 kept + 3 corrected in the unchanged saved JSON.
+    assert recorded["run"]["spend_usd"] == pytest.approx(5.055042)
+    legacy_denominator = state["counts"]["rows"]["kept"] + state["counts"]["rows"]["corrected"]
+    assert legacy_denominator == 23  # refreshed mechanical view, not accepted results
+    # Earlier checker snapshot was 21 and 0.240716; do not use either as today's
+    # human-accepted cost metric. The raw saved count of 33 remains pinned above.
+    assert recorded["run"]["spend_usd"] / legacy_denominator == pytest.approx(0.219784, abs=0.000001)
+    accepted = sum(t["accepted"] for t in state["targets"].values() if t["kind"] == "row")
+    assert state["counts"]["review"]["accepted"] == accepted
     spend = run["run"]["spend_usd"]
-    expect = None if spend is None or kept <= 0 else round(spend / kept, 6)
+    expect = None if spend is None or accepted <= 0 else round(spend / accepted, 6)
     assert state["cost_per_kept_row_usd"] == expect
 
 

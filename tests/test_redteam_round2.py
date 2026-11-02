@@ -243,10 +243,26 @@ def test_a_read_during_a_recheck_sees_the_fix_with_its_recheck(client, runs_dir,
     n = len(_lines(runs_dir))
     real = server_app.recheck_cell
     gate = threading.Event()
+    reader_waiting = threading.Event()
+    real_lock = server_app.DECISIONS_LOCK
+
+    class ObservedLock:
+        def __enter__(self):
+            if not real_lock.acquire(blocking=False):
+                # A read really reached the lock while the fix holds it.
+                # Signal before blocking, so the recheck can finish.
+                reader_waiting.set()
+                assert real_lock.acquire(timeout=30), "decision lock did not release"
+            return self
+
+        def __exit__(self, *args):
+            real_lock.release()
+
+    monkeypatch.setattr(server_app, "DECISIONS_LOCK", ObservedLock())
 
     def slow(*args, **kwargs):
         gate.set()
-        time.sleep(0.3)
+        assert reader_waiting.wait(30), "read never queued during the recheck"
         return real(*args, **kwargs)
 
     monkeypatch.setattr(server_app, "recheck_cell", slow)
@@ -257,9 +273,13 @@ def test_a_read_during_a_recheck_sees_the_fix_with_its_recheck(client, runs_dir,
 
     thread = threading.Thread(target=do_fix)
     thread.start()
-    assert gate.wait(2)
-    mid = client.get("/api/runs/sample/decisions")
-    thread.join()
+    try:
+        assert gate.wait(30), "fix never reached recheck"
+        mid = client.get("/api/runs/sample/decisions")
+    finally:
+        thread.join(timeout=35)
+    assert not thread.is_alive()
+    assert reader_waiting.is_set()
     assert holder["r"].status_code == 200, holder["r"].text
     assert mid.status_code == 200
     new = mid.json()[n:]

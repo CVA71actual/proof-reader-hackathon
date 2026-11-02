@@ -117,14 +117,16 @@ def test_rewindow_puts_back_the_right_rows_and_leaves_person_decisions_alone(tmp
     before = (d / "run.json").read_bytes()
     assert rewindow.main(["r1", "--runs-dir", str(tmp_path)]) == 0
     assert (d / "run.json").read_bytes() == before                         # dry run saves nothing
-    assert "2 put back" in capsys.readouterr().out
+    assert "3 put back" in capsys.readouterr().out  # DATE-LITERAL-001: past date alone does not exclude
     assert rewindow.main(["--all", "--runs-dir", str(tmp_path), "--write"]) == 0
     saved = json.loads((d / "run.json").read_text())
     by = {x["id"]: x for x in saved["rows"]}
     assert (by["e1"]["group"], by["e3"]["group"]) == ("kept", "open")
-    assert by["e2"]["group"] == "removed" and by["e4"]["group"] == "removed"
-    assert [x["target"] for x in saved["exclusions"]] == ["e2", "e4"]
+    assert by["e2"]["group"] != "removed" and by["e4"]["group"] == "removed"
+    assert [x["target"] for x in saved["exclusions"]] == ["e4"]
+    from runs.state import current_state
+    assert current_state(saved, [])["counts"]["review"]["accepted"] == 0
     step = by["e1"]["trail"][-1]
     assert (step["step"], step["tag"], step["text"]) == ("Put back", "Code",
-                                                          "the past-event rule now tests the period's end against the run date")
-    assert by["e2"]["trail"][-1]["step"] == "Date re-checked" and by["e4"]["trail"] == []
+                                                          "A printed date does not establish which event it belongs to; the old date-only exclusion returns for review.")
+    assert by["e2"]["trail"][-1]["step"] == "Put back" and by["e4"]["trail"] == []

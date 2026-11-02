@@ -99,6 +99,8 @@ def load_bound_run(run_dir: Path) -> dict:
     """Read run.json and refresh stale row checks from its captured artifacts."""
     run_dir = Path(run_dir)
     run = json.loads((run_dir / "run.json").read_text())
+    from runs.sources import verify_page_files
+    verify_page_files(run_dir, run)
     return bind_on_load(run, run_dir, refuse_invalid_artifact=True)
 
 

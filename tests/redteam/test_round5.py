@@ -66,14 +66,18 @@ def _node(script: str) -> str:
 # ---------------------------------------------------------------- whole words
 
 
-def test_a_hyphen_is_not_the_edge_of_the_event_word_but_a_slash_is():
-    """'data-room' is not the word 'data'; the date check cannot tell and stays could_not_run. Job 52b: a slash
-    IS a word edge ('approval/launch'), so 'data/set' holds the word 'data'."""
+def test_date_wording_does_not_classify_hyphen_or_slash_words():
+    """DATE-LITERAL-001: a matching date cannot classify data-room or data/set."""
+    from tests.pivot_assertions import assert_proposal_held
     room = date_match("Q4 2027", "2027-10-01", "The data-room opens in Q4 2027.", "2027-12-31",
                       event_type="trial_results")
     slash = date_match("Q4 2027", "2027-10-01", "The data/set arrives in Q4 2027.", "2027-12-31",
                        event_type="trial_results")
-    assert (room.result, slash.result) == ("could_not_run", "pass")
+    assert (room.result, slash.result) == ("pass", "pass")
+
+    for quote in ("The data-room opens in Q4 2027.", "The data/set arrives in Q4 2027."):
+        assert_proposal_held(quote, "trial_results", date_text="Q4 2027",
+                             start="2027-10-01", end="2027-12-31")
 
 
 def test_the_type_check_uses_the_same_whole_word_boundary():

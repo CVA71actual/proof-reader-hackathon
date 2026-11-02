@@ -179,6 +179,12 @@ def test_r117_ui_needs_attention_count_equals_the_servers_unresolved_count(sampl
     # over the same state with a fix waiting for its re-check, the rows the screen lists as needing attention are as
     # many as the server's `unresolved`.
     run, decisions = sample
+    # FIX-THEN-KEEP-001: first accept e1's current revision. A pending edit then
+    # invalidates that acceptance and adds one review item; legacy Keeps stay history.
+    decisions = decisions + [{"at": "2026-10-31T09:59:00Z", "target": "e1", "action": "keep",
+                              "by": "person", "fix": None, "note": None,
+                              "review_basis": current_state(run, decisions)["targets"]["e1"]["review_basis"]}]
+    assert current_state(run, decisions)["targets"]["e1"]["accepted"]
     pending = decisions + [{"at": "2026-10-31T10:00:00Z", "target": "e1", "action": "fix", "by": "person",
                             "fix": {"field": "date", "from": "2027-03-12", "to": "2027-03-13"}}]
     for decs in (decisions, pending):

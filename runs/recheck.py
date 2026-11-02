@@ -36,6 +36,8 @@ No other page is ever used in its place.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from checks import event_checks
 from checks.common import COULD_NOT_RUN, FAIL, PASS, UNRESOLVED, CheckResult
 from checks.restriction import ROW, page_capability, page_restriction
@@ -80,7 +82,7 @@ def as_iso(value):
 
 
 def row_checks(row: dict, source: dict, words_doc: dict | None, chosen: bool = False,
-               consumed_artifact: dict | None = None) -> list:
+               consumed_artifact: dict | None = None, *, date_text_cleared: bool | None = None) -> list:
     """The five event-row checks, in the order the run shows them. `chosen`: a person typed the date (a fix of
     date_text, date or date_end), so the quote need not show by itself which of its dates is the event's."""
     words = words_doc["words"] if words_doc else []
@@ -119,6 +121,13 @@ def row_checks(row: dict, source: dict, words_doc: dict | None, chosen: bool = F
         event_checks.source_rule(source["kind"], []),
         event_checks.type_match(row.get("event_type"), row.get("quote")),
     ]
+    if date_text_cleared is not None:
+        # Attribute the person's explicit clear before binding/persisting the
+        # result. The reader's before-check remains unchanged.
+        reason = ("You cleared the date wording; there is no printed wording left to compare."
+                  if date_text_cleared else "No date wording is supplied for this row.")
+        results = [replace(r, reason=reason)
+                   if r.check == event_checks.DATE_ID and r.result == COULD_NOT_RUN else r for r in results]
     return bind_checks(results, row, source, consumed_artifact=consumed_artifact, chosen=chosen, capability=used)
 
 
@@ -228,17 +237,21 @@ def recheck_row(at: str, row: dict, source: dict, words_doc: dict | None, settle
                    else _recheck_row(at, before, source, words_doc, settles, field, chosen=False,
                                      consumed_artifact=consumed_artifact))
     return _with_before(_recheck_row(at, row, source, words_doc, settles, field, chosen=True,
-                                     consumed_artifact=consumed_artifact), before_line)
+                                     consumed_artifact=consumed_artifact,
+                                     previous_date_text=(before or {}).get("date_text")), before_line)
 
 
 def _recheck_row(at: str, row: dict, source: dict, words_doc: dict | None, settles: bool,
-                 field: str | None, chosen: bool = True, consumed_artifact: dict | None = None) -> dict:
+                 field: str | None, chosen: bool = True, consumed_artifact: dict | None = None,
+                 previous_date_text: str | None = None) -> dict:
     if words_doc is None and consumed_artifact is None:
         page = next((p for p in source.get("pages", []) if p.get("page_number") == row.get("page_number")), {})
         if not page.get("words") and not page.get("derived_words"):
             consumed_artifact = {"file": None, "sha256": None, "kind": "unavailable"}
     results = row_checks(row, source, words_doc, chosen=chosen and field in DATE_FIELDS,
-                         consumed_artifact=consumed_artifact)
+                         consumed_artifact=consumed_artifact,
+                         date_text_cleared=(field == "date_text" and bool(str(previous_date_text or "").strip())
+                                            if chosen and row.get("date_text") in (None, "") else None))
     page_missing = None
     if words_doc is None:
         page_missing = row.get("page_number")

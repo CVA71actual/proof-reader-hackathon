@@ -97,20 +97,22 @@ def test_schema_rejects_a_trail_step_with_the_wrong_actor(tag, who):
     assert errors, f"schema accepted tag {tag!r} who {who!r}"
 
 
-# from Red Team round 1. Since the Codex PR9 review the check needs the row's event (event_type and title)
-# to find the clause that dates it; each case now carries a row title, and every case still fails.
-@pytest.mark.parametrize("text,start,end,quote,title", [
-    ("mid-2027", "2027-01-01", "2027-01-02", "The company expects data in mid-2027.", "Phase 3 data"),
-    ("2027", "2027-01-01", "2027-12-31", "Results are expected in Q3 2027.", "Phase 3 results"),
+# DATE-LITERAL-001: preserve every original input. Wrong bounds still fail;
+# printed comparison/negation dates pass literally but do not accept meaning.
+@pytest.mark.parametrize("text,start,end,quote,title,expected", [
+    ("mid-2027", "2027-01-01", "2027-01-02", "The company expects data in mid-2027.", "Phase 3 data", "fail"),
+    ("2027", "2027-01-01", "2027-12-31", "Results are expected in Q3 2027.", "Phase 3 results", "fail"),
     ("2026", "2026-01-01", "2026-12-31",
-     "We reaffirm Q3 2027 guidance. The 2026 figure was preliminary.", "Readout guidance"),
-    ("Q3 2026", "2026-07-01", "2026-09-30", "Data in Q3 2027, compared with Q3 2026.", "Phase 3 data"),
-    ("Q3 2027", "2027-07-01", "2027-09-30", "The trial is not expected in Q3 2027.", "STAR trial"),
-    ("Q3", None, None, "Data in Q3 2027.", "Phase 3 data"),
+     "We reaffirm Q3 2027 guidance. The 2026 figure was preliminary.", "Readout guidance", "pass"),
+    ("Q3 2026", "2026-07-01", "2026-09-30", "Data in Q3 2027, compared with Q3 2026.", "Phase 3 data", "pass"),
+    ("Q3 2027", "2027-07-01", "2027-09-30", "The trial is not expected in Q3 2027.", "STAR trial", "pass"),
+    ("Q3", None, None, "Data in Q3 2027.", "Phase 3 data", "fail"),
 ])
-def test_date_match_rejects_a_period_the_quote_does_not_state(text, start, end, quote, title):
+def test_date_match_checks_literal_period_without_accepting_meaning(text, start, end, quote, title, expected):
     r = event_checks.date_match(text, start, quote, date_end=end, event_type="trial_readout", title=title)
-    assert r.result == "fail", r.reason
+    assert r.result == expected, r.reason
+    from tests.pivot_assertions import assert_proposal_held
+    assert_proposal_held(quote, "trial_readout", date_text=text, start=start, end=end)
 
 
 # from Red Team round 1

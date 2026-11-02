@@ -57,7 +57,7 @@ from accuracy import types as T
 from accuracy.key import cell_id, event_indication_names, event_program_names
 from checks.common import FAIL, normalize
 from checks.coverage import sentence_covered
-from checks.event_checks import (AMBIGUOUS_TYPES, _words_in, parse_exact_date, parse_period, type_group,
+from checks.event_checks import (EVENT_WORDS, _has_word, _INHERENT_RE, parse_exact_date, parse_period,
                                  vague_period_window)
 from checks.status import FAILED, MATCHED, check_cell
 
@@ -264,9 +264,55 @@ def _expected(k: dict) -> dict:
     return out
 
 
+# Historical answer-key scoring heuristic only. These keywords never feed the
+# reader proposal, mechanical checks, human acceptance, calendar or report state.
+# Kept unchanged here for comparability of prior metrics, not semantic validation.
+_ANCHORS = {
+    **{t.replace("_", " "): w for t, w in EVENT_WORDS.items()},
+    "regulatory decision": (*EVENT_WORDS["regulatory_decision"], "approval", "decision"),
+    "earnings": ("results", "earnings", "revenue", "net loss", "quarter ended", "year ended"),
+    "other": (),
+}
+_TYPE_KEYS = (
+    (("trial", "readout", "result", "topline", "data"), "trial results"),
+    (("regulatory_decision", "decision", "approval", "pdufa", "crl"), "regulatory decision"),
+    (("launch",), "launch"),
+    (("conference", "presentation", "meeting_presentation"), "conference"),
+    (("filing", "submission"), "filing"),
+    (("milestone", "dosing", "enrollment", "initiation"), "milestone"),
+    (("earnings",), "earnings"),
+    (("other",), "other"),
+)
+
+
+# Legacy metric categories only; reader type hints remain unrestricted proposals.
+TYPE_GROUPS = ("trial results", "regulatory decision", "launch", "conference", "filing", "milestone")
+
+
+def type_group(event_type: str | None) -> str | None:
+    """'trial_results' -> 'trial results'; None for a type with no fixed words (earnings, other, unknown)."""
+    et = (event_type or "").lower()
+    for keys, group in _TYPE_KEYS:
+        if any(k in et for k in keys):
+            return group if group in TYPE_GROUPS else None
+    return None
+
+
+# Two kinds of event that one sentence often has both kinds of words for ("Phase 1 initiation ... data"): when a quote
+# holds words of both, the quote does not say which the event is, and the type is not held against the reader.
+AMBIGUOUS_TYPES = ("milestone", "trial results")
+
+
+def _words_in(quote: str, group: str) -> list[str]:
+    found = [w for w in _ANCHORS[group] if _has_word(quote, w)]
+    if group == "regulatory decision":
+        found += [w for w in _INHERENT_RE.findall(quote.lower()) if w not in found]
+    return found
+
+
 def _type_tie(row_type: str | None, key_type: str | None, quote: str | None) -> bool:
     """The reader and the key differ on milestone versus trial results, and the quote holds words of both: it does not
-    say which, so the key's choice is not held against the reader (checks.event_checks.AMBIGUOUS_TYPES)."""
+    say which, so the key's choice is not held against the reader (metric-only AMBIGUOUS_TYPES)."""
     groups = {type_group(row_type), type_group(key_type)}
     return (len(groups) == 2 and groups == set(AMBIGUOUS_TYPES)
             and all(_words_in(quote or "", g) for g in AMBIGUOUS_TYPES))

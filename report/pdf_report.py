@@ -72,6 +72,37 @@ def _footer_canvas(view):
     return _draw
 
 
+def _decision(row: dict) -> str:
+    """The person's ruling on an open row, verbatim from report/data.py; nothing when there is none."""
+    label = row.get("decision_label")
+    return f" · {label}" if label and label != row.get("group_label") else ""
+
+
+def _check_text(c: dict, *, limitation: bool = True) -> str:
+    """One check result as text. A passing date_match is a neutral finding (DATE-LITERAL-001): it prints the
+    server's label alone, never a pass verdict, because it compares printed date wording only."""
+    if c.get("check_name") == "date_match" and c.get("result") == "pass":
+        text = c["name"]
+    else:
+        text = f"{c['name']}: {c['result']}"
+    if limitation and c.get("limitation"):
+        text += f" ({c['limitation']})"
+    return text
+
+
+def _context(row: dict) -> str:
+    """The row's transported context in plain words: conditions, relevance, subject company, relation."""
+    # None = unknown (never established); [] = the reader said there are none (runs/proposal.py).
+    conditions = row.get("conditions")
+    if conditions is None:
+        conds = "not stated"
+    else:
+        conds = "; ".join(conditions) or "none stated"
+    return (f"conditions: {conds} · relevance: {row.get('relevance') or 'not stated'} · "
+            f"subject company: {row.get('subject_company') or 'not stated'} · "
+            f"relation: {row.get('relation') or 'not stated'}")
+
+
 def _p(text: str, style) -> Paragraph:
     safe = (
         (text or "")
@@ -134,11 +165,12 @@ def build_pdf(view: dict) -> bytes:
     story.append(_p("Calendar", styles["h1"]))
     story.append(_p(f"Window: {view['calendar_window']}", styles["small"]))
     story.append(_p(
-        "Kept and corrected rows only, ordered by date. Periods are shown as stated.",
+        f"{view['group_labels']['accepted']} — ordered by date. Periods are shown as stated.",
         styles["small"],
     ))
     if not view["calendar"] and not view.get("past") and not view.get("contingent") and not view.get("undated") and not view.get("timing_unresolved") and not view.get("later"):
-        story.append(_p("No kept or corrected rows.", styles["body"]))
+        if view.get("no_accepted_rows_text"):
+            story.append(_p(view["no_accepted_rows_text"], styles["body"]))
     else:
         data = [[
             _p("Date / period", styles["small"]),
@@ -149,7 +181,7 @@ def build_pdf(view: dict) -> bytes:
             _p("Status", styles["small"]),
         ]]
         for row in view["calendar"]:
-            status = row["status"]
+            status = row["review_label"]
             if row.get("contingent"):
                 status += " · Contingent"
             if row["person_tag"]:
@@ -182,19 +214,20 @@ def build_pdf(view: dict) -> bytes:
                 story.append(_p(f"{row['date_display']} · {row['ticker']} · {row['program']} · {row['event']} · "
                         f"{row['id']} · {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
                                 f"indication: {row['indication'] or 'not stated'} · action: {row['action']} · "
-                                f"{row['reason']}" + (f" · {row['page_evidence_note']}" if row.get("page_evidence_note") else ""),
+                                f"{_context(row)} · {row['reason']}" + (f" · {row['page_evidence_note']}" if row.get("page_evidence_note") else ""),
                                 styles["body"]))
     for row in view["calendar"] + view.get("past", []) + view.get("undated", []) + view.get("timing_unresolved", []) + view.get("contingent", []) + view.get("later", []):
-        checks = "; ".join(f"{c['name']}: {c['result']}" + (f" ({c['limitation']})" if c["limitation"] else "")
+        checks = "; ".join(_check_text(c)
                             for c in row["check_limitations"])
         if not checks and row.get("check_status_text"):
             checks = row["check_status_text"]
-        history = "; ".join(f"{c['name']}: {c['result']}" + (f" ({c['limitation']})" if c["limitation"] else "")
+        history = "; ".join(_check_text(c)
                               for c in row.get("check_history", []))
         history_text = f" · {row.get('check_history_label') or 'Check history'}: {history}" if history else ""
         story.append(_p(f"Evidence {row['id']}: {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
                         f"indication {row['indication'] or 'not stated'} · action {row['action']} · "
-                        f"quote: {row['quote'] or 'not recorded'} · current-value checks: {checks or 'not recorded'}"
+                        f"quote: {row['quote'] or 'not recorded'} · {_context(row)} · "
+                        f"current-value checks: {checks or 'not recorded'}"
                         f"{history_text}" + (f" · {row['page_evidence_note']}" if row.get("page_evidence_note") else ""),
                         styles["small"]))
 
@@ -237,14 +270,15 @@ def build_pdf(view: dict) -> bytes:
         story.append(_p("None.", styles["body"]))
     else:
         for r in view["open_rows"]:
-            checks = "; ".join(f"{c['name']}: {c['result']}" for c in r.get("check_limitations", []))
+            checks = "; ".join(_check_text(c, limitation=False) for c in r.get("check_limitations", []))
             checks = checks or r.get("check_status_text") or "not recorded"
-            history = "; ".join(f"{c['name']}: {c['result']}" for c in r.get("check_history", []))
+            history = "; ".join(_check_text(c, limitation=False) for c in r.get("check_history", []))
             history_text = f" · {r.get('check_history_label') or 'Check history'}: {history}" if history else ""
             story.append(_p(
-                f"{r['group_label']} · {r['ticker']} · {r['company']} · {r['program']} · "
-                f"{r['indication'] or 'indication not stated'} · {r['event']} · {r['date_text'] or 'Undated · no timing stated'} · "
-                f"source {r['source_document']} ({r['source_id']}) page {r['page_number']} · quote: {r['quote']}: {r['reason']}"
+                f"{r['group_label']}{_decision(r)} · {r['ticker']} · {r['company']} · {r['program']} · "
+                f"{r['indication'] or 'indication not stated'} · {r['event']} · {r['date_display']} · "
+                f"source {r['source_document']} ({r['source_id']}) page {r['page_number']} · {_context(r)} · "
+                f"quote: {r['quote']}: {r['reason']}"
                 + (f" · {r['page_evidence_note']}" if r.get("page_evidence_note") else "")
                 + f" · timing: {r.get('timing_state') or 'unresolved'}"
                 + (" · Contingent" if r.get("contingent") else "")

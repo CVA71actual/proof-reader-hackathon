@@ -1398,7 +1398,8 @@ def test_u26_glass2_wonder_prompt_folds_and_person_steps_carry_time():
     prompt_steps = re.search(r"var PROMPT_STEPS = \{.*?\};", js, re.S).group(0)
     fns = "\n".join(_grab_fn(js, n) for n in
                     ("el", "esc", "clear", "revealRow", "checkFnFor", "daySpanWords",
-                     "plainProposal", "dayInWords", "trailStep"))
+                     "plainProposal", "dayInWords", "trailStep", "readerDateWords",
+                     "readerWhen", "shownField"))
     script = f"""
 {prompt_steps}
 var FIELD_WORDS = {{ date_text: 'Date as written' }};
@@ -3734,15 +3735,24 @@ def _item30_render(tmp_path, shape):
 
 def test_t1_cleared_date_text_renders_cleared_on_calendar_and_trail(tmp_path):
     # T1/H2: a cleared date_text (null AND '') renders as cleared on every
-    # surface — calendar, audit list, judgment list, panes and the trail
-    # proposal sentence never resurrect the raw 'Q1 2027'
+    # CURRENT surface — calendar, audit list, judgment list, panes never
+    # resurrect the raw 'Q1 2027'. The trail is different (item 38): it is the
+    # reader's historical record and quotes the reader's own words again
     out = _item30_render(tmp_path, "cleared")
     for name, v in out.items():
         assert not isinstance(v, str), (name, v)
-    for surface in ("calendar", "auditRows_ALL", "judgment_rows", "trail_r-empty", "trail_r-null",
+    for surface in ("calendar", "auditRows_ALL", "judgment_rows",
                     "pane_r-empty", "pane_r-null"):
         text = " ".join(out[surface]["text"])
         assert "Q1 2027" not in text, (surface, text[:200])
+    # the trail sentence wears the READER's words + the row period's day-span
+    # words — never the cleared state, and no ISO dates (F1/F3, second pass)
+    import re
+    iso = re.compile(r"\d{4}-\d{2}-\d{2}")
+    for surface in ("trail_r-empty", "trail_r-null"):
+        text = " ".join(out[surface]["text"])
+        assert "Q1 2027 (12 Mar – 30 Jun 2027)" in text, (surface, text[:200])
+        assert not iso.search(text), (surface, text[:200])
     # the structured period still places the row on the calendar (no invented
     # wording, the period dates kept); the two identical cleared rows fold
     cal = " ".join(out["calendar"]["text"])
@@ -3809,63 +3819,11 @@ def test_t1_edited_type_trail_quotes_the_reader(tmp_path):
 
 
 def test_h4_real_state_payload_shows_the_server_display_after_a_clear(tmp_path):
-    # H4: never a hand-built shape — the payload comes from the REAL state
-    # machine (current_state over a run doc, with a person's clear of the date
-    # wording applied through the decision pipeline), and date_display /
-    # date_text_cleared are attached by the server's own functions, verbatim
-    # from codex/pivot-001 runs/calendar.py (runs/state.py:577-578). Rendered
-    # through the real app.js: every surface shows the server display.
-    import calendar as _calendar
+    # Integration uses the actual state projection, without copying its date
+    # functions or filling missing fields on the result inside this test.
     import json
     import subprocess
-    from datetime import date as _date
-
     from runs.state import current_state
-
-    # --- the server's own display functions, verbatim (codex/pivot-001
-    # runs/calendar.py) — the new fields the state target carries ---
-    def period_word(start, end):
-        try:
-            a, b = _date.fromisoformat(start), _date.fromisoformat(end)
-        except (TypeError, ValueError):
-            return None
-        if a.year != b.year or a.day != 1 or b.day != _calendar.monthrange(b.year, b.month)[1]:
-            return None
-        months = (a.month, b.month)
-        if a.month == b.month:
-            return f"{_calendar.month_name[a.month]} {a.year}"
-        if months == (1, 12):
-            return str(a.year)
-        if months in ((1, 6), (7, 12)):
-            return f"H{1 if a.month == 1 else 2} {a.year}"
-        if b.month - a.month == 2 and a.month % 3 == 1:
-            return f"Q{a.month // 3 + 1} {a.year}"
-        return None
-
-    def period_display(start, end):
-        if not start:
-            return end
-        span = f"{start} to {end}"
-        word = period_word(start, end)
-        return f"{word} ({span})" if word else span
-
-    def stated_date_display(values):
-        text = (values.get("date_text") or "").strip()
-        if values.get("date_end"):
-            return text or period_display(values.get("date"), values["date_end"])
-        if text:
-            return text
-        return values.get("date") or "—"
-
-    def effective_date_display(values, timing):
-        shown = stated_date_display(values)
-        if shown != "—":
-            return shown
-        return "Timing unresolved" if timing == "timing_unresolved" else "Undated · no timing stated"
-
-    def date_text_cleared(values, fixes):
-        return (values.get("date_text") in (None, "")
-                and any(fx.get("field") == "date_text" for fx in fixes or []))
 
     # the real state machine over a run doc: a period row, then the person
     # clears the date wording, keeping the structured period
@@ -3880,9 +3838,6 @@ def test_h4_real_state_payload_shows_the_server_display_after_a_clear(tmp_path):
                  "note": None, "fix": {"field": "date_text", "from": "Q1 2027", "to": ""}}
     st = current_state(run, [clear_fix])
     t = st["targets"]["r1"]
-    # the server's three lines (runs/state.py:577-578)
-    t["date_display"] = effective_date_display(t["values"], st["targets"]["r1"].get("timing_state"))
-    t["date_text_cleared"] = date_text_cleared(t["values"], t.get("fixes"))
     assert t["date_text_cleared"] is True
     assert t["date_display"] == "Q1 2027 (2027-01-01 to 2027-03-31)", t["date_display"]
 
@@ -3902,19 +3857,185 @@ def test_h4_real_state_payload_shows_the_server_display_after_a_clear(tmp_path):
     display = "Q1 2027 (2027-01-01 to 2027-03-31)"
     # the calendar is not in this list on purpose: the real state machine keeps
     # an unaccepted fix off the calendar (on_calendar False) — the calendar
-    # surface for a cleared row is covered by the t1_cleared render test
-    for surface in ("auditRows_ALL", "judgment_rows", "trail_r1", "pane_r1"):
+    # surface for a cleared row is covered by the t1_cleared render test.
+    # The trail is not in this list either (item 38, second pass): the Reader
+    # step quotes the READER's own date, not the current state.
+    for surface in ("auditRows_ALL", "judgment_rows", "pane_r1"):
         text = " ".join(out[surface]["text"])
         assert display in text, (surface, text[:220])
-    # no invented ISO day on its own and no undated/unresolved wording
+    # no undated/unresolved wording on the current surfaces
     alltext = " ".join(" ".join(v["text"]) for v in out.values())
     assert "Undated" not in alltext and "no timing stated" not in alltext
-    assert "Q1 2027" in alltext  # as part of the display, never the bare raw wording
-    # L4: the trail wears the server's date_display alone — no local day-span
-    # suffix, no ISO dates, no doubled display
+    # F3: no ISO date anywhere in the Reader step — inverted from the first
+    # pass, which pinned the display on the trail
+    import re
+    iso = re.compile(r"\d{4}-\d{2}-\d{2}")
     trail = " ".join(out["trail_r1"]["text"])
-    assert trail.count("Q1 2027 (2027-01-01 to 2027-03-31)") == 1, trail
-    assert "1 Jan" not in trail and "31 Mar" not in trail, trail
+    assert not iso.search(trail), trail
+    assert trail.count("Q1 2027 (1 Jan – 31 Mar 2027)") == 1, trail
+    # F1/F2: the sentence wears the reader's own words + the row period's
+    # day-span words; the attribution quotes the reader's bare wording
+    step_text = " ".join(out["trail_step_r1"]["text"])
+    assert not iso.search(step_text), step_text
+    assert "1 Jan – 31 Mar 2027" in step_text, step_text
+    assert "Reader's words: 'Q1 2027'" in step_text, step_text
+
+
+@pytest.mark.parametrize("mode", ["clear-null", "edit"])
+def test_item38_reader_step_quotes_the_readers_date_after_clear_null_and_edit(tmp_path, mode):
+    # item 38 second pass (F1/F3), real pivot payloads: after a clear to null
+    # and after an edit, the Reader step's sentence and attribution quote the
+    # READER's own date words ('the first quarter of 2027') with the row
+    # period's day-span words — never the server's date_display, never the
+    # person's value, no ISO dates. Every current surface keeps date_display.
+    import json
+    import re
+    import subprocess
+
+    from runs.state import current_state
+
+    run = {"run": {"id": "run1", "label": "probe"}, "rows": [{
+        "id": "r1", "ticker": "ACME", "company": "Acme", "title": "Period row",
+        "proposed_by": "Muse Spark", "event_type": "filing", "quote": "q",
+        "source_id": "s1", "page_number": 1, "checks": [],
+        "date_text": "the first quarter of 2027",
+        "date": "2027-01-01", "date_end": "2027-03-31"}],
+        "sources": [{"id": "s1", "kind": "pdf", "title": "S", "publisher": "P"}],
+        "mistakes": [], "tables": []}
+    if mode == "clear-null":
+        fix = {"at": "2026-11-01T00:00:00Z", "target": "r1", "action": "fix", "by": "person",
+               "note": None, "fix": {"field": "date_text", "from": "the first quarter of 2027", "to": None}}
+        expect = "Q1 2027 (2027-01-01 to 2027-03-31)"   # wording cleared, period kept
+    else:
+        fix = {"at": "2026-11-01T00:00:00Z", "target": "r1", "action": "fix", "by": "person",
+               "note": None, "fix": {"field": "date_text", "from": "the first quarter of 2027", "to": "Q1 2027"}}
+        expect = "Q1 2027"                              # the person's wording
+    st = current_state(run, [fix])
+    t = st["targets"]["r1"]
+    assert t["date_display"] == expect, t["date_display"]
+
+    payload = {"rows": run["rows"], "targets": st["targets"],
+               "calendar": [{"id": "r1"}], "groups": {}}
+    payload_path = tmp_path / "payload.json"
+    payload_path.write_text(json.dumps(payload))
+    script = tmp_path / "realpay.js"
+    script.write_text(_REALPAY_RENDER_JS)
+    got = subprocess.run(["node", str(script), str(UI / "app.js"), str(payload_path)],
+                         text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stderr
+    out = json.loads(got.stdout)
+    for name, v in out.items():
+        assert not isinstance(v, str), (name, v)
+    # current surfaces wear the server's date_display in both modes
+    for surface in ("auditRows_ALL", "judgment_rows", "pane_r1"):
+        text = " ".join(out[surface]["text"])
+        assert expect in text, (mode, surface, text[:220])
+    # the Reader step quotes the reader, not the current state
+    iso = re.compile(r"\d{4}-\d{2}-\d{2}")
+    step_text = " ".join(out["trail_step_r1"]["text"])
+    assert not iso.search(step_text), (mode, step_text)
+    sentence = [x for x in out["trail_step_r1"]["text"] if x.startswith("Filing ·")][0]
+    assert sentence.startswith("Filing · the first quarter of 2027 (1 Jan – 31 Mar 2027): "), (mode, sentence)
+    assert "Reader's words: 'the first quarter of 2027'" in step_text, (mode, step_text)
+
+
+def test_item38_untouched_trail_step_is_byte_identical_to_e90cfc8(tmp_path):
+    # item 38 third pass: the 'Reader's words' line rides ONLY after a clear or
+    # a date fix — an untouched row's Reader step renders byte-identical to
+    # e90cfc8's trailStep (the hash below is that base render's sha256)
+    import hashlib
+    import json
+    import subprocess
+
+    script = tmp_path / "trailstep.js"
+    script.write_text(_TRAIL_STEP_RENDER_JS)
+    got = subprocess.run(["node", str(script), str(UI / "app.js")],
+                         text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stderr
+    assert hashlib.sha256(got.stdout.encode()).hexdigest() == _UNTOUCHED_TRAIL_SHA256
+    out = json.loads(got.stdout)
+    sentence = [x for x in out if x.startswith("Filing ·")][0]
+    assert sentence == "Filing · in the coming months (12 Mar – 30 Jun 2027): “the words on the page”", sentence
+    assert not any("Reader's words" in x for x in out), out
+
+
+def test_item38_day_span_words_keeps_the_start_year_across_a_year_boundary():
+    # Red Team on #160: a cross-year span dropped the start year (both branches
+    # of the ternary were empty) — '1 Nov – 28 Feb 2027'. The start year now
+    # rides ('1 Nov 2026 – 28 Feb 2027'); same-year spans are unchanged
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in ("daySpanWords", "dayMonth"))
+    script = "\n".join([
+        "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',",
+        "  'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];",
+        fns,
+        "if (daySpanWords('2026-11-01', '2027-02-28') !== '1 Nov 2026 – 28 Feb 2027')",
+        "  { console.error(daySpanWords('2026-11-01', '2027-02-28')); process.exit(2); }",
+        "if (daySpanWords('2027-01-01', '2027-03-31') !== '1 Jan – 31 Mar 2027')",
+        "  { console.error(daySpanWords('2027-01-01', '2027-03-31')); process.exit(3); }",
+        # a whole-year span names the year once
+        "if (daySpanWords('2027-01-01', '2027-12-31') !== '1 Jan – 31 Dec 2027')",
+        "  { console.error(daySpanWords('2027-01-01', '2027-12-31')); process.exit(4); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+_UNTOUCHED_TRAIL_SHA256 = "46e1a2620828172917bd9253c816bfbfc6ac60a4482d1b01ab22320be752036d"
+
+_TRAIL_STEP_RENDER_JS = r"""// item 38 third pass: render one Reader step (trailStep) for an untouched row
+const fs = require('fs');
+const [, , appPath] = process.argv;
+function make(tag) {
+  return { tag, className: '', textContent: '', children: [], style: {}, hidden: false, value: '', dataset: {},
+    classList: { toggle() {}, add() {}, remove() {}, contains() { return false; } },
+    append(...a) { for (const c of a) this.children.push(typeof c === 'string' ? { textContent: c, children: [] } : c); },
+    appendChild(c) { this.children.push(c); return c; }, prepend(...a) { this.children.unshift(...a); },
+    addEventListener() {}, removeEventListener() {}, setAttribute(k, v) { this[k] = v; }, getAttribute() { return null; },
+    querySelector() { return null; }, querySelectorAll() { return []; }, focus() {}, scrollIntoView() {}, remove() {},
+    getBoundingClientRect() { return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }; },
+    set innerHTML(v) { this.children = []; this._html = v; }, get innerHTML() { return this._html || ''; },
+    firstChild: null };
+}
+const nodes = {};
+global.document = { createElement: make, createTextNode: t => ({ textContent: String(t), children: [] }),
+  getElementById: id => (nodes[id] = nodes[id] || make('div')), querySelector: () => null, querySelectorAll: () => [],
+  addEventListener() {}, body: make('body'), documentElement: make('html'), title: '' };
+global.window = { addEventListener() {}, location: { hash: '' }, matchMedia: () => ({ matches: false, addEventListener() {} }),
+  setTimeout, history: { replaceState() {}, pushState() {} }, getComputedStyle: () => ({}) };
+global.location = window.location; global.history = window.history;
+global.localStorage = { getItem() { return null; }, setItem() {} };
+global.fetch = () => new Promise(() => {});
+global.requestAnimationFrame = () => 0;
+let src = fs.readFileSync(appPath, 'utf8');
+src = src.replace(/route = parseHash\(\);\s*boot\(\);\s*\}\)\(\);\s*$/,
+  'global.__H = { get detail(){return detail;}, set detail(v){detail=v;}, ev: function(s){ return eval(s); } };\n})();');
+if (!/global\.__H/.test(src)) throw new Error('no boot hook');
+eval(src);
+const H = global.__H;
+function textOf(n, out) { out = out || []; if (!n) return out; if (n.textContent) out.push(n.textContent); (n.children || []).forEach(c => textOf(c, out)); return out; }
+const row = { id: 'r1', title: 'Untouched', ticker: 'ACME', proposed_by: 'Muse Spark', checks: [],
+  date_text: 'in the coming months', date: '2027-03-12', date_end: '2027-06-30',
+  event_type: 'filing', quote: 'the words on the page', source_id: 's1', page_number: 1 };
+const targets = { 'r1': { group: 'kept', status: 'matched', needs_recheck: false, recheck: null,
+  reason: null, disagreement: null, fixes: [],
+  values: { date_text: 'in the coming months', date: '2027-03-12', date_end: '2027-06-30', quote: 'the words on the page' } } };
+H.detail = { id: 'run1',
+  run: { rows: [row], calendar_partition: { calendar: [], past: [], later: [], undated: [], timing_unresolved: [], contingent: [] },
+    calendar_window: { start: '2026-10-01' }, run: { id: 'run1', label: 'probe', started: '2026-10-01T00:00:00Z' },
+    sources: [{ id: 's1', kind: 'pdf', title: 'S', publisher: 'P' }], mistakes: [], tables: [] },
+  state: { targets, counts: { rows: { kept: 1, corrected: 0, removed: 0, unverified: 0, open: 0 }, cells: {}, fixes_pending: 0, edits_without_error: 0, excluded_by_person: 0 },
+    mistakes: { code: 0, second_reader: 0, person: 0 }, mistake_list: [], excluded: { code: 0, person: 0 },
+    exclusions: [], unresolved: 0, ignored: [], kept_rows: 0, cost_per_kept_row_usd: null } };
+H.ev("route = { screen: 'audit', runId: 'run1', rowId: null, dialog: null }");
+const step = H.ev('trailStep')(row, { step: 'Proposed', tag: 'Model', who: 'Muse Spark',
+  text: 'ACME filing on 2027-03-12: “the words on the page”', at: '2026-10-01T00:00:00Z',
+  tokens: { prompt: 1200, completion: 150 }, cost_usd: 0.002 }, false);
+console.log(JSON.stringify(textOf(step)));
+"""
 
 
 _REALPAY_RENDER_JS = r"""// H4 real-payload probe: render the state-machine payload through the real
@@ -3972,6 +4093,9 @@ run('auditRows_ALL', () => { H.ev("audit.filter='ALL'; audit.selected=null"); H.
 run('judgment_rows', () => H.ev('renderJudgment()'), 'judgment-rows');
 const row = payload.rows[0];
 run('trail_r1', () => { const txt = H.ev('plainProposal')(H.ev('rowOf')('r1'), H.ev('rowTarget')(row), {}); const n = make('div'); n.textContent = txt; return n; });
+run('trail_step_r1', () => H.ev('trailStep')(H.ev('rowOf')('r1'), { step: 'Proposed', tag: 'Model',
+  who: 'Muse Spark', text: 'ACME filing on 2027-03-12: “q”', at: '2026-10-01T00:00:00Z',
+  tokens: { prompt: 1, completion: 1 }, cost_usd: 0.001 }, false));
 run('pane_r1', () => { const host = make('div'); H.ev('detailsPane')(host, H.ev('rowOf')('r1'), { actions: true, back: 'audit' }); return host; });
 console.log(JSON.stringify(out, null, 1));
 """

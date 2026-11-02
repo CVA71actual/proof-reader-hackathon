@@ -139,14 +139,22 @@ def test_a_call_with_no_token_count_does_not_erase_the_priced_calls(runs_dir):
 
 
 @tools
-def test_a_type_the_tool_found_is_not_stored_as_a_different_matched_type(runs_dir):
+def test_retired_type_tool_preserves_reader_type_without_accepting_it(runs_dir):
     events = [dict(e) for e in _events()]
     events[0] = dict(events[0], event_type="other")
     reader = _Script(_ask(_tool_call("event_type_for_words", quote=events[0]["quote"])), _final(events))
     doc = _run(runs_dir, reader)
     row = doc["rows"][0]
-    assert any("found: milestone" in t["text"] for t in _answered(row))
-    assert row["event_type"] == "milestone" or row["status"] != "matched"
+    # PIVOT: never make the tool's old keyword interpretation the source of truth.
+    assert any("could_not_run" in t["text"] for t in _answered(row))
+    assert not any("found: milestone" in t["text"] for t in _answered(row))
+    assert row["event_type"] == "other" and row["type_hint"] == "other"
+    from runs.state import current_state
+    from runs.calendar import calendar_entries
+    state = current_state(doc, [])
+    assert not state["targets"][row["id"]]["accepted"]
+    assert state["targets"][row["id"]]["needs_attention"]
+    assert calendar_entries(doc, state) == []
 
 
 @tools
@@ -213,7 +221,7 @@ def test_a_quote_cannot_jump_from_one_region_to_the_next():
 
 
 @slides
-def test_a_picture_page_row_the_window_removes_keeps_the_source_note(tmp_path):
+def test_a_past_picture_page_proposal_stays_held_and_keeps_the_source_note(tmp_path):
     from capture import read_events
     from capture.capture_source import load_entry
     from runs import sources
@@ -266,5 +274,12 @@ def test_a_picture_page_row_the_window_removes_keeps_the_source_note(tmp_path):
     page = doc["sources"][0]["pages"][0]
     row = doc["rows"][0]
     assert page["kind"] == "picture" and page["note"] == picture.SOURCE_NOTE
-    assert row["group"] == "removed"
+    # DATE-LITERAL-001: a printed past date is not semantic evidence for exclusion.
+    assert row["group"] != "removed" and doc["exclusions"] == []
     assert picture.SOURCE_NOTE in row["reason"]
+    from runs.state import current_state
+    from runs.calendar import calendar_entries
+    state = current_state(doc, [])
+    assert not state["targets"][row["id"]]["accepted"]
+    assert state["targets"][row["id"]]["needs_attention"]
+    assert calendar_entries(doc, state) == []

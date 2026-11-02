@@ -242,6 +242,10 @@ Prices are the ones in `runs/prices.py` (`PRICE_STATUS` says where each comes fr
 
 ### A page where the second model changed the answer
 
+Historical behavior from 29 October: the example below predates the bounded-repair contract. Current code does
+not accept type, title, program or indication changes because keyword checks pass. Escalation can repair a
+mechanically demonstrated date error on the original passage; interpretations remain proposals for human review.
+
 Run twelve-3, row `e3`: the Ionis (IONS) 8-K exhibit 99.1 page, page id
 `src-ions-8k-0001140361-26-037371-ex991-p1`, sha256 `5b558015e2f28510c98fd9c16457cf31f23ac0c4869a35d52fd6d2658ad6e569`.
 Muse Spark proposed the event as a conference; the check "Event type matches the quote" failed ("The quote's words

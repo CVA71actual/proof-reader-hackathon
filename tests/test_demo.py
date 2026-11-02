@@ -93,7 +93,7 @@ def say(capsys, *args, runs_dir=None, **kw):
     return code, out.out, out.err
 
 
-def test_the_demo_lists_the_runs_then_prints_ptgx_r5s_counts_accuracy_and_cost_per_kept_row(capsys):
+def test_the_demo_lists_ptgx_record_but_keeps_unbound_historical_decisions_out_of_acceptance(capsys):
     code, out, _ = say(capsys, "--no-serve")
     assert code == 0
     head, _, rest = out.partition("\nptgx-r5\n")
@@ -101,10 +101,12 @@ def test_the_demo_lists_the_runs_then_prints_ptgx_r5s_counts_accuracy_and_cost_p
     for rid in ("demo", "ptgx-r4a", "ptgx-r5", "ptgx-scan", "sample"):
         assert re.search(rf"^  {rid} +#\d+", head, re.M)
     assert "ptgx-r5 · PTGX · two readers: saved" in rest and "pages read: 1" in rest
-    assert re.search(r"rows: kept 2, corrected 0, removed 0, unverified 0, open 0", rest) and "needs attention: 0" in rest
-    assert "calendar: 2 kept or corrected rows" in rest
+    # PIVOT: the saved model results remain recorded; unbound historical Keeps are not current acceptance.
+    assert [r["group"] for r in run_json("ptgx-r5")["rows"]] == ["kept", "kept"]
+    assert "rows: Accepted by you 0, Proposed — needs review 2, Excluded 0" in rest
+    assert "needs attention: 2" in rest and "calendar: 0 accepted rows" in rest
     spend = run_json("ptgx-r5")["run"]["spend_usd"]
-    assert f"cost: ${spend:.4f}; kept rows: 2; cost per kept row: ${spend / 2:.4f}" in rest
+    assert f"cost: ${spend:.4f}; accepted rows: 0; cost per accepted row: not computed" in rest
     # Job 50b: ptgx-r5's committed accuracy.json predates input binding: no counts, a plain re-score reason
     assert "Accuracy: not shown. Accuracy file predates input binding; re-score" in rest
     assert "Muse Spark — events" not in rest and "Unsealed" not in rest and "turns:" not in rest
