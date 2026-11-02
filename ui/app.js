@@ -23,12 +23,32 @@
   // count as accepted (a superseded Keep is history); a server without the
   // projection keeps the old group rule
   function keptCurrent(t) {
+    if (partialProjection(t)) return false;
     if (!t || !t.decided_by_person || t.group !== 'kept') return false;
     return t.accepted === undefined || t.accepted === null || t.accepted === true;
   }
   // the row carries the server's review projection (review_label/bucket)
+  // H3: the projection is atomic. The complete field set is review_label,
+  // review_bucket, accepted, needs_attention, on_calendar (decision_label is
+  // legitimately null for rule/correction rows, so it is not required).
+  function projectionComplete(t) {
+    // M2: the decision_label KEY must be present — null is a legitimate value
+    // for rule/correction rows, a missing key is not a projection
+    return !!t && typeof t.review_label === 'string' && typeof t.review_bucket === 'string' &&
+           typeof t.accepted === 'boolean' && typeof t.needs_attention === 'boolean' &&
+           typeof t.on_calendar === 'boolean' && 'decision_label' in t;
+  }
+  // some projection fields but not all: never trusted — the row needs review,
+  // is never kept/accepted, never on the calendar. The trigger is a pivot-only
+  // field: needs_attention/on_calendar exist on main too, so they never mark
+  // a row partial on their own.
+  function partialProjection(t) {
+    if (!t || projectionComplete(t)) return false;
+    return typeof t.review_label === 'string' || typeof t.review_bucket === 'string' ||
+           typeof t.accepted === 'boolean';
+  }
   function projected(t) {
-    return !!t && typeof t.review_label === 'string';
+    return projectionComplete(t);
   }
   // the '· decided by you' marker. With the projection the row badge is the
   // review label, and every label that carries a person's decision already
@@ -36,6 +56,7 @@
   // marker would only repeat it; it shows only for a decision label whose
   // review label does not say so. Without the projection: the old group rule.
   function decidedMark(t) {
+    if (partialProjection(t)) return false;
     if (projected(t)) {
       return typeof t.decision_label === 'string' && !!t.decision_label &&
              !/\byou(r)?\b/i.test(t.review_label);
@@ -55,14 +76,26 @@
   // row keeps its check result (corrected / unverified / still open).
   // Without the projection: the server's group, as before.
   function viewGroup(t) {
+    if (partialProjection(t)) return 'proposed';
     if (!t || typeof t.review_bucket !== 'string') return t ? t.group : undefined;
     if (t.review_bucket === 'accepted') return 'kept';
     if (t.review_bucket === 'excluded') return 'removed';
     return t.group === 'kept' || t.group === 'removed' ? 'proposed' : t.group;
   }
   var REVIEW_GROUP_ORDER = ['kept', 'proposed', 'corrected', 'removed', 'unverified', 'open'];
+  // the review axis turns on when the projection is present at all — the
+  // server's counts.review, or any row carrying a pivot-only field (a partial
+  // row is uncounted even when the run ships no counts.review)
+  function reviewAxis() {
+    if (reviewAcceptedCount(detail.state) !== null) return true;
+    return (detail.run.rows || []).some(function (r) {
+      var t = rowTarget(r);
+      return typeof t.review_label === 'string' || typeof t.review_bucket === 'string' ||
+             typeof t.accepted === 'boolean';
+    });
+  }
   function groupOrder() {
-    return reviewAcceptedCount(detail.state) !== null ? REVIEW_GROUP_ORDER : GROUP_ORDER;
+    return reviewAxis() ? REVIEW_GROUP_ORDER : GROUP_ORDER;
   }
   function groupName(g) {
     return g === 'proposed' ? 'Proposed — needs review' : GROUP_NAMES[g];
@@ -70,7 +103,7 @@
   // one count per listed group: with the projection, the rows behind the
   // heading (so facet == list == heading == summary line); else the server's
   function groupCount(g) {
-    if (reviewAcceptedCount(detail.state) === null) return detail.state.counts.rows[g];
+    if (!reviewAxis()) return detail.state.counts.rows[g];
     return rowsByGroup(g).length;
   }
   // a row a person fixed that still needs a person (re-check could not run;
@@ -78,7 +111,48 @@
   // a fix: it needs review like any proposal.
   function fixStillOpen(t) {
     if (!t || !t.decided_by_person || !needsAttention(t)) return false;
+    if (partialProjection(t)) return false;   // H5: not a fix — needs review
     return projected(t) ? t.last_action === 'fix' : true;
+  }
+  // RED-2 / addendum 3: ONE presence-aware rule for every effective-field
+  // lookup — a target.values own property wins even when null/empty (an
+  // explicit clear is a clear, never resurrected from the row's raw value);
+  // only an absent key falls back to the row.
+  function shownField(t, row, field) {
+    var v = t && t.values;
+    if (v && Object.prototype.hasOwnProperty.call(v, field)) {
+      return v[field] === null || v[field] === undefined ? '' : v[field];
+    }
+    return (row && row[field]) || '';
+  }
+  function shownDateText(t, row) {
+    // H4: the server puts the one effective date display on the state target
+    // itself (runs/state.py: date_display / date_text_cleared), not inside
+    // values — a cleared wording with a kept period shows that period
+    if (t && typeof t.date_display === 'string') return t.date_display;
+    if (t && t.date_text_cleared === true) return '';
+    return shownField(t, row, 'date_text');
+  }
+  // #52 type provenance (server: runs/proposal.py type_presentation). Labels
+  // render as the server sends them; values read in plain words — a known id
+  // becomes its word, freeform reader wording passes through untouched.
+  function plainTypeValue(v) {
+    if (v === null || v === undefined || v === '') return 'Not supplied';
+    return EVENT_WORDS[v] !== undefined ? eventWord(v) : String(v);
+  }
+  // the category value alone (list rows and the calendar line), or null when
+  // the server sends no type_presentation — the caller keeps its old wording
+  function typeCategoryValue(t) {
+    var p = t && t.type_presentation;
+    return p && typeof p === 'object' ? plainTypeValue(p.category) : null;
+  }
+  // both label:value pairs for the detail pane: [category_label, value],
+  // [type_hint_label, value]; null without the projection
+  function typePresentationPairs(t) {
+    var p = t && t.type_presentation;
+    if (!p || typeof p !== 'object') return null;
+    return [[p.category_label || 'Category', plainTypeValue(p.category)],
+            [p.type_hint_label || "Reader's proposed type", plainTypeValue(p.type_hint)]];
   }
   var FIX_FIELDS = ['date_text', 'date', 'date_end', 'event_type', 'title', 'quote', 'company', 'ticker',
                     'program', 'indication'];
@@ -199,6 +273,11 @@
   // A-F6: a matched row whose date check or type check was 'not needed' did
   // not have that confirmed — "matched" alone would overstate it
   function rowBadge(row, t) {
+    // H3/H5: a partial projection is an amber needs-review, never
+    // kept/accepted — its own labels are not trusted either
+    if (partialProjection(t)) {
+      return el('span', 'st st-corrected open', 'Needs review');
+    }
     // the projection's review_label is the row's badge when present: accepted
     // green, excluded red, anything else the amber attention style
     if (projected(t)) return el('span', 'st st-' + reviewClass(t), t.review_label);
@@ -223,6 +302,7 @@
   // with no decided word (e.g. 'open'): the badge the group id, the still-open
   // line 'Fixed by you', the decided pane 'Decided by you'.
   function decidedWord(t, otherwise) {
+    if (partialProjection(t)) return 'Needs review';
     if (projected(t)) return t.decision_label || t.review_label;
     return DECIDED_BADGE[t.group] || otherwise;
   }
@@ -233,6 +313,8 @@
     return bucket === 'accepted' ? 'kept' : bucket === 'excluded' ? 'removed' : 'corrected open';
   }
   function decidedBadge(t) {
+    // a partial projection never wears the group colour (kept green) — amber
+    if (partialProjection(t)) return el('span', 'st st-corrected open', decidedWord(t));
     return el('span', 'st st-' + (projected(t) ? reviewClass(t) : t.group), decidedWord(t, t.group));
   }
   function checkDot(result) { return el('span', 'dot ' + result); }
@@ -242,7 +324,8 @@
   // of that label decides; the old label keeps the old pass style.
   function dateFinding(c) {
     return !!c && (c.name === 'date_match' || c.id === 'date_match') &&
-           c.result === 'pass' && c.label === 'Date wording present in quote';
+           c.result === 'pass' &&
+           (c.label === 'Date period found in quote' || c.label === 'Date wording present in quote');
   }
   function checkResultWord(result) { return CHECK_WORDS[result] || result; }
 
@@ -327,6 +410,7 @@
   var accuracyCache = { id: null, line: null, tried: false };   // runs/<id>/accuracy.json, one line for the audit header
 
   function needsAttention(t) {
+    if (partialProjection(t)) return true;
     return !!(t && t.needs_attention);
   }
   function rowTarget(row) { return detail.state.targets[row.id] || {}; }
@@ -604,13 +688,16 @@
     }
     detail.run.rows.forEach(function (r) {
       var t = rowTarget(r);
+      if (partialProjection(t)) return;   // H3: never on the calendar
       if (!t.on_calendar) return;
       var bucket = bucketById[r.id];
       if (!bucket) return; // the shared read view is the only placement authority
       var vals = t.values || {};
       var d = vals.date || null;
       var end = vals.date_end || null;
-      var dt = vals.date_text || null;
+      // the calendar entry wears the target-level effective display
+      var dt = typeof t.date_display === 'string' ? t.date_display
+        : t.date_text_cleared === true ? '' : (vals.date_text || null);
       var entry = { row: r, t: t, date: d || null, nodate: !d,
                     period: !!end, end: end || null, dateText: dt || null, bucket: bucket };
       out.push(entry);
@@ -955,12 +1042,16 @@
     l1.append(el('span', 'tk', row.ticker || '—'));
     if (row.program) l1.append(el('span', 'pg2', row.program));
     l1.append(el('span', 'tt', row.title || '(no title)'));
-    l1.append(el('span', 'dt', t.values && t.values.date_text || row.date_text || ''));
+    l1.append(el('span', 'dt', shownDateText(t, row)));
     var l2 = el('div', 'l2');
     var x = t.decided_by_person ? null : exclusionFor(row.id);
     if (projected(t)) {
       // GROUP-AXIS-001: the review projection owns the badge when sent
       // ('Excluded', 'Corrected, awaiting your review', …)
+      l2.append(rowBadge(row, t));
+    } else if (partialProjection(t)) {
+      // H3/H5: a partial projection is needs review — never the group's
+      // 'Fixed by you' / 'Removed by code' badge
       l2.append(rowBadge(row, t));
     } else if (x && x.by === 'code') {
       // G1-8 / G1-S1: a row removed by code says so — never a matched/proposed badge
@@ -1190,8 +1281,16 @@
     }
     kv('Company', (row.ticker || '') + ' · ' + (row.company || ''));
     if (row.program) kv('Program', row.program);
-    kv('Type', eventWord(row.event_type));
-    kv('Event date', '', el('span', 'v mono', t.values && t.values.date_text || row.date_text || ''));
+    // #52 type provenance: the server's label:value pairs when it sends them
+    var typePairs = typePresentationPairs(t);
+    if (typePairs) {
+      kv(typePairs[0][0], typePairs[0][1]);
+      kv(typePairs[1][0], typePairs[1][1]);
+    } else {
+      kv('Type', eventWord(row.event_type));
+    }
+    kv('Event date', '', el('span', 'v mono', shownDateText(t, row) ||
+      (projected(t) || partialProjection(t) ? 'Not stated' : '')));
     var timingWords = { undated: 'Undated · no timing stated', timing_unresolved: 'Timing unresolved', dated: 'Timing stated' };
     kv('Timing', (timingWords[t.timing_state] || 'Timing unresolved') +
       (t.contingent ? ' · Contingent (explicit dependency)' : ''));
@@ -1226,7 +1325,7 @@
       host.append(sq);
     }
 
-    if (t.group === 'corrected') host.append(correctedSection(row, t));
+    if (t.group === 'corrected' && !partialProjection(t)) host.append(correctedSection(row, t));
     if (t.group === 'removed') host.append(removedSection(row, t));
     if (t.group === 'open' || t.group === 'unverified') host.append(whySection(row, t));
     if (t.disagreement) host.append(disagreementSection(row, t));
@@ -1990,7 +2089,7 @@
     l1.append(el('span', 'tk', row.ticker || '—'));
     if (row.program) l1.append(el('span', 'pg2', row.program));
     l1.append(el('span', 'tt', row.title || ''));
-    l1.append(el('span', 'dt', (t.values && t.values.date_text) || row.date_text || ''));
+    l1.append(el('span', 'dt', shownDateText(t, row)));
     var l2 = el('div', 'l2');
     l2.append(t.decided_by_person ? decidedBadge(t) : statusBadge(t.status));
     l2.append(el('span', 'mdl', 'by ' + (row.proposed_by || 'Model')));
@@ -2040,13 +2139,19 @@
     return dayMonth(a) + ' – ' + dayMonth(b) + ' ' + yb + (ya === yb ? '' : '');
   }
   function plainProposal(row, t, s) {
-    var v = (t && t.values) || {};
-    var dt = v.date_text || row.date_text;
-    var d1 = v.date || row.date, d2 = v.date_end || row.date_end;
+    var dt = shownDateText(t, row);
+    // L4: the server's date_display is complete (wording + period) — no local
+    // day-span suffix after it, and no ISO dates invented on the trail
     var when;
-    if (dt && d2 && d1 && daySpanWords(d1, d2)) when = dt + ' (' + daySpanWords(d1, d2) + ')';
-    else when = dt || d1 || 'no date on the page';
-    var quote = v.quote || row.quote;
+    if (t && typeof t.date_display === 'string') when = dt;
+    else {
+      var d1 = shownField(t, row, 'date'), d2 = shownField(t, row, 'date_end');
+      if (dt && d2 && d1 && daySpanWords(d1, d2)) when = dt + ' (' + daySpanWords(d1, d2) + ')';
+      else when = dt || d1 || 'no date on the page';
+    }
+    var quote = shownField(t, row, 'quote');
+    // H1: the proposal sentence quotes what the READER proposed — a person's
+    // later type edit is never credited to the model (runs/proposal.py:108)
     var said = eventWord(row.event_type) + ' · ' + when;
     return quote ? said + ': “' + quote + '”' : said;
   }
@@ -2285,7 +2390,7 @@
         // G9-R2: a period marker inside a month carries the source wording
         // ('early Q1 2027'), never the month's own name repeated from the
         // header above it
-        var wording = (r.t.values && r.t.values.date_text) || r.row.date_text || '';
+        var wording = shownDateText(r.t, r.row);
         var canon = calIsMonthPeriod(r) ? (wording || monthYear(r.date))
           : calMonths(r) <= 3 ? calQuarterKey(r)
           : calMonths(r) === 12 ? r.date.slice(0, 4)
@@ -2310,7 +2415,7 @@
       var htext = h.label;
       if (!htext && sample && sample.period && !calIsExact(sample) &&
           h.key.slice(0, 2) === 'p:')
-        htext = (sample.t.values && sample.t.values.date_text) || sample.row.date_text;
+        htext = shownDateText(sample.t, sample.row);
       wrap.append(el('div', 'mo', htext || monthYear(sample ? sample.date : h.sort + '-01')));
       // G3-4: exact dates first by day, then periods shortest to longest
       h.exact.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
@@ -2347,7 +2452,7 @@
     if (past.length) {
       wrap.append(el('div', 'mo', 'Past · ' + past.length));
       past.forEach(function (r) {
-        var written = (r.t.values && r.t.values.date_text) || r.row.date_text || r.date;
+        var written = shownDateText(r.t, r.row) || r.date;
         var reason = r.t.reason || r.row.reason || (keptCurrent(r.t) ? 'Kept by you; the event period ended before this run began.' : '');
         if (reason) r.row.reason = reason;
         wrap.append(calRow(r, written, !!r.period));
@@ -2356,14 +2461,15 @@
     if (later.length) {
       wrap.append(el('div', 'mo', 'Later · ' + later.length));
       later.forEach(function (r) {
-        var written = (r.t.values && r.t.values.date_text) || r.row.date_text || r.date;
+        var written = shownDateText(r.t, r.row) || r.date;
         wrap.append(calRow(r, written, !!r.period));
       });
     }
     if (lastEvents.length) {
       lastEvents.forEach(function (r) {
         wrap.append(el('div', 'mo', 'Latest past event · ' + (r.row.ticker || 'ticker not stated')));
-        var written = (r.row.date_text || r.row.date || 'Date not stated');
+        var written = shownDateText(r.t, r.row) ||
+          ((r.t.values && r.t.values.date) || '') || 'Date not stated';   // never the raw row date
         wrap.append(calRow(r, written, !!r.period));
       });
     }
@@ -2468,11 +2574,11 @@
     if (r.fold.length > 1) c2.append(el('span', 'srcpill', r.fold.length + ' sources'));
     if (isPeriod) {
       // G3-4: the row keeps its own source wording as the date text
-      var wording = (t.values && t.values.date_text) || row.date_text || '';
+      var wording = shownDateText(t, row);
       if (wording) c2.append(el('span', 'dt', wording));
     }
     b.append(c2);
-    b.append(el('span', 'ty', eventWord(row.event_type)));
+    b.append(el('span', 'ty', typeCategoryValue(t) || eventWord(row.event_type)));
     if (t.decided_by_person) b.append(decidedBadge(t));
     b.addEventListener('click', function () {
       calSel = row.id;
@@ -2535,7 +2641,7 @@
     l1.append(el('span', 'tk', row.ticker || '—'));
     if (row.program) l1.append(el('span', 'pg2', row.program));
     l1.append(el('span', 'tt', row.title || ''));
-    l1.append(el('span', 'dt', (t.values && t.values.date_text) || row.date_text || ''));
+    l1.append(el('span', 'dt', shownDateText(t, row)));
     var l2 = el('div', 'l2');
     if (fixStillOpen(t)) {
       l2.append(el('span', 'st st-corrected open', decidedWord(t, 'Fixed by you') + ' · still open'));
@@ -2886,7 +2992,7 @@
     br.append(keepB);
     if (isPeriod) {
       br.append(btn('btn', 'Keep as stated', function () {
-        var dt = (t.values && t.values.date_text) || row.date_text || 'the period';
+        var dt = shownDateText(t, row) || 'the period';
         postDecision(row.id, { target: row.id, action: 'keep', note: 'Kept as stated: ' + dt + '.' },
           'Kept as stated — the period stays, no day invented.');
       }));
@@ -2897,17 +3003,23 @@
     br.append(btn('btn danger', 'Remove…', function () {
       navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id, dialog: 'remove' });
     }));
-    if (correctedOpen) {
-      // the earlier fix is still on the row — offer to take it back (round 7:
-      // the pane must not be Undo-only, but Undo stays one of the offers)
+    // D1: under the projection the server tells us the decision stack through
+    // last_action (null when the stack is empty) — Undo is offered whenever a
+    // decision exists, not only beside an open fix: a superseded Keep can be
+    // taken back like any other decision
+    var canUndo = correctedOpen ||
+      (projected(t) && typeof t.last_action === 'string' && !!t.last_action);
+    if (canUndo) {
       br.append(btn('btn', 'Undo', function () {
         postDecision(row.id, { target: row.id, action: 'undo', note: null }, 'Undone.');
       }));
     }
     sec.append(br);
     if (isPeriod) {
-      sec.append(el('div', 'hint', '“Keep as stated” keeps “' +
-        ((t.values && t.values.date_text) || row.date_text) + '” as a period — the calendar shows no invented day.'));
+      var keptWording = shownDateText(t, row);
+      sec.append(el('div', 'hint', keptWording
+        ? '“Keep as stated” keeps “' + keptWording + '” as a period — the calendar shows no invented day.'
+        : '“Keep as stated” keeps the cleared wording cleared — the calendar shows no invented day.'));
     }
     if (correctedOpen) {
       sec.append(el('div', 'hint',
@@ -2928,9 +3040,9 @@
     function kvr(k, v) { var r = el('div', 'kv'); r.append(el('span', 'k', k), el('span', 'v', v)); kv.append(r); }
     kvr('Company', (row.ticker || '') + ' · ' + (row.company || ''));
     if (row.program) kvr('Program', row.program);
-    kvr('Event date', (t.values && t.values.date_text) || row.date_text || '');
+    kvr('Event date', shownDateText(t, row) || (projected(t) || partialProjection(t) ? 'Not stated' : ''));
     hd.append(kv);
-    var qt = (t.values && t.values.quote) || row.quote;
+    var qt = shownField(t, row, 'quote');
     if (qt) {
       var sq = el('div', 'sec');
       sq.append(el('h4', null, 'The quote'));
@@ -3827,6 +3939,14 @@
     return '/runs/' + encodeURIComponent(currentRunId()) + '/report/' +
       name.split('/').map(encodeURIComponent).join('/');
   }
+  // D3 / L1: the server's reason sentence on a refused report file travels in
+  // the HEAD response's X-Report-Reason header (a HEAD body never reaches the
+  // browser — header only, no body parsing).
+  function reportRefusalReason(res) {
+    var fromHeader = res.headers &&
+      (res.headers.get('x-report-reason') || res.headers.get('x-refuse-reason'));
+    return Promise.resolve(fromHeader ? String(fromHeader) : null);
+  }
 
   function renderExport() {
     var meta = detail.run.run || {};
@@ -3871,10 +3991,30 @@
           var a = el('a', 'link', 'Open');
           a.href = reportUrl(f.file);
           right.append(a);
-        } else {
-          // G5-2b: no dead label — the honest sentence until the file is served
-          right.append(el('span', 'exmeta', reportsStale ? 'Saved report is out of date.' : 'No report is saved for this run yet.'));
+          return null;
         }
+        // D3: a refused file (unverified against the run state, out of date)
+        // carries the server's own reason — that sentence is the honest line,
+        // never 'No report is saved for this run yet'
+        return reportRefusalReason(r).then(function (reason) {
+          if (reason) {
+            // L2: when the top-of-screen hint already carries this exact
+            // sentence, say it once — the file row points at it
+            var topReason = reportsStale && (detail.run.report_stale_reason || '');
+            if (topReason && reason === topReason) {
+              right.append(el('span', 'exmeta', 'Unavailable until rebuilt.'));
+            } else {
+              var box = el('div', 'exmeta');
+              box.style.textAlign = 'right';
+              box.append(el('div', null, reason));
+              if (!/rebuild/i.test(reason)) box.append(el('div', null, 'Rebuild the report to open it here.'));
+              right.append(box);
+            }
+          } else {
+            // G5-2b: no dead label — the honest sentence until the file is served
+            right.append(el('span', 'exmeta', reportsStale ? 'Saved report is out of date.' : 'No report is saved for this run yet.'));
+          }
+        });
       }).catch(function () {
         clear(right);
         right.append(el('span', 'exmeta', reportsStale ? 'Saved report is out of date.' : 'No report is saved for this run yet.'));
@@ -3904,11 +4044,12 @@
     }
     // the same groups and counts as the audit log's facets — with the
     // projection the lines add up to every row (proposed rows on their own line)
-    if (reviewAcceptedCount(st) === null) {
+    if (!reviewAxis()) {
       GROUP_ORDER.forEach(function (g) {
         kv(GROUP_NAMES[g], String(st.counts.rows[g]));
       });
     } else {
+      // the same viewGroup counts as the facet strip — partial rows uncounted
       groupOrder().forEach(function (g) {
         kv(groupName(g), String(groupCount(g)));
       });

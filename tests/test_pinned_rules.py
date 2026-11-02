@@ -355,7 +355,7 @@ function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.cl
 renderCalendar();
 console.log(JSON.stringify({ mid: texts(nodes['cal-mid']), det: texts(nodes['cal-det']) }));
 """
-    return _node(["calWindow", "calFoldHit", "renderCalendar"], body)
+    return _node(["projectionComplete", "partialProjection", "shownField", "shownDateText", "calWindow", "calFoldHit", "renderCalendar"], body)
 
 
 def test_r74_latest_past_event_is_the_latest_raw_end_or_start_per_ticker():

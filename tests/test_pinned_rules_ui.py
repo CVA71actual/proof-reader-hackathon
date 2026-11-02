@@ -88,7 +88,7 @@ def _calendar_script(rows, targets, partition=None, exclusions=None, window=None
         "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
         "function rowOf(id) { return detail.run.rows.filter(function (r) { return r.id === id; })[0] || null; }",
         "function calRow(r, written) { return el('div', 'crow', 'ROW ' + r.row.id + ' ' + written); }",
-        _fns("shownVal", "effectiveChecks", "calendarRows", "calWindow", "calFoldHit", "renderCalendar"),
+        _fns("shownVal", "effectiveChecks", "projectionComplete", "partialProjection", "calendarRows", "calWindow", "calFoldHit", "renderCalendar"),
         tail,
     ]
 
@@ -141,7 +141,8 @@ def _export_text(fetch_js: str, stale: bool) -> str:
         "function reportFileNames() { return [{ file: 'r.pdf', kind: 'PDF' }, { file: 'r.docx', kind: 'Word' }]; }",
         "function reportUrl(n) { return '/runs/x/report/' + n; }",
         "global.fetch = " + fetch_js + ";",
-        _fns("reviewAcceptedCount", "renderExport"),
+        _fns("projectionComplete", "partialProjection", "shownDateText", "shownField",
+             "reviewAcceptedCount", "reportRefusalReason", "reviewAxis", "renderExport"),
         "renderExport();",
         "setTimeout(function () { console.log(textOf(NODES['exp-mid'])); }, 0);",
     )
@@ -183,7 +184,7 @@ def test_r117_ui_needs_attention_count_equals_the_servers_unresolved_count(sampl
     for decs in (decisions, pending):
         st = current_state(run, decs)
         rows = [t for rid, t in st["targets"].items() if t["kind"] == "row"]
-        out = _node(_fns("needsAttention"),
+        out = _node(_fns("projectionComplete", "partialProjection", "needsAttention"),
                     "var ts = %s;" % json.dumps(rows),
                     "console.log(ts.filter(needsAttention).length);")
         assert int(out.strip().splitlines()[-1]) == st["unresolved"]

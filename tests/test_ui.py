@@ -446,7 +446,7 @@ def _judgment_screen(row_id):
              "projected", "reviewClass", "fixStillOpen", "needsAttention", "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
              "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
              "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith",
-             "revealRow", "sourceOf", "nearMissCheck", "listReasonLine")
+             "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText", "shownField", "projectionComplete", "partialProjection")
     rows = [
         {"id": "r-cnr", "title": "ROW-COULD-NOT-RUN", "ticker": "ACME", "proposed_by": "Muse Spark",
          "checks": [], "date_text": "Q3 2027"},
@@ -913,7 +913,7 @@ def test_u23_hold_release_stops_even_when_the_mic_is_slow():
     import subprocess
 
     js = (UI / "app.js").read_text()
-    fns = "\n".join(_grab_fn(js, n) for n in ("sayControls", "stopSay"))
+    fns = "\n".join(_grab_fn(js, n) for n in ("sayControls", "stopSay", "projectionComplete", "partialProjection"))
     script = f"""
 var SAY_MAX_SECONDS = 30;
 var FIELD_WORDS = {{}};
@@ -1588,7 +1588,7 @@ def test_u24_g1r1_the_code_that_ran_is_the_real_source_not_json():
     import subprocess
 
     js = (UI / "app.js").read_text()
-    fns = "\n".join(_grab_fn(js, n) for n in ("seeTheCheck", "dateFinding"))
+    fns = "\n".join(_grab_fn(js, n) for n in ("seeTheCheck", "dateFinding", "projectionComplete", "partialProjection"))
     script = f"""
 var CHECK_WORDS = {{ pass: 'passed', fail: 'failed', could_not_run: 'could not run',
                    not_needed: 'not needed' }};
@@ -1755,7 +1755,7 @@ def test_u23_server_422_sentence_is_shown():
     import subprocess
 
     js = (UI / "app.js").read_text()
-    fns = "\n".join(_grab_fn(js, n) for n in ("sayControls", "stopSay"))
+    fns = "\n".join(_grab_fn(js, n) for n in ("sayControls", "stopSay", "projectionComplete", "partialProjection"))
     script = f"""
 var SAY_MAX_SECONDS = 30;
 var FIELD_WORDS = {{}};
@@ -1842,7 +1842,7 @@ def test_u29_run_card_job_block_and_money_rule():
                  "less than a cent per kept row", "saved run", "jb-row1"):
         assert word in (html + js), word
     assert "jobbar" not in html
-    fns = "\n".join(_grab_fn(js, n) for n in ("cents", "usdCents", "money", "costPerKeptRowWords"))
+    fns = "\n".join(_grab_fn(js, n) for n in ("cents", "usdCents", "money", "costPerKeptRowWords", "projectionComplete", "partialProjection"))
     script = f"""
 var detail = {{ state: {{ cost_per_kept_row_usd: null }} }};
 {fns}
@@ -1870,7 +1870,7 @@ def test_u25_resume_rechecks_the_button_before_begin():
     import subprocess
 
     js = (UI / "app.js").read_text()
-    fns = "\n".join(_grab_fn(js, n) for n in ("sayControls", "stopSay"))
+    fns = "\n".join(_grab_fn(js, n) for n in ("sayControls", "stopSay", "projectionComplete", "partialProjection"))
     script = f"""
 var SAY_MAX_SECONDS = 30;
 var FIELD_WORDS = {{}};
@@ -1941,7 +1941,8 @@ def test_u28_corrected_rows_say_who_caught_it():
     assert "Caught by the second reader" in js and "calWords" in js
     fns = "\n".join(_grab_fn(js, n) for n in
                     ("el", "esc", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket", "dayInWords",
-                     "projected", "reviewClass", "decidedMark", "exclusionFor", "mistakeFor", "auditRow"))
+                     "projected", "reviewClass", "decidedMark", "shownDateText", "shownField", "exclusionFor", "mistakeFor", "auditRow",
+                     "projectionComplete", "partialProjection"))
     script = f"""
 var FIELD_WORDS = {{ date_text: 'Date as written', date: 'Date', event_type: 'Event type' }};
 var STATUS_WORDS = {{ matched: 'matched', proposed: 'proposed' }};
@@ -2024,7 +2025,7 @@ console.log('ok');
     import subprocess
 
     js = (UI / "app.js").read_text()
-    fns = "\n".join(_grab_fn(js, n) for n in ("sayControls", "stopSay"))
+    fns = "\n".join(_grab_fn(js, n) for n in ("sayControls", "stopSay", "projectionComplete", "partialProjection"))
     script = f"""
 var SAY_MAX_SECONDS = 30;
 var FIELD_WORDS = {{}};
@@ -2453,6 +2454,7 @@ def test_u32_calendar_folds_only_identical_current_events():
         _grab_fn(js, "shownVal"),
         _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
+        _grab_fn(js, "projectionComplete"), _grab_fn(js, "partialProjection"),
         "var got = calendarRows();",
         "if (got.length !== 7) { console.error('n=' + got.length); process.exit(2); }",
         "if (got.some(function (e) { return e.fold.length !== 1; })) process.exit(3);",
@@ -2489,6 +2491,7 @@ def test_u32_back_from_a_secondary_source_reselects_the_fold():
         _grab_fn(js, "shownVal"),
         _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
+        _grab_fn(js, "projectionComplete"), _grab_fn(js, "partialProjection"),
         _grab_fn(js, "calFoldHit"),
         "var all = calendarRows();",
         # A same-start row with conflicting date wording is no longer folded.
@@ -2551,6 +2554,7 @@ def test_u34_g9_1_calendar_uses_the_servers_corrected_rule():
         _grab_fn(js, "shownVal"),
         _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
+        _grab_fn(js, "projectionComplete"), _grab_fn(js, "partialProjection"),
         "var got = calendarRows().map(function (e) { return e.row.id; });",
         "console.log(JSON.stringify(got));",
     ])
@@ -2565,6 +2569,7 @@ def test_needs_attention_includes_pending_recheck():
     js = (UI / "app.js").read_text()
     script = "\n".join([
         _grab_fn(js, "needsAttention"),
+        _grab_fn(js, "projectionComplete"), _grab_fn(js, "partialProjection"),
         "var pending = needsAttention({group:'corrected', needs_attention:true, needs_recheck:true, recheck:null, status:'matched'});",
         "var completed = needsAttention({group:'corrected', needs_attention:false, needs_recheck:false, recheck:{result:'pass'}, status:'matched'});",
         "console.log(JSON.stringify([pending, completed]));",
@@ -2953,6 +2958,7 @@ def test_u35_af2b_calendar_lists_rows_with_no_parsed_day():
         _grab_fn(js, "shownVal"),
         _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
+        _grab_fn(js, "projectionComplete"), _grab_fn(js, "partialProjection"),
         "var got = calendarRows();",
         "if (got.length !== 4) { console.error('n=' + got.length); process.exit(2); }",
         "var und = got.filter(function (e) { return e.nodate; });",
@@ -2995,6 +3001,7 @@ def test_u35_af3_fold_key_uses_the_title_when_program_is_empty():
         _grab_fn(js, "shownVal"),
         _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
+        _grab_fn(js, "projectionComplete"), _grab_fn(js, "partialProjection"),
         "var got = calendarRows();",
         "if (got.length !== 3) { console.error('n=' + got.length); process.exit(2); }",
         "if (got.some(function (e) { return e.fold.length !== 1; })) process.exit(3);",
@@ -3026,6 +3033,7 @@ def test_calendar_partitions_before_folding_and_keeps_period_conflict_visible():
         _grab_fn(js, "shownVal"),
         _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
+        _grab_fn(js, "projectionComplete"), _grab_fn(js, "partialProjection"),
         "var got = calendarRows();",
         "if (got.length !== 2) { console.error('n=' + got.length); process.exit(2); }",
         "if (got[0].row.id !== 'e1' || got[0].bucket !== 'past') process.exit(3);",
@@ -3060,6 +3068,7 @@ def test_u35_af6_matched_badge_names_the_unchecked_check():
     # the audit and judgment lists use rowBadge; decided rows never read as code
     script = "\n".join([
         _grab_fn(js, "rowBadge"),
+        _grab_fn(js, "projectionComplete"), _grab_fn(js, "partialProjection"),
         _grab_fn(js, "reviewBucket"),
         _grab_fn(js, "projected"),
         _grab_fn(js, "reviewClass"),
@@ -3118,6 +3127,265 @@ def test_review_labels_wiring_pins():
     assert "calendarUndated" not in js
 
 
+def test_type_provenance_undo_and_refusal_pins():
+    # #52 follow-ups: type provenance (labels verbatim, values in plain words,
+    # never a raw id), D1 (Undo whenever the decision stack is non-empty under
+    # the projection — last_action tells), D3 (a refused report file prints the
+    # server's reason sentence, never 'No report is saved…')
+    js = (UI / "app.js").read_text()
+    for word in ("function plainTypeValue(v)", "function typeCategoryValue(t)",
+                 "function typePresentationPairs(t)", "EVENT_WORDS[v] !== undefined ? eventWord(v) : String(v)",
+                 "function reportRefusalReason(res)",
+                 "Rebuild the report to open it here.",
+                 "var canUndo = correctedOpen ||",
+                 "typeof t.last_action === 'string' && !!t.last_action",
+                 "return reportRefusalReason(r).then(function (reason)",
+                 "c.label === 'Date period found in quote' || c.label === 'Date wording present in quote'",
+                 "function shownDateText(t, row)",
+                 "function shownField(t, row, field)",
+                 "Object.prototype.hasOwnProperty.call(v, field)",
+                 "typeof t.date_display === 'string'",
+                 "'decision_label' in t",
+                 # RT item-30: every date-wording surface routes through the one
+                 # helper — calendar period label, span header, Past/Later and
+                 # latest-past lines included
+                 "var wording = shownDateText(r.t, r.row);",
+                 "htext = shownDateText(sample.t, sample.row);",
+                 "var written = shownDateText(r.t, r.row) || r.date;",
+                 "shownDateText(r.t, r.row) ||",
+                 "((r.t.values && r.t.values.date) || '') || 'Date not stated';"):
+        assert word in js, word
+    # D3: the refusal path must not fall through to the no-report sentence when
+    # a reason exists; the fallback only stands when there is no reason
+    assert "if (reason) {" in js
+    # type surfaces read the presentation when present
+    assert "typePresentationPairs(t)" in _grab_fn(js, "detailsPane")
+
+
+def test_shown_date_text_presence_beats_fallback():
+    # RED-2 (item-29 addendum): an explicit clear (present null/empty
+    # values.date_text) is never resurrected from the row's raw wording; only
+    # an absent key falls back
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    script = "\n".join([
+        _grab_fn(js, "shownField"),
+        _grab_fn(js, "shownDateText"),
+        "var row = { date_text: 'Q3 2027' };",
+        # absent key -> the row's wording
+        "if (shownDateText({}, row) !== 'Q3 2027') process.exit(2);",
+        "if (shownDateText({ values: {} }, row) !== 'Q3 2027') process.exit(3);",
+        # present value -> it wins
+        "if (shownDateText({ values: { date_text: 'early 2027' } }, row) !== 'early 2027') process.exit(4);",
+        # an explicit clear is a clear, never the raw wording
+        "if (shownDateText({ values: { date_text: '' } }, row) !== '') { console.error('clear resurrected'); process.exit(5); }",
+        "if (shownDateText({ values: { date_text: null } }, row) !== '') { console.error('null resurrected'); process.exit(6); }",
+        # pivot 07de86e: the fields live on the state TARGET — date_display
+        # wins when present; date_text_cleared marks a clear even plainer
+        # than an empty value
+        "var withDisplay = { date_display: 'Q1 2027 (Jan 1 – Mar 31, 2027)', values: { date_text: '' } };",
+        "if (shownDateText(withDisplay, row) !== 'Q1 2027 (Jan 1 – Mar 31, 2027)') process.exit(7);",
+        "var flagged = { date_text_cleared: true, values: { date_text: 'Q1 2027' } };",
+        "if (shownDateText(flagged, row) !== '') { console.error('cleared flag ignored'); process.exit(8); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_cleared_date_text_regression_addendum3():
+    # Addendum 3 regression: a person clears the date wording only (structured
+    # dates kept). Every effective-field lookup is presence-aware through ONE
+    # helper: the audit card, detail pane, Decide pane, period calendar and the
+    # Keep-as-stated prompt show the cleared state — and the posted Keep note
+    # carries no raw 'Q1 2027'.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket",
+             "rowBadge", "checkDot", "checkResultWord", "projected", "reviewClass", "fixStillOpen",
+             "needsAttention", "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows",
+             "mistakeFor", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
+             "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith",
+             "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText", "shownField",
+             "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane",
+             "disagreementSection", "whySection", "checksSection", "keptCurrent", "codeExclusionHistory", "projectionComplete", "partialProjection", "projectionComplete", "partialProjection")
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    script = "\n".join([
+        "var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed', unreadable: 'unreadable', undecided: 'undecided' };",
+        "var CHECK_WORDS = { pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed', unresolved: 'unresolved' };",
+        "var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };",
+        "var FIELD_WORDS = { date_text: 'Date as written', date: 'Date', event_type: 'Event type' };",
+        "var NO_ERROR = 'The value already passed its checks before the edit.';",
+        "var EVENT_WORDS = { filing: 'Filing' };",
+        "var judgmentSel = null; var route = { screen: 'judgment', rowId: null, dialog: null };",
+        "var posts = [];",
+        "function navigate() {}",
+        "function postDecision(id, body) { posts.push({ id: id, body: body }); }",
+        "function exclusionFor() { return null; }",
+        "function closeDialog() {}",
+        "function openDialog() {}",
+        "function seeTheCheck() { return { textContent: '', children: [] }; }",
+        "function fmtField(f, v) { return String(v); }",
+        "function bothReadersWord() { return 'The readers'; }",
+        "function toast() {}",
+        "function eventWord(t) { return EVENT_WORDS[t] || String(t); }",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, hidden: false,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  querySelector: function () { return null; } }; }",
+        "var nodes = {}; var sayRec = null;",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        fns,
+        # the row's raw wording is 'Q1 2027'; the person's clear left values.date_text = ''
+        "var row = { id: 'r1', title: 'ROW-CLEARED', ticker: 'ACME', proposed_by: 'Muse Spark',",
+        "  date_text: 'Q1 2027', date: '2027-03-12', date_end: '2027-06-30', quote: 'q', event_type: 'filing',",
+        "  checks: [], source_id: 's1', page_number: 1 };",
+        "var detail = { id: 'run', run: { rows: [row], mistakes: [], sources: [], run: { label: 'probe' } },",
+        "  state: { targets: { r1: { group: 'open', status: 'proposed', decided_by_person: false,",
+        "    needs_attention: true, needs_recheck: false, recheck: null,",
+        "    values: { date_text: '', date: '2027-03-12', date_end: '2027-06-30' },",
+        "    fixes: [], reason: null, disagreement: null } }, exclusions: [], mistake_list: [] } };",
+        "function textOf(node, out) { out = out || []; if (node && node.textContent) out.push(node.textContent);",
+        "  ((node && node.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        "renderJudgment();",
+        "var detTxt = textOf(nodes['judgment-det']);",
+        "if (detTxt.indexOf('Q1 2027') !== -1) { console.error('decide pane resurrected the clear: ' + detTxt.slice(0, 160)); process.exit(2); }",
+        "if (detTxt.indexOf('Keep as stated') === -1) { console.error('period prompt missing'); process.exit(3); }",
+        "var listTxt = textOf(nodes['judgment-rows']);",
+        "if (listTxt.indexOf('Q1 2027') !== -1) { console.error('list card resurrected the clear'); process.exit(4); }",
+        # the Keep-as-stated button posts a note with no raw wording
+        "var btns = [];",
+        "(function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'button') btns.push(c); walk(c); }); })(nodes['judgment-det']);",
+        "var kas = btns.filter(function (b) { return b.textContent === 'Keep as stated'; })[0];",
+        "if (!kas) { console.error('Keep as stated not offered for the period'); process.exit(5); }",
+        "kas.addEventListener ? null : null;",
+        "if (typeof kas.onclick !== 'function') { console.error('button has no click handler'); process.exit(6); }",
+        "kas.onclick();",
+        "if (!posts.length) { console.error('no decision posted'); process.exit(7); }",
+        "var note = posts[0].body.note || '';",
+        "if (note.indexOf('Q1 2027') !== -1) { console.error('note carries the raw wording: ' + note); process.exit(8); }",
+        "if (note.indexOf('the period') === -1) { console.error('note lost the period sense: ' + note); process.exit(9); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_type_provenance_values_and_labels():
+    # labels render as sent; a known id becomes its word; freeform reader
+    # wording passes through untouched; empty reads 'Not supplied'; without
+    # the projection every surface keeps its old wording
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    script = "\n".join([
+        "var EVENT_WORDS = { trial_results: 'Trial results', filing: 'Filing' };",
+        "function eventWord(t) { return EVENT_WORDS[t] || String(t); }",
+        _grab_fn(js, "plainTypeValue"),
+        _grab_fn(js, "typeCategoryValue"),
+        _grab_fn(js, "typePresentationPairs"),
+        # known id -> plain word
+        "if (plainTypeValue('trial_results') !== 'Trial results') process.exit(2);",
+        # freeform reader wording passes through verbatim (no title-casing)
+        "if (plainTypeValue('topline data talk') !== 'topline data talk') process.exit(3);",
+        # empty / missing -> 'Not supplied'
+        "if (plainTypeValue(null) !== 'Not supplied' || plainTypeValue('') !== 'Not supplied') process.exit(4);",
+        # category value alone
+        "var t = { type_presentation: { category: 'trial_results', category_label: 'Stored category',",
+        "  type_hint: null, type_hint_label: \"Reader's proposed type\" } };",
+        "if (typeCategoryValue(t) !== 'Trial results') process.exit(5);",
+        # both pairs, labels verbatim as the server sends them
+        "var pairs = typePresentationPairs(t);",
+        "if (pairs[0].join('|') !== 'Stored category|Trial results') { console.error(pairs[0]); process.exit(6); }",
+        "if (pairs[1].join('|') !== \"Reader's proposed type|Not supplied\") { console.error(pairs[1]); process.exit(7); }",
+        # legacy keyword label renders as sent
+        "var leg = { type_presentation: { category: 'trial_results', category_label: 'Category (from old keyword rule)',",
+        "  type_hint: 'topline data talk', type_hint_label: \"Reader's proposed type\" } };",
+        "if (typePresentationPairs(leg)[0][0] !== 'Category (from old keyword rule)') process.exit(8);",
+        "if (typePresentationPairs(leg)[1][1] !== 'topline data talk') process.exit(9);",
+        # no presentation -> null, the caller keeps the old wording
+        "if (typeCategoryValue({}) !== null || typePresentationPairs({}) !== null) process.exit(10);",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_report_refusal_prints_the_servers_reason():
+    # D3: a refused HEAD (unverified against the run state) carries the
+    # server's reason — that sentence plus the rebuild hint is shown; a refusal
+    # without a reason keeps the old honest fallback
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("currentRunId", "reportUrl", "reportRefusalReason", "reportFileNames", "rowTarget",
+                     "reviewAcceptedCount", "reviewAxis", "renderExport"))
+    script = "\n".join([
+        "function el(tag, cls, text) { return { tag: tag, className: cls || '', textContent: text || '', children: [], style: {},",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "function clear(n) { n.textContent = ''; n.children = []; return n; }",
+        "var nodes = {};",
+        "global.document = { getElementById: function (id) { if (!nodes[id]) nodes[id] = el('div'); return nodes[id]; } };",
+        "var current = 'run-x';",
+        "function money(v) { return '$' + v; } function unpricedMark() { return ''; }",
+        "var detail = { run: { run: { number: 2, label: 'probe', spend_usd: null }, report_stale: false,",
+        "  report_stale_reason: null },",
+        "  state: { cost_per_kept_row_usd: null, counts: { rows: {} }, unresolved: 0,",
+        "    mistakes: { code: 0, second_reader: 0, person: 0 }, excluded: { code: 0, person: 0 } } };",
+        "var GROUP_ORDER = [], GROUP_NAMES = {};",
+        "var REFUSAL = 'This saved report is not verified against the current run state.';",
+        "var STALE = 'Saved report is out of date. Rebuild it to show the current results.';",
+        "var mode = 'reason';",
+        "global.fetch = function () {",
+        "  if (mode === 'ok') return Promise.resolve({ ok: true, status: 200, headers: { get: function () { return null; } } });",
+        "  if (mode === 'reason') return Promise.resolve({ ok: false, status: 404,",
+        "    headers: { get: function (h) { return h === 'x-report-reason' ? REFUSAL : null; } },",
+        "    json: function () { return Promise.reject(new Error('HEAD has no body')); } });",
+        "  if (mode === 'stale') return Promise.resolve({ ok: false, status: 404,",
+        "    headers: { get: function (h) { return h === 'x-report-reason' ? STALE : null; } },",
+        "    json: function () { return Promise.reject(new Error('no body')); } });",
+        "  return Promise.resolve({ ok: false, status: 404, headers: { get: function () { return null; } },",
+        "    json: function () { return Promise.reject(new Error('no body')); } });",
+        "};",
+        "function textOf(n, out) { out = out || []; if (n.textContent) out.push(n.textContent);",
+        "  (n.children || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        fns,
+        "renderExport();",
+        "setTimeout(function () {",
+        "  var t1 = textOf(nodes['exp-mid']);",
+        "  if (t1.indexOf(REFUSAL) === -1) { console.error('reason missing: ' + t1.slice(0, 200)); process.exit(2); }",
+        "  if (t1.indexOf('Rebuild the report to open it here.') === -1) { console.error('hint missing'); process.exit(3); }",
+        "  if (t1.indexOf('No report is saved for this run yet.') !== -1) { console.error('wrong sentence shown'); process.exit(4); }",
+        "  mode = 'stale';",
+        "  renderExport();",
+        "  setTimeout(function () {",
+        "    var ts = textOf(nodes['exp-mid']);",
+        "    if (ts.indexOf(STALE) === -1) { console.error('stale sentence missing'); process.exit(7); }",
+        "    if (ts.indexOf('Rebuild the report to open it here.') !== -1) { console.error('doubled rebuild hint'); process.exit(8); }",
+        "    mode = 'bare';",
+        "    renderExport();",
+        "    setTimeout(function () {",
+        "      var t2 = textOf(nodes['exp-mid']);",
+        "      if (t2.indexOf('No report is saved for this run yet.') === -1) { console.error('fallback lost'); process.exit(5); }",
+        "      mode = 'ok';",
+        "      renderExport();",
+        "      setTimeout(function () {",
+        "        var t3 = textOf(nodes['exp-mid']);",
+        "        if (t3.indexOf('Open') === -1) { console.error('open link missing'); process.exit(6); }",
+        "        console.log('ok');",
+        "      }, 0);",
+        "    }, 0);",
+        "  }, 0);",
+        "}, 0);",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
 def test_review_labels_badge_and_decided_words():
     # The badge shows the projection's review_label with the bucket's colour;
     # a superseded Keep reads as history — never 'Kept by you', never green.
@@ -3128,7 +3396,7 @@ def test_review_labels_badge_and_decided_words():
     script = "\n".join([
         _grab_fn(js, n) for n in ("reviewBucket", "projected", "reviewClass", "rowBadge", "decidedWord",
                                   "decidedBadge", "keptCurrent", "decidedMark", "reviewAcceptedCount",
-                                  "needsAttention", "fixStillOpen")
+                                  "needsAttention", "fixStillOpen", "projectionComplete", "partialProjection")
     ] + [
         "var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };",
         "var STATUS_WORDS = { matched: 'matched', failed: 'failed', proposed: 'proposed',"
@@ -3136,12 +3404,12 @@ def test_review_labels_badge_and_decided_words():
         "function el(tag, cls, text) { return { tag: tag, className: cls, textContent: text || '', title: '' }; }",
         "function statusBadge(s) { return el('span', 'st st-' + s, STATUS_WORDS[s]); }",
         "function fail(n, m) { console.error(n + ': ' + m); process.exit(n); }",
-        "var acc = { group: 'kept', decided_by_person: true, last_action: 'keep', accepted: true, needs_attention: false,",
+        "var acc = { group: 'kept', decided_by_person: true, last_action: 'keep', accepted: true, needs_attention: false, on_calendar: true,",
         "  review_bucket: 'accepted', review_label: 'Accepted by you', decision_label: 'Kept by you' };",
         "var b = rowBadge({}, acc);",
         "if (b.textContent !== 'Accepted by you' || b.className !== 'st st-kept') fail(2, b.textContent + b.className);",
         "if (decidedWord(acc, 'x') !== 'Kept by you') fail(3, decidedWord(acc, 'x'));",
-        "var stale = { group: 'kept', decided_by_person: true, last_action: 'keep', accepted: false, needs_attention: true,",
+        "var stale = { group: 'kept', decided_by_person: true, last_action: 'keep', accepted: false, needs_attention: true, on_calendar: false,",
         "  review_bucket: 'proposed', review_label: 'Previous Keep — needs your review',",
         "  decision_label: 'Previous Keep — needs your review' };",
         "var sb = rowBadge({}, stale), sd = decidedBadge(stale);",
@@ -3152,13 +3420,13 @@ def test_review_labels_badge_and_decided_words():
         "if (fixStillOpen(stale) !== false) fail(7, 'stale reads as a fix');",
         # F5: no doubled 'decided by you' when the label already names the person
         "if (decidedMark(stale) || decidedMark(acc)) fail(8, 'doubled decided by you');",
-        "var fix = { group: 'corrected', decided_by_person: true, last_action: 'fix', accepted: false,",
+        "var fix = { group: 'corrected', decided_by_person: true, last_action: 'fix', accepted: false, on_calendar: false,",
         "  needs_attention: true, review_bucket: 'proposed', review_label: 'Corrected, awaiting your review',",
         "  decision_label: 'Fixed by you — not yet accepted' };",
         "if (decidedMark(fix)) fail(9, 'doubled on a fix');",
         "if (fixStillOpen(fix) !== true) fail(10, 'fix not open');",
         # F7: projection present, decision_label null — review_label, never group words
-        "var f7 = { group: 'removed', decided_by_person: true, last_action: 'undo', accepted: false,",
+        "var f7 = { group: 'removed', decided_by_person: true, last_action: 'undo', accepted: false, on_calendar: false,",
         "  needs_attention: false, review_bucket: 'excluded', review_label: 'Excluded', decision_label: null };",
         "if (decidedWord(f7, 'x') !== 'Excluded') fail(11, decidedWord(f7, 'x'));",
         "if (decidedBadge(f7).className !== 'st st-removed') fail(12, decidedBadge(f7).className);",
@@ -3238,8 +3506,9 @@ if (!/global\.__H/.test(src)) throw new Error('no boot hook');
 eval(src);
 const H = global.__H;
 const proj = shape === 'proj';
+const projLabel = 'Date period found in quote';
 // the date check: the pivot's label on the projected payload, main's label otherwise
-const dateCheck = { name: 'date_match', label: proj ? 'Date wording present in quote' : 'Date read as written', result: 'pass' };
+const dateCheck = { name: 'date_match', label: proj ? projLabel : 'Date read as written', result: 'pass' };
 function row(id, title, extra) {
   return Object.assign({ id, title, ticker: 'ACME', proposed_by: 'Muse Spark',
     checks: [{ name: 'quote_found', label: 'Quote found', result: 'pass' }, dateCheck],
@@ -3326,8 +3595,116 @@ for (const r of rows) {
 console.log(JSON.stringify(out, null, 1));
 """
 
-# sha256 of the main-shaped render by main's own app.js (746385f; ui/ is
-# unchanged on main since): without the projection the render is main's.
+# sha256 of the main-shaped render: byte-identical to main's own render (RT
+# addition c — the 'Not stated' wording appears only when the projection is
+# present). Re-verified by diffing both renders surface by surface.
+_ITEM30_RENDER_JS = r"""// T1 (pr157 review) render probe: the real app.js under a stub DOM against
+// server-shaped payloads — cleared date wording, a partial projection, an
+// edited type on the trail. One shape per call.
+const fs = require('fs');
+const [, , appPath, shape] = process.argv;
+function make(tag) {
+  return { tag, className: '', textContent: '', children: [], style: {}, hidden: false, value: '', dataset: {},
+    classList: { toggle() {}, add() {}, remove() {}, contains() { return false; } },
+    append(...a) { for (const c of a) this.children.push(typeof c === 'string' ? { textContent: c, children: [] } : c); },
+    appendChild(c) { this.children.push(c); return c; }, prepend(...a) { this.children.unshift(...a); },
+    addEventListener(ev, fn) { this['on' + ev] = fn; }, removeEventListener() {},
+    setAttribute(k, v) { this[k] = v; }, getAttribute() { return null; },
+    querySelector() { return null; }, querySelectorAll() { return []; }, focus() {}, scrollIntoView() {}, remove() {},
+    getBoundingClientRect() { return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }; },
+    set innerHTML(v) { this.children = []; this._html = v; }, get innerHTML() { return this._html || ''; },
+    firstChild: null };
+}
+const nodes = {};
+global.document = { createElement: make, createTextNode: t => ({ textContent: String(t), children: [] }),
+  getElementById: id => (nodes[id] = nodes[id] || make('div')), querySelector: () => null, querySelectorAll: () => [],
+  addEventListener() {}, body: make('body'), documentElement: make('html'), title: '' };
+global.window = { addEventListener() {}, location: { hash: '' }, matchMedia: () => ({ matches: false, addEventListener() {} }),
+  setTimeout, history: { replaceState() {}, pushState() {} }, getComputedStyle: () => ({}) };
+global.location = window.location; global.history = window.history;
+global.localStorage = { getItem() { return null; }, setItem() {} };
+global.fetch = () => new Promise(() => {});
+global.requestAnimationFrame = () => 0;
+let src = fs.readFileSync(appPath, 'utf8');
+src = src.replace(/route = parseHash\(\);\s*boot\(\);\s*\}\)\(\);\s*$/,
+  'global.__H = { get detail(){return detail;}, set detail(v){detail=v;}, ev: function(s){ return eval(s); } };\n})();');
+if (!/global\.__H/.test(src)) throw new Error('no boot hook');
+eval(src);
+const H = global.__H;
+function textOf(n, out) { out = out || []; if (!n) return out; if (n.textContent) out.push(n.textContent); (n.children || []).forEach(c => textOf(c, out)); return out; }
+function cls(n, out) { out = out || []; if (!n) return out; if (n.className && /\bst\b/.test(n.className)) out.push(n.className + ' :: ' + n.textContent); (n.children || []).forEach(c => cls(c, out)); return out; }
+function mkRow(id, title, extra) {
+  return Object.assign({ id, title, ticker: 'ACME', proposed_by: 'Muse Spark', checks: [],
+    date_text: 'Q1 2027', date: '2027-03-12', date_end: '2027-06-30', event_type: 'filing', quote: 'q',
+    source_id: 's1', page_number: 1 }, extra || {});
+}
+let rows, targets, calendar;
+const base = { status: 'matched', needs_recheck: false, recheck: null, fixes: [], reason: null, disagreement: null };
+if (shape === 'cleared') {
+  // the person cleared the date wording only; the structured period stays
+  rows = [mkRow('r-empty', 'CLEARED-EMPTY', {}), mkRow('r-null', 'CLEARED-NULL', {})];
+  targets = {
+    'r-empty': Object.assign({}, base, { group: 'kept', decided_by_person: false, values: { date_text: '', date: '2027-03-12', date_end: '2027-06-30' }, on_calendar: true }),
+    'r-null': Object.assign({}, base, { group: 'kept', decided_by_person: false, values: { date_text: null, date: '2027-03-12', date_end: '2027-06-30' }, on_calendar: true }),
+  };
+  calendar = { calendar: [{ id: 'r-empty' }, { id: 'r-null' }], past: [], later: [], undated: [], timing_unresolved: [], contingent: [] };
+} else if (shape === 'partial') {
+  // H3: some projection fields but not all — needs review, never kept/accepted/calendar
+  rows = [mkRow('r-part', 'PARTIAL', {}), mkRow('r-ok', 'COMPLETE', {}), mkRow('r-pc', 'PARTIAL-CORRECTED', {})];
+  targets = {
+    'r-part': Object.assign({}, base, { group: 'kept', decided_by_person: true, last_action: 'keep',
+      review_label: 'Accepted by you', accepted: true, values: { date_text: 'Q1 2027', date: '2027-03-12', date_end: '2027-06-30' }, on_calendar: true }),
+    'r-ok': Object.assign({}, base, { group: 'kept', decided_by_person: true, last_action: 'keep',
+      review_label: 'Accepted by you', decision_label: 'Kept by you', review_bucket: 'accepted',
+      accepted: true, on_calendar: true, needs_attention: false, values: { date_text: 'Q1 2027', date: '2027-03-12', date_end: '2027-06-30' } }),
+    // a partial row in the corrected group: never 'Fixed by you' anywhere
+    'r-pc': Object.assign({}, base, { group: 'corrected', decided_by_person: true, last_action: 'fix',
+      review_label: 'Corrected, awaiting your review', needs_attention: true,
+      values: { date_text: 'Q3 2027', date: null, date_end: null } }),
+  };
+  calendar = { calendar: [{ id: 'r-ok' }], past: [], later: [], undated: [], timing_unresolved: [], contingent: [] };
+} else if (shape === 'edited-type') {
+  // H1: the reader proposed trial_readout; the person fixed it to filing —
+  // the trail proposal sentence quotes the READER, not the current value
+  rows = [mkRow('r-ed', 'EDITED-TYPE', { event_type: 'trial_readout' })];
+  targets = { 'r-ed': Object.assign({}, base, { group: 'corrected', decided_by_person: true, last_action: 'fix',
+    fixes: [{ field: 'event_type', from: 'trial_readout', to: 'filing', mistake: false, recheck: { result: 'pass' } }],
+    values: { event_type: 'filing', date_text: 'Q3 2027', date: null, date_end: null },
+    type_presentation: { category: 'filing', category_label: 'Category edited by you',
+      type_hint: null, type_hint_label: "Reader's proposed type" } }) };
+  calendar = { calendar: [], past: [], later: [], undated: [], timing_unresolved: [], contingent: [] };
+} else { throw new Error('unknown shape ' + shape); }
+const groups = { kept: 0, corrected: 0, removed: 0, unverified: 0, open: 0 };
+for (const k in targets) groups[targets[k].group]++;
+const counts = { rows: groups, cells: {}, fixes_pending: 0, edits_without_error: 0, excluded_by_person: 0 };
+H.detail = { id: 'run1',
+  run: { rows, calendar_partition: calendar, calendar_window: { start: '2026-10-01' }, run: { id: 'run1', label: 'probe', started: '2026-10-01T00:00:00Z' },
+    sources: [{ id: 's1', kind: 'pdf', title: 'S', publisher: 'P' }], mistakes: [], tables: [] },
+  state: { targets, counts, mistakes: { code: 0, second_reader: 0, person: 0 }, mistake_list: [],
+    excluded: { code: 0, person: 0 }, exclusions: [], unresolved: 0, ignored: [], kept_rows: 0,
+    cost_per_kept_row_usd: null } };
+function money(v) { return '$' + v; }
+function unpricedMark() { return ''; }
+function reportFileNames() { return []; }
+H.ev("route = { screen: 'audit', runId: 'run1', rowId: null, dialog: null }");
+const out = {};
+function run(name, fn, nodeId) {
+  try { const r = fn(); const n = nodeId ? nodes[nodeId] : r; out[name] = { text: textOf(n), badges: cls(n) }; }
+  catch (e) { out[name] = 'ERR ' + e.message.split('\n')[0]; }
+  finally { if (nodeId) delete nodes[nodeId]; }
+}
+run('calendar', () => H.ev('renderCalendar()'), 'cal-mid');
+run('export', () => H.ev('renderExport()'), 'exp-det');
+run('auditRows_ALL', () => { H.ev("audit.filter='ALL'; audit.selected=null"); H.ev('renderAuditRows()'); }, 'audit-rows');
+run('judgment_rows', () => H.ev('renderJudgment()'), 'judgment-rows');
+run('facets', () => H.ev('renderAuditFacets()'), 'audit-facets');
+for (const r of rows) {
+  run('pane_' + r.id, () => { const host = make('div'); H.ev('detailsPane')(host, H.ev('rowOf')(r.id), { actions: true, back: 'audit' }); return host; });
+  run('trail_' + r.id, () => { const row = H.ev('rowOf')(r.id); const txt = H.ev('plainProposal')(row, H.ev('rowTarget')(row), { step: 'Proposed', tag: 'Model' }); const n = make('div'); n.textContent = txt; return n; });
+}
+console.log(JSON.stringify(out, null, 1));
+"""
+
 _MAIN_SHAPED_RENDER_SHA256 = "b717638e8ab733f9dccb9a47e6431d38eb99c52512de81dac3b4d375c540cacb"
 
 
@@ -3341,6 +3718,335 @@ def _review_render(tmp_path, shape):
                          text=True, capture_output=True, timeout=60)
     assert got.returncode == 0, got.stderr
     return got.stdout, json.loads(got.stdout)
+
+
+def _item30_render(tmp_path, shape):
+    import json
+    import subprocess
+
+    script = tmp_path / "item30.js"
+    script.write_text(_ITEM30_RENDER_JS)
+    got = subprocess.run(["node", str(script), str(UI / "app.js"), shape],
+                         text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stderr
+    return json.loads(got.stdout)
+
+
+def test_t1_cleared_date_text_renders_cleared_on_calendar_and_trail(tmp_path):
+    # T1/H2: a cleared date_text (null AND '') renders as cleared on every
+    # surface — calendar, audit list, judgment list, panes and the trail
+    # proposal sentence never resurrect the raw 'Q1 2027'
+    out = _item30_render(tmp_path, "cleared")
+    for name, v in out.items():
+        assert not isinstance(v, str), (name, v)
+    for surface in ("calendar", "auditRows_ALL", "judgment_rows", "trail_r-empty", "trail_r-null",
+                    "pane_r-empty", "pane_r-null"):
+        text = " ".join(out[surface]["text"])
+        assert "Q1 2027" not in text, (surface, text[:200])
+    # the structured period still places the row on the calendar (no invented
+    # wording, the period dates kept); the two identical cleared rows fold
+    cal = " ".join(out["calendar"]["text"])
+    assert "CLEARED-EMPTY" in cal and "2 sources" in cal, cal[:200]
+    # RT(c): 'Not stated' appears only under the projection — these cleared
+    # rows carry no projection fields, so the pane shows the cleared display
+
+
+def test_t1_partial_projection_needs_review_not_kept(tmp_path):
+    # T1/H3: a row with some projection fields but not all is listed as needs
+    # review — never kept/accepted, never on the calendar, never green
+    out = _item30_render(tmp_path, "partial")
+    for name, v in out.items():
+        assert not isinstance(v, str), (name, v)
+    audit = " ".join(out["auditRows_ALL"]["text"])
+    # the partial rows sit under the proposed heading, the complete one under kept
+    assert "Proposed — needs review · 2" in audit, audit[:300]
+    assert "Checked and kept · 1" in audit, audit[:300]
+    assert "PARTIAL" in " ".join(out["judgment_rows"]["text"])
+    # H5: needs review on the badge, the decided word and the pane — no
+    # kept/accepted words, no green, and never the fix pane
+    for surface in ("pane_r-part",):
+        text = " ".join(out[surface]["text"])
+        for word in ("Kept by you", "Accepted by you"):
+            assert word not in text, (surface, word)
+        assert "Needs review" in text, (surface, text[:200])
+        assert not any(b.startswith("st st-kept ") for b in out[surface]["badges"]), out[surface]["badges"]
+    jtext = " ".join(out["judgment_rows"]["text"])
+    jbadge = " ".join(b for b in out["judgment_rows"]["badges"])
+    assert "Kept by you" not in jbadge and "Needs review" in jbadge, jbadge
+    assert "still open" not in jtext, jtext[:200]
+    # RT(a): the export summary uses the same viewGroup counts as the strip
+    # even with no counts.review — kept 1, one proposed line, total adds up
+    exp = " ".join(out["export"]["text"])
+    assert "Checked and kept 1" in exp, exp[:300]
+    assert "Proposed — needs review 2" in exp, exp[:300]
+    assert "Checked and kept 2" not in exp, exp[:300]
+    # RT(b): a partial CORRECTED row never reads 'Fixed by you' — not on the
+    # audit-list badge, not in the pane's corrected section
+    pc_text = " ".join(out["pane_r-pc"]["text"])
+    assert "Fixed by you" not in pc_text, pc_text[:200]
+    assert "Needs review" in pc_text, pc_text[:200]
+    pc_badges = " ".join(out["auditRows_ALL"]["badges"])
+    all_badge_needs = [b for b in out["auditRows_ALL"]["badges"] if "Needs review" in b]
+    assert all(b.startswith("st st-corrected open") for b in all_badge_needs), all_badge_needs
+    # the calendar carries only the complete row
+    cal = " ".join(out["calendar"]["text"])
+    assert "COMPLETE" in cal and "PARTIAL" not in cal, cal[:200]
+
+
+def test_t1_edited_type_trail_quotes_the_reader(tmp_path):
+    # T1/H1: the trail's proposal sentence credits the READER's proposal — a
+    # person's later type edit never replaces it ('Trial results', not 'Filing')
+    out = _item30_render(tmp_path, "edited-type")
+    for name, v in out.items():
+        assert not isinstance(v, str), (name, v)
+    trail = " ".join(out["trail_r-ed"]["text"])
+    assert "Trial results" in trail, trail[:200]
+    assert trail.index("Trial results") < trail.index("·"), trail
+    assert not trail.startswith("Filing"), trail
+    # the DETAIL pane still names the person's edit (type provenance)
+    pane = " ".join(out["pane_r-ed"]["text"])
+    assert "Category edited by you" in pane and "Filing" in pane, pane[:240]
+
+
+def test_h4_real_state_payload_shows_the_server_display_after_a_clear(tmp_path):
+    # H4: never a hand-built shape — the payload comes from the REAL state
+    # machine (current_state over a run doc, with a person's clear of the date
+    # wording applied through the decision pipeline), and date_display /
+    # date_text_cleared are attached by the server's own functions, verbatim
+    # from codex/pivot-001 runs/calendar.py (runs/state.py:577-578). Rendered
+    # through the real app.js: every surface shows the server display.
+    import calendar as _calendar
+    import json
+    import subprocess
+    from datetime import date as _date
+
+    from runs.state import current_state
+
+    # --- the server's own display functions, verbatim (codex/pivot-001
+    # runs/calendar.py) — the new fields the state target carries ---
+    def period_word(start, end):
+        try:
+            a, b = _date.fromisoformat(start), _date.fromisoformat(end)
+        except (TypeError, ValueError):
+            return None
+        if a.year != b.year or a.day != 1 or b.day != _calendar.monthrange(b.year, b.month)[1]:
+            return None
+        months = (a.month, b.month)
+        if a.month == b.month:
+            return f"{_calendar.month_name[a.month]} {a.year}"
+        if months == (1, 12):
+            return str(a.year)
+        if months in ((1, 6), (7, 12)):
+            return f"H{1 if a.month == 1 else 2} {a.year}"
+        if b.month - a.month == 2 and a.month % 3 == 1:
+            return f"Q{a.month // 3 + 1} {a.year}"
+        return None
+
+    def period_display(start, end):
+        if not start:
+            return end
+        span = f"{start} to {end}"
+        word = period_word(start, end)
+        return f"{word} ({span})" if word else span
+
+    def stated_date_display(values):
+        text = (values.get("date_text") or "").strip()
+        if values.get("date_end"):
+            return text or period_display(values.get("date"), values["date_end"])
+        if text:
+            return text
+        return values.get("date") or "—"
+
+    def effective_date_display(values, timing):
+        shown = stated_date_display(values)
+        if shown != "—":
+            return shown
+        return "Timing unresolved" if timing == "timing_unresolved" else "Undated · no timing stated"
+
+    def date_text_cleared(values, fixes):
+        return (values.get("date_text") in (None, "")
+                and any(fx.get("field") == "date_text" for fx in fixes or []))
+
+    # the real state machine over a run doc: a period row, then the person
+    # clears the date wording, keeping the structured period
+    run = {"run": {"id": "run1", "label": "probe"}, "rows": [{
+        "id": "r1", "ticker": "ACME", "company": "Acme", "title": "Period row",
+        "proposed_by": "Muse Spark", "event_type": "filing", "quote": "q",
+        "source_id": "s1", "page_number": 1, "checks": [],
+        "date_text": "Q1 2027", "date": "2027-01-01", "date_end": "2027-03-31"}],
+        "sources": [{"id": "s1", "kind": "pdf", "title": "S", "publisher": "P"}],
+        "mistakes": [], "tables": []}
+    clear_fix = {"at": "2026-11-01T00:00:00Z", "target": "r1", "action": "fix", "by": "person",
+                 "note": None, "fix": {"field": "date_text", "from": "Q1 2027", "to": ""}}
+    st = current_state(run, [clear_fix])
+    t = st["targets"]["r1"]
+    # the server's three lines (runs/state.py:577-578)
+    t["date_display"] = effective_date_display(t["values"], st["targets"]["r1"].get("timing_state"))
+    t["date_text_cleared"] = date_text_cleared(t["values"], t.get("fixes"))
+    assert t["date_text_cleared"] is True
+    assert t["date_display"] == "Q1 2027 (2027-01-01 to 2027-03-31)", t["date_display"]
+
+    # render through the real app.js (the item-30 probe style)
+    payload = {"rows": run["rows"], "targets": st["targets"],
+               "calendar": [{"id": "r1"}], "groups": {}}
+    payload_path = tmp_path / "payload.json"
+    payload_path.write_text(json.dumps(payload))
+    script = tmp_path / "realpay.js"
+    script.write_text(_REALPAY_RENDER_JS)
+    got = subprocess.run(["node", str(script), str(UI / "app.js"), str(payload_path)],
+                         text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stderr
+    out = json.loads(got.stdout)
+    for name, v in out.items():
+        assert not isinstance(v, str), (name, v)
+    display = "Q1 2027 (2027-01-01 to 2027-03-31)"
+    # the calendar is not in this list on purpose: the real state machine keeps
+    # an unaccepted fix off the calendar (on_calendar False) — the calendar
+    # surface for a cleared row is covered by the t1_cleared render test
+    for surface in ("auditRows_ALL", "judgment_rows", "trail_r1", "pane_r1"):
+        text = " ".join(out[surface]["text"])
+        assert display in text, (surface, text[:220])
+    # no invented ISO day on its own and no undated/unresolved wording
+    alltext = " ".join(" ".join(v["text"]) for v in out.values())
+    assert "Undated" not in alltext and "no timing stated" not in alltext
+    assert "Q1 2027" in alltext  # as part of the display, never the bare raw wording
+    # L4: the trail wears the server's date_display alone — no local day-span
+    # suffix, no ISO dates, no doubled display
+    trail = " ".join(out["trail_r1"]["text"])
+    assert trail.count("Q1 2027 (2027-01-01 to 2027-03-31)") == 1, trail
+    assert "1 Jan" not in trail and "31 Mar" not in trail, trail
+
+
+_REALPAY_RENDER_JS = r"""// H4 real-payload probe: render the state-machine payload through the real
+// app.js under a stub DOM. Payload: rows/targets/calendar from argv[3].
+const fs = require('fs');
+const [, , appPath, payloadPath] = process.argv;
+const payload = JSON.parse(fs.readFileSync(payloadPath, 'utf8'));
+function make(tag) {
+  return { tag, className: '', textContent: '', children: [], style: {}, hidden: false, value: '', dataset: {},
+    classList: { toggle() {}, add() {}, remove() {}, contains() { return false; } },
+    append(...a) { for (const c of a) this.children.push(typeof c === 'string' ? { textContent: c, children: [] } : c); },
+    appendChild(c) { this.children.push(c); return c; }, prepend(...a) { this.children.unshift(...a); },
+    addEventListener() {}, removeEventListener() {}, setAttribute(k, v) { this[k] = v; }, getAttribute() { return null; },
+    querySelector() { return null; }, querySelectorAll() { return []; }, focus() {}, scrollIntoView() {}, remove() {},
+    getBoundingClientRect() { return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }; },
+    set innerHTML(v) { this.children = []; this._html = v; }, get innerHTML() { return this._html || ''; },
+    firstChild: null };
+}
+const nodes = {};
+global.document = { createElement: make, createTextNode: t => ({ textContent: String(t), children: [] }),
+  getElementById: id => (nodes[id] = nodes[id] || make('div')), querySelector: () => null, querySelectorAll: () => [],
+  addEventListener() {}, body: make('body'), documentElement: make('html'), title: '' };
+global.window = { addEventListener() {}, location: { hash: '' }, matchMedia: () => ({ matches: false, addEventListener() {} }),
+  setTimeout, history: { replaceState() {}, pushState() {} }, getComputedStyle: () => ({}) };
+global.location = window.location; global.history = window.history;
+global.localStorage = { getItem() { return null; }, setItem() {} };
+global.fetch = () => new Promise(() => {});
+global.requestAnimationFrame = () => 0;
+let src = fs.readFileSync(appPath, 'utf8');
+src = src.replace(/route = parseHash\(\);\s*boot\(\);\s*\}\)\(\);\s*$/,
+  'global.__H = { get detail(){return detail;}, set detail(v){detail=v;}, ev: function(s){ return eval(s); } };\n})();');
+if (!/global\.__H/.test(src)) throw new Error('no boot hook');
+eval(src);
+const H = global.__H;
+function textOf(n, out) { out = out || []; if (!n) return out; if (n.textContent) out.push(n.textContent); (n.children || []).forEach(c => textOf(c, out)); return out; }
+const targets = payload.targets;
+const groups = { kept: 0, corrected: 0, removed: 0, unverified: 0, open: 0 };
+for (const k in targets) { const g = targets[k].group; if (g in groups) groups[g] += 1; }
+H.detail = { id: 'run1',
+  run: { rows: payload.rows, calendar_partition: { calendar: payload.calendar, past: [], later: [], undated: [], timing_unresolved: [], contingent: [] },
+    calendar_window: { start: '2026-10-01' }, run: { id: 'run1', label: 'probe', started: '2026-10-01T00:00:00Z' },
+    sources: [{ id: 's1', kind: 'pdf', title: 'S', publisher: 'P' }], mistakes: [], tables: [] },
+  state: { targets, counts: { rows: groups, cells: {}, fixes_pending: 0, edits_without_error: 0, excluded_by_person: 0 },
+    mistakes: { code: 0, second_reader: 0, person: 0 }, mistake_list: [], excluded: { code: 0, person: 0 },
+    exclusions: [], unresolved: 0, ignored: [], kept_rows: 0, cost_per_kept_row_usd: null } };
+H.ev("route = { screen: 'audit', runId: 'run1', rowId: null, dialog: null }");
+const out = {};
+function run(name, fn, nodeId) {
+  try { const r = fn(); const n = nodeId ? nodes[nodeId] : r; out[name] = { text: textOf(n) }; }
+  catch (e) { out[name] = 'ERR ' + e.message.split('\n')[0]; }
+  finally { if (nodeId) delete nodes[nodeId]; }
+}
+run('calendar', () => H.ev('renderCalendar()'), 'cal-mid');
+run('auditRows_ALL', () => { H.ev("audit.filter='ALL'; audit.selected=null"); H.ev('renderAuditRows()'); }, 'audit-rows');
+run('judgment_rows', () => H.ev('renderJudgment()'), 'judgment-rows');
+const row = payload.rows[0];
+run('trail_r1', () => { const txt = H.ev('plainProposal')(H.ev('rowOf')('r1'), H.ev('rowTarget')(row), {}); const n = make('div'); n.textContent = txt; return n; });
+run('pane_r1', () => { const host = make('div'); H.ev('detailsPane')(host, H.ev('rowOf')('r1'), { actions: true, back: 'audit' }); return host; });
+console.log(JSON.stringify(out, null, 1));
+"""
+
+
+def test_m1_undo_click_posts_the_undo(tmp_path):
+    # M1/D1: a superseded Keep offers Undo; clicking it posts the API undo —
+    # target, action undo, no note
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    script = (Path(__file__).parent / "item30.js")
+    names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket",
+             "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
+             "reviewClass", "fixStillOpen", "needsAttention", "effectiveChecks", "rowTarget", "rowOf",
+             "unresolvedRows", "decidedRows", "mistakeFor", "judgmentRow", "correctedSection", "checksSection",
+             "judgmentPendingPane", "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay",
+             "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText",
+             "shownField", "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane",
+             "disagreementSection", "whySection", "keptCurrent", "codeExclusionHistory", "projectionComplete", "partialProjection", "projectionComplete", "partialProjection")
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    harness = "\n".join([
+        "var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed', unreadable: 'unreadable', undecided: 'undecided' };",
+        "var CHECK_WORDS = { pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed', unresolved: 'unresolved' };",
+        "var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };",
+        "var FIELD_WORDS = { date_text: 'Date as written', date: 'Date', event_type: 'Event type' };",
+        "var NO_ERROR = 'The value already passed its checks before the edit.';",
+        "var EVENT_WORDS = { filing: 'Filing' };",
+        "var judgmentSel = null; var route = { screen: 'judgment', rowId: null, dialog: null };",
+        "var posts = [];",
+        "function navigate() {}",
+        "function postDecision(id, body) { posts.push({ id: id, body: body }); }",
+        "function exclusionFor() { return null; }",
+        "function closeDialog() {}",
+        "function openDialog() {}",
+        "function seeTheCheck() { return { textContent: '', children: [] }; }",
+        "function fmtField(f, v) { return String(v); }",
+        "function bothReadersWord() { return 'The readers'; }",
+        "function toast() {}",
+        "function eventWord(t) { return EVENT_WORDS[t] || String(t); }",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, hidden: false,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  querySelector: function () { return null; } }; }",
+        "var nodes = {}; var sayRec = null;",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        fns,
+        "var row = { id: 'r-stale', title: 'STALE', ticker: 'ACME', proposed_by: 'Muse Spark', checks: [],",
+        "  date_text: 'Q3 2027', date: null, event_type: 'filing', quote: 'q', source_id: 's1', page_number: 1 };",
+        # the superseded Keep: person's keep, projection says proposed
+        "var detail = { id: 'run', run: { rows: [row], mistakes: [], sources: [], run: { label: 'probe' } },",
+        "  state: { targets: { 'r-stale': { group: 'kept', status: 'matched', decided_by_person: true,",
+        "    last_action: 'keep', needs_attention: true, needs_recheck: false, recheck: null,",
+        "    review_label: 'Previous Keep — needs your review', decision_label: 'Previous Keep — needs your review',",
+        "    review_bucket: 'proposed', accepted: false, on_calendar: false,",
+        "    values: { date_text: 'Q3 2027' }, fixes: [], reason: null, disagreement: null } },",
+        "    exclusions: [], mistake_list: [] } };",
+        "function textOf(node, out) { out = out || []; if (node && node.textContent) out.push(node.textContent);",
+        "  ((node && node.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        "renderJudgment();",
+        "var btns = [];",
+        "(function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'button') btns.push(c); walk(c); }); })(nodes['judgment-det']);",
+        "var undo = btns.filter(function (b) { return b.textContent === 'Undo'; })[0];",
+        "if (!undo) { console.error('Undo not offered for the superseded Keep'); process.exit(2); }",
+        "undo.onclick();",
+        "if (posts.length !== 1) { console.error('posts=' + posts.length); process.exit(3); }",
+        "var p = posts[0];",
+        "if (p.id !== 'r-stale' || p.body.target !== 'r-stale' || p.body.action !== 'undo' || p.body.note !== null)",
+        "  { console.error(JSON.stringify(p)); process.exit(4); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=harness, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
 
 
 def test_review_projection_rendered_counts_lists_and_badges(tmp_path):
@@ -3384,9 +4090,12 @@ def test_review_projection_rendered_counts_lists_and_badges(tmp_path):
             assert not any(b.startswith("st st-kept ") for b in out[surface + rid]["badges"]), (surface, rid)
     alltext = " ".join(" ".join(v["text"]) for v in out.values())
     assert "decided by you" not in alltext                 # F5: no doubled marker
-    # F3/F4: the superseded Keep is amber and never a fix
+    # F3/F4: the superseded Keep is amber and never a fix — and D1: with the
+    # projection, Undo is offered whenever the decision stack is non-empty
+    # (last_action names the person's decision), so the stale Keep can be
+    # taken back; it is still not the fix pane
     stale = out["jpane_r-stale"]["text"]
-    assert "Undo" not in stale and "Fix again…" not in stale
+    assert "Undo" in stale and "Fix again…" not in stale
     assert not any("Keep accepts the fixed value" in t or "· still open" in t for t in stale)
     for surface in ("pane_r-stale", "jpane_r-stale", "auditRows_ALL", "judgment_rows"):
         assert "st st-corrected open :: Previous Keep — needs your review" in out[surface]["badges"], surface
@@ -3463,6 +4172,7 @@ def test_u35_af8_fold_representative_is_the_unsettled_source():
         _grab_fn(js, "shownVal"),
         _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
+        _grab_fn(js, "projectionComplete"), _grab_fn(js, "partialProjection"),
         "var got = calendarRows();",
         "if (got.length !== 2) { console.error('n=' + got.length); process.exit(2); }",
         # fold a: a2 is undecided -> the representative, fold still counts both
@@ -3517,7 +4227,7 @@ def test_u35_codex_p2s_presence_effective_checks_reader_label():
                  "effectiveChecks(e.row, e.t).some(function (c) { return c.result !== 'pass'; })",
                  "'Second reader · ' + srL + ': '"):
         assert word in js, word
-    fns = "\n".join(_grab_fn(js, n) for n in ("shownVal", "effectiveChecks", "calendarRows"))
+    fns = "\n".join(_grab_fn(js, n) for n in ("shownVal", "effectiveChecks", "calendarRows", "projectionComplete", "partialProjection"))
     script = "\n".join([
         "var detail = { run: { rows: [",
         "  { id: 'c1', ticker: 'PTGX', program: 'PN-1', event_type: 'milestone',",
@@ -3860,6 +4570,7 @@ def test_r48c_unresolved_window_renders_without_date_arithmetic():
         _grab_fn(js, "shownVal"),
         _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "calendarRows"),
+        _grab_fn(js, "projectionComplete"), _grab_fn(js, "partialProjection"),
         _grab_fn(js, "calWindow("),
         "var got = calendarRows();",
         "if (got.length !== 1 || got[0].bucket !== 'contingent') process.exit(2);",
@@ -3896,7 +4607,7 @@ def _render_card_and_summary(meta: dict, accepted: int = 0) -> dict:
     consts = "\n".join(_grab_var(js, n) for n in ("GROUP_NAMES", "GROUP_ORDER", "JOB_STATUS_WORDS", "JOB_ACTIVE",
                                                    "JOB_PAUSABLE", "JOB_LIMIT_STOP"))
     fns = "\n".join(_grab_fn(js, n) for n in ("money", "cents", "costPerKeptRowWords", "unpricedMark", "jobReason",
-                                               "updateRunCardJob", "renderExport", "reviewAcceptedCount"))
+                                               "updateRunCardJob", "reviewAxis", "renderExport", "reviewAcceptedCount", "projectionComplete", "partialProjection"))
     script = f"""
 function make() {{
   return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, hidden: false, value: '',
