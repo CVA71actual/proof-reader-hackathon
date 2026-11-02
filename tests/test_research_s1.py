@@ -1,0 +1,961 @@
+"""RESEARCHER-FULL-001 S1: the research loop on the Responses API, with fake Responses and fake fetches only.
+
+Covers: the Responses call path (replay before tool results, previous_response_id, tool_choice auto, search pricing,
+no retry), the capture tools (bytes, SHA-256, retrieval time, pages and words, capture_incomplete and hidden-text
+checks, the append-only manifest with checkpoints), the checks inside propose_events (typed feedback once, revisions,
+multi-span, word ids as strings, null vs [] conditions, the dateline rule, exact repeats and linked near-duplicates),
+rows in the existing state/decision log/calendar/exports with the label, the draft audit, the Agent trail, and the
+kill conditions (unpriced call, empty-answer rate, capture failure, limit hit)."""
+
+import io
+import json
+import zipfile
+from pathlib import Path
+
+import pymupdf
+import pytest
+from fastapi.testclient import TestClient
+from jsonschema import Draft202012Validator
+
+from capture import research_sources as rs
+from capture import responses_reader as rr
+from runs import prices, research, research_audit, research_contract as rc
+from server import jobs
+from server.app import create_app
+from tests import research_fakes as F
+from tests.conftest import FIXTURES, REPO
+
+RUN_SCHEMA = Draft202012Validator(json.loads((REPO / "runs" / "schema" / "run.schema.json").read_text()))
+PR1 = "https://ir.example.com/news/pr1"
+PR2 = "https://www.partner.example.org/release"
+QUOTE = "Topline data from the Phase 3 ICARUS trial are expected in Q2 2027."
+PAGE1 = F.html("SAN DIEGO, Nov. 2, 2026 -- Protagonist Therapeutics announced today its pipeline update.",
+               QUOTE, "The company also plans an NDA submission for rusfertide by year-end 2027, subject to FDA "
+                      "feedback.")
+
+
+@pytest.fixture
+def runs_dir(tmp_path):
+    d = tmp_path / "runs"
+    d.mkdir()
+    return d
+
+
+def start(runs_dir, reader, pages=None, *, companies=("PTGX",), limit=None, limits=None, resolve=None, **choices):
+    tools = F.tools(pages if pages is not None else {PR1: (200, "text/html; charset=utf-8", PAGE1)})
+    if resolve:
+        tools.resolve = resolve
+    app = create_app(runs_dir=runs_dir, reader=reader, background=False, second_reader=None, wonder_reader=None,
+                     sam_reader=None, research_tools=tools, research_reader=reader)
+    client = TestClient(app)
+    body = {"mode": "research", "companies": list(companies), "as_of": "2026-11-02", **choices}
+    if limit is not None:
+        body["spending_limit_usd"] = limit
+    if limits is not None:
+        body["research_limits"] = limits
+    r = client.post("/api/runs/new", json=body)
+    assert r.status_code == 202, r.text
+    return client, r.json()["id"], tools
+
+
+def run_json(runs_dir, rid):
+    return json.loads((runs_dir / rid / "run.json").read_text())
+
+
+def happy_script(extra_events=None):
+    ev = F.event("ICARUS Phase 3 topline data", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30",
+                 program="ICARUS", conditions=[])
+    return [
+        F.body([F.reasoning(1), F.search("Protagonist catalysts 2027", [PR1]),
+                F.call("fetch_url", {"url": PR1, "purpose": "company release"}, "c1")], rid="r1"),
+        F.body([F.call("propose_events", {"events": [ev] + (extra_events or [])}, "c2")], rid="r2"),
+        F.body([F.call("record_coverage", {"ticker": "PTGX", "category": "regulators",
+                                           "question": "Any PDUFA date for rusfertide?", "status": "checked_none",
+                                           "tool_call_ids": ["c1"], "source_ids": ["src-r1-ptgx"],
+                                           "programs": ["rusfertide"], "finding": "No PDUFA date stated."}, "c3")],
+               rid="r3"),
+        lambda req: F.body([F.call("finish_draft", {"dispositions": [
+            {"row_id": r, "disposition": "proposal", "related_row_id": None, "reason": "supported"}
+            for r in _row_ids(req)], "limitations": [
+            {"question": "Partner releases", "tool_call_ids": [], "source_ids": [], "reason": "not opened"}]}, "c4")],
+            rid="r4"),
+    ]
+
+
+def _row_ids(req):
+    """The row ids the propose_events answers in this request's history assigned."""
+    ids = []
+    for item in req["input"]:
+        if item.get("type") == "function_call_output":
+            data = json.loads(item["output"]).get("data") or {}
+            ids += [e["id"] for e in data.get("events", []) if e.get("id")]
+    return sorted(set(ids))
+
+
+# ---------------------------------------------------------------- the end-to-end fake run
+
+
+def test_fake_run_from_captured_web_source_to_proposal_checks_state_and_export(runs_dir, tmp_path):
+    reader = F.FakeResponses(happy_script())
+    client, rid, tools = start(runs_dir, reader)
+    run = run_json(runs_dir, rid)
+    meta = run["run"]
+    assert meta["status"] == "done", meta["status_reason"]
+    assert meta["choices"]["mode"] == "research" and meta["choices"]["spending_limit_usd"] == 30.0
+    assert meta["prices"]["per_1k_searches_usd"] == {"Muse Spark": 2.50}
+    assert all(v is None for k, v in meta["choices"]["research_limits"].items()
+               if k not in ("concurrency", "stop_on_empty_rate"))
+    RUN_SCHEMA.validate(run)
+    # the captured source: bytes, hash, retrieval time, pages and words, capture checks on every page
+    src = run["sources"][0]
+    ret = src["retrieval"]
+    assert src["id"] == "src-r1-ptgx" and src["url"] == PR1 and ret["tool"] == "fetch_url"
+    import hashlib
+    assert hashlib.sha256((runs_dir / rid / ret["original_file"]).read_bytes()).hexdigest() == ret["original_sha256"]
+    assert ret["retrieved_at"] == "2026-11-02T18:00:00+00:00" and src["rendered_from"]["format"] == "html"
+    for p in src["pages"]:
+        assert set(p["research_checks"]) >= {"capture_incomplete", "hidden_text"}
+        assert (runs_dir / rid / p["words"]).is_file() and (runs_dir / rid / p["image"]).is_file()
+    # the proposal and its checks
+    rows = [r for r in run["rows"] if r.get("research")]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["research"]["label"] == "Agent research — not independently reviewed"
+    assert row["quote"] == QUOTE and row["status"] == "matched", row["checks"]
+    assert {c["name"]: c["result"] for c in row["checks"]}["quote_match"] == "pass"
+    assert row["conditions"] == [] and row["research"]["conditions_state"] == "none_stated"
+    assert row["trail"][0]["step"].startswith("Sent the page")
+    # the existing state, decision log and calendar: Keep puts it on the calendar, Remove/Undo work
+    assert client.post(f"/api/runs/{rid}/decisions", json={"target": row["id"], "action": "keep", "note": None,
+                                                           "fix": None}).status_code == 200
+    cal = client.get(f"/api/runs/{rid}/calendar").json()
+    assert row["id"] in json.dumps(cal)
+    assert client.post(f"/api/runs/{rid}/decisions", json={"target": row["id"], "action": "remove",
+                                                           "note": "test", "fix": None}).status_code == 200
+    assert client.post(f"/api/runs/{rid}/decisions", json={"target": row["id"], "action": "undo", "note": None,
+                                                           "fix": None}).status_code == 200
+    state = client.get(f"/api/runs/{rid}").json()["state"]["targets"][row["id"]]
+    assert state["accepted"] is True
+    # exports: PDF and DOCX carry the label and the row
+    from report.build import build as build_report
+    out = build_report(rid, out=tmp_path / "rep", run_dir=runs_dir / rid)
+    pdf_text = "".join(p.get_text() for p in pymupdf.open(out["pdf"]))
+    assert "Agent research — not independently reviewed" in " ".join(pdf_text.split())
+    assert "ICARUS" in pdf_text
+    docx_xml = zipfile.ZipFile(out["docx"]).read("word/document.xml").decode()
+    assert "Agent research — not independently reviewed" in docx_xml and "searched, not found" in docx_xml
+    # the audit: sourced, captured, window on the period end, scope per row, exports agree
+    audit = meta["research"]["audit"]
+    assert audit["every_row_sourced"] and audit["every_source_captured"] and audit["exports"]["agree"]
+    assert audit["rows"][0]["window"]["result"] == "in_window"
+    assert audit["searched_not_found"][0]["retrieval_times"]
+    assert audit["published"] is False
+    text = research_audit.format_audit(research_audit.draft_audit(runs_dir / rid, run_json(runs_dir, rid),
+                                                                  _decisions(runs_dir, rid)))
+    assert "check quote_match: pass" in text and "not checked:" in text and "searched, not found" in text
+
+
+def _decisions(runs_dir, rid):
+    return [json.loads(l) for l in (runs_dir / rid / "decisions.jsonl").read_text().splitlines() if l.strip()]
+
+
+def test_agent_trail_steps_search_fetch_proposal_check(runs_dir):
+    reader = F.FakeResponses(happy_script())
+    _, rid, _ = start(runs_dir, reader)
+    steps = run_json(runs_dir, rid)["run"]["research"]["steps"]
+    kinds = [s["kind"] for s in steps]
+    for k in ("request", "search", "fetch", "proposal", "check", "coverage", "finish"):
+        assert k in kinds, k
+    search = next(s for s in steps if s["kind"] == "search")
+    assert "leads, not evidence" in search["text"] and search["refs"]["results"] == [PR1]
+    assert next(s for s in steps if s["kind"] == "proposal")["tag"] == "Model"
+    assert next(s for s in steps if s["kind"] == "check")["tag"] == "Code"
+
+
+def test_requests_replay_full_output_before_tool_results_with_auto_tool_choice(runs_dir):
+    reader = F.FakeResponses(happy_script())
+    start(runs_dir, reader)
+    first, second = reader.requests[0], reader.requests[1]
+    assert first["tool_choice"] == "auto" and first["parallel_tool_calls"] is False
+    assert first["store"] is False and "previous_response_id" not in first
+    assert first["tools"][0] == {"type": "web_search", "search_context_size": "medium"}
+    assert "max_tool_calls" not in first          # no search limit is on unless a person sets one
+    assert {t["name"] for t in first["tools"][1:]} == set(rc.ARGUMENTS)
+    assert all("function" not in t for t in first["tools"][1:])       # flat Responses form
+    # the instructions are the compact controller; the assignment is its own input item, exactly
+    assert first["instructions"] == rc.CONTROLLER and len(rc.CONTROLLER) < 2000
+    assert first["input"][0]["content"].endswith(run_choices_note())
+    kinds = [i.get("type") for i in second["input"][2:]]
+    assert kinds == ["reasoning", "web_search_call", "function_call", "function_call_output"]
+    assert second["input"][4]["call_id"] == second["input"][5]["call_id"] == "c1"
+
+
+def run_choices_note():
+    from capture import research_instructions
+    return research_instructions.DEFAULT
+
+
+def test_previous_response_id_sends_only_new_items(runs_dir):
+    # continuation is a code setting; exercise it directly on a job
+    reader = F.FakeResponses(happy_script() + [F.body([F.call("finish_draft", {"dispositions": [
+        {"row_id": "e1", "disposition": "proposal", "related_row_id": None, "reason": "x"}], "limitations": []},
+        "c5")])])           # with previous_response_id the first finish lacks e1 and is sent back once
+    run = jobs.create_run(runs_dir, jobs.validate_choices({"mode": "research", "companies": ["PTGX"]}),
+                          as_of="2026-11-02")
+    choices_path = runs_dir / run["run"]["id"] / "run.json"
+    doc = json.loads(choices_path.read_text())
+    doc["run"]["choices"]["research_continuation"] = rr.CONTINUE_PREVIOUS
+    choices_path.write_text(json.dumps(doc))
+    research.run_research(runs_dir, run["run"]["id"], reader, F.tools({PR1: (200, "text/html", PAGE1)}))
+    second = reader.requests[1]
+    assert second["previous_response_id"] == "r1" and second["store"] is True
+    assert [i["type"] for i in second["input"]] == ["function_call_output"]
+
+
+def test_search_price_and_responses_cost():
+    assert prices.PRICES_PER_1K_SEARCHES_USD["Muse Spark"] == 2.50
+    assert prices.search_cost_usd("Muse Spark", 4) == 0.01
+    assert prices.responses_cost_usd("Muse Spark", 1_000_000, 0, 1000) == round(1.25 + 2.50, 6)
+    assert prices.search_cost_usd("Muse Spark", None) is None        # unknown search count is never priced as zero
+    assert prices.responses_cost_usd("Muse Wonder", 10, 10, 1) is None  # no search price -> unpriced
+    assert "per_1k_searches_usd" not in prices.snapshot()     # page-mode snapshots unchanged
+    assert prices.search_snapshot() == {"Muse Spark": 2.50}
+
+
+def test_token_counts_must_be_whole_non_negative_numbers():
+    for bad in (-1, True, False, 1.5, None, "10"):
+        assert prices.cost_usd("Muse Spark", bad, 10) is None
+        assert prices.cost_usd("Muse Spark", 10, bad) is None
+        assert prices.search_cost_usd("Muse Spark", bad) is None
+        assert prices.image_cost_usd("SAM 3.1", bad) is None
+    assert prices.model_cost_fields("Muse Spark", -5, 10) == {"tokens": None, "cost_usd": None}
+
+
+def test_run_spend_counts_tokens_and_searches(runs_dir):
+    reader = F.FakeResponses(happy_script())
+    _, rid, _ = start(runs_dir, reader)
+    meta = run_json(runs_dir, rid)["run"]
+    per_call = prices.cost_usd("Muse Spark", 1000, 200)
+    assert meta["spend_usd"] == pytest.approx(4 * per_call + 0.0025, abs=1e-6)
+    c = meta["research"]["companies"]["PTGX"]
+    assert c["searches"] == 1 and c["requests"] == 4 and c["status"] == "finished"
+
+
+# ---------------------------------------------------------------- the Responses reader boundary (Manus 14:45)
+
+
+class _Resp:
+    def __init__(self, status, data):
+        self.status_code, self._data = status, data
+
+    def json(self):
+        if isinstance(self._data, Exception):
+            raise self._data
+        return self._data
+
+
+def _live(monkeypatch, status, data):
+    import httpx
+    sent = []
+
+    class Client:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None, headers=None):
+            sent.append(url)
+            return _Resp(status, data)
+    monkeypatch.setattr(httpx, "Client", Client)
+    monkeypatch.setenv("MODEL_API_KEY", "synthetic-marker")
+    return rr.LiveResponsesReader(), sent
+
+
+BODY = {"model": rr.MODEL, "input": [], "tools": [], "max_output_tokens": 10}
+
+
+def test_http_200_with_a_json_list_is_a_typed_possibly_billed_error(monkeypatch):
+    reader, sent = _live(monkeypatch, 200, [])
+    reply = reader.respond(BODY)
+    assert reply.error and reply.may_have_been_billed and reply.searches is None and len(sent) == 1
+
+
+@pytest.mark.parametrize("output", ["missing", "not-output-items", [1, 2]])
+def test_missing_or_wrong_shaped_output_keeps_search_usage_unknown(monkeypatch, output):
+    data = {"status": "completed", "usage": {"input_tokens": 10, "output_tokens": 10}}
+    if output != "missing":
+        data["output"] = output
+    reader, _ = _live(monkeypatch, 200, data)
+    reply = reader.respond(BODY)
+    assert reply.error and reply.may_have_been_billed
+    assert reply.searches is None                       # never 0
+    assert reply.input_tokens == 10 and reply.output_tokens == 10
+    assert prices.responses_cost_usd("Muse Spark", reply.input_tokens, reply.output_tokens, reply.searches) is None
+
+
+def test_valid_function_call_without_prose_is_not_empty_and_an_empty_list_is_allowed(monkeypatch):
+    reader, _ = _live(monkeypatch, 200, F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")]))
+    reply = reader.respond(BODY)
+    assert not reply.error and not reply.empty and reply.searches == 0
+    reader, _ = _live(monkeypatch, 200, F.body([]))
+    reply = reader.respond(BODY)
+    assert not reply.error and reply.empty and reply.searches == 0
+
+
+def test_400_and_422_are_never_retried(monkeypatch):
+    for status in (400, 422):
+        reader, sent = _live(monkeypatch, status, {"error": "bad"})
+        reply = reader.respond(BODY)
+        assert len(sent) == 1 and reply.http_status == status and reply.may_have_been_billed
+        assert "bad" not in reply.error           # never the provider's body
+
+
+def test_a_400_stops_only_that_company_and_the_others_go_on(runs_dir):
+    bad = rr.ResponsesReply(model=rr.MODEL, http_status=400, error="The model call did not succeed (HTTP 400).",
+                            may_have_been_billed=True)
+    reader = F.PerCompany({"PTGX": [bad], "IONS": [
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "i1")])]})
+
+    def resolve(t):
+        return {"PTGX": ("1377121", "Protagonist"), "IONS": ("874015", "Ionis")}[t]
+    _, rid, _ = start(runs_dir, reader, companies=("PTGX", "IONS"), resolve=resolve)
+    meta = run_json(runs_dir, rid)["run"]
+    cs = meta["research"]["companies"]
+    assert cs["PTGX"]["status"] == "failed" and "not retried" in cs["PTGX"]["status_reason"]
+    assert cs["IONS"]["status"] == "finished"
+    assert len(reader.readers["PTGX"].requests) == 1
+    assert meta["status"] == "needs_input" and "Partial research, not published" in meta["status_reason"]
+    assert meta["spend_usd"] > 0        # the failed, possibly billed request is charged its reserved worst case
+
+
+# ---------------------------------------------------------------- capture tools
+
+
+def test_word_ids_are_strings_and_a_real_captured_page_validates():
+    words = json.loads((FIXTURES / "ptgx_8k_2026-08-05_ex991_p3.words.json").read_text())["words"]
+    ids = [w["id"] for w in words[:30]]
+    span = {"source_id": "s", "page_number": 1, "quote": "x", "word_ids": ids, "roles": ["timing"]}
+    Draft202012Validator(rc.SPAN).validate(span)
+    with pytest.raises(Exception):
+        Draft202012Validator(rc.SPAN).validate({**span, "word_ids": [1, 2]})
+
+
+def test_url_safety_refuses_local_private_and_credentialed_urls():
+    for url in ("http://localhost:8777/api", "http://127.0.0.1:8777/x", "ftp://example.com/a",
+                "https://user:pw@example.com/", "http://10.0.0.5/", "http://[::1]/", "file:///etc/passwd"):
+        with pytest.raises(rs.FetchRefused):
+            rs.check_url(url, F.public)
+    with pytest.raises(rs.FetchRefused):
+        rs.check_url("https://loopback.test/", F.public)      # a name that resolves to loopback
+    assert rs.check_url("https://example.com/x", F.public)
+
+
+def test_web_html_is_rendered_from_an_isolated_snapshot(tmp_path, monkeypatch):
+    """Manus 14:45 HIGH: a page with a script fetching 127.0.0.1, a loopback image and a relative image. Nothing the
+    page names reaches the renderer, Chrome runs with scripts off and no network, and the limitation is recorded."""
+    from capture import fetch_filings as ff
+    page = (b"<html><head><title>T</title><script>fetch('http://127.0.0.1:8777/api/runs')</script>"
+            b"<link rel=stylesheet href='site.css'></head><body onload='go()'>"
+            b"<p>Topline data in Q2 2027.</p><img src='http://127.0.0.1:8777/x.png' alt='chart'>"
+            b"<img src='figures/fig1.png'><iframe src='http://127.0.0.1:8777/'></iframe></body></html>")
+    fake_chrome = tmp_path / "chrome"
+    fake_chrome.write_text("")
+    monkeypatch.setenv("CHROME_BIN", str(fake_chrome))
+    monkeypatch.setattr(ff, "renderer_label", lambda chrome: "Fake Chrome headless print-to-pdf")
+    seen = {}
+
+    def intercept(cmd, **kw):          # never executes a browser
+        seen["cmd"] = cmd
+        printable = Path(cmd[-1].replace("file://", ""))
+        seen["html"] = printable.read_text()
+        seen["folder"] = sorted(p.name for p in printable.parent.iterdir())
+        out = next(c for c in cmd if c.startswith("--print-to-pdf=")).split("=", 1)[1]
+        Path(out).write_bytes(rs.render_text_pdf("Topline data in Q2 2027.", "T"))
+    fetcher = F.FakeFetcher({"https://example.org/public": (200, "text/html", page)})
+    fetched = fetcher.get("https://example.org/public")
+    got = rs.capture_document(fetched, tmp_path / "run", "src-r1-x",
+                              render_html=lambda h, p: rs.chrome_render(h, p, run=intercept))
+    assert fetcher.asked == ["https://example.org/public"]        # no subresource was fetched
+    html = seen["html"]
+    assert "<script" not in html and "127.0.0.1" not in html and "fig1.png" not in html and "site.css" not in html
+    assert "onload" not in html and "<iframe" not in html
+    assert "Content-Security-Policy" in html and "default-src 'none'" in html
+    assert set(rs.ISOLATION_FLAGS) <= set(seen["cmd"])
+    assert "--blink-settings=scriptEnabled=false" in seen["cmd"]
+    assert seen["folder"] == [".print_page.html", "page.html"]   # an empty folder: relative refs resolve to nothing
+    lim = got["rendered"]["limitations"]
+    assert any("image(s) not captured" in l for l in lim) and any("script(s) removed" in l for l in lim)
+    assert got["rendered"]["removed"]["images_not_captured"] == 2
+
+
+def test_sec_exhibit_renderer_is_unchanged():
+    import inspect
+    from capture import fetch_filings as ff
+    src = inspect.getsource(ff.render_html_to_pdf)
+    assert "ISOLATION" not in src and "sanitize" not in src
+
+
+def test_capture_failure_is_recorded_and_the_loop_goes_on(runs_dir):
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": "https://gone.example.com/x", "purpose": "lead"}, "c1")]),
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": [
+            {"question": "gone.example.com release", "tool_call_ids": ["c1"], "source_ids": [],
+             "reason": "404"}]}, "c2")]),
+    ])
+    _, rid, _ = start(runs_dir, reader, pages={})
+    run = run_json(runs_dir, rid)
+    c = run["run"]["research"]["companies"]["PTGX"]
+    assert c["status"] == "finished" and c["capture_failures"][0]["http_status"] == 404
+    assert "HTTP 404" in c["capture_failures"][0]["reason"]
+    out = json.loads(reader.requests[1]["input"][-1]["output"])
+    assert out["status"] == "error" and out["issues"][0]["code"] == "capture_failed"
+    assert run["sources"] == []
+    lines = (runs_dir / rid / "research" / "manifest.jsonl").read_text().splitlines()
+    assert any(json.loads(l)["kind"] == "capture_failed" for l in lines)
+    assert run["run"]["research"]["audit"]["capture_failures"]["PTGX"]
+
+
+def test_hidden_and_incomplete_pages_are_flagged_and_a_hidden_quote_is_an_issue(runs_dir):
+    url = "https://ir.example.com/deck.pdf"
+    pdf = F.pdf_with(["Pipeline overview for 2027."], tiny=["Approval expected March 3, 2027."],
+                     off_page=["clipped words"])
+    ev = F.event("Approval", "Approval expected March 3, 2027.", date_text="March 3, 2027", date="2027-03-03")
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": url, "purpose": "deck"}, "c1")]),
+        F.body([F.call("propose_events", {"events": [ev]}, "c2")]),
+        F.body([F.message("Done.")]),
+        F.body([F.message("Still done.")]),
+    ])
+    _, rid, _ = start(runs_dir, reader, pages={url: (200, "application/pdf", pdf)})
+    run = run_json(runs_dir, rid)
+    page = run["sources"][0]["pages"][0]
+    assert page["research_checks"]["hidden_text"]["result"] == "fail"
+    assert page["research_checks"]["capture_incomplete"]["result"] == "fail"
+    row = next(r for r in run["rows"] if r.get("research"))
+    codes = {i["code"] for i in row["research"]["issues"]}
+    assert {"quote_on_hidden_text", "capture_incomplete"} <= codes
+    # a final prose answer after one reminder ends the company: the model said it is done
+    c = run["run"]["research"]["companies"]["PTGX"]
+    assert c["status"] == "finished" and c["finish"]["by"] == "prose"
+
+
+def test_ctgov_record_is_captured_and_a_query_returns_leads_only(runs_dir):
+    study = json.dumps({"protocolSection": {"identificationModule": {"nctId": "NCT01234567",
+                                                                     "briefTitle": "ICARUS"},
+                                            "statusModule": {"overallStatus": "RECRUITING",
+                                                             "primaryCompletionDateStruct": {"date": "2027-03"}}}})
+    search = json.dumps({"studies": [json.loads(study)]})
+    pages = {rs.CTGOV_STUDY.format(nct="NCT01234567"): (200, "application/json", study.encode()),
+             rs.ctgov_search_url("rusfertide"): (200, "application/json", search.encode())}
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_ctgov", {"nct_id": None, "query": "rusfertide", "cursor": None}, "c1")]),
+        F.body([F.call("fetch_ctgov", {"nct_id": "NCT01234567", "query": None, "cursor": None}, "c2")]),
+        F.body([F.call("fetch_ctgov", {"nct_id": "NCT01234567", "query": "x", "cursor": None}, "c3")]),
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c4")]),
+    ])
+    _, rid, _ = start(runs_dir, reader, pages=pages)
+    run = run_json(runs_dir, rid)
+    out1 = json.loads(reader.requests[1]["input"][-1]["output"])
+    assert out1["data"]["studies"][0]["nct_id"] == "NCT01234567" and "Leads only" in out1["data"]["note"]
+    assert len(run["sources"]) == 1 and run["sources"][0]["retrieval"]["tool"] == "fetch_ctgov"
+    assert run["sources"][0]["retrieval"]["rendered"]["format"] == "json"
+    out2 = json.loads(reader.requests[2]["input"][-1]["output"])
+    assert any("protocolSection.statusModule.overallStatus: RECRUITING" in l for l in out2["data"]["text"][0]["lines"])
+    out3 = json.loads(reader.requests[3]["input"][-1]["output"])
+    assert out3["status"] == "error"
+
+
+def test_fetch_edgar_lists_leads_for_the_company_only_and_clips_to_as_of(runs_dir):
+    subs = {"filings": {"recent": {"form": ["8-K", "10-Q", "8-K"], "filingDate": ["2026-10-01", "2026-08-01",
+                                                                                   "2026-12-01"],
+                                   "accessionNumber": ["0001-26-000001", "0001-26-000002", "0001-26-000003"],
+                                   "primaryDocument": ["a.htm", "b.htm", "c.htm"]}}}
+    pages = {rs.SUBMISSIONS_URL.format(cik="1377121"): (200, "application/json", json.dumps(subs).encode())}
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_edgar", {"cik": "1377121", "forms": ["8-K"], "since": "2026-01-01",
+                                       "until": "2027-01-01", "cursor": None}, "c1")]),
+        F.body([F.call("fetch_edgar", {"cik": "999", "forms": [], "since": "2026-01-01", "until": "2026-02-01",
+                                       "cursor": None}, "c2")]),
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")]),
+    ])
+    _, rid, _ = start(runs_dir, reader, pages=pages)
+    out = json.loads(reader.requests[1]["input"][-1]["output"])
+    assert [f["filing_date"] for f in out["data"]["filings"]] == ["2026-10-01"]      # Dec 1 is after as_of
+    assert out["data"]["filings"][0]["url"].endswith("/000126000001/a.htm")
+    assert json.loads(reader.requests[2]["input"][-1]["output"])["issues"][0]["code"] == "identity_mismatch"
+    assert run_json(runs_dir, rid)["sources"] == []          # a listing is leads, never a source
+
+
+def test_manifest_is_append_only_with_verifiable_checkpoints(runs_dir):
+    reader = F.FakeResponses(happy_script())
+    _, rid, _ = start(runs_dir, reader)
+    path = runs_dir / rid / "research" / "manifest.jsonl"
+    lines = [json.loads(l) for l in path.read_text().splitlines()]
+    assert [l["seq"] for l in lines] == list(range(1, len(lines) + 1))
+    assert {"leads", "source", "checkpoint"} <= {l["kind"] for l in lines}
+    assert research.verify_manifest(runs_dir / rid) == []
+    raw = path.read_text().replace('"kind": "source"', '"kind": "sourcex"', 1)
+    path.write_text(raw)
+    assert research.verify_manifest(runs_dir / rid)          # an edited entry breaks the next checkpoint
+
+
+# ---------------------------------------------------------------- proposals: checks inside the tool
+
+
+def _propose_run(runs_dir, events_batches, pages=None, finish=True):
+    script = [F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")])]
+    script += [F.body([F.call("propose_events", {"events": b}, f"p{i}")]) for i, b in enumerate(events_batches)]
+    if finish:
+        script.append(lambda req: F.body([F.call("finish_draft", {"dispositions": [
+            {"row_id": r, "disposition": "proposal", "related_row_id": None, "reason": "x"} for r in _row_ids(req)],
+            "limitations": []}, "fin")]))
+    reader = F.FakeResponses(script)
+    _, rid, _ = start(runs_dir, reader, pages=pages)
+    return reader, rid, run_json(runs_dir, rid)
+
+
+def _answer(reader, k):
+    return json.loads(reader.requests[k]["input"][-1]["output"])
+
+
+def test_a_failed_check_goes_back_once_as_typed_feedback_and_one_revision_is_accepted(runs_dir):
+    bad = F.event("ICARUS readout", "Topline data are expected in Q3 2027.", date_text="Q3 2027",
+                  date="2027-07-01", date_end="2027-09-30")
+    fixed = F.event("ICARUS readout", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30",
+                    rid="e1", rev=1)
+    again = {**fixed, "expected_revision": 2}
+    reader, rid, run = _propose_run(runs_dir, [[bad], [fixed], [again]])
+    first = _answer(reader, 2)["data"]["events"][0]
+    assert first["status"] == "needs_repair" and first["issues"][0]["code"] == "quote_not_found"
+    assert "once" in first["repair"]
+    second = _answer(reader, 3)["data"]["events"][0]
+    assert second["status"] == "checked" and second["revision"] == 2 and not second["issues"]
+    third = _answer(reader, 4)["data"]["events"][0]
+    assert third["status"] == "refused" and third["issues"][0]["code"] == "repair_not_offered"
+    row = next(r for r in run["rows"] if r["id"] == "e1")
+    assert row["research"]["revision"] == 2 and row["research"]["revisions"][0]["revision"] == 1
+    assert row["research"]["revisions"][0]["issues"][0]["code"] == "quote_not_found"
+    assert any(s["step"] == "Revised" for s in row["trail"])
+    assert run["run"]["research"]["refusals"]          # the refused third attempt is recorded, not dropped
+
+
+def test_an_unrepaired_failure_stays_a_proposal_for_a_person(runs_dir):
+    bad = F.event("ICARUS readout", "Topline data are expected in Q3 2027.", date_text="Q3 2027",
+                  date="2027-07-01", date_end="2027-09-30")
+    _, rid, run = _propose_run(runs_dir, [[bad]])
+    row = next(r for r in run["rows"] if r.get("research"))
+    assert row["status"] == "failed" and row["research"]["feedback"]["repair_open"] is True
+    st = __import__("runs.state", fromlist=["current_state"]).current_state(run, [])
+    assert st["targets"][row["id"]]["needs_attention"] is True
+
+
+def test_uncaptured_or_malformed_citations_make_no_row_and_are_recorded(runs_dir):
+    uncaptured = F.event("X", QUOTE, source="src-r9-ptgx")
+    other = F.event("X", QUOTE, ticker="IONS")
+    reader, rid, run = _propose_run(runs_dir, [[uncaptured, other]])
+    out = _answer(reader, 2)["data"]["events"]
+    assert [e["status"] for e in out] == ["refused", "refused"]
+    assert out[0]["issues"][0]["code"] == "missing_source" and out[1]["issues"][0]["code"] == "identity_mismatch"
+    assert not [r for r in run["rows"] if r.get("research")]
+    assert len(run["run"]["research"]["refusals"]) == 2
+    bad_json = F.FakeResponses([F.body([{"type": "function_call", "call_id": "z", "name": "propose_events",
+                                         "arguments": "{not json"}]),
+                                F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    start(runs_dir, bad_json)
+    assert json.loads(bad_json.requests[1]["input"][-1]["output"])["issues"][0]["code"] == "malformed_argument"
+
+
+def test_multi_span_evidence_checks_every_span(runs_dir):
+    spans = [{"source_id": "src-r1-ptgx", "page_number": 1, "quote": QUOTE, "word_ids": None,
+              "roles": ["action", "timing"]},
+             {"source_id": "src-r1-ptgx", "page_number": 1, "quote": "subject to FDA feedback.",
+              "word_ids": None, "roles": ["condition"]},
+             {"source_id": "src-r1-ptgx", "page_number": 1, "quote": "not on the page at all", "word_ids": ["w99999"],
+              "roles": ["context"]}]
+    ev = F.event("ICARUS readout", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30",
+                 spans=spans, conditions=["subject to FDA feedback"])
+    _, _, run = _propose_run(runs_dir, [[ev]])
+    row = next(r for r in run["rows"] if r.get("research"))
+    ev_checks = row["research"]["evidence"]
+    assert [s["quote_match"] for s in ev_checks][:2] == ["pass", "pass"] and ev_checks[2]["quote_match"] != "pass"
+    codes = [i["code"] for i in row["research"]["issues"]]
+    assert "quote_not_found" in codes and "locator_mismatch" in codes
+    assert row["conditions"] == ["subject to FDA feedback"] and row["research"]["conditions_state"] == "stated"
+
+
+def test_unknown_conditions_stay_null_and_none_stays_empty(runs_dir):
+    unknown = F.event("A", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30", conditions=None)
+    none = F.event("B", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30", conditions=[])
+    _, _, run = _propose_run(runs_dir, [[unknown, none]])
+    rows = {r["title"]: r for r in run["rows"] if r.get("research")}
+    assert rows["A"]["conditions"] is None and rows["A"]["research"]["conditions_state"] == "not_established"
+    assert rows["B"]["conditions"] == [] and rows["B"]["research"]["conditions_state"] == "none_stated"
+    RUN_SCHEMA.validate(run)
+
+
+def test_the_dateline_is_not_the_event_date_unless_anchored(runs_dir):
+    dateline = F.event("Pipeline update", "SAN DIEGO, Nov. 2, 2026 -- Protagonist Therapeutics announced",
+                       date_text="Nov. 2, 2026", date="2026-11-02")
+    anchored = F.event("Update announced", "SAN DIEGO, Nov. 2, 2026 -- Protagonist Therapeutics announced today",
+                       date_text="Nov. 2, 2026", date="2026-11-02")
+    _, _, run = _propose_run(runs_dir, [[dateline, anchored]])
+    rows = {r["title"]: r for r in run["rows"] if r.get("research")}
+    assert "dateline_as_event_date" in {i["code"] for i in rows["Pipeline update"]["research"]["issues"]}
+    assert "dateline_as_event_date" not in {i["code"] for i in rows["Update announced"]["research"]["issues"]}
+
+
+def test_exact_repeat_reuses_the_row_and_near_duplicates_are_linked_not_merged(runs_dir):
+    pages = {PR1: (200, "text/html", PAGE1),
+             PR2: (200, "text/html", F.html("Partner note: ICARUS topline data expected mid-2027."))}
+    a = F.event("ICARUS topline", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30",
+                program="ICARUS")
+    b = F.event("ICARUS topline (partner)", "ICARUS topline data expected mid-2027.", source="src-r2-ptgx",
+                date_text="mid-2027", date="2027-05-01", date_end="2027-08-31", program="ICARUS")
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")]),
+        F.body([F.call("fetch_url", {"url": PR2, "purpose": "x"}, "c1")]),
+        F.body([F.call("propose_events", {"events": [a, a]}, "c2")]),
+        F.body([F.call("propose_events", {"events": [b]}, "c3")]),
+        F.body([F.call("fetch_url", {"url": PR1, "purpose": "again"}, "c4")]),
+        F.body([F.call("finish_draft", {"dispositions": [
+            {"row_id": "e1", "disposition": "proposal", "related_row_id": None, "reason": "x"},
+            {"row_id": "e2", "disposition": "duplicate", "related_row_id": "e1", "reason": "same readout"}],
+            "limitations": []}, "c5")]),
+    ])
+    _, rid, _ = start(runs_dir, reader, pages=pages)
+    run = run_json(runs_dir, rid)
+    out = _answer(reader, 3)["data"]["events"]
+    assert out[1]["status"] == "duplicate" and out[1]["id"] == out[0]["id"]
+    rows = {r["id"]: r for r in run["rows"] if r.get("research")}
+    assert set(rows) == {"e1", "e2"}                      # both kept
+    assert rows["e1"]["research"]["near_duplicates"] == ["e2"] and rows["e2"]["research"]["near_duplicates"] == ["e1"]
+    assert run["run"]["research"]["consolidations"][0]["status"] == "proposed"
+    # an identical refetch is the same source with a new access line
+    assert len(run["sources"]) == 2
+    kinds = [json.loads(l)["kind"] for l in (runs_dir / rid / "research" / "manifest.jsonl").read_text().splitlines()]
+    assert "access" in kinds
+
+
+def test_window_test_uses_the_period_end():
+    from datetime import date
+    as_of, end = date(2026, 11, 2), date(2027, 5, 2)
+    assert research_audit.window_test({"date": "2026-10-01", "date_end": "2026-12-31"}, as_of, end)["result"] == "in_window"
+    assert research_audit.window_test({"date": "2026-07-01", "date_end": "2026-09-30"}, as_of, end)["result"] == "outside_window"
+    assert research_audit.window_test({"date": "2027-05-02"}, as_of, end)["result"] == "in_window"
+    assert research_audit.window_test({"date": "2027-05-03"}, as_of, end)["result"] == "outside_window"
+    assert research_audit.window_test({"date": None}, as_of, end)["result"] == "undated"
+
+
+def test_repeated_identical_action_is_recorded_and_the_loop_goes_on(runs_dir):
+    read = {"source_id": "src-r1-ptgx", "pages": [1], "purpose": "re-read"}
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")]),
+        F.body([F.call("read_source_pages", read, "c1")]),
+        F.body([F.call("read_source_pages", read, "c2")]),
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")]),
+    ])
+    _, rid, _ = start(runs_dir, reader)
+    r = run_json(runs_dir, rid)["run"]["research"]
+    assert r["repeats"] and r["repeats"][0]["tool"] == "read_source_pages"
+    assert r["companies"]["PTGX"]["status"] == "finished"
+    assert any(s["kind"] == "repeat" for s in r["steps"])
+
+
+# ---------------------------------------------------------------- kill conditions and limits
+
+
+def test_kill_condition_unpriced_call_stops_paid_work(runs_dir):
+    reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")], u={})])
+    _, rid, _ = start(runs_dir, reader)
+    meta = run_json(runs_dir, rid)["run"]
+    assert meta["unpriced_calls"] == 1 and len(reader.requests) == 1
+    c = meta["research"]["companies"]["PTGX"]
+    assert c["status"] == "stopped" and c["limitation"]["kind"] == "unpriced"
+    assert meta["status"] == "needs_input" and "not published" in meta["status_reason"]
+
+
+def test_kill_condition_unpriced_model_is_refused_before_any_call(runs_dir):
+    reader = F.FakeResponses([F.body([F.message("x")], model="mystery-model"),
+                              F.body([F.message("x")], model="mystery-model")])
+    _, rid, _ = start(runs_dir, reader)
+    meta = run_json(runs_dir, rid)["run"]
+    assert meta["unpriced_calls"] == 1 and len(reader.requests) == 1     # the reply named a model with no price
+    assert meta["research"]["companies"]["PTGX"]["limitation"]["kind"] == "unpriced"
+
+
+def test_kill_condition_empty_answer_rate_is_recorded_and_surfaced(runs_dir):
+    empty = F.body([F.reasoning()], status="incomplete", incomplete="max_output_tokens")
+    script = [empty, F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")]), empty,
+              F.body([F.call("read_source_pages", {"source_id": "src-r1-ptgx", "pages": [1], "purpose": "x"}, "c2")]),
+              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")])]
+    reader = F.FakeResponses(script)
+    _, rid, _ = start(runs_dir, reader)
+    r = run_json(runs_dir, rid)["run"]["research"]
+    assert r["kill_conditions"][0]["code"] == "empty_answer_rate"
+    assert r["companies"]["PTGX"]["status"] == "finished"           # recorded, not a stop (setting off)
+    assert r["companies"]["PTGX"]["empty_answers"] == 2
+    assert any("output budget" in s["text"] for s in r["steps"] if s["kind"] == "error")
+    # the nudge after an empty answer replays the output then asks for a tool call
+    assert reader.requests[1]["input"][-1]["content"] == research.NUDGE_EMPTY
+
+
+def test_kill_condition_empty_rate_stops_when_a_person_turned_it_on(runs_dir):
+    empty = F.body([], status="incomplete", incomplete="max_output_tokens")
+    fetch = F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")])
+    read = F.body([F.call("read_source_pages", {"source_id": "src-r1-ptgx", "pages": [1], "purpose": "x"}, "c2")])
+    reader = F.FakeResponses([empty, fetch, empty, read, read])
+    _, rid, _ = start(runs_dir, reader, limits={"stop_on_empty_rate": True})
+    c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
+    assert c["status"] == "stopped" and "empty" in c["limitation"]["reason"]
+
+
+def test_two_empty_answers_in_a_row_are_a_technical_failure(runs_dir):
+    empty = F.body([], status="incomplete", incomplete="max_output_tokens")
+    reader = F.FakeResponses([empty, empty])
+    _, rid, _ = start(runs_dir, reader)
+    c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
+    assert c["status"] == "failed" and "two empty answers" in c["status_reason"]
+
+
+def test_kill_condition_spend_cap_hit_stops_with_a_recorded_limitation_and_never_publishes(runs_dir):
+    big = F.usage(i=400_000, o=8000)          # more than the reservation assumed: recorded, and the cap stops the next
+    reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")], u=big),
+                              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c2")])])
+    _, rid, _ = start(runs_dir, reader, limit=0.3)
+    meta = run_json(runs_dir, rid)["run"]
+    assert len(reader.requests) == 1                      # the call that crossed the cap was the last one
+    c = meta["research"]["companies"]["PTGX"]
+    assert c["status"] == "stopped" and c["limitation"]["kind"] == "spend_cap"
+    assert "Spending cap reached" in c["limitation"]["reason"]
+    assert meta["research"]["reservation_exceeded"][0]["input_tokens"] == 400_000
+    assert meta["status"] == "needs_input" and meta["research"]["audit"]["published"] is False
+    assert meta["research"]["audit"]["complete"] is False
+
+
+def test_optional_limits_are_off_by_default_and_work_when_turned_on(runs_dir):
+    assert research.validate_limits(None) == {**{k: None for k in research.LIMIT_KEYS},
+                                              "concurrency": 3, "stop_on_empty_rate": False}
+    with pytest.raises(ValueError):
+        research.validate_limits({"max_pages_per_company": -1})
+    with pytest.raises(ValueError):
+        research.validate_limits({"surprise": 1})
+    reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")])])
+    _, rid, _ = start(runs_dir, reader, limits={"max_requests_per_company": 1, "max_searches_per_request": 2})
+    c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
+    assert c["limitation"]["kind"] == "limit" and "turned on" in c["limitation"]["reason"]
+    assert reader.requests[0]["max_tool_calls"] == 2
+
+
+def test_concurrency_queues_every_company_and_drops_none(runs_dir):
+    tickers = ["AAA", "BBB", "CCC", "DDD"]
+    reader = F.PerCompany({t: [F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, t)])]
+                           for t in tickers})
+    _, rid, _ = start(runs_dir, reader, companies=tickers, limits={"concurrency": 1},
+                      resolve=lambda t: (str(100 + tickers.index(t)), t))
+    cs = run_json(runs_dir, rid)["run"]["research"]["companies"]
+    assert all(cs[t]["status"] == "finished" for t in tickers)
+    assert run_json(runs_dir, rid)["run"]["status"] == "done"
+
+
+def test_ten_companies_at_most_and_tickers_validated():
+    with pytest.raises(ValueError):
+        jobs.validate_choices({"mode": "research", "companies": [f"T{i}" for i in range(11)]})
+    with pytest.raises(ValueError):
+        jobs.validate_choices({"mode": "research", "companies": ["not a ticker"]})
+    with pytest.raises(ValueError):
+        jobs.validate_choices({"mode": "research", "companies": ["PTGX"], "models": "all"})
+    ch = jobs.validate_choices({"mode": "research", "companies": ["ptgx"]})
+    assert ch["companies"] == ["PTGX"] and ch["models"] == "one" and ch["spending_limit_usd"] == 30.0
+
+
+def test_a_person_stop_ends_research_before_the_next_call(runs_dir):
+    holder = {}
+
+    def stop_then_answer(req):
+        research.request_stop(holder["dir"], holder["rid"])
+        return F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")])
+    reader = F.FakeResponses([stop_then_answer])
+    run = jobs.create_run(runs_dir, jobs.validate_choices({"mode": "research", "companies": ["PTGX"]}),
+                          as_of="2026-11-02")
+    holder.update(dir=runs_dir, rid=run["run"]["id"])
+    research.run_research(runs_dir, run["run"]["id"], reader, F.tools({PR1: (200, "text/html", PAGE1)}))
+    c = run_json(runs_dir, run["run"]["id"])["run"]["research"]["companies"]["PTGX"]
+    assert c["limitation"]["kind"] == "person" and len(reader.requests) == 1
+
+
+def test_a_research_run_is_not_resumed_in_s1(runs_dir):
+    reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")], u={})])
+    _, rid, _ = start(runs_dir, reader)
+    with pytest.raises(jobs.JobError) as e:
+        jobs.resume_run(runs_dir, rid, accept_unknown_cost=True)
+    assert "not resumed in S1" in e.value.message
+
+
+def test_missing_key_stops_before_any_call(runs_dir):
+    reader = F.FakeResponses([], key=False)
+    _, rid, _ = start(runs_dir, reader)
+    meta = run_json(runs_dir, rid)["run"]
+    assert meta["status"] == "needs_input" and reader.requests == []
+
+
+def test_page_mode_is_unchanged_by_the_research_choices():
+    with pytest.raises(ValueError):
+        jobs.validate_choices({"companies": ["PTGX"], "research_limits": {}})
+
+
+# ---------------------------------------------------------------- Manus 15:01: exact-repeat identity, Keep binding
+
+
+@pytest.mark.parametrize("change", [{"conditions": ["subject to FDA feedback"]}, {"subject_company": "Takeda"},
+                                    {"relation": "partner"}, {"program": "rusfertide"}, {"modality": "oral"},
+                                    {"indication": "PV"}, {"action": "NDA"}])
+def test_a_materially_different_proposal_is_never_an_exact_repeat(runs_dir, change):
+    a = F.event("ICARUS readout", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30",
+                conditions=None)
+    b = {**a, **change}
+    reader, rid, run = _propose_run(runs_dir, [[a, b]])
+    out = _answer(reader, 2)["data"]["events"]
+    assert [e["status"] for e in out] == ["checked", "checked"] and out[0]["id"] != out[1]["id"]
+    assert len([r for r in run["rows"] if r.get("research")]) == 2
+
+
+def test_changed_roles_or_primary_span_is_a_new_proposal_and_a_true_repeat_is_not(runs_dir):
+    a = F.event("ICARUS readout", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30")
+    roles = {**a, "evidence": [{**a["evidence"][0], "roles": ["timing"]}]}
+    _, _, run = _propose_run(runs_dir, [[a, roles, dict(a)]])
+    assert len([r for r in run["rows"] if r.get("research")]) == 2
+
+
+def _kept_research_run(runs_dir):
+    spans = [{"source_id": "src-r1-ptgx", "page_number": 1, "quote": QUOTE, "word_ids": None,
+              "roles": ["action", "timing"]},
+             {"source_id": "src-r2-ptgx", "page_number": 1, "quote": "ICARUS topline data expected mid-2027.",
+              "word_ids": None, "roles": ["context"]}]
+    ev = F.event("ICARUS", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30", spans=spans)
+    pages = {PR1: (200, "text/html", PAGE1),
+             PR2: (200, "text/html", F.html("Partner note: ICARUS topline data expected mid-2027."))}
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")]),
+        F.body([F.call("fetch_url", {"url": PR2, "purpose": "x"}, "c1")]),
+        F.body([F.call("propose_events", {"events": [ev]}, "c2")]),
+        F.body([F.call("finish_draft", {"dispositions": [
+            {"row_id": "e1", "disposition": "proposal", "related_row_id": None, "reason": "x"}],
+            "limitations": []}, "c3")])])
+    client, rid, _ = start(runs_dir, reader, pages=pages)
+    assert client.post(f"/api/runs/{rid}/decisions", json={"target": "e1", "action": "keep", "note": None,
+                                                           "fix": None}).status_code == 200
+    return run_json(runs_dir, rid), _decisions(runs_dir, rid)
+
+
+@pytest.mark.parametrize("mutate", ["secondary_words", "secondary_document", "secondary_quote", "secondary_role",
+                                    "revision"])
+def test_a_keep_expires_when_secondary_evidence_or_the_revision_changes(runs_dir, mutate):
+    from runs.state import current_state
+    run, decisions = _kept_research_run(runs_dir)
+    assert current_state(run, decisions)["targets"]["e1"]["accepted"] is True
+    row = next(r for r in run["rows"] if r["id"] == "e1")
+    second = next(s for s in run["sources"] if s["id"] == "src-r2-ptgx")
+    if mutate == "secondary_words":
+        second["pages"][0]["words_sha256"] = "0" * 64
+    elif mutate == "secondary_document":
+        second["retrieval"]["original_sha256"] = "1" * 64
+    elif mutate == "secondary_quote":
+        row["research"]["evidence"][1]["quote"] = "ICARUS topline data"
+    elif mutate == "secondary_role":
+        row["research"]["evidence"][1]["roles"] = ["timing"]
+    else:
+        row["research"]["revision"] = 2
+    st = current_state(run, decisions)["targets"]["e1"]
+    assert st["accepted"] is False and st["review_history"]
+
+
+def test_non_research_rows_keep_a_byte_identical_review_basis():
+    import subprocess
+    import types
+    old_src = subprocess.check_output(["git", "-C", str(REPO), "show", "origin/main:runs/review.py"], text=True)
+    old = types.ModuleType("old_review")
+    exec(compile(old_src, "old_review.py", "exec"), old.__dict__)
+    from runs import review
+    from runs.state import current_state
+    for name in ("sample", "demo", "ptgx-r4a", "ptgx-r5"):
+        run = json.loads((REPO / "runs" / name / "run.json").read_text())
+        st = current_state(run, [])
+        for r in run["rows"]:
+            values = st["targets"][r["id"]]["values"]
+            assert review.review_basis(run, r, values) == old.review_basis(run, r, values)
+
+
+# ---------------------------------------------------------------- Manus 15:03 timing span, 15:04 strict cap and CSP
+
+TIMING_PAGE = F.html("Protagonist plans to report topline data from ICARUS.",
+                     "These topline results are expected in Q1 2027.")
+TP = "https://ir.example.com/timing"
+
+
+def _timing_run(runs_dir, date_text, date, date_end):
+    spans = [{"source_id": "src-r1-ptgx", "page_number": 1, "quote": "plans to report topline data from ICARUS.",
+              "word_ids": None, "roles": ["action", "program"]},
+             {"source_id": "src-r1-ptgx", "page_number": 1, "quote": "These topline results are expected in Q1 2027.",
+              "word_ids": None, "roles": ["timing"]}]
+    ev = F.event("ICARUS topline", spans[0]["quote"], date_text=date_text, date=date, date_end=date_end, spans=spans)
+    reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": TP, "purpose": "x"}, "c0")]),
+                              F.body([F.call("propose_events", {"events": [ev]}, "c1")]),
+                              F.body([F.call("finish_draft", {"dispositions": [
+                                  {"row_id": "e1", "disposition": "proposal", "related_row_id": None,
+                                   "reason": "x"}], "limitations": []}, "c2")])])
+    _, rid, _ = start(runs_dir, reader, pages={TP: (200, "text/html", TIMING_PAGE)})
+    return run_json(runs_dir, rid)
+
+
+def test_timing_in_a_separate_span_is_checked_against_that_span(runs_dir):
+    from runs.state import current_state
+    run = _timing_run(runs_dir, "Q1 2027", "2027-01-01", "2027-03-31")
+    row = next(r for r in run["rows"] if r["id"] == "e1")
+    checks = {c["name"]: c for c in row["checks"]}
+    assert checks["date_match"]["result"] == "pass", checks["date_match"]
+    assert checks["date_match"]["reason"].startswith("Date compared against timing span src-r1-ptgx p1")
+    assert checks["quote_match"]["result"] == "pass"            # the primary span keeps its quote check
+    assert row["status"] == "matched" and row["research"]["timing_span_index"] == 1
+    st = current_state(run, [])["targets"]["e1"]
+    assert st["checks_stale"] is False                           # the bound check stays current on load
+
+
+def test_a_timing_span_with_a_different_period_fails(runs_dir):
+    run = _timing_run(runs_dir, "Q3 2027", "2027-07-01", "2027-09-30")
+    row = next(r for r in run["rows"] if r["id"] == "e1")
+    assert {c["name"]: c["result"] for c in row["checks"]}["date_match"] == "fail"
+    assert "timing_mismatch" in {i["code"] for i in row["research"]["issues"]}
+
+
+def test_strict_admission_refuses_a_call_whose_bound_would_cross_the_cap(runs_dir):
+    assert jobs.reserve_budget("strict-test", 29.99, 30.0, 0.25, alone_may_cross=False) is None
+    run = jobs.create_run(runs_dir, jobs.validate_choices({"mode": "research", "companies": ["PTGX"]}),
+                          as_of="2026-11-02")
+    path = runs_dir / run["run"]["id"] / "run.json"
+    doc = json.loads(path.read_text())
+    doc["run"]["spend_usd"] = 29.99
+    path.write_text(json.dumps(doc))
+    reader = F.FakeResponses([])
+    research.run_research(runs_dir, run["run"]["id"], reader, F.tools({}))
+    meta = run_json(runs_dir, run["run"]["id"])["run"]
+    assert reader.requests == []
+    reason = meta["research"]["companies"]["PTGX"]["limitation"]["reason"]
+    assert "would exceed the $30.00 cap" in reason
+    assert meta["research"]["reservation"]["assumptions"]["searches_per_request"] == 5
+    assert meta["research"]["reservation"]["assumptions"]["search_context_tokens_per_search"] == 8000
+
+
+def test_csp_comes_first_without_a_head_and_escaped_css_urls_do_not_survive():
+    page = ('<p>Our Content-Security-Policy is strict.</p>'
+            '<div style="background:u\\72l(file:///etc/passwd)">x</div>'
+            '<style>p{background:u\\72l(http://127.0.0.1:8777/a)}</style>')
+    snap, counts = rs.sanitize_html(page)
+    assert snap.startswith(rs.CSP_META)
+    assert "url(" not in snap.lower() and "\\72" not in snap
+    assert counts["css_escapes_removed"] == 2
+    assert "--host-resolver-rules=MAP * ~NOTFOUND" in rs.ISOLATION_FLAGS
