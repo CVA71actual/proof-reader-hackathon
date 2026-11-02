@@ -247,6 +247,7 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
             "group": st["group"],
             "group_label": st["review_label"],
             "semantic_status": st["semantic_status"],
+            "issues": list(st["issues"]),
             "review_label": st["review_label"],
             "decision_label": st["decision_label"],
             "person_tag": _person_tag(st),
@@ -389,6 +390,7 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
             "group": st["group"],
             "group_label": st["review_label"],
             "semantic_status": st["semantic_status"],
+            "issues": list(st["issues"]),
             "review_label": st["review_label"],
             "decision_label": st["decision_label"],
             "person_tag": _person_tag(st),
@@ -465,6 +467,8 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         "mistakes": mistakes,
         "excluded_total": excluded_n,
         "unresolved": state["unresolved"],
+        # REVIEW-NOT-A-FLAG-001: rows still under review that carry a real issue (needing review is not one)
+        "issues": state["counts"]["issues"],
         "counters_line": (
             f"Mistakes caught by code {mistakes['code']} · by the second reader "
             f"{mistakes['second_reader']} · by a person {mistakes['person']} · Excluded {excluded_n}"
