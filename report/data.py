@@ -189,6 +189,37 @@ def date_in_words(iso: str) -> str:
     return f"{d.day} {d:%B %Y}"
 
 
+def _research_lines(meta: dict, run: dict) -> tuple[str | None, list[str]]:
+    """A research run's label and its per-company outcome, recorded limitations, searched-but-not-found notes,
+    capture failures and source capture limitations, from run.research as the job saved it."""
+    research = meta.get("research")
+    if not research:
+        return None, []
+    lines = []
+    for ticker, c in (research.get("companies") or {}).items():
+        lines.append(f"{ticker}: {c.get('status')} — {c.get('status_reason')} Sources captured {c.get('sources', 0)}, "
+                     f"proposals {c.get('proposals', 0)}, model requests {c.get('requests', 0)}, searches "
+                     f"{c.get('searches', 0)}.")
+        if c.get("limitation"):
+            lines.append(f"{ticker} limitation: {c['limitation']['reason']} {c['limitation'].get('not_checked') or ''}".strip())
+        for lim in (c.get("finish") or {}).get("limitations") or []:
+            lines.append(f"{ticker} limitation stated by the model: {lim.get('question')} — {lim.get('reason')}")
+        for f in c.get("capture_failures") or []:
+            lines.append(f"{ticker} capture failed: {f.get('url')} — {f.get('reason')}")
+    for cov in research.get("coverage") or []:
+        if cov.get("searched_not_found"):
+            when = ", ".join(cov.get("retrieval_times") or []) or "no retrieval time recorded"
+            lines.append(f"{cov.get('ticker')} searched, not found ({cov.get('category')}): {cov.get('question')} "
+                         f"— retrieved {when}.")
+    for src in run.get("sources", []):
+        lim = ((src.get("retrieval") or {}).get("rendered") or {}).get("limitations") or []
+        if lim:
+            lines.append(f"{src['id']} capture limitations: " + "; ".join(lim) + ".")
+    for k in research.get("kill_conditions") or []:
+        lines.append(f"Kill condition met: {k.get('detail')}")
+    return research.get("label"), lines
+
+
 def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
     """Assemble every section the PDF and Word writers share."""
     state = current_state(run, decisions)
@@ -437,9 +468,14 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
                 "page rendered by code from the filed HTML"
                 if rf else None
             ),
+            "retrieved_at": (src.get("retrieval") or {}).get("retrieved_at"),
+            "original_sha256": (src.get("retrieval") or {}).get("original_sha256"),
         })
 
+    research_label, research_lines = _research_lines(meta, run)
     return {
+        "research_label": research_label,
+        "research_lines": research_lines,
         "title": TITLE,
         "footer": FOOTER,
         "run_id": meta["id"],

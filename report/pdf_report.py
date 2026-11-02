@@ -137,6 +137,10 @@ def build_pdf(view: dict) -> bytes:
     if view.get("as_of_note"):
         story.append(_p(view["as_of_note"], styles["body"]))
     story.append(_p(f"Run status: {view['run_status']}", styles["body"]))
+    if view.get("research_label"):
+        story.append(_p(view["research_label"], styles["stamp"]))
+        for line in view.get("research_lines") or []:
+            story.append(_p(line, styles["small"]))
     if view.get("models_line"):
         story.append(_p(view["models_line"], styles["body"]))
     if view["page_outcomes_recorded"]:
