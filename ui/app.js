@@ -336,6 +336,24 @@
            c.result === 'pass' &&
            (c.label === 'Date period found in quote' || c.label === 'Date wording present in quote');
   }
+  // CHECK-RESULTS-WORDS-001: a passing scoped comparison states one
+  // concise observed outcome — never an amber warning. Other passes keep the
+  // plain 'passed'.
+  function passOutcome(c) {
+    if (!c || c.result !== 'pass') return null;
+    var o = PASS_OUTCOME_WORDS[c.name];
+    if (!o) return null;
+    return typeof o === 'function' ? o(c) : o;
+  }
+  function passOutcomeDate(c) {
+    var wording = c.timing && typeof c.timing.wording === 'string' && c.timing.wording;
+    return 'Timing matches source' + (wording ? ': ' + wording : '');
+  }
+  var PASS_OUTCOME_WORDS = {
+    date_match: passOutcomeDate,
+    quote_match: 'Quote matches source',
+    selector_match: 'Citation located'
+  };
   function checkResultWord(result) { return CHECK_WORDS[result] || result; }
 
   // ---------------------------------------------------------------- theme
@@ -1566,10 +1584,24 @@
     var evidence = t.page_evidence || {};
     var capture = evidence.capture_completeness || {};
     if (capture.capture_incomplete) {
-      sec.append(el('div', 'hint', 'Capture may be incomplete: ' + (capture.capture_incomplete_reason || 'reason not recorded')));
+      // detected clipping stays an actionable warning, with the original source
+      var warn = el('div', 'capwarn');
+      warn.append('The captured page may be cut off. ');
+      var osrc = row && row.source_id ? sourceOf(row) : null;
+      var oa = el('a', 'link', 'Open the original to check.');
+      if (osrc && osrc.url) { oa.href = osrc.url; oa.target = '_blank'; oa.rel = 'noopener'; }
+      else oa.remove();
+      warn.append(oa);
+      if (capture.capture_incomplete_reason)
+        warn.append(el('span', 'capwhy', ' ' + capture.capture_incomplete_reason));
+      sec.append(warn);
     } else if (capture.completeness_not_established) {
-      sec.append(el('div', 'hint', 'Capture completeness was not established: ' +
-        (capture.completeness_reason || 'reason not recorded')));
+      // unknown completeness is neutral detail, never a warning on every row
+      var cdet = el('details', 'fold capdet');
+      cdet.append(el('summary', null, 'Capture details'));
+      cdet.append(el('div', null, 'This check cannot rule out every kind of clipping.'));
+      if (capture.completeness_reason) cdet.append(el('div', 'hint', capture.completeness_reason));
+      sec.append(cdet);
     }
     if (evidence.derived_words) {
       sec.append(el('div', 'hint', 'Words came from a model transcription of the captured page image; their geometry is approximate.'));
@@ -1584,12 +1616,15 @@
       checks.forEach(function (c) {
       var line = el('div', 'chk');
       var finding = dateFinding(c);
-      line.append(finding ? el('span', 'dot finding unresolved') : checkDot(c.result));
+      var outcome = passOutcome(c);
+      // a passing scoped comparison reads as its observed outcome (green); a
+      // failure stays red and names its conflict — never amber on a match
+      line.append(outcome ? checkDot('pass')
+        : finding ? el('span', 'dot finding unresolved') : checkDot(c.result));
       var cn = el('span', 'cn');
       cn.append(esc(c.label), el('span', 'wtag', 'Code'));
       line.append(cn);
-      // the label is the finding; no 'passed' beside it
-      var cr = el('span', 'cr', finding ? '' : checkResultWord(c.result));
+      var cr = el('span', 'cr', outcome ? outcome : finding ? '' : checkResultWord(c.result));
       line.append(cr);
       sec.append(line);
       if (c.reason) {

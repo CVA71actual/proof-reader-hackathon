@@ -3272,10 +3272,13 @@ def test_judgment_checks_show_current_results_and_label_original_history():
         "function esc(value) { return el('span', null, value); }",
         "function checkResultWord(result) { return result; }",
         "function seeTheCheck(check) { return el('details', null, 'details ' + check.label); }",
-        "function flatten(node) { return (node.textContent || '') + (node.children || []).map(flatten).join(' '); }",
+        "function flatten(node) { return (typeof node === 'string' ? node : node.textContent || '') + (node.children || []).map(flatten).join(' '); }",
         _grab_fn(js, "effectiveChecks"),
         _grab_fn(js, "dateFinding"),
+        _grab_fn(js, "passOutcome"),
+        _grab_fn(js, "passOutcomeDate"),
         _grab_fn(js, "checksSection"),
+        "var PASS_OUTCOME_WORDS = { date_match: passOutcomeDate, quote_match: 'Quote matches source', selector_match: 'Citation located' };",
         "var raw = [{result:'fail', label:'Original value failure', reason:'Old value.'}];",
         "var current = [{result:'pass', label:'Fixed value pass', reason:'Re-check on new value.'}];",
         "var done = flatten(checksSection({checks:raw}, {fixes:[{}], effective_checks:current, check_history:raw, recheck:{result:'pass'}}));",
@@ -3286,6 +3289,73 @@ def test_judgment_checks_show_current_results_and_label_original_history():
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_check_results_words_and_capture_copy():
+    # CHECK-RESULTS-WORDS-001: a passing scoped check states one concise
+    # observed outcome (date with its period wording, quote, citation); a fail
+    # stays an honest conflict; could_not_run stays honest. Detected clipping
+    # is an actionable warning with the original source; unknown completeness
+    # is a neutral 'Capture details' disclosure — never a warning per row.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    script = "\n".join([
+        "function el(tag, cls, value) { return {tag:tag, cls:cls, textContent:value || '', children:[], style:{}, dataset:{}, append:function(){ this.children.push.apply(this.children, arguments); }}; }",
+        "function checkDot(result) { return el('span', null, result); }",
+        "function esc(value) { return el('span', null, value); }",
+        "function checkResultWord(result) { return ({ pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed', unresolved: 'unresolved' })[result] || result; }",
+        "function seeTheCheck(check) { return el('details', null, 'details ' + check.label); }",
+        "function sourceOf(row) { return { url: 'https://www.sec.gov/Archives/x' }; }",
+        "function flatten(node) { return (typeof node === 'string' ? node : node.textContent || '') + (node.children || []).map(flatten).join(' '); }",
+        _grab_fn(js, "effectiveChecks"),
+        _grab_fn(js, "dateFinding"),
+        _grab_fn(js, "passOutcome"),
+        _grab_fn(js, "passOutcomeDate"),
+        _grab_fn(js, "checksSection"),
+        "var PASS_OUTCOME_WORDS = { date_match: passOutcomeDate, quote_match: 'Quote matches source', selector_match: 'Citation located' };",
+        "var checks = [",
+        "  { name: 'date_match', result: 'pass', label: 'Date read as written',",
+        "    timing: { wording: 'first half of calendar year 2027' } },",
+        "  { name: 'quote_match', result: 'pass', label: 'Quote found on page' },",
+        "  { name: 'selector_match', result: 'pass', label: 'Citation located' },",
+        "  { name: 'type_match', result: 'pass', label: 'Event type matches the quote' },",
+        "  { name: 'quote_match', result: 'fail', label: 'Quote found on page', reason: 'Says June 3, the page says June 30.' },",
+        "  { name: 'date_match', result: 'could_not_run', label: 'Date read as written', reason: 'No words on the page.' } ];",
+        "var t = { effective_checks: checks, fixes: [], check_history: [], page_evidence: {} };",
+        "var out = flatten(checksSection({ checks: [], source_id: 's1' }, t));",
+        "if (out.indexOf('Timing matches source: first half of calendar year 2027') === -1) { console.error('date outcome'); process.exit(2); }",
+        "if (out.indexOf('Quote matches source') === -1) { console.error('quote outcome'); process.exit(3); }",
+        "if (out.indexOf('Citation located') === -1) { console.error('citation outcome'); process.exit(4); }",
+        "if (out.indexOf('pass') === -1 || out.indexOf('failed') === -1) { console.error('fail not honest'); process.exit(5); }",
+        "if (out.indexOf('could not run') === -1 || out.indexOf('No words on the page.') === -1) { console.error('unable not honest'); process.exit(6); }",
+        # actual conflict names the compared values (the reason prints)
+        "if (out.indexOf('June 3') === -1) { console.error('conflict values lost'); process.exit(7); }",
+        # no detected clipping and no unknown completeness: no warning, no details
+        "if (/cut off|Capture details/.test(out)) { console.error('copy leaked'); process.exit(8); }",
+        # detected clipping: actionable warning + original source link + issue
+        "var t2 = { effective_checks: [], fixes: [], check_history: [],",
+        "  page_evidence: { capture_completeness: { capture_incomplete: true,",
+        "    capture_incomplete_reason: 'Text runs past the rendered page bottom.' } } };",
+        "var warn = flatten(checksSection({ checks: [], source_id: 's1' }, t2));",
+        "if (warn.indexOf('The captured page may be cut off.') === -1 ||",
+        "    warn.indexOf('Open the original to check.') === -1 ||",
+        "    warn.indexOf('Text runs past the rendered page bottom.') === -1)",
+        "  { console.error(warn); process.exit(9); }",
+        # unknown completeness only: neutral disclosure, no warning paragraph
+        "var t3 = { effective_checks: [], fixes: [], check_history: [],",
+        "  page_evidence: { capture_completeness: { completeness_not_established: true,",
+        "    completeness_reason: 'The capture tool reported no completeness signal for this renderer.' } } };",
+        "var det = flatten(checksSection({ checks: [], source_id: 's1' }, t3));",
+        "if (det.indexOf('Capture details') === -1 ||",
+        "    det.indexOf('This check cannot rule out every kind of clipping.') === -1 ||",
+        "    det.indexOf('The capture tool reported no completeness signal for this renderer.') === -1)",
+        "  { console.error(det); process.exit(10); }",
+        "if (det.indexOf('The captured page may be cut off.') !== -1) { console.error('warning on unknown completeness'); process.exit(11); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
     assert got.returncode == 0, got.stdout + got.stderr
 
 
@@ -4389,7 +4459,10 @@ for (const r of rows) {
 console.log(JSON.stringify(out, null, 1));
 """
 
-_MAIN_SHAPED_RENDER_SHA256 = "b717638e8ab733f9dccb9a47e6431d38eb99c52512de81dac3b4d375c540cacb"
+# c1313667 is CHECK-RESULTS-WORDS-001's date outcome ('Timing matches source'
+# in place of a bare 'passed' on every pane's passing date check) — re-verified
+# by diffing both renders surface by surface: that one line is the only change
+_MAIN_SHAPED_RENDER_SHA256 = "c131366741881e980ee57cf0f587c2e5d0bb279686f29d3a3ffa5450183c9cb8"
 
 
 def _review_render(tmp_path, shape):
@@ -4912,14 +4985,15 @@ def test_review_projection_rendered_counts_lists_and_badges(tmp_path):
     assert "st st-kept :: Kept by you" in out["pane_r-acc"]["badges"]
     assert "st st-kept :: Accepted by you" in out["auditRows_ALL"]["badges"]
     assert out["judgment_sub"]["text"] == ["Waiting for your decision · 7"]
-    # DATE-LITERAL-001: a passing date check under the pivot's label is a
-    # neutral finding — amber dot, no pass/green class, no 'passed'
+    # CHECK-RESULTS-WORDS-001 (supersedes DATE-LITERAL-001's neutral finding):
+    # a passing scoped date comparison states its observed outcome, green —
+    # never amber on a match
     for rid in ("r-acc", "r-stale", "r-fix"):
         lines = out["pane_" + rid]["date"]
         assert lines, rid
         for dot, word in lines:
-            assert "pass" not in dot.split() and "unresolved" in dot.split(), (rid, dot)
-            assert word != "passed", rid
+            assert "pass" in dot.split() and "unresolved" not in dot.split(), (rid, dot)
+            assert word == "Timing matches source", (rid, word)
 
 
 def test_review_projection_fallback_is_main_byte_for_byte(tmp_path):
@@ -4935,7 +5009,9 @@ def test_review_projection_fallback_is_main_byte_for_byte(tmp_path):
     # Red Team at 497aada: a person's fix whose re-check failed (group 'open')
     assert "Fixed by you · still open" in listed and "Decided by you · still open" not in listed
     assert "st st-open :: open" in out["pane_r-open"]["badges"]
-    assert out["pane_r-acc"]["date"] == [["dot pass", "passed"]]   # main's date label: main's style
+    # CHECK-RESULTS-WORDS-001: a passing date check states its observed
+    # outcome rather than a bare 'passed'
+    assert out["pane_r-acc"]["date"] == [["dot pass", "Timing matches source"]]
     # and the whole render, byte for byte, is main's
     assert hashlib.sha256(raw.encode()).hexdigest() == _MAIN_SHAPED_RENDER_SHA256
 
