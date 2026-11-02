@@ -248,7 +248,7 @@ def _summary(state: dict) -> dict:
 def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, background: bool = True,
                second_reader="default", coverage_as_of=None, wonder_reader="default",
                sam_reader="default", index=None, transcriber=None, default_run=None,
-               intake_preparer=None) -> FastAPI:
+               intake_preparer=None, research_tools=None, research_reader=None) -> FastAPI:
     """`reader`: what a run's job calls (default: Muse Spark, needs a key). `second_reader`: the independent second
     read (default: Muse Spark Open when no `reader` was given, none when one was, so a test with a fake reader never
     reaches the network; None: one reader). `background`: False runs a job to its stop inside the request, which is
@@ -274,6 +274,10 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         sam_reader = SamReader() if reader is None else None
     reader = reader or LiveReader()
 
+    # RESEARCHER-FULL-001: what a research run reaches the web and the Responses API with (default: live)
+    research_kwargs = {k: v for k, v in (("research_tools", research_tools), ("research_reader", research_reader))
+                       if v is not None}
+
     def start_job(run_id: str, run_index=None) -> None:
         job_second = SecondReader() if default_second_for_job else second_reader
         job_wonder, job_sam = wonder_reader, sam_reader
@@ -286,11 +290,11 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         job_index = run_index if run_index is not None else index
         if background:
             threading.Thread(target=jobs.run_job, args=(store.runs_dir, run_id, reader, job_second, coverage_as_of, job_wonder,
-                                   job_sam, job_index),
-                             daemon=True).start()
+                                   job_sam, job_index), daemon=True,
+                             **({"kwargs": research_kwargs} if research_kwargs else {})).start()
         else:
             jobs.run_job(store.runs_dir, run_id, reader, job_second, coverage_as_of, job_wonder, job_sam,
-                         job_index)
+                         job_index, **research_kwargs)
 
     validator = Draft202012Validator(json.loads(DECISION_SCHEMA.read_text()))
     app = FastAPI(title="Proof Reader decisions server", docs_url=None, redoc_url=None, openapi_url=None)
@@ -426,6 +430,17 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
             raise HTTPException(e.status, e.message) from None
         start_job(run_id)
         return jobs_view(store, run_id)
+
+    @app.post("/api/runs/{run_id}/research-stop", status_code=202)
+    def research_stop(run_id: str) -> dict:
+        """A person stops a research run: every company stops before its next model call; nothing is published."""
+        run = json.loads((store.run_dir(run_id) / "run.json").read_text())
+        if run["run"].get("choices", {}).get("mode") != "research":
+            raise HTTPException(409, "This is not a research run.")
+        if run["run"].get("status") not in ("queued", "running"):
+            raise HTTPException(409, "This research run is not going.")
+        from runs import research
+        return research.request_stop(store.runs_dir, run_id)
 
     @app.post("/api/runs/{run_id}/operator-stop")
     def operator_stop(run_id: str) -> dict:

@@ -119,7 +119,8 @@ TIME_WINDOW_MAX = 120
 # the built-in one (PTGX 8-K exhibit page 3, IONS annual report page 95, and the PTGX page as a scan: no text layer, regions
 # from SAM 3.1). "events" pages go to the event reader (both readers), "table" pages to the table reader.
 CHOICE_FIELDS = ("companies", "event_types", "time_window_months", "spending_limit_usd", "note_for_agent",
-                 "reader_tools", "models")
+                 "reader_tools", "models", "mode", "research_limits")
+MODES = ("pages", "research")
 
 
 # One lock for the run.json / job.json files of every run in this process.
@@ -302,12 +303,19 @@ def selectable_companies(index: sources.Index) -> tuple[list[str], list[str]]:
 def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
     """The New run panel's choices, or a ValueError with one plain sentence. `companies` may be ["all"]: every company in
     the sources index (the scanned variant of a page is not one of them), recorded as the list it stands for."""
-    index = index or sources.load_index()
     if not isinstance(body, dict):
         raise ValueError("The choices must be a JSON object.")
     extra = set(body) - set(CHOICE_FIELDS)
     if extra:
         raise ValueError(f"Unknown choice: {', '.join(sorted(extra))}.")
+    mode = body.get("mode") or "pages"
+    if mode not in MODES:
+        raise ValueError('mode must be "pages" (read the captured pages) or "research" (the research agent).')
+    if mode == "research":
+        return validate_research_choices(body)
+    if body.get("research_limits") is not None:
+        raise ValueError("research_limits go with mode research.")
+    index = index or sources.load_index()
     companies, types = body.get("companies"), body.get("event_types", list(read_events.EVENT_TYPES))
     if not isinstance(companies, list) or not companies or not all(isinstance(c, str) for c in companies):
         raise ValueError("Choose at least one company.")
@@ -353,10 +361,32 @@ def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
             "reader_tools": tools, "models": models}
 
 
+def validate_research_choices(body: dict) -> dict:
+    """RESEARCHER-FULL-001: the research agent's choices. Companies are tickers (up to 10; nothing need be captured
+    yet). The spending cap is the one limit that is on; it defaults to $30 (CVA, 2026-11-02). Every other limit in
+    research_limits is off (null) unless a person turns it on (runs/research.py LIMIT_KEYS)."""
+    from runs import research
+    companies = research.validate_research_companies(body.get("companies"))
+    limit = body.get("spending_limit_usd")
+    limit = research.DEFAULT_SPEND_CAP_USD if limit is None else limit
+    if not _finite_limit(limit):
+        raise ValueError("The spending limit must be a finite number of dollars, zero or more.")
+    note = research_instructions.validate(body.get("note_for_agent"))
+    if body.get("reader_tools") not in (None, False):
+        raise ValueError("reader_tools is a page-mode choice; a research run always uses its tools.")
+    if body.get("models") not in (None, "one"):
+        raise ValueError('A research run uses Muse Spark only (models "one"); the independent reviewer is stage S2.')
+    return {"companies": companies, "event_types": list(read_events.EVENT_TYPES), "time_window_months": 6,
+            "spending_limit_usd": limit, "note_for_agent": note, "reader_tools": False, "models": "one",
+            "mode": "research", "research_limits": research.validate_limits(body.get("research_limits"))}
+
+
 def label_for(number: int, choices: dict) -> str:
     """The run's label, from its choices: "12 companies · 6 months", "PTGX · 12 months", "IONS" (no window)."""
     companies = choices["companies"]
     who = companies[0] if len(companies) == 1 else f"{len(companies)} companies"
+    if choices.get("mode") == "research":
+        return f"{who} · research"
     window = choices.get("time_window_months")
     return f"{who} · {window} month{'s' if window != 1 else ''}" if window else who
 
@@ -763,6 +793,9 @@ def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None, accept_unkn
             raise JobError(409, what.get(status, f"A run that is {status} cannot be resumed."))
         job = json.loads((run_dir / "job.json").read_text())
         choices = meta["choices"]
+        if choices.get("mode") == "research":
+            raise JobError(409, "A research run is not resumed in S1: its captured sources and proposals stay as "
+                                "they are. Start a new research run (with a higher spending cap if the cap stopped it).")
         _check_source_freeze(job, index, choices["companies"])
         limit = choices["spending_limit_usd"]
         if spending_limit_usd is not None:
@@ -813,7 +846,7 @@ def resume_run(runs_dir: Path, run_id: str, spending_limit_usd=None, accept_unkn
 
 
 def run_job(runs_dir: Path, run_id: str, reader, second=None, as_of: date | None = None, wonder=None,
-            sam=None, index: sources.Index | None = None) -> None:
+            sam=None, index: sources.Index | None = None, research_tools=None, research_reader=None) -> None:
     """Carry the run on until it is done or a limit stops it. Never raises: an unexpected error ends it as failed.
     `second`: the second reader (capture/second_reader.py), or None for a run with one reader.
     `index`: the sources index (default: runs/sources_index.json, else the built-in one).
@@ -821,6 +854,13 @@ def run_job(runs_dir: Path, run_id: str, reader, second=None, as_of: date | None
     `wonder`: the escalation model (capture/wonder.py, Muse Wonder), or None for a run that never escalates.
     `as_of`: must equal the run's persisted as_of (else refused); if the run has none it is persisted. Coverage counts
     dates after the run's reference date (runs.state.run_reference_date) only."""
+    try:
+        mode = json.loads((Path(runs_dir) / run_id / "run.json").read_text())["run"]["choices"].get("mode")
+    except (OSError, ValueError, KeyError, TypeError):
+        mode = None
+    if mode == "research":      # RESEARCHER-FULL-001: one loop per company on the Responses API (runs/research.py)
+        from runs import research
+        return research.run_research(runs_dir, run_id, research_reader or reader, research_tools, as_of)
     job = Job(Path(runs_dir) / run_id, reader, second, as_of, wonder, sam, index)
     with RUN_LOCK:
         ACTIVE_RUNS.add(job.dir.name)
