@@ -28,10 +28,32 @@ def test_flagged_spans_are_recut_from_the_submitted_claim():
     assert out["model"] == MODEL and out["weights_sha256"] == "fakesha"
 
 
-def test_no_spans_is_supported_and_never_a_gate():
+def test_an_empty_span_list_is_no_finding_never_supported():
     out = support_signal(CLAIM, "the cited passage", detector=FakeDetector([]))
-    assert out["result"] == "supported" and out["spans"] == []
+    assert out["result"] == "no_finding" and out["spans"] == []
     assert not {"acceptance", "accepted", "group", "calendar", "status"} & set(out)
+
+
+def test_malformed_detector_output_is_could_not_run():
+    for bad in (None, False, 0, {}, "", 1):
+        out = support_signal(CLAIM, "x", detector=FakeDetector(bad))
+        assert out["result"] == "could_not_run" and out["spans"] == [], bad
+
+
+def test_the_claim_is_explicit_never_the_source_quote():
+    seen = {}
+
+    class Spy(FakeDetector):
+        def count_tokens(self, passage, claim):
+            seen["passage"], seen["claim"] = passage, claim
+            return 10
+
+    claim = {"title": "CB-100 readout expected in Q1 2027",
+             "quote": "the exact printed source sentence, different wording",
+             "claim": "CB-100 readout expected in Q1 2027"}
+    support_signal(claim, "the cited evidence passage", detector=Spy([]))
+    assert seen == {"passage": "the cited evidence passage",
+                    "claim": "CB-100 readout expected in Q1 2027"}
 
 
 def test_missing_weights_are_could_not_run(monkeypatch, tmp_path):

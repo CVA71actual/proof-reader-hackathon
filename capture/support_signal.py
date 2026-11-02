@@ -80,8 +80,8 @@ class _LocalDetector:
 
 
 def _claim_text(claim: dict) -> str:
-    """The claim's wording: 'claim', 'text' or 'quote' — the first present non-empty string."""
-    for key in ("claim", "text", "quote"):
+    """The claim's wording, given explicitly: 'claim' or 'text'. The source 'quote' is evidence, never the claim."""
+    for key in ("claim", "text"):
         value = (claim or {}).get(key)
         if isinstance(value, str) and value.strip():
             return value
@@ -95,7 +95,7 @@ def _result(result: str, spans=(), model=MODEL, weights_sha256=None, **extra) ->
 def support_signal(claim: dict, evidence_text: str, *, detector=None, weights_path=None) -> dict:
     """One claim's support signal against its cited evidence passage.
 
-    Returns {"result": "supported" | "unsupported_spans" | "could_not_run", "spans": [...], "model": ...,
+    Returns {"result": "no_finding" | "unsupported_spans" | "could_not_run", "spans": [...], "model": ...,
     "weights_sha256": ...}. Spans are character offsets into the submitted claim text. FINDINGS ONLY — the
     caller may display this beside the proposal for a person; it must never drive a check or decision.
     """
@@ -122,6 +122,9 @@ def support_signal(claim: dict, evidence_text: str, *, detector=None, weights_pa
         began = time.perf_counter()
         raw = det.predict(evidence_text, text)
         latency = time.perf_counter() - began
+        if not isinstance(raw, list):                            # malformed output is never a finding
+            return _result("could_not_run", model=det.model, weights_sha256=wsha,
+                           detail=f"detector returned a non-list result: {type(raw).__name__}")
     except Exception as exc:                                     # explicit, never a silent pass
         return _result("could_not_run", model=det.model, weights_sha256=wsha,
                        detail=f"{type(exc).__name__}: {exc}")
@@ -137,5 +140,5 @@ def support_signal(claim: dict, evidence_text: str, *, detector=None, weights_pa
         if "confidence" in s:
             span["confidence"] = s["confidence"]
         spans.append(span)
-    return _result("unsupported_spans" if spans else "supported", spans, model=det.model,
+    return _result("unsupported_spans" if spans else "no_finding", spans, model=det.model,
                    weights_sha256=wsha, tokens=tokens, latency_seconds=round(latency, 4))
