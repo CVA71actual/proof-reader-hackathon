@@ -130,12 +130,14 @@
     <div class="sh-s">Choices only — nothing here calls a model until the run starts, and the checks never change.</div>
     <h4>Companies</h4>
     <div class="sh-grid" id="nr-cos"></div>
-    <p class="hint">Read broadly across the captured sources. Dates and categories do not restrict discovery.</p>
+    <p class="hint">The run reads the ticked companies. Dates and categories do not restrict discovery.</p>
     <h4>Add tickers <span class="opt">(paste any list — commas, spaces or one per line)</span></h4>
     <textarea class="fld" id="nr-tickers" rows="2" placeholder="Tickers, e.g. ACME, BTBR"></textarea>
     <div class="btnrow" style="margin-top:8px"><button class="btn" id="nr-intake-go">Prepare tickers</button></div>
     <p class="hint" id="nr-paste-note" hidden></p>
     <div id="nr-intake-out" hidden></div>
+    <h4 class="qhead" id="nr-prev-h" hidden>Previously captured</h4>
+    <div class="sh-grid" id="nr-prev"></div>
     <h4>Spending limit <span class="opt">(USD — leave empty for no limit)</span></h4>
     <input class="fld" id="nr-limit" inputmode="decimal" placeholder="2.00" style="width:130px">
     <h4>Models</h4>

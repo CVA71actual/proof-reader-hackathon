@@ -4133,42 +4133,108 @@
   var nrLoadError = '';
   var nrLoadSeq = 0;
   var NR_EMPTY = 'No company has a page to read yet.';
-  function renderNewRunCompanies(companies, unreadable) {
+  // Addendum 2 (CVA): the Companies grid shows what YOU chose — prepared
+  // tickers as ticked boxes (greyed with their reason when they could not be
+  // read) and captured names you ticked. The old captured names stay available
+  // unticked under a quiet 'Previously captured' heading. Nothing pre-ticked.
+  var nrChosen = {};    // captured symbols the person ticked
+  // the prepared tickers for the box's current text (done intake only)
+  function nrPreparedTickers() {
+    var text = document.getElementById('nr-tickers').value.trim();
+    var st = nrIntake.last;
+    if (!text || !st || text !== nrIntake.text || st.status !== 'done') return [];
+    return st.tickers || [];
+  }
+  function renderChosen() {
     var cos = clear(document.getElementById('nr-cos'));
-    if (!companies.length) {
-      cos.append(el('div', 'hint', NR_EMPTY));
-    } else {
-      var all = el('label', 'tk2');
-      var allInput = el('input');
-      // NEWRUN-ONE-START-001: nothing pre-ticked — the person chooses; 'All N' ticks every box
-      allInput.type = 'checkbox'; allInput.id = 'nr-all'; allInput.checked = false;
-      all.append(allInput, document.createTextNode(' All ' + companies.length));
-      cos.append(all);
-      companies.forEach(function (t) {
+    var any = false;
+    nrPreparedTickers().forEach(function (tk) {
+      any = true;
+      if (tk.state === 'ready') {
         var l = el('label', 'tk2');
         var i = el('input');
-        i.type = 'checkbox'; i.className = 'nr-co'; i.value = t; i.checked = false;
-        l.append(i, document.createTextNode(' ' + t));
+        i.type = 'checkbox'; i.className = 'nr-ik'; i.value = tk.symbol; i.checked = true;
+        l.append(i, document.createTextNode(' ' + tk.symbol + (tk.company ? ' · ' + tk.company : '')));
+        i.addEventListener('change', function () { nrError(''); syncStartButton(); });
         cos.append(l);
+      } else {
+        // a ticker that could not be read: a greyed box with its plain reason
+        cos.append(el('span', 'tk2 off', tk.symbol + ' — ' + (INTAKE_STATE_WORDS[tk.state] || tk.state) +
+                      (tk.reason ? ' · ' + tk.reason : '')));
+      }
+    });
+    (nrCompanies || []).forEach(function (t) {
+      if (!nrChosen[t]) return;
+      any = true;
+      var l = el('label', 'tk2');
+      var i = el('input');
+      i.type = 'checkbox'; i.className = 'nr-co'; i.value = t; i.checked = true;
+      l.append(i, document.createTextNode(' ' + t));
+      i.addEventListener('change', function () {
+        if (i.checked) return;
+        delete nrChosen[t];
+        renderChosen();
+        renderPrevCompanies(nrCompanies, nrPrevUnreadable);
       });
-      allInput.addEventListener('change', function () {
-        document.querySelectorAll('.nr-co').forEach(function (c) { c.checked = allInput.checked; });
-      });
+      cos.append(l);
+    });
+    if (!any) cos.append(el('div', 'hint', 'Tick a company below, or paste tickers above.'));
+  }
+  var nrPrevUnreadable = [];
+  // the quiet 'Previously captured' list: available names, nothing pre-ticked
+  function renderPrevCompanies(companies, unreadable) {
+    nrPrevUnreadable = unreadable || [];
+    nrCompanies = companies;
+    var host = clear(document.getElementById('nr-prev'));
+    document.getElementById('nr-prev-h').hidden = !companies.length;
+    if (!companies.length) {
+      host.append(el('div', 'hint', NR_EMPTY));
+      renderChosen();
+      return;
     }
+    var all = el('label', 'tk2');
+    var allInput = el('input');
+    allInput.type = 'checkbox'; allInput.id = 'nr-all'; allInput.checked = false;
+    all.append(allInput, document.createTextNode(' All ' + companies.length));
+    host.append(all);
+    companies.forEach(function (t) {
+      if (nrChosen[t]) return;   // chosen names live in the Companies grid
+      var l = el('label', 'tk2');
+      var i = el('input');
+      i.type = 'checkbox'; i.className = 'nr-pc'; i.value = t; i.checked = false;
+      l.append(i, document.createTextNode(' ' + t));
+      i.addEventListener('change', function () {
+        if (i.checked) { nrChosen[t] = true; nrError(''); }
+        else delete nrChosen[t];
+        renderChosen();
+        renderPrevCompanies(companies, unreadable);
+      });
+      host.append(l);
+    });
+    allInput.addEventListener('change', function () {
+      companies.forEach(function (t) { if (allInput.checked) nrChosen[t] = true; else delete nrChosen[t]; });
+      nrError('');
+      renderChosen();
+      renderPrevCompanies(companies, unreadable);
+    });
     // companies the server names but holds no page for: plain names, nothing to tick
     (unreadable || []).forEach(function (t) {
-      cos.append(el('span', 'hint nr-nopage', t + ' — No pages read yet'));
+      host.append(el('span', 'hint nr-nopage', t + ' — No pages read yet'));
     });
+    renderChosen();
+  }
+  function renderNewRunCompanies(companies, unreadable) {
+    renderPrevCompanies(companies, unreadable);
   }
   function loadNewRunCompanies() {
     var seq = ++nrLoadSeq;
     nrCompanies = null; nrState = 'loading'; nrLoadError = '';
     // the old list never stays on screen while the new one loads
-    clear(document.getElementById('nr-cos')).append(el('div', 'hint', 'Loading…'));
+    clear(document.getElementById('nr-prev')).append(el('div', 'hint', 'Loading…'));
     function failed(msg) {
       if (seq !== nrLoadSeq) return;
       nrState = 'failed'; nrLoadError = msg;
-      clear(document.getElementById('nr-cos'));
+      clear(document.getElementById('nr-prev'));
       // inline red line, no toast (the order's rule for dialog errors)
       nrError(msg);
     }
@@ -4299,10 +4365,18 @@
       prep.hidden = false;
       prep.textContent = 'Preparing… (' + fin + ' of ' + (nrIntake.last.requested || []).length + ' done)';
     } else {
-      btn.textContent = 'Continue with ' + st.ready_count + ' ready';
-      btn.disabled = !!st.run_id || st.intake_id === nrIntake.usedId || !st.ready_count || !!nrBusy;
+      // addendum 2: the button counts the boxes you ticked
+      var n = tickedReadyCount(st);
+      btn.textContent = 'Continue with ' + n + ' ready';
+      btn.disabled = !!st.run_id || st.intake_id === nrIntake.usedId || !n || !!nrBusy;
       prep.hidden = true;
     }
+  }
+  // the prepared ready tickers whose box is ticked
+  function tickedReadyCount(st) {
+    var ticked = {};
+    document.querySelectorAll('.nr-ik:checked').forEach(function (c) { ticked[c.value] = true; });
+    return (st.tickers || []).filter(function (t) { return t.state === 'ready' && ticked[t.symbol]; }).length;
   }
   // Operator ruling: when the paste box has any text, the run reads only the
   // pasted tickers — the captured-name boxes are disabled and one plain line
@@ -4312,7 +4386,8 @@
   function syncPasteMode() {
     var text = document.getElementById('nr-tickers').value.trim();
     var pasted = !!text;
-    document.querySelectorAll('.nr-co, #nr-all').forEach(function (c) { c.disabled = pasted; });
+    document.querySelectorAll('.nr-pc, .nr-co, #nr-all').forEach(function (c) { c.disabled = pasted; });
+    renderChosen();
     syncStartButton();
     var note = document.getElementById('nr-paste-note');
     note.textContent = pasted ? NR_PASTE_ONLY : '';
@@ -4444,9 +4519,11 @@
     if (nrBusy) return;
     if ((st.intake_id && st.intake_id === nrIntake.usedId) || st.run_id) return;
     if (!researchReady()) return;
-    var ready = (st.tickers || []).filter(function (t) { return t.state === 'ready'; })
+    var ticked = {};
+    document.querySelectorAll('.nr-ik:checked').forEach(function (c) { ticked[c.value] = true; });
+    var ready = (st.tickers || []).filter(function (t) { return t.state === 'ready' && ticked[t.symbol]; })
                                    .map(function (t) { return t.symbol; });
-    if (!ready.length) { nrError('No ticker is ready, so there is nothing for a run to read.'); return; }
+    if (!ready.length) { nrError('Tick at least one prepared ticker.'); return; }
     var limit = null;
     var limitRaw = document.getElementById('nr-limit').value.trim();
     if (limitRaw !== '') {
@@ -4467,7 +4544,7 @@
       syncPasteMode();
     }
     return A.newRun({ intake_id: st.intake_id, companies: ready,
-               accept_ready_subset: st.failed_count > 0,
+               accept_ready_subset: st.requested.some(function (s) { return ready.indexOf(s) < 0; }),
                event_types: NEW_RUN_TYPES.map(function (t) { return t[0]; }),
                time_window_months: null,
                spending_limit_usd: limit,

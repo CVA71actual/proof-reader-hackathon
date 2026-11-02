@@ -353,6 +353,10 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
 .tk2{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-weight:500;background:var(--panel2);cursor:pointer}
 .tk2:hover{border-color:var(--faint)}
 .tk2 input{accent-color:var(--accent)}
+/* NEWRUN-ONE-START-001 addendum 2: the quiet 'Previously captured' heading
+   and a prepared ticker that could not be read (greyed, reason on it) */
+.qhead{color:var(--sub);font-weight:500;margin:12px 0 2px}
+.tk2.off{color:var(--sub);border-style:dashed;cursor:default}
 /* G4-R3: the job block inside the rail run card */
 .runcard .jb{margin-top:8px;border-top:1px solid var(--line);padding-top:8px;font-size:12px}
 .runcard .jb-row1{display:flex;align-items:center;gap:6px;font-weight:600}
