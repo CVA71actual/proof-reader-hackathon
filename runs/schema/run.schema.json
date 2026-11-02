@@ -67,7 +67,8 @@
             "time_window_months": {"type": ["integer", "null"], "minimum": 1},
             "spending_limit_usd": {"type": ["number", "null"], "minimum": 0},
             "note_for_agent": {"type": ["string", "null"]},
-            "reader_tools": {"type": "boolean", "description": "Whether the first reader could call the checks as tools while it read (capture/reader_tools.py). Absent on a run saved before it existed: false."}
+            "reader_tools": {"type": "boolean", "description": "Whether the first reader could call the checks as tools while it read (capture/reader_tools.py). Absent on a run saved before it existed: false."},
+            "models": {"enum": ["one", "all"], "description": "one: Muse Spark only (no second reader, no Muse Wonder escalation, no SAM 3.1); all: the usual set. Absent on a run saved before it existed: all."}
           }
         },
         "spend_usd": {"type": ["number", "null"], "minimum": 0, "description": "The sum of the cost_usd of every Model step in the rows' trails; null when the spend was not recorded."},

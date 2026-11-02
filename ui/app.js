@@ -371,7 +371,7 @@
             .then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
         });
       },
-      settings: function () { return getJSON('/api/settings').catch(function () { return {}; }); },
+      settings: function () { return getJSON('/api/settings').then(function (b) { return b || {}; }, function () { return null; }); },
       intake: function (text) {
         // TICKER-INTAKE-001: pasted tickers the server resolves and captures; no model call
         return fetch('/api/intake', {
@@ -474,6 +474,13 @@
       var t = rowTarget(r);
       return t.decided_by_person && !needsAttention(t);
     });
+  }
+  // ONE-MODEL-RUN-001: a run started with Muse Spark only (choices.models
+  // 'one'); the same sentences as runs/one_model.py
+  var ONE_MODEL_LINE = 'One model: Muse Spark only (no second reader, no escalation).';
+  var NO_SECOND_READER = 'No second reader in this run';
+  function oneModelRun(meta) {
+    return !!(meta && meta.choices && meta.choices.models === 'one');
   }
   // A-C9: one name per reader, from the run itself — the first reader from
   // the rows it proposed, the second and Wonder from the run's own record
@@ -957,6 +964,11 @@
       ['EXC', 'excluded', st.excluded.code + st.excluded.person]
     ];
     chipDefs.forEach(function (d) {
+      // ONE-MODEL-RUN-001: no second reader ran, so no 'caught by the second reader: 0'
+      if (d[0] === 'MREADER' && oneModelRun(meta)) {
+        countersEl.append(el('span', 'ctchip zero', NO_SECOND_READER));
+        return;
+      }
       if (!d[2]) {
         countersEl.append(el('span', 'ctchip zero', d[1] + ': 0'));
         return;
@@ -4102,7 +4114,8 @@
     }
     kv('Needs attention', String(st.unresolved));
     kv('Mistakes caught by code', String(st.mistakes.code));
-    kv('Mistakes caught by the second reader', String(st.mistakes.second_reader));
+    if (oneModelRun(meta)) kv('Second reader', NO_SECOND_READER);
+    else kv('Mistakes caught by the second reader', String(st.mistakes.second_reader));
     kv('Mistakes caught by you', String(st.mistakes.person));
     kv('Excluded by code', String(st.excluded.code));
     kv('Excluded by you', String(st.excluded.person));
@@ -4180,6 +4193,56 @@
     e.textContent = msg;
     e.hidden = !msg;
   }
+  // ---------------- research instructions (#52): the box's default and limit
+  // come from GET /api/settings (research_instructions_default /
+  // research_instructions_max_length) — never a hard-coded default. Loaded
+  // means a non-empty default AND a positive whole-number limit; anything
+  // else refuses the start rather than run on an unseen default. Blank
+  // starts the run with the displayed default; the hint says so in the open.
+  var nrResearch = { defaultText: null, maxLength: null, loaded: false };
+  function researchFromSettings(body) {
+    var d = body && typeof body.research_instructions_default === 'string'
+      ? body.research_instructions_default : null;
+    var m = body && body.research_instructions_max_length;
+    var maxOk = typeof m === 'number' && isFinite(m) && Math.floor(m) === m && m > 0;
+    var loaded = !!d && maxOk;
+    return { defaultText: loaded ? d : null, maxLength: maxOk ? m : null, loaded: loaded };
+  }
+  // the start buttons refuse until the settings are loaded — never an
+  // unseen server default
+  function researchReady() {
+    if (nrResearch.loaded) return true;
+    nrError('The default instructions could not be loaded. Close and open New run to try again.');
+    return false;
+  }
+  // what a run receives: the box's text exactly as written, byte for byte;
+  // whitespace-only chooses the displayed default
+  function notePayload() {
+    var raw = document.getElementById('nr-note').value;
+    return raw.trim() === '' ? nrResearch.defaultText : raw;
+  }
+  // the hint under the box: the plain explanation, or how blank/over-long resolves
+  function noteHintText(value, rs) {
+    var text = value || '';
+    if (!rs.loaded) return 'The default instructions could not be loaded. Close and open New run to try again.';
+    if (rs.maxLength && text.length > rs.maxLength)
+      return 'At most ' + rs.maxLength + ' characters — this is ' + text.length + '. Nothing is cut short.';
+    if (!text.trim() && rs.defaultText) return 'Blank — the run uses the default instructions.';
+    return 'Guides the research; the source checks still run on every row.';
+  }
+  function applyResearchSettings(body) {
+    nrResearch = researchFromSettings(body);
+    var el = document.getElementById('nr-note');
+    // prefill from the server's default once; a person's edits never
+    // overwritten — a delayed answer finds the box as the person left it
+    if (nrResearch.loaded && nrResearch.defaultText && !el.value) el.value = nrResearch.defaultText;
+    updateNoteHint();
+  }
+  function updateNoteHint() {
+    document.getElementById('nr-note-hint').textContent =
+      noteHintText(document.getElementById('nr-note').value, nrResearch);
+  }
+  document.getElementById('nr-note').addEventListener('input', function () { nrError(''); updateNoteHint(); });
   // ---------------- ticker intake (TICKER-INTAKE-001): paste any list; the
   // server resolves each symbol against SEC records and captures its documents.
   // The run starts from the intake with the ready names only — the failures
@@ -4328,11 +4391,18 @@
       nrError('The server is not reachable.');
     });
   }
+  // ONE-MODEL-RUN-001: 'one' = Muse Spark only, 'all' = checked by a second
+  // reader (the default); both Run now and Continue send it
+  function nrModels() {
+    var one = document.getElementById('nr-models-one');
+    return one && one.checked ? 'one' : 'all';
+  }
   // Continue with N ready: the run reads only this intake's captured pages —
   // the ready names; accept_ready_subset when a requested name is left out
   function startRunFromIntake(st, btn) {
     if (nrBusy) return;
     if ((st.intake_id && st.intake_id === nrIntake.usedId) || st.run_id) return;
+    if (!researchReady()) return;
     var ready = (st.tickers || []).filter(function (t) { return t.state === 'ready'; })
                                    .map(function (t) { return t.symbol; });
     if (!ready.length) { nrError('No ticker is ready, so there is nothing for a run to read.'); return; }
@@ -4360,8 +4430,9 @@
                event_types: NEW_RUN_TYPES.map(function (t) { return t[0]; }),
                time_window_months: null,
                spending_limit_usd: limit,
-               note_for_agent: document.getElementById('nr-note').value.trim() || null,
-               reader_tools: document.getElementById('nr-tools').checked }).then(function (res) {
+               note_for_agent: notePayload(),
+               reader_tools: document.getElementById('nr-tools').checked,
+               models: nrModels() }).then(function (res) {
       if (!res.ok && res.status === 409 && res.body && typeof res.body.run_id === 'string') {
         // the server already bound a run to this intake: it is used, link to that run
         nrBusy = false;
@@ -4402,6 +4473,10 @@
     // reopening keeps the last intake result (the failures stay listed)
     if (nrIntake.last) renderIntakeStatus(document.getElementById('nr-intake-out'), nrIntake.last);
     syncPasteMode();
+    // retry the research settings when they never loaded — that is the retry
+    // the hint promises; a loaded default is never overwritten
+    if (!nrResearch.loaded) A.settings().then(function (s) { applyResearchSettings(s); });
+    else updateNoteHint();
   });
   document.getElementById('nr-cancel').addEventListener('click', function () { newrunWrap.hidden = true; });
   // G4-6: one wording in both limit boxes, and the red line clears as soon as
@@ -4411,6 +4486,7 @@
   // Run now: the captured names ticked above; refused while the paste box has text
   function startRunNow() {
     if (nrBusy) return;
+    if (!researchReady()) return;
     var pastedText = document.getElementById('nr-tickers').value.trim();
     if (pastedText) {
       nrError(pastedText === nrIntake.text && nrIntake.last ? NR_PASTE_ONLY : NR_PREPARE_FIRST);
@@ -4432,7 +4508,7 @@
       // anything that is not finite (Number.isFinite), never send the request
       if (!Number.isFinite(limit) || limit < 0) { nrError('The spending limit must be a number of dollars, zero or more.'); return; }
     }
-    var note = document.getElementById('nr-note').value.trim() || null;
+    var note = notePayload();
     nrError('');
     nrBusy = true;
     syncPasteMode();
@@ -4440,7 +4516,8 @@
     return A.newRun({ companies: companies, event_types: types,
                time_window_months: null,
                spending_limit_usd: limit, note_for_agent: note,
-               reader_tools: document.getElementById('nr-tools').checked }).then(function (res) {
+               reader_tools: document.getElementById('nr-tools').checked,
+               models: nrModels() }).then(function (res) {
       done();
       if (!res.ok) { nrError((res.body && res.body.detail) || ('HTTP ' + res.status)); return; }
       newrunWrap.hidden = true;
@@ -4525,6 +4602,7 @@
       row1.append(el('span', null, JOB_STATUS_WORDS[st] || st));
     }
     host.append(row1);
+    if (oneModelRun(meta)) host.append(el('div', 'jb-sub', ONE_MODEL_LINE));
     var bits = [];
     if (meta.turn_count !== null && meta.turn_count !== undefined) {
       bits.push('turn ' + meta.turn_count + ' of ' + (meta.turn_limit || '?'));
@@ -4771,6 +4849,7 @@
   function boot() {
     Promise.all([A.runs(), A.settings()]).then(function (both) {
       var list = both[0], dflt = both[1] && both[1].default_run;
+      applyResearchSettings(both[1]);
       runs = list;
       if (!runs.length) {
         document.getElementById('audit-rows').append(el('div', 'empty', 'No runs found under runs/.'));

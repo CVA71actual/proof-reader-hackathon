@@ -126,7 +126,7 @@ def reads_the_page(prompt, n):
     for w in words:
         for k in ("x0", "y0", "x1", "y1"):
             w[k] = float(w[k])
-    head = re.search(r"company's SEC filing: (.+?) \(ticker (\w+)\)", prompt)
+    head = re.search(r"^Read (.+?) \((\w+)\), [^\n]+? exhibit ", prompt, re.MULTILINE)
     filed = re.search(r"filed\s+(\d{4})-(\d{2})-(\d{2})", prompt)
     from datetime import date
     today = date(int(filed[1]), int(filed[2]), int(filed[3]))

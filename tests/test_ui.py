@@ -215,7 +215,7 @@ def test_u8_new_run_panel_is_wired():
     for tk in ("ABVX", "ROIV", "ZLAB", "CLDX", "TSHA", "MNPR", "ENTA", "RYTM", "RVMD"):
         assert tk not in js, tk
     assert "renderNewRunCompanies" in js and "loadNewRunCompanies" in js
-    assert "Adds context without narrowing discovery or turning off checks." in html
+    assert "Guides the research; the source checks still run on every row." in html
     for word in ("Next 3 months", "Next 6 months", "Next 12 months"):
         assert word not in html, word
     # Run now POSTs to the run-controls endpoints; nothing calls a model from the UI
@@ -1191,6 +1191,177 @@ def test_new_run_company_load_failure_is_an_inline_error_not_a_toast():
     assert got.returncode == 0, got.stdout + got.stderr
 
 
+def test_research_instructions_pins():
+    # #52: the New run note becomes 'Research instructions' — a real textarea,
+    # no 200-char cap, default and limit from GET /api/settings only
+    html = (UI / "index.html").read_text()
+    assert '<textarea class="fld" id="nr-note" rows="3"' in html
+    assert 'Research instructions' in html
+    note_line = html[html.index('id="nr-note"') - 40:html.index('id="nr-note"') + 60]
+    assert 'maxlength' not in note_line, note_line
+    assert 'Note for the agent' not in html
+    js = (UI / "app.js").read_text()
+    for word in ("research_instructions_default", "research_instructions_max_length",
+                 "function researchFromSettings(", "function noteHintText(",
+                 "function applyResearchSettings(", "function notePayload(", "function researchReady(",
+                 "Blank — the run uses the default instructions.",
+                 "The default instructions could not be loaded.",
+                 "Close and open New run to try again"):
+        assert word in js, word
+    # no hard-coded default text of our own: the only long string literals are
+    # sentences, and the settings keys are the only source of the default
+    assert "defaultText: '" not in js and 'defaultText: "' not in js
+
+
+def test_research_instructions_behavior():
+    # prefill from settings once; blank says the default will be used; over the
+    # limit refuses instead of truncating; unavailable says so and never
+    # claims an unseen default; edited text survives ticker preparation errors;
+    # both start paths send the exact text (blank -> displayed server default)
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("el", "clear", "nrError", "researchFromSettings", "noteHintText", "notePayload",
+                     "researchReady", "applyResearchSettings", "updateNoteHint", "startIntake",
+                     "stopIntakePoll"))
+    script = "\n".join([
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], hidden: false,",
+        "  addEventListener: function () {},",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "var els = { 'nr-tickers': { value: '' }, 'nr-note': { value: '' } };",
+        "var nodes = {};",
+        "var nrResearch = { defaultText: null, maxLength: null, loaded: false };",
+        "var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null, usedRun: null };",
+        "function setInterval() { return 1; }",
+        "function clearInterval() {}",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (els[id]) return els[id]; if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        "var A = { intake: function () { return Promise.reject(new Error('down')); },",
+        "          settings: function () { return Promise.resolve({ research_instructions_default: 'Read the 8-K exhibits.',",
+        "            research_instructions_max_length: 4000 }); } };",
+        fns,
+        # settings with the contract fields: the box prefills, hint is the plain line
+        "applyResearchSettings({ research_instructions_default: 'Read the 8-K exhibits.',",
+        "  research_instructions_max_length: 4000 });",
+        "if (els['nr-note'].value !== 'Read the 8-K exhibits.') { console.error('prefill: ' + els['nr-note'].value); process.exit(2); }",
+        "if (nodes['nr-note-hint'].textContent !== 'Guides the research; the source checks still run on every row.')",
+        "  { console.error(nodes['nr-note-hint'].textContent); process.exit(3); }",
+        # a person's text is never overwritten by a later settings apply
+        "els['nr-note'].value = 'Focus on phase 3 readouts.';",
+        "applyResearchSettings({ research_instructions_default: 'Read the 8-K exhibits.', research_instructions_max_length: 4000 });",
+        "if (els['nr-note'].value !== 'Focus on phase 3 readouts.') { console.error('edit lost'); process.exit(4); }",
+        # blank resolves visibly to the default
+        "els['nr-note'].value = '   ';",
+        "updateNoteHint();",
+        "if (nodes['nr-note-hint'].textContent !== 'Blank — the run uses the default instructions.')",
+        "  { console.error(nodes['nr-note-hint'].textContent); process.exit(5); }",
+        # whitespace-only box resolves to the displayed default (payload rule)
+        "if (notePayload() !== 'Read the 8-K exhibits.') { console.error('blank payload'); process.exit(6); }",
+        # a non-blank box is preserved byte for byte — no trim, no client cut
+        "els['nr-note'].value = '  Focus on phase 3 readouts.  ';",
+        "if (notePayload() !== '  Focus on phase 3 readouts.  ') { console.error('raw not kept'); process.exit(18); }",
+        # over the limit the hint counts — the text still goes to the run as
+        # written; the server answers any refusal
+        "els['nr-note'].value = new Array(4002).join('x');",
+        "updateNoteHint();",
+        "if (nodes['nr-note-hint'].textContent.indexOf('At most 4000 characters — this is 4001.') === -1)",
+        "  { console.error(nodes['nr-note-hint'].textContent); process.exit(7); }",
+        # settings unavailable: clear sentence, no invented default, text kept
+        "applyResearchSettings(null);",
+        "if (nrResearch.defaultText !== null || nrResearch.loaded !== false || !els['nr-note'].value)",
+        "  { console.error('default invented or text wiped'); process.exit(10); }",
+        "if (nodes['nr-note-hint'].textContent !== 'The default instructions could not be loaded. Close and open New run to try again.')",
+        "  { console.error(nodes['nr-note-hint'].textContent); process.exit(11); }",
+        # loaded requires a non-empty default AND a positive whole-number max
+        "applyResearchSettings({ research_instructions_default: '', research_instructions_max_length: 4000 });",
+        "if (nrResearch.loaded) { console.error('empty default loaded'); process.exit(14); }",
+        "applyResearchSettings({ research_instructions_default: 'Read the 8-K exhibits.', research_instructions_max_length: 2.5 });",
+        "if (nrResearch.loaded) { console.error('fractional max loaded'); process.exit(15); }",
+        "applyResearchSettings({ research_instructions_default: 'Read the 8-K exhibits.', research_instructions_max_length: 0 });",
+        "if (nrResearch.loaded) { console.error('zero max loaded'); process.exit(16); }",
+        "applyResearchSettings({ default_run: null });",
+        "if (nrResearch.loaded || nrResearch.defaultText !== null) { console.error('old server'); process.exit(12); }",
+        "applyResearchSettings({ research_instructions_default: 'Read the 8-K exhibits.', research_instructions_max_length: 4000 });",
+        "if (!nrResearch.loaded) { console.error('valid settings not loaded'); process.exit(17); }",
+        # edited text survives a ticker preparation failure untouched (and a
+        # delayed settings answer does not overwrite it: value non-empty)
+        "els['nr-tickers'].value = 'ACME';",
+        "els['nr-note'].value = 'Keep this text.';",
+        "applyResearchSettings({ research_instructions_default: 'Read the 8-K exhibits.', research_instructions_max_length: 4000 });",
+        "if (els['nr-note'].value !== 'Keep this text.') { console.error('late overwrite'); process.exit(19); }",
+        "startIntake().then(function () {",
+        "  if (els['nr-note'].value !== 'Keep this text.') { console.error('note lost on failure'); process.exit(13); }",
+        "  console.log('ok');",
+        "}).catch(function (e) { console.error(e && e.message); process.exit(99); });",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_research_instructions_both_start_paths_send_the_exact_text():
+    # Continue with N ready and Run now send the box's exact text; blank goes
+    # as the displayed server default
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("el", "clear", "nrError", "nrModels", "researchReady", "notePayload", "startRunFromIntake", "syncPasteMode",
+                     "renderIntakeStatus", "intakeScopeLine", "dayMonth"))
+    script = "\n".join([
+        "var NEW_RUN_TYPES = [['trial_results', 'Trial results']];",
+        "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',",
+        "  'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];",
+        "var INTAKE_STATE_WORDS = { ready: 'Ready' };",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], hidden: false, disabled: false,",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "var els = { 'nr-note': { value: 'Focus on catalysts.' }, 'nr-limit': { value: '' }, 'nr-tools': { checked: false },",
+        "            'nr-tickers': { value: '' } };",
+        "var nodes = {};",
+        "var nrResearch = { defaultText: 'Read the 8-K exhibits.', maxLength: 4000, loaded: true };",
+        "var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null, usedRun: null };",
+        "var nrBusy = false;",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  querySelectorAll: function () { return []; },",
+        "  getElementById: function (id) { if (els[id]) return els[id]; if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        "var newrunWrap = { hidden: false };",
+        "var runs = []; var switched = null;",
+        "function toast() {}",
+        "function switchRun(id) { switched = id; }",
+        "function stopIntakePoll() {}",
+        "var posted = [];",
+        "var A = { newRun: function (body) { posted.push(body); return Promise.resolve({ ok: true, status: 202,",
+        "    body: { id: 'run1', number: 1, label: 'Run 1' } }); },",
+        "  runs: function () { return Promise.resolve([]); } };",
+        fns,
+        "var st = { intake_id: 'ik1', ready_count: 1, failed_count: 0, tickers: [",
+        "    { symbol: 'ACME', company: 'Acme', state: 'ready', reason: null, documents: 1, pages: 1 } ] };",
+        # settings not loaded: the start refuses with the plain retry sentence
+        "nrResearch.loaded = false;",
+        "startRunFromIntake(st, null);",
+        "if (posted.length || nodes['nr-error'].hidden",
+        "    || nodes['nr-error'].textContent !== 'The default instructions could not be loaded. Close and open New run to try again.') {",
+        "  console.error('not refused: ' + JSON.stringify(posted) + ' / ' + nodes['nr-error'].textContent); process.exit(2); }",
+        "nrResearch.loaded = true;",
+        # non-blank text goes byte for byte — surrounding spaces preserved
+        "els['nr-note'].value = '  Focus on catalysts.  ';",
+        "startRunFromIntake(st, null);",
+        "if (!posted.length || posted[0].note_for_agent !== '  Focus on catalysts.  ') { console.error(JSON.stringify(posted)); process.exit(3); }",
+        # whitespace-only chooses the displayed default, exactly
+        "els['nr-note'].value = '   ';",
+        "Promise.resolve().then(function () {",
+        "  startRunFromIntake({ intake_id: 'ik2', ready_count: 1, failed_count: 0, tickers: [",
+        "      { symbol: 'ACME', company: 'Acme', state: 'ready', reason: null, documents: 1, pages: 1 } ] }, null);",
+        "}).then(function () {",
+        "  if (posted[1].note_for_agent !== 'Read the 8-K exhibits.') { console.error(JSON.stringify(posted[1])); process.exit(4); }",
+        "  console.log('ok');",
+        "}).catch(function (e) { console.error(e && e.message); process.exit(99); });",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
 def test_ticker_intake_pins():
     # TICKER-INTAKE-001: the New run sheet intakes pasted tickers through the
     # server — no hard-coded list, plain words, inline errors (the red line)
@@ -1330,7 +1501,8 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
     js = (UI / "app.js").read_text()
     fns = "\n".join(_grab_fn(js, n) for n in
                     ("el", "clear", "nrError", "dayMonth", "intakeScopeLine", "renderIntakeStatus",
-                     "syncPasteMode", "stopIntakePoll", "pollIntake", "startIntake", "startRunFromIntake"))
+                     "syncPasteMode", "stopIntakePoll", "pollIntake", "startIntake", "startRunFromIntake",
+                     "nrModels", "notePayload", "researchReady"))
     script = "\n".join([
         "var NR_PASTE_ONLY = 'This run reads only the pasted tickers. Clear the box to choose from the captured names instead.';",
         "var nrBusy = false;",
@@ -1359,6 +1531,7 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
         "function clearInterval() {}",
         "var posted = null, intakeText = null, statusCalls = 0;",
         "var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null };",
+        "var nrResearch = { defaultText: null, maxLength: null, loaded: true };",
         "var PREPARING = { intake_id: 'ik1', status: 'preparing', ready_count: 0, failed_count: 0,",
         "  requested: ['ACME', 'BTBR'], tickers: [",
         "    { symbol: 'ACME', company: 'Acme Corporation', state: 'capturing', reason: 'Capturing 8-K exhibits filed 2026-08-04 to 2026-11-02.', documents: 1, pages: 0 },",
@@ -3569,7 +3742,7 @@ def test_report_refusal_prints_the_servers_reason():
     js = (UI / "app.js").read_text()
     fns = "\n".join(_grab_fn(js, n) for n in
                     ("currentRunId", "reportUrl", "reportRefusalReason", "reportFileNames", "rowTarget",
-                     "reviewAcceptedCount", "reviewAxis", "renderExport"))
+                     "reviewAcceptedCount", "reviewAxis", "oneModelRun", "renderExport"))
     script = "\n".join([
         "function el(tag, cls, text) { return { tag: tag, className: cls || '', textContent: text || '', children: [], style: {},",
         "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
@@ -4976,7 +5149,7 @@ def _render_card_and_summary(meta: dict, accepted: int = 0) -> dict:
     consts = "\n".join(_grab_var(js, n) for n in ("GROUP_NAMES", "GROUP_ORDER", "JOB_STATUS_WORDS", "JOB_ACTIVE",
                                                    "JOB_PAUSABLE", "JOB_LIMIT_STOP"))
     fns = "\n".join(_grab_fn(js, n) for n in ("money", "cents", "costPerKeptRowWords", "unpricedMark", "jobReason",
-                                               "updateRunCardJob", "reviewAxis", "renderExport", "reviewAcceptedCount", "projectionComplete", "partialProjection"))
+                                               "updateRunCardJob", "oneModelRun", "reviewAxis", "renderExport", "reviewAcceptedCount", "projectionComplete", "partialProjection"))
     script = f"""
 function make() {{
   return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, hidden: false, value: '',
@@ -5105,7 +5278,7 @@ def _new_run_sheet_script(body_lines, extra_fns=()):
     js = (UI / "app.js").read_text()
     names = ("el", "nrError", "dayMonth", "intakeScopeLine", "renderIntakeStatus",
              "syncPasteMode", "stopIntakePoll", "pollIntake", "startIntake", "startRunFromIntake",
-             "startRunNow") + tuple(extra_fns)
+             "startRunNow", "nrModels", "notePayload", "researchReady") + tuple(extra_fns)
     fns = "\n".join(_grab_fn(js, n) for n in names)
     consts = "\n".join(re.search(r"var %s = '[^']*';" % n, js).group(0)
                        for n in ("NR_PASTE_ONLY", "NR_PREPARE_FIRST", "NR_EMPTY"))
@@ -5135,6 +5308,7 @@ def _new_run_sheet_script(body_lines, extra_fns=()):
         "var newrunWrap = { hidden: false };",
         "var runs = []; var switched = null; var nrState = 'ready'; var nrLoadError = '';",
         "var nrCompanies = ['IONS', 'PTGX'];",
+        "var nrResearch = { defaultText: null, maxLength: null, loaded: true };",
         "function toast() {}",
         "function switchRun(id) { switched = id; }",
         "function setInterval() { return 1; }",

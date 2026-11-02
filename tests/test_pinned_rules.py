@@ -18,7 +18,7 @@ from io import BytesIO
 import pytest
 from fastapi.testclient import TestClient
 
-from capture import read_events, read_table, sam
+from capture import read_events, read_table, research_instructions, sam
 from capture.capture_source import load_entry
 from checks import date_fixture_test as fx
 from checks.event_checks import COULD_NOT_RUN, add_months_to, date_match, parse_exact_date
@@ -160,14 +160,15 @@ def test_r32_second_reader_scan_and_wonder_prompts_are_not_narrowed_by_type_choi
     words_doc = json.loads((FIXTURES / f"{PIN}.words.json").read_text())
     trig = {"kind": "check", "label": "Date read as written", "why": "The period differs."}
     narrow = ("filing",)
+    brief = research_instructions.DEFAULT
     pairs = {
         # the second reader builds its prompts with read_events' builders and their default (all) types
-        "second reader, words": (read_events.build_prompt(words_doc, entry, narrow),
-                                 read_events.build_prompt(words_doc, entry)),
-        "second reader, image": (read_events.build_image_prompt(entry, narrow),
-                                 read_events.build_image_prompt(entry)),
-        "scan region": (scan.region_prompt(entry, {"concept": sam.FALLBACK}, narrow),
-                        scan.region_prompt(entry, {"concept": sam.FALLBACK})),
+        "second reader, words": (read_events.build_prompt(words_doc, entry, narrow, brief),
+                                 read_events.build_prompt(words_doc, entry, note=brief)),
+        "second reader, image": (read_events.build_image_prompt(entry, narrow, brief),
+                                  read_events.build_image_prompt(entry, note=brief)),
+        "scan region": (scan.region_prompt(entry, {"concept": sam.FALLBACK}, narrow, brief),
+                        scan.region_prompt(entry, {"concept": sam.FALLBACK}, note=brief)),
         "wonder": (escalate.prompt(entry, trig, (100.0, 200.0), words_doc, narrow),
                    escalate.prompt(entry, trig, (100.0, 200.0), words_doc)),
     }
@@ -178,8 +179,10 @@ def test_r32_second_reader_scan_and_wonder_prompts_are_not_narrowed_by_type_choi
             assert "Repair only the date fields" in narrowed
             assert "Do not rewrite the event" in narrowed
         else:
-            assert "historical developments" in narrowed, name
-            assert "do not omit a proposal because of its date or category" in narrowed, name
+            assert brief in narrowed, name
+            assert "undated plans and conditional events" in narrowed, name
+            assert "source's meaning, timing and qualifications" in narrowed, name
+            assert "Routine financial figures alone are not calendar events." in narrowed, name
     assert read_table.build_image_prompt() == read_table.build_image_prompt(None)
 
 

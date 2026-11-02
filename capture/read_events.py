@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from capture import read_table
+from capture import research_instructions
 from capture.capture_source import FIXTURES, load_entry
 from capture.read_table import BASE_URL, ENV_FILE, FAKE_MODEL, MODEL, _num, _plain_error, _status, sha256_text
 
@@ -36,104 +37,46 @@ FAKE_READING_PATH = FIXTURES / f"{PIN}.events.fake.json"
 from checks.event_checks import EVENT_TYPES, type_guide   # the one event-type word table (checks/event_checks.py)
 
 INSTRUCTIONS = """\
-You are reading one page of a company's SEC filing: {company} (ticker {ticker}), {form} exhibit {exhibit}, filed
-{filing_date}. Below is every word on the page, one per line, as: id|text|x0|y0|x1|y1
-Coordinates are PDF points. The origin is the top-left corner of the page and y grows downward.
-The page is {width} points wide and {height} points tall.
-
-Read the page broadly and propose the events and supporting context it describes, including undated or
-conditional plans, historical developments, and changed or withdrawn guidance. Preserve the timing as written;
-do not omit a proposal because of its date or category. Answer with JSON only, in exactly this shape:
-{{
-  "events": [
-    {{
-      "ticker": "{ticker}",
-      "company": "{company}",
-      "program": "<the drug or program name as printed, or null>",
-      "indication": "<the disease or condition the program is for, as printed, or null>",
-      "type_hint": "<optional short description of the event type in your own words>",
-      "title": "<a short title for the event>",
-      "date_text": "<the date or period exactly as printed, or an empty string when no timing is given>",
-      "date": "<YYYY-MM-DD or null>",
-      "date_end": "<YYYY-MM-DD or null>",
-      "quote": "<the printed words supporting the event and any timing, word for word>",
-      "word_ids": ["<id of the first word of the quote>", "...", "<id of the last word of the quote>"],
-      "box": [x0, y0, x1, y1]
-    }}
-  ]
-}}
-
-Rules:
-- Use only the words given below. Do not add or reword anything.
-- "quote" is the printed words in page order joined by single spaces, exactly as printed, punctuation included.
-- "program" is the drug or program name exactly as printed; "indication" is the disease or condition it is for,
-  as printed (null if the page does not say). Give both whenever the page names both.
-- "date_text" is copied exactly as printed in the quote.
-- "date" and "date_end": for an exact day, "date" is that day and "date_end" is null. For a quarter, half, month
-  or year, "date" is its first day and "date_end" its last day. For anything vaguer ("mid-2027", "later this
-  year"), both are null.
-- Give a free-text type_hint if useful. Code assigns the controlled event_type after reading from the quote; categories never limit what you read.
-- "word_ids" are the ids of every word of the quote, in order.
-- "box" is your proposal for where the quote is printed: the smallest box, in PDF points, that encloses all the
-  words of the quote (if the quote runs over several lines, the box encloses those lines). If you cannot place
-  it, use null.
-- Keep historical events as context for code and human review. If the page names no events, answer {{"events": []}}.
-- Output the JSON object only, with no other text.
+{assignment}Read {company} ({ticker}), {form} exhibit {exhibit}, filed {filing_date}. The page is {width} by {height}
+PDF points. Words below are id|text|x0|y0|x1|y1; origin top-left, y down.
+Return one compact JSON object: {{"events": [{{"ticker":"{ticker}","company":"{company}","program":null,
+"indication":null,"type_hint":null,"relevance":null,"conditions":[],"subject_company":null,"relation":null,
+"title":"...","date_text":"...","date":null,"date_end":null,"quote":"...","word_ids":[],
+"box":[x0,y0,x1,y1]}}]}}. Use only source evidence. Preserve separate developments and qualifications. Quote exact
+consecutive printed words joined by single spaces, punctuation included; include every quote word id in order.
+Program is the printed drug or program; indication is the printed disease or condition; use source-supported wording or null.
+Box is the
+smallest PDF-point box enclosing the quote; use null if it cannot be placed. Copy date_text exactly. Exact dates use
+YYYY-MM-DD with date_end null; quarters, halves, months and years use first and last day in date/date_end; vague timing
+has null bounds. Fill context fields only when supported, otherwise null (conditions may be []). No responsive
+development means {{"events": []}}. JSON only.
 
 Words:
 """
 
 
 INSTRUCTIONS_IMAGE = """\
-You are reading one page of a company's SEC filing: {company} (ticker {ticker}), {form} exhibit {exhibit}, filed
-{filing_date}. The page is attached as an image. Read it from the image: you are given no list of its words.
-
-Read the page broadly and propose the events and supporting context it describes, including undated or
-conditional plans, historical developments, and changed or withdrawn guidance. Preserve the timing as written;
-do not omit a proposal because of its date or category. Answer with JSON only, in exactly this shape:
-{{
-  "events": [
-    {{
-      "ticker": "{ticker}",
-      "company": "{company}",
-      "program": "<the drug or program name as printed, or null>",
-      "indication": "<the disease or condition the program is for, as printed, or null>",
-      "type_hint": "<optional short description of the event type in your own words>",
-      "title": "<a short title for the event>",
-      "date_text": "<the date or period exactly as printed, or an empty string when no timing is given>",
-      "date": "<YYYY-MM-DD or null>",
-      "date_end": "<YYYY-MM-DD or null>",
-      "quote": "<the printed words supporting the event and any timing, word for word>",
-      "box": [x0, y0, x1, y1]
-    }}
-  ]
-}}
-
-Rules:
-- Use only what is printed on the page. Do not add or reword anything.
-- "quote" is the printed words in page order joined by single spaces, exactly as printed, punctuation included.
-- "program" is the drug or program name exactly as printed; "indication" is the disease or condition it is for,
-  as printed (null if the page does not say). Give both whenever the page names both.
-- "date_text" is copied exactly as printed in the quote.
-- "date" and "date_end": for an exact day, "date" is that day and "date_end" is null. For a quarter, half, month
-  or year, "date" is its first day and "date_end" its last day. For anything vaguer ("mid-2027", "later this
-  year"), both are null.
-- Give a free-text type_hint if useful. Code assigns the controlled event_type after reading from the quote; categories never limit what you read.
-- "box" is your proposal for where the quote is printed: the smallest box that encloses all the words of the
-  quote (if the quote runs over several lines, the box encloses those lines), on a grid from 0 to 1000 over the
-  image: x counts from the left edge and y from the top edge, and 1000 is the full width or height. If you cannot
-  place it, use null.
-- Keep historical events as context for code and human review. If the page names no events, answer {{"events": []}}.
-- Output the JSON object only, with no other text.
+{assignment}Read {company} ({ticker}), {form} exhibit {exhibit}, filed {filing_date}, from the attached page image.
+Return one compact JSON object: {{"events": [{{"ticker":"{ticker}","company":"{company}","program":null,
+"indication":null,"type_hint":null,"relevance":null,"conditions":[],"subject_company":null,"relation":null,
+"title":"...","date_text":"...","date":null,"date_end":null,"quote":"...","box":[x0,y0,x1,y1]}}]}}.
+Use only source evidence. Preserve separate developments and qualifications. Quote exact consecutive printed words.
+Program is the printed drug or program; indication is the printed disease or condition; use source-supported wording or null. Box is
+the smallest quote box on a 0-1000 image grid (origin top-left, x right and y down); use null if it cannot be placed.
+Copy date_text exactly. Exact dates use YYYY-MM-DD with date_end null; quarters, halves, months and years use first and
+last day in date/date_end; vague timing has null bounds. Fill context fields only when supported, otherwise null
+(conditions may be []). No responsive development means {{"events": []}}. JSON only.
 """
 
 
-def build_image_prompt(entry: dict, event_types: tuple[str, ...] = EVENT_TYPES, note: str | None = None) -> str:
+def build_image_prompt(entry: dict, event_types: tuple[str, ...] = EVENT_TYPES, note: str | None = None,
+                       *, as_of: str | None = None) -> str:
     """The prompt for a read from the page image alone: no word list, so the read is independent of the text layer.
     The attached image is the page; boxes come back on a 0-1000 grid (grid_to_points turns them into PDF points)."""
-    return read_table.append_note(INSTRUCTIONS_IMAGE.format(
+    brief = note
+    return INSTRUCTIONS_IMAGE.format(assignment=research_instructions.prompt_block(brief, as_of),
         company=entry["company"], ticker=entry["ticker"], form=entry["form"], exhibit=entry["exhibit"],
-        filing_date=entry["filing_date"], types=", ".join(EVENT_TYPES), guide=type_guide(EVENT_TYPES)), note)
+        filing_date=entry["filing_date"], types=", ".join(EVENT_TYPES), guide=type_guide(EVENT_TYPES))
 
 
 def grid_to_points(box, width_pt: float, height_pt: float) -> list[float] | None:
@@ -156,12 +99,12 @@ def load_words(path: Path = WORDS_PATH) -> dict:
 
 
 def build_prompt(words_doc: dict, entry: dict, event_types: tuple[str, ...] = EVENT_TYPES,
-                 note: str | None = None) -> str:
-    head = read_table.add_note(INSTRUCTIONS.format(
+                 note: str | None = None, *, as_of: str | None = None) -> str:
+    brief = note
+    head = INSTRUCTIONS.format(assignment=research_instructions.prompt_block(brief, as_of),
         company=entry["company"], ticker=entry["ticker"], form=entry["form"], exhibit=entry["exhibit"],
         filing_date=entry["filing_date"], width=_num(words_doc["page_width"]),
-        height=_num(words_doc["page_height"]), types=", ".join(EVENT_TYPES), guide=type_guide(EVENT_TYPES),
-    ), note)
+        height=_num(words_doc["page_height"]), types=", ".join(EVENT_TYPES), guide=type_guide(EVENT_TYPES))
     lines = [
         f"{w['id']}|{w['text']}|{_num(w['x0'])}|{_num(w['y0'])}|{_num(w['x1'])}|{_num(w['y1'])}"
         for w in words_doc["words"]

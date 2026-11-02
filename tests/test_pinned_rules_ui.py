@@ -142,7 +142,7 @@ def _export_text(fetch_js: str, stale: bool) -> str:
         "function reportUrl(n) { return '/runs/x/report/' + n; }",
         "global.fetch = " + fetch_js + ";",
         _fns("projectionComplete", "partialProjection", "shownDateText", "shownField",
-             "reviewAcceptedCount", "reportRefusalReason", "reviewAxis", "renderExport"),
+             "reviewAcceptedCount", "reportRefusalReason", "reviewAxis", "oneModelRun", "renderExport"),
         "renderExport();",
         "setTimeout(function () { console.log(textOf(NODES['exp-mid'])); }, 0);",
     )

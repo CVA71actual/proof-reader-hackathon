@@ -9,6 +9,7 @@ from pathlib import Path
 from runs.state import UNRESOLVED_REASON, as_of_note, current_state, run_reference_date
 from runs.calendar import period_display, period_word, run_interval_partition, stated_date_display
 from runs.proposal import context_fields
+from runs.one_model import NO_SECOND_READER, ONE_MODEL_LINE, run_is_one_model
 from runs.check_load import bind_decisions_on_load, load_bound_run
 from checks import event_checks
 
@@ -465,9 +466,12 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         "mistakes": mistakes,
         "excluded_total": excluded_n,
         "unresolved": state["unresolved"],
+        # ONE-MODEL-RUN-001: a run with no second reader never shows a second-reader count of 0
+        "models_line": ONE_MODEL_LINE if run_is_one_model(run) else None,
         "counters_line": (
-            f"Mistakes caught by code {mistakes['code']} · by the second reader "
-            f"{mistakes['second_reader']} · by a person {mistakes['person']} · Excluded {excluded_n}"
+            f"Mistakes caught by code {mistakes['code']} · "
+            + (NO_SECOND_READER if run_is_one_model(run) else f"by the second reader {mistakes['second_reader']}")
+            + f" · by a person {mistakes['person']} · Excluded {excluded_n}"
         ),
         "no_accepted_rows_text": "No rows accepted by you." if state["counts"]["review"]["accepted"] == 0 else None,
         "calendar": calendar,

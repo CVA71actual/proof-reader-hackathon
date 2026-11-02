@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from accuracy import export
-from capture import read_events, read_table
+from capture import read_events, read_table, research_instructions
 from runs import build_run, demo, prices
 from tests.conftest import FIXTURES, REPO
 from tests.test_cost_and_words import cost_at, prices_of
@@ -213,18 +213,21 @@ def test_every_committed_run_has_a_pdf_and_a_word_report_that_open():
 def test_the_default_run_setting_is_served_and_the_demo_prints_where_to_open(runs_dir, capsys):
     from server.app import create_app
 
-    assert TestClient(create_app(runs_dir=runs_dir)).get("/api/settings").json() == {"default_run": None}
-    assert TestClient(create_app(runs_dir=runs_dir, default_run="nope")).get("/api/settings").json() == {"default_run": None}
+    fields = {"research_instructions_default": research_instructions.DEFAULT,
+              "research_instructions_max_length": 4000}
+    assert TestClient(create_app(runs_dir=runs_dir)).get("/api/settings").json() == {"default_run": None, **fields}
+    assert TestClient(create_app(runs_dir=runs_dir, default_run="nope")).get("/api/settings").json() == {
+        "default_run": None, **fields}
     assert TestClient(create_app(runs_dir=runs_dir, default_run="ptgx-r4a")).get("/api/settings").json() == {
-        "default_run": "ptgx-r4a"}
+        "default_run": "ptgx-r4a", **fields}
 
     seen = {}
     demo.main(["--run", "ptgx-r4a", "--runs-dir", str(runs_dir)],
               serve=lambda app, host, port: seen.update(body=TestClient(app).get("/api/settings").json()))
-    assert seen["body"] == {"default_run": "ptgx-r4a"}
+    assert seen["body"] == {"default_run": "ptgx-r4a", **fields}
     assert "Open http://127.0.0.1:8777/#/ptgx-r4a/audit" in capsys.readouterr().out
 
     demo.main(["--runs-dir", str(runs_dir)],
               serve=lambda app, host, port: seen.update(body=TestClient(app).get("/api/settings").json()))
-    assert seen["body"] == {"default_run": "ptgx-r5"}
+    assert seen["body"] == {"default_run": "ptgx-r5", **fields}
     assert "Open http://127.0.0.1:8777/#/ptgx-r5/audit" in capsys.readouterr().out

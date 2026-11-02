@@ -40,6 +40,7 @@ from capture.reader import LiveReader
 from capture import voice
 from capture.sam import SamReader
 from capture.second_reader import SecondReader
+from capture import research_instructions
 from capture.wonder import WonderReader
 from runs import prices, sources
 from runs.calendar import calendar_entries, run_interval_partition
@@ -275,13 +276,20 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
 
     def start_job(run_id: str, run_index=None) -> None:
         job_second = SecondReader() if default_second_for_job else second_reader
+        job_wonder, job_sam = wonder_reader, sam_reader
+        try:
+            run_choices = json.loads((store.runs_dir / run_id / "run.json").read_text())["run"]["choices"]
+        except (OSError, ValueError, KeyError, TypeError):
+            run_choices = None
+        if jobs.one_model(run_choices):     # ONE-MODEL-RUN-001: Muse Spark is the only model called, start and resume
+            job_second = job_wonder = job_sam = None
         job_index = run_index if run_index is not None else index
         if background:
-            threading.Thread(target=jobs.run_job, args=(store.runs_dir, run_id, reader, job_second, coverage_as_of, wonder_reader,
-                                   sam_reader, job_index),
+            threading.Thread(target=jobs.run_job, args=(store.runs_dir, run_id, reader, job_second, coverage_as_of, job_wonder,
+                                   job_sam, job_index),
                              daemon=True).start()
         else:
-            jobs.run_job(store.runs_dir, run_id, reader, job_second, coverage_as_of, wonder_reader, sam_reader,
+            jobs.run_job(store.runs_dir, run_id, reader, job_second, coverage_as_of, job_wonder, job_sam,
                          job_index)
 
     validator = Draft202012Validator(json.loads(DECISION_SCHEMA.read_text()))
@@ -290,7 +298,9 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     @app.get("/api/settings")
     def get_settings() -> dict:
         """The run the app opens on when the address names none (`python -m runs.demo --run X`); null: the UI's own pick."""
-        return {"default_run": default_run if default_run in store.ids() else None}
+        return {"default_run": default_run if default_run in store.ids() else None,
+                "research_instructions_default": research_instructions.DEFAULT,
+                "research_instructions_max_length": research_instructions.MAX_LENGTH}
 
     @app.get("/api/companies")
     def get_companies() -> dict:

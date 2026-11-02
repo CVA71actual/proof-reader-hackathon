@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 
-from capture import read_events, read_table, second_reader
+from capture import read_events, read_table, research_instructions, second_reader
 from capture.capture_source import load_entry
 from capture.reader import Reply
 from capture.second_reader import BASETEN_MODEL, NO_KEY, OPENROUTER_MODEL, SecondReader
@@ -242,7 +242,9 @@ def test_the_second_reader_gets_the_page_image_and_no_word_list_and_never_the_fi
     first, second = FakeReader(), FakeSecond()
     _, rid = start(runs_dir, first, second)
     entry = load_entry(PIN)
-    assert second.prompts == [read_events.build_image_prompt(entry)], "the image prompt, built from the page's facts"
+    assert second.prompts == [read_events.build_image_prompt(
+        entry, note=research_instructions.DEFAULT, as_of=run_of(runs_dir, rid)["run"]["started_at"][:10])], \
+        "the image prompt, built from the page's facts and the saved run date"
     assert "\nw0|" not in second.prompts[0] and "id|text|x0|y0|x1|y1" not in second.prompts[0], "no word list"
     png = (runs_dir / rid / "pages" / "p3.png").read_bytes()
     assert second.images == [png] and png[:4] == b"\x89PNG", "the page's own image, the bytes the run hashed"
@@ -257,7 +259,8 @@ def test_the_trail_says_what_the_second_reader_was_given(runs_dir):
         assert steps["Sent the page image to Muse Spark Open"]["text"] == compare.INPUT_WORDS["image"]
         assert "does not depend on the text layer" in steps["Sent the page image to Muse Spark Open"]["text"]
         assert steps["Instructions sent to the second reader"]["text"] == read_events.build_image_prompt(
-            load_entry(PIN))
+            load_entry(PIN), note=research_instructions.DEFAULT,
+            as_of=run_of(runs_dir, rid)["run"]["started_at"][:10])
 
 
 def test_an_unreadable_image_answer_is_followed_once_by_the_words_as_a_fallback(runs_dir):
@@ -267,10 +270,15 @@ def test_an_unreadable_image_answer_is_followed_once_by_the_words_as_a_fallback(
         return "I could not read the image." if n == 1 else json.dumps({"events": events})
 
     second = FakeSecond(answer=answer)
-    _, rid = start(runs_dir, FakeReader(), second)
+    first = FakeReader()
+    _, rid = start(runs_dir, first, second)
     run = run_of(runs_dir, rid)
     assert len(second.prompts) == 2 and run["run"]["status"] == "done"
     assert "\nw0|" not in second.prompts[0] and "w0|" in second.prompts[1], "words only in the fallback"
+    brief = run["run"]["choices"]["note_for_agent"]
+    run_date = run["run"].get("as_of", run["run"]["started_at"][:10])
+    assert all(brief in prompt and f"Run reference date: {run_date}" in prompt for prompt in second.prompts)
+    assert all(FakeReader.default(first.prompts[0]) not in prompt for prompt in second.prompts)
     assert second.images[0] is not None and second.images[1] is not None
     assert run["run"]["second_reader"] == {"model": "Muse Spark Open", "status": "read", "reason": None,
                                            "input": "image_and_words"}

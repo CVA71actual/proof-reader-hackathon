@@ -62,3 +62,20 @@ def normalize(value: str | None) -> str:
 
 def join_words(words: list[dict]) -> str:
     return " ".join(w["text"] for w in words)
+
+
+def normalize_quote(value: str | None) -> str:
+    """Compare a prose excerpt, allowing its opening quotation delimiter.
+
+    An excerpt can start inside quoted speech and omit the opening double quote
+    attached to the page's first word. Remove that delimiter and, if present,
+    its closing delimiter. Do not strip punctuation from individual words or
+    a lone trailing quote (which could be an inch symbol). Table values keep
+    using normalize(), without this prose-only allowance.
+    """
+    s = normalize(value).replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
+    if s.startswith('"'):
+        s = s[1:]
+        if s.endswith('"'):
+            s = s[:-1]
+    return s

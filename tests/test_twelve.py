@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 
 from capture import read_events, read_table
+from capture.research_instructions import DEFAULT
 from capture.capture_source import load_entry
 from report.build import build as build_report
 from runs import build_entry, build_run, sources, twelve
@@ -34,7 +35,7 @@ PIN = read_events.PIN
 
 def answer(prompt, n):
     """Reads the page the way the offline readers do, for whichever company the prompt names."""
-    m = re.search(r"company's SEC filing: (.+?) \(ticker (\w+)\)", prompt)
+    m = re.search(r"^Read (.+?) \((\w+)\), [^\n]+? exhibit ", prompt, re.MULTILINE)
     if not m:
         return json.dumps(read_table.build_fake_table(read_table.load_words()))
     entry = {**load_entry(PIN), "company": m[1], "ticker": m[2]}
@@ -354,8 +355,8 @@ def test_the_command_prints_checks_separately_and_no_accepted_cost_until_a_human
     run = run_of(runs_dir, "run-1")
     assert code == 0 and run["run"]["status"] == "done" and run["run"]["label"] == "2 companies · 6 months"
     assert run["run"]["choices"] == {"companies": ["AAA", "BBB"], "event_types": list(read_events.EVENT_TYPES),
-                                     "time_window_months": 6, "spending_limit_usd": 5.0, "note_for_agent": None,
-                                         "reader_tools": False}
+                                     "time_window_months": 6, "spending_limit_usd": 5.0, "note_for_agent": DEFAULT,
+                                         "reader_tools": False, "models": "all"}
     assert "Created run-1: 2 companies · 6 months (2 companies)" in out
     assert "run-1 · 2 companies · 6 months: done" in out and "pages read: 3" in out
     # GROUP-AXIS-001: every new row is a proposal, never accepted by checks.

@@ -82,6 +82,7 @@ from pathlib import Path
 
 from accuracy import types as T
 from capture import read_events, read_table, reader_tools, sam as sam_module
+from capture import research_instructions
 from capture.reader import Reply
 from capture.http import MAX_COMPLETION_TOKENS
 from capture.second_reader import CAP_REACHED, OPENROUTER_CAP_USD, UNPRICED
@@ -92,6 +93,7 @@ from checks import event_checks
 from runs import picture, build_entry, build_run, compare, coverage, escalate, prices, scan, sources
 from runs.ids import reserve_row_numbers, require_unique_target_ids
 from runs import page_outcomes
+from runs.one_model import MODELS_CHOICES, NO_SECOND_READER, ONE_MODEL_LINE, one_model  # noqa: F401
 from runs.state import _real_disagreement, as_of_note, derive_status, run_reference_date
 
 
@@ -117,7 +119,8 @@ TIME_WINDOW_MAX = 120
 # the built-in one (PTGX 8-K exhibit page 3, IONS annual report page 95, and the PTGX page as a scan: no text layer, regions
 # from SAM 3.1). "events" pages go to the event reader (both readers), "table" pages to the table reader.
 CHOICE_FIELDS = ("companies", "event_types", "time_window_months", "spending_limit_usd", "note_for_agent",
-                 "reader_tools")
+                 "reader_tools", "models")
+
 
 # One lock for the run.json / job.json files of every run in this process.
 RUN_LOCK = threading.RLock()
@@ -334,16 +337,20 @@ def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
         raise ValueError(f"The time window must be a whole number of months from 1 to {TIME_WINDOW_MAX}, or null.")
     if limit is not None and not _finite_limit(limit):
         raise ValueError("The spending limit must be a finite number of dollars, zero or more, or null.")
-    if note is not None and not isinstance(note, str):
-        raise ValueError("The note for the agent must be text or null.")
+    note = research_instructions.validate(note)
     tools = body.get("reader_tools", False)
     if tools is None:
         tools = False
     if not isinstance(tools, bool):
         raise ValueError("reader_tools must be true or false.")
+    models = body.get("models", "all")
+    if models is None:
+        models = "all"
+    if models not in MODELS_CHOICES:
+        raise ValueError('models must be "one" (Muse Spark only) or "all" (Muse Spark, checked by a second reader).')
     return {"companies": list(companies), "event_types": list(read_events.EVENT_TYPES), "time_window_months": 6,
-            "spending_limit_usd": limit, "note_for_agent": note.strip() or None if isinstance(note, str) else None,
-            "reader_tools": tools}
+            "spending_limit_usd": limit, "note_for_agent": note,
+            "reader_tools": tools, "models": models}
 
 
 def label_for(number: int, choices: dict) -> str:
@@ -408,6 +415,9 @@ def create_run(runs_dir: Path, choices: dict, turn_limit: int | None = None, run
             },
             "sources": [], "tables": [], "rows": [], "mistakes": [], "exclusions": [],
         }
+        if one_model(choices):
+            run["run"]["trail"] = [{"step": "Models chosen", "tag": "Person", "who": "person", "at": now,
+                                    "text": ONE_MODEL_LINE}]
         if as_of:       # the one reference date (runs.state.run_reference_date); absent = the start day
             run["run"]["as_of"] = as_of
         (run_dir / "decisions.jsonl").write_text("")
@@ -842,6 +852,8 @@ class Job:
         self.job = json.loads((run_dir / "job.json").read_text())
         self.meta = self.run["run"]
         self.choices = self.meta["choices"]
+        if one_model(self.choices):
+            self.second = self.wonder = self.sam = None
         if as_of is not None:       # one clock: the run's persisted as_of; a different one is refused, a new one persisted
             given, persisted = as_of.isoformat(), self.meta.get("as_of")
             if persisted and persisted != given:
@@ -1199,10 +1211,13 @@ class Job:
                 return False                      # the run stopped (a limit, a failed call); a resume goes on from here
             words_doc, picture_state, consumed_artifact = rebuilt
         if kind == "events":
-            prompt = read_events.build_prompt(words_doc, entry, types, self.choices["note_for_agent"])
+            prompt = read_events.build_prompt(words_doc, entry, types, self.choices["note_for_agent"],
+                                              as_of=(run_reference_date(self.run).isoformat()
+                                                     if run_reference_date(self.run) else None))
             who, parse = "capture.read_events", read_events.parse_events
         else:
-            prompt = read_table.build_prompt(words_doc, self.choices["note_for_agent"])
+            note = self.choices["note_for_agent"]
+            prompt = read_table.build_prompt(words_doc, None if note == research_instructions.DEFAULT else note)
             who, parse = "capture.read_table", read_table.parse_table
         page_facts = {"words_sha256": consumed_artifact["sha256"], "words_used": consumed_artifact,
                       "page_sha256": entry["page_sha256"], "pin": entry["id"]}
@@ -1545,15 +1560,19 @@ class Job:
         words_doc, consumed_artifact = sources.load_page_evidence(self.dir, page0)
         image, image_identity = sources.load_page_image_evidence(self.dir, page0)  # exact image sent to reader
         note = self.choices["note_for_agent"]
+        ref_date = run_reference_date(self.run)
         entry = page["record"]
         if page["kind"] == "events":
             types = read_events.EVENT_TYPES
-            attempts = [("image", read_events.build_image_prompt(entry, types, note), image),
-                        ("image_and_words", read_events.build_prompt(words_doc, entry, types, note), image)]
+            attempts = [("image", read_events.build_image_prompt(entry, types, note,
+                                                                  as_of=ref_date.isoformat() if ref_date else None), image),
+                        ("image_and_words", read_events.build_prompt(words_doc, entry, types, note,
+                                                                       as_of=ref_date.isoformat() if ref_date else None), image)]
             parse = read_events.parse_events
         else:
-            attempts = [("image", read_table.build_image_prompt(note), image),
-                        ("image_and_words", read_table.build_prompt(words_doc, note), image)]
+            table_note = None if note == research_instructions.DEFAULT else note
+            attempts = [("image", read_table.build_image_prompt(table_note), image),
+                        ("image_and_words", read_table.build_prompt(words_doc, table_note), image)]
             parse = read_table.parse_table
         # The second reader reads the page IMAGE, with no word list: its read does not depend on the text layer. If
         # that answer cannot be read, the words are sent too, once, as a fallback; the run records which it got.
@@ -1672,11 +1691,14 @@ class Job:
             self.save()
         regions = scan.merge_regions(st["by_concept"])
         note = self.choices["note_for_agent"]
+        ref_date = run_reference_date(self.run)
         for region in regions:
             if region["id"] in st["reads"]:
                 continue
             crop = scan.crop_box(region, w, h)
-            prompt = scan.region_prompt(entry, region, types, note)
+            date_context = (f"Run reference date: {ref_date.isoformat()}. Use this date to distinguish upcoming from "
+                            f"historical developments.\n" if ref_date else "")
+            prompt = date_context + scan.region_prompt(entry, region, types, note)
             if self.stopped_before_a_call(self.reader):
                 return False
             reply = self.reader.call(prompt, image=scan.crop_png(png, crop, w))

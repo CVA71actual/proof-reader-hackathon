@@ -23,7 +23,7 @@ import calendar
 import re
 from datetime import date
 
-from checks.common import COULD_NOT_RUN, FAIL, NOT_NEEDED, PASS, UNRESOLVED, CheckResult, join_words, normalize
+from checks.common import COULD_NOT_RUN, FAIL, NOT_NEEDED, PASS, UNRESOLVED, CheckResult, join_words, normalize, normalize_quote
 from checks.selector_match import CHECK_ID as SELECTOR_ID, PICTURE_REASON, _valid_box, is_picture_at
 
 QUOTE_ID, QUOTE_LABEL = "quote_match", "Quote found on page"
@@ -40,9 +40,7 @@ MATCHED, FAILED, PROPOSED, UNREADABLE, UNDECIDED = "matched", "failed", "propose
 
 
 def _norm_quote(text: str | None) -> str:
-    # Quotes may carry typographic quote marks or a trailing full stop the page prints differently.
-    s = normalize(text).replace("’", "'").replace("“", '"').replace("”", '"')
-    return s
+    return normalize_quote(text)
 
 
 def quote_match(quote: str | None, words: list[dict], box=None, *, transcribed: bool = False) -> CheckResult:

@@ -97,6 +97,8 @@ def build_docx(view: dict) -> bytes:
     if view.get("as_of_note"):
         _line(doc, view["as_of_note"])
     _line(doc, f"Run status: {view['run_status']}")
+    if view.get("models_line"):
+        _line(doc, view["models_line"])
     if view["page_outcomes_recorded"]:
         pc = view["page_outcome_counts"]
         _line(doc, "Page outcomes: " + " · ".join(f"{key.replace('_', ' ')} {pc[key]}" for key in (

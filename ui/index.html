@@ -138,9 +138,12 @@
     <div id="nr-intake-out" hidden></div>
     <h4>Spending limit <span class="opt">(USD — leave empty for no limit)</span></h4>
     <input class="fld" id="nr-limit" inputmode="decimal" placeholder="2.00" style="width:130px">
-    <h4>Note for the agent <span class="opt">(optional)</span></h4>
-    <input class="fld" id="nr-note" maxlength="200" placeholder="Additional research context">
-    <div class="hint">Adds context without narrowing discovery or turning off checks.</div>
+    <h4>Models</h4>
+    <label><input type="radio" name="nr-models" id="nr-models-one" value="one"> Muse Spark only</label>
+    <label><input type="radio" name="nr-models" id="nr-models-all" value="all" checked> Muse Spark, checked by a second reader</label>
+    <h4>Research instructions <span class="opt">(optional)</span></h4>
+    <textarea class="fld" id="nr-note" rows="3" placeholder="What the research should focus on"></textarea>
+    <div class="hint" id="nr-note-hint">Guides the research; the source checks still run on every row.</div>
     <h4>Reader tools <span class="opt">(optional)</span></h4>
     <label><input type="checkbox" id="nr-tools"> Let the first reader call the checks while it reads</label>
     <div class="hint">The reader may ask the checks about its own proposals; the checks still run on every row afterwards.</div>

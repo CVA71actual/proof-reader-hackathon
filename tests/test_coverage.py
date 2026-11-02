@@ -371,9 +371,13 @@ def test_the_indication_is_matched_through_the_keys_aliases():
 
 
 def test_the_reader_is_asked_for_the_program_and_the_indication(ptgx_words_doc):
-    prompt = read_events.build_prompt(ptgx_words_doc, build_entry.load_entry(PIN))
-    assert '"indication": "<the disease or condition the program is for, as printed, or null>"' in prompt
-    assert '"program" is the drug or program name exactly as printed; "indication" is the disease or condition' in prompt
+    entry = build_entry.load_entry(PIN)
+    words_prompt = read_events.build_prompt(ptgx_words_doc, entry)
+    image_prompt = read_events.build_image_prompt(entry)
+    definition = ("Program is the printed drug or program; indication is the printed disease or condition; "
+                  "use source-supported wording or null.")
+    assert definition in words_prompt
+    assert definition in image_prompt
 
 
 def test_a_row_carries_program_and_indication(reading, ptgx_words_doc, ptgx_run):

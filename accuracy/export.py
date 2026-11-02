@@ -19,6 +19,8 @@ header and the Accuracy panel read, with what the order adds:
     agreement      the two readers on the run's event rows: how many were compared, agreed, disagreed, the rate, rows only
                    the second reader found, values the readers read differently, and (with a key) how many rows or values
                    BOTH readers agreed on and the key says were wrong: the case the checks must catch
+                   A one-model run (choices.models "one": Muse Spark only) has agreement null, readers.models saying
+                   so, and no second_reader count in mistake_log.from_run_by_caught_by.
     mistake_log    counts by type: from this scoring, and from the run's own log (what code, the second reader and the
                    person caught)
     date, product_tip, product_dirty   when it was made, the product commit it was made on, and whether that tree had
@@ -42,6 +44,8 @@ import subprocess
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+
+from runs.one_model import ONE_MODEL_LINE, run_is_one_model
 
 EXPORT_VERSION = 1
 FILE_NAME = "accuracy.json"
@@ -114,7 +118,18 @@ def window_block(events: dict | None) -> dict | None:
 def readers(run: dict, report: dict) -> dict:
     meta = run.get("run") or {}
     first = sorted({n for name, m in report.get("models", {}).items() for n in (m.get("models") or [name])})
-    return {"first": first, "second_reader": meta.get("second_reader"), "escalation": meta.get("escalation")}
+    out = {"first": first, "second_reader": meta.get("second_reader"), "escalation": meta.get("escalation")}
+    if run_is_one_model(run):       # ONE-MODEL-RUN-001: say so; never a second reader's status
+        out.update(second_reader=None, escalation=None, models=ONE_MODEL_LINE)
+    return out
+
+
+def caught_by(run: dict, counts: dict) -> dict:
+    """Who caught the run's mistakes. A one-model run had no second reader: its count is left out, not shown as 0."""
+    counts = dict(counts)
+    if run_is_one_model(run):
+        counts.pop("second_reader", None)
+    return counts
 
 
 class StaleReport(Exception):
@@ -156,9 +171,10 @@ def build_export(report: dict, run: dict, run_bytes: bytes, *, now: datetime | N
         "models": report["models"],
         "planted": ({"caught": planted["caught"], "total": planted["total"], "by_kind": planted["by_kind"]}
                     if planted else None),
-        "agreement": agreement(run, report.get("table"), report.get("events")),
+        # a one-model run has no second reader to agree with: no agreement block, not a block of zeros
+        "agreement": (None if run_is_one_model(run) else agreement(run, report.get("table"), report.get("events"))),
         "mistake_log": {"from_scoring": dict(scoring), "from_run": dict(from_run.get("by_type", {})),
-                        "from_run_by_caught_by": dict(from_run.get("by_caught_by", {}))},
+                        "from_run_by_caught_by": caught_by(run, from_run.get("by_caught_by", {}))},
         "run_sha256": sha256_bytes(run_bytes),
         **{k: report["inputs"][k] for k in ("decisions_sha256", "words", "words_sha256")},
     }
@@ -237,7 +253,7 @@ def _with_current_decisions(doc: dict, run_dir: Path) -> dict:
     run, decisions = load_run(run_dir)
     live = mistake_log(run, decisions)
     out = {**doc, "mistake_log": {**doc["mistake_log"], "from_run": dict(live["by_type"]),
-                                  "from_run_by_caught_by": dict(live["by_caught_by"])},
+                                  "from_run_by_caught_by": caught_by(run, live["by_caught_by"])},
            "decisions_sha256": sha256_bytes(_decisions_bytes(run_dir))}
     out["content_sha256"] = content_hash(out)
     return out

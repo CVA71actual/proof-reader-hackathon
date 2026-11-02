@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from numbers import Real
 
-from checks.common import COULD_NOT_RUN, FAIL, PASS, CheckResult, join_words, normalize
+from checks.common import COULD_NOT_RUN, FAIL, PASS, CheckResult, join_words, normalize, normalize_quote
 
 CHECK_ID = "selector_match"
 LABEL = "Citation located"
@@ -177,17 +177,13 @@ def region_match(box, regions: list[dict] | None, page_width: float, page_height
                   found=", ".join(r["id"] for r in regions))
 
 
-def _fold(s: str) -> str:
-    return s.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
-
-
 def _quote_run(want: str, words: list[dict], rect) -> list[dict] | None:
     """The run of page words that reads as the quote; when it is printed more than once, the run the box overlaps
     most, and among equal overlaps the run nearest the box. None when the quote is not printed (the strict rule then reports what is in the box)."""
-    want = _fold(want)       # the same typographic marks quote_match folds: a quote it finds is found here too
+    want = normalize_quote(want)  # the same prose comparison as quote_match; geometry stays strict
     n = len(want.split(" ")) if want else 0
     runs = [words[i : i + n] for i in range(len(words) - n + 1)
-            if n and _fold(normalize(join_words(words[i : i + n]))) == want]
+            if n and normalize_quote(join_words(words[i : i + n])) == want]
     if not runs:
         return None
     return max(runs, key=lambda r: (sum(share_inside(rect, w) for w in r), -_gap(rect, r)))
