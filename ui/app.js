@@ -1627,6 +1627,9 @@
     // opener is the person (or the trail's 'See the check' link) — the code
     // block is never shown uninvited
     var d = el('details', 'fold');
+    // CODEXADV_KIMI_DIALOG_REFRESH: the fold carries its check's name so a
+    // same-target background refresh can re-open the same check
+    if (c.name) d.dataset.check = c.name;
     d.append(el('summary', null, 'See the check'));
     var cmp = c.compared || {};
     var box = el('div', 'cmp');
@@ -1689,7 +1692,36 @@
   }
 
   // ---------------------------------------------------------------- source (U1)
+  // CODEXADV_KIMI_DIALOG_REFRESH: across a same-target background refresh, an
+  // opened 'See the check' fold and the pane scroll survive; a changed target
+  // (or a deliberate navigation) resets them
+  var srcViewKeep = null;
+  function srcViewRouteKey() {
+    return currentRunId() + '/' + route.srcId + '/' + route.page + '/' + (route.valueId || '');
+  }
+  function captureSrcView() {
+    var detEl = document.getElementById('srcDet');
+    var openChk = detEl.querySelector ? detEl.querySelector('details.fold[data-check][open]') : null;
+    srcViewKeep = {
+      routeKey: srcViewRouteKey(),
+      check: openChk ? openChk.getAttribute('data-check') : null,
+      scroll: detEl.scrollTop
+    };
+  }
+  function restoreSrcView() {
+    var keep = srcViewKeep;
+    srcViewKeep = null;
+    if (!keep) return;
+    if (keep.routeKey !== srcViewRouteKey()) return;   // the target changed: no stale restore
+    var detEl = document.getElementById('srcDet');
+    if (keep.check) {
+      var d = detEl.querySelector ? detEl.querySelector('details.fold[data-check="' + keep.check + '"]') : null;
+      if (d) d.open = true;
+    }
+    detEl.scrollTop = keep.scroll;
+  }
   function renderSource() {
+    captureSrcView();
     var host = clear(document.getElementById('srcList'));
     var mid = clear(document.getElementById('srcwrap'));
     var det = clear(document.getElementById('srcDet'));
@@ -1768,6 +1800,7 @@
 
     if (!selected) {
       mid.append(el('div', 'empty', 'Choose a page on the left.'));
+      restoreSrcView();
       return;
     }
 
@@ -1782,7 +1815,7 @@
     if (selBox) revealRow(selBox, { behavior: 'smooth', block: 'center', inline: 'center' });
 
     var v = valuesOnPage(selected).filter(function (x) { return x.id === route.valueId; })[0];
-    if (!v) return;
+    if (!v) { restoreSrcView(); return; }
     // G8-9a: a value is picked — the pane opens
     det.hidden = false;
     var row = rowOf(v.id);
@@ -1803,6 +1836,7 @@
         det.append(checksSection({ checks: cell.checks }, {}));
       }
     }
+    restoreSrcView();
   }
 
   // ---------------------------------------------------------------- accuracy panel (U11)
@@ -2996,7 +3030,20 @@
     return wrap;
   }
 
+  // the row the mounted 'Your call' note belongs to (the pane rebuilds every
+  // poll; the note's draft may only follow the SAME row)
+  var qnoteOwner = null;
   function judgmentPendingPane(host, row, t) {
+    // CODEXADV_KIMI_DIALOG_REFRESH: an in-progress 'Your call' note survives a
+    // same-row background refresh — value and caret kept, focus restored
+    var prevNote = host.querySelector ? host.querySelector('#qnote') : null;
+    var keepNote = null;
+    if (prevNote && (prevNote.value || (document.activeElement === prevNote))) {
+      keepNote = { rowId: qnoteOwner, value: prevNote.value,
+                   start: prevNote.selectionStart, end: prevNote.selectionEnd,
+                   focused: document.activeElement === prevNote };
+    }
+    qnoteOwner = row.id;
     clear(host);
     if (sayBusyWith(row)) cancelSay();
     // a row the person corrected earlier but that still needs a person: show the
@@ -3028,6 +3075,13 @@
     note.id = 'qnote';
     sec.append(el('div', null, ''), note);
     note.placeholder = 'Why you decided this… (optional for Keep, required for Remove)';
+    if (keepNote && keepNote.rowId === row.id && keepNote.value) {
+      note.value = keepNote.value;
+      if (note.setSelectionRange && keepNote.start !== null && keepNote.start !== undefined) {
+        try { note.setSelectionRange(keepNote.start, keepNote.end); } catch (e) { /* not focused yet */ }
+      }
+      if (keepNote.focused && note.focus) note.focus();
+    }
     // G1-11: the decision buttons stay on one line — Remove… is never orphaned
     var br = el('div', 'btnrow nowrap');
     br.style.marginTop = '10px';
@@ -3191,7 +3245,13 @@
   // ---------------------------------------------------------------- dialogs
   var dialogWrap = document.getElementById('dialog-wrap');
   var dialogHost = document.getElementById('dialog');
+  // CODEXADV_KIMI_DIALOG_REFRESH: the 2500 ms job poll re-renders and re-calls
+  // openDialog for the same run/row/action. The mounted dialog, its draft, the
+  // selected field, focus and caret survive that. A real close (Esc, Cancel,
+  // backdrop), a successful save, or another target/action resets it.
+  var dialogMount = null;
   function closeDialog() {
+    dialogMount = null;
     dialogWrap.hidden = true;
     clear(dialogHost);
   }
@@ -3207,6 +3267,12 @@
   }
 
   function openDialog(row, action) {
+    // background refresh for the dialog already open on this run/row/action:
+    // keep the mounted dialog untouched — recreating it wiped the in-progress
+    // reason, the selected field and the caret mid-typing
+    if (action && dialogMount && dialogMount.key === currentRunId() + '/' + row.id + '/' + action &&
+        !dialogWrap.hidden) return;
+    dialogMount = action ? { key: currentRunId() + '/' + row.id + '/' + action } : null;
     // U38: on a row whose quote check failed with a near match, the Fix
     // dialog opens on the quote field pre-filled with the page's wording —
     // one Save fix click accepts it (the person can still edit)

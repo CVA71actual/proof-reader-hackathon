@@ -1362,6 +1362,271 @@ def test_research_instructions_both_start_paths_send_the_exact_text():
     assert got.returncode == 0, got.stdout + got.stderr
 
 
+def test_dialog_survives_background_polling():
+    # CODEXADV_KIMI_DIALOG_REFRESH: the 2500 ms job poll re-renders and
+    # re-calls openDialog for the same run/row/action. The mounted dialog,
+    # its draft, focus and caret survive; a close, another target/action, or
+    # a fresh open starts clean. Remove, Fix and Keep-anyway covered.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    names = ("el", "esc", "clear", "btn", "noteField", "openDialog", "closeDialog", "removeDialog",
+             "fixDialog", "keepAnywayDialog", "showDialogError")
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    script = "\n".join([
+        "var FIELD_WORDS = { quote: 'Quote', date_text: 'Date as written' };",
+        "var FIX_FIELDS = ['quote', 'date_text'];",
+        "var RULE_WORDS = { event_in_past: 'The period ended before this run began.' };",
+        "var NO_ERROR = 'x';",
+        "var posts = [];",
+        "function currentRunId() { return 'run1'; }",
+        "function postDecision(id, body, msg, opts) { posts.push({ id: id, body: body }); }",
+        "function navigate() {}",
+        "function exclusionFor() { return null; }",
+        "function codeExclusionHistory() { return { rule: 'event_in_past', reason: 'The period ended before this run began.' }; }",
+        "function rowTarget() { return { values: {} }; }",
+        "function nearMissCheck() { return null; }",
+        "function nearMissPrefill() { return null; }",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, dataset: {}, hidden: false, value: '',",
+        "  checked: false,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  querySelector: function () { return null; }, remove: function () {}, focus: function () { this.focused = true; } }; }",
+        "var nodes = {};",
+        "var dialogMount = null;",
+        "var dialogWrap = { hidden: true };",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (id === 'dialog-wrap') return dialogWrap; if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        "var dialogHost = global.document.getElementById('dialog');",
+        fns,
+        # the stub DOM expands textContent='' into dropped children, like a browser
+        "function clear(node) { node.children = []; node.textContent = ''; return node; }",
+        "var row = { id: 'e1', ticker: 'ACME', title: 'Row one', checks: [] };",
+        "var row2 = { id: 'e2', ticker: 'BTBR', title: 'Row two', checks: [] };",
+        "function textOf(n, out) { out = out || []; if (n && n.textContent) out.push(n.textContent);",
+        "  ((n && n.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        "function findNote(host) { var hit = null;",
+        "  (function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'textarea') hit = hit || c; walk(c); }); })(host);",
+        "  return hit; }",
+        "function findBtns(host) { var b = [];",
+        "  (function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'button') b.push(c); walk(c); }); })(host);",
+        "  return b; }",
+        # --- Remove: type across two polls
+        "openDialog(row, 'remove');",
+        "var note1 = findNote(nodes['dialog']);",
+        "if (!note1) { console.error('no note'); process.exit(2); }",
+        "note1.value = 'Not an upcoming event';",
+        "note1.selectionStart = 4; note1.selectionEnd = 4;",
+        "var nodeBefore = nodes['dialog'].children[0];",
+        "openDialog(row, 'remove');   // first poll re-render",
+        "openDialog(row, 'remove');   // second poll re-render",
+        "if (findNote(nodes['dialog']) !== note1) { console.error('textarea replaced'); process.exit(3); }",
+        "if (note1.value !== 'Not an upcoming event' || note1.selectionStart !== 4) { console.error('draft lost'); process.exit(4); }",
+        "if (nodes['dialog'].children[0] !== nodeBefore) { console.error('host rebuilt'); process.exit(5); }",
+        # submit works and carries the draft
+        "var rb = findBtns(nodes['dialog']).filter(function (b) { return b.textContent === 'Remove'; })[0];",
+        "rb.onclick();",
+        "if (posts.length !== 1 || posts[0].body.action !== 'remove' || posts[0].body.note !== 'Not an upcoming event')",
+        "  { console.error(JSON.stringify(posts)); process.exit(6); }",
+        # a real close resets: the next open starts fresh
+        "closeDialog();",
+        "openDialog(row, 'remove');",
+        "var note2 = findNote(nodes['dialog']);",
+        "if (note2 === note1 || note2.value !== '') { console.error('not fresh after close'); process.exit(7); }",
+        # another action on the same row rebuilds (no draft transfer)
+        "note2.value = 'a remove draft';",
+        "openDialog(row, 'fix');",
+        "if (findNote(nodes['dialog']) === note2) { console.error('draft followed the action change'); process.exit(8); }",
+        # Fix: the field choice and the entered value survive polls
+        "var sel1 = null, f1 = null;",
+        "(function walk(n) { (n.children || []).forEach(function (c) {",
+        "  if (c.tag === 'select') sel1 = sel1 || c; if (c.tag === 'input') f1 = f1 || c; walk(c); }); })(nodes['dialog']);",
+        "if (!sel1 || !f1) { console.error('fix fields missing'); process.exit(9); }",
+        "f1.value = 'some wording'; sel1.value = 'quote';",
+        "openDialog(row, 'fix'); openDialog(row, 'fix');",
+        "if (f1.value !== 'some wording' || sel1.value !== 'quote') { console.error('fix draft lost'); process.exit(10); }",
+        # a different row rebuilds (never transfers the draft)
+        "openDialog(row2, 'fix');",
+        "var moved = false;",
+        "(function walk(n) { (n.children || []).forEach(function (c) { if (c === f1) moved = true; walk(c); }); })(nodes['dialog']);",
+        "if (moved) { console.error('draft followed the row change'); process.exit(11); }",
+        # Keep-anyway: prefilled reason editable and stable across polls
+        "openDialog(row, 'keepanyway');",
+        "var kn = findNote(nodes['dialog']);",
+        "if (!kn || !kn.value) { console.error('keep-anyway prefill missing'); process.exit(12); }",
+        "var preLen = kn.value.length;",
+        "kn.value = kn.value + ' (checked the filing)';",
+        "openDialog(row, 'keepanyway'); openDialog(row, 'keepanyway');",
+        "if (findNote(nodes['dialog']) !== kn || kn.value.length <= preLen) { console.error('keep-anyway draft lost'); process.exit(13); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_your_call_note_survives_background_polling():
+    # CODEXADV_KIMI_DIALOG_REFRESH: the inline 'Your call' note in the
+    # judgment pending pane keeps its draft and caret across a same-row
+    # re-render; another row starts clean
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket",
+             "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
+             "reviewClass", "fixStillOpen", "needsAttention",
+             "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
+             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "judgmentDecidedPane",
+             "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck", "listReasonLine",
+             "shownDateText", "shownField", "whySection", "keptCurrent", "codeExclusionHistory", "detailsPane",
+             "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "disagreementSection",
+             "postDecision", "checkFnFor", "reportUrl", "reportRefusalReason", "dayInWords", "eventWord")
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    script = "\n".join([
+        "var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed', unreadable: 'unreadable', undecided: 'undecided' };",
+        "var CHECK_WORDS = { pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed', unresolved: 'unresolved' };",
+        "var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };",
+        "var FIELD_WORDS = { date_text: 'Date as written', date: 'Date', event_type: 'Event type' };",
+        "var NO_ERROR = 'x';",
+        "var EVENT_WORDS = { filing: 'Filing' };",
+        "var RULE_WORDS = {};",
+        "var posts = [];",
+        "function currentRunId() { return 'run1'; }",
+        "function postDecision(id, body) { posts.push(body); }",
+        "function navigate() {}",
+        "function exclusionFor() { return null; }",
+        "function codeExclusionHistory() { return null; }",
+        "function closeDialog() {}",
+        "function openDialog() {}",
+        "function seeTheCheck() { return { textContent: '', children: [] }; }",
+        "function fmtField(f, v) { return String(v); }",
+        "function bothReadersWord() { return 'The readers'; }",
+        "function toast() {}",
+        "function mistakeTypeWord(t) { return t; }",
+        "var detail = { id: 'run1', run: { rows: [], mistakes: [], sources: [], tables: [], run: { label: 'probe' } },",
+        "  state: { targets: {}, exclusions: [], mistake_list: [] } };",
+        "function rowTarget() { return {}; }",
+        "function rowOf() { return null; }",
+        "function nearMissCheck() { return null; }",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, hidden: false, value: '',",
+        "  checked: false, dataset: {}, open: false, scrollTop: 0,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  querySelector: function (sel) { var hit = null;",
+        "    (function walk(n) { (n.children || []).forEach(function (c) {",
+        "      if (!hit && sel === '#qnote' && c.id === 'qnote') hit = c; walk(c); }); })(this);",
+        "    return hit; },",
+        "  remove: function () {}, focus: function () { this.focused = true; },",
+        "  setSelectionRange: function (a, b) { this.selectionStart = a; this.selectionEnd = b; } }; }",
+        "var nodes = {}; var sayRec = null; var qnoteOwner = null;",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; },",
+        "  activeElement: null };",
+        fns,
+        # the stub DOM expands textContent='' into dropped children, like a browser
+        "function clear(node) { node.children = []; node.textContent = ''; return node; }",
+        "var row = { id: 'e1', title: 'ROW', ticker: 'ACME', proposed_by: 'Muse Spark', checks: [],",
+        "  date_text: 'Q3 2027', date: null, event_type: 'filing', quote: 'q', source_id: 's1', page_number: 1 };",
+        "var row2 = { id: 'e2', title: 'ROW2', ticker: 'BTBR', proposed_by: 'Muse Spark', checks: [],",
+        "  date_text: 'Q4 2027', date: null, event_type: 'filing', quote: 'q', source_id: 's1', page_number: 1 };",
+        "var t = { group: 'open', status: 'undecided', decided_by_person: false, needs_attention: true,",
+        "  needs_recheck: false, recheck: null, last_action: null, review_label: 'Proposed — needs review',",
+        "  review_bucket: 'proposed', accepted: false, decision_label: null, on_calendar: false, issues: [],",
+        "  values: { date_text: 'Q3 2027' }, fixes: [], reason: null, disagreement: null };",
+        "var host = global.document.getElementById('judgment-det');",
+        "judgmentPendingPane(host, row, t);",
+        "var note1 = null;",
+        "(function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'textarea') note1 = note1 || c; walk(c); }); })(host);",
+        "if (!note1) { console.error('no qnote'); process.exit(2); }",
+        "note1.value = 'mid-word draft here';",
+        "note1.selectionStart = 7; note1.selectionEnd = 7;",
+        "judgmentPendingPane(host, row, t);   // background refresh, same row",
+        "judgmentPendingPane(host, row, t);   // second interval",
+        "var still = null;",
+        "(function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'textarea') still = still || c; walk(c); }); })(host);",
+        # the pane legitimately rebuilds; the draft and caret are what survive
+        "if (!still || still.value !== 'mid-word draft here' || still.selectionStart !== 7)",
+        "  { console.error('qnote draft lost: ' + (still && still.value)); process.exit(3); }",
+        # another row: the pane rebuilds clean (no draft transfer)
+        "judgmentPendingPane(host, row2, t);",
+        "var fresh = null;",
+        "(function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'textarea') fresh = fresh || c; walk(c); }); })(host);",
+        "if (fresh === note1 || fresh.value !== '') { console.error('draft followed the row change'); process.exit(5); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_source_view_check_and_scroll_survive_background_polling():
+    # CODEXADV_KIMI_DIALOG_REFRESH: an opened 'See the check' fold (stable
+    # check identity) and the Source pane scroll survive a same-target
+    # refresh; a changed target resets them. Two intervals covered.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in ("el", "esc", "clear", "seeTheCheck", "captureSrcView", "restoreSrcView", "srcViewRouteKey"))
+    script = "\n".join([
+        "var CHECK_WORDS = { pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed', unresolved: 'unresolved' };",
+        "function currentRunId() { return 'run1'; }",
+        "function checkResultWord(r) { return CHECK_WORDS[r] || r; }",
+        "function dateFinding() { return false; }",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, dataset: {}, hidden: false, open: false, scrollTop: 0,",
+        "  setAttribute: function (k, v) { this[k] = v; },",
+        "  getAttribute: function (k) { if (k === 'data-check') return this.dataset.check; return this[k]; },",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  querySelector: function (sel) { var hit = null;",
+        "    (function walk(n) { (n.children || []).forEach(function (c) {",
+        "      if (!hit && c.tag === 'details' && sel.indexOf('details') === 0) {",
+        "        var wantOpen = sel.indexOf('[open]') !== -1;",
+        "        var wantChk = /data-check=\"([^\"]+)\"/.exec(sel);",
+        "        if (wantOpen && !c.open) return;",
+        "        if (wantChk && (!c.dataset || c.dataset.check !== wantChk[1])) return;",
+        "        hit = c; }",
+        "      walk(c); }); })(this);",
+        "    return hit; } }; }",
+        "var nodes = {};",
+        "var route = { srcId: 's1', page: 'p1', valueId: 'v1' };",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        fns,
+        # a mounted fold, open, carrying its check identity; the pane is scrolled
+        "var det = global.document.getElementById('srcDet');",
+        "var fold = seeTheCheck({ name: 'quote_match', result: 'fail', reason: 'nearly matches', compared: { looked_for: 'x' } });",
+        "if (fold.dataset.check !== 'quote_match') { console.error('no identity'); process.exit(2); }",
+        "fold.open = true;",
+        "det.append(fold);",
+        "det.scrollTop = 300;",
+        "captureSrcView();",
+        # the refresh clears and rebuilds the pane (new node, closed, scroll kept)
+        "det.children = [];",
+        "var fold2 = seeTheCheck({ name: 'quote_match', result: 'fail', reason: 'nearly matches', compared: { looked_for: 'x' } });",
+        "det.append(fold2);",
+        "restoreSrcView();",
+        "if (fold2.open !== true) { console.error('check not re-opened'); process.exit(3); }",
+        "if (det.scrollTop !== 300) { console.error('scroll not restored: ' + det.scrollTop); process.exit(4); }",
+        # second interval: the same again
+        "captureSrcView();",
+        "det.children = []; det.scrollTop = 300;",
+        "var fold3 = seeTheCheck({ name: 'quote_match', result: 'fail', reason: 'nearly matches', compared: { looked_for: 'x' } });",
+        "det.append(fold3);",
+        "restoreSrcView();",
+        "if (fold3.open !== true || det.scrollTop !== 300) { console.error('second interval lost'); process.exit(5); }",
+        # a changed target: no stale restore
+        "fold3.open = true; det.scrollTop = 111;",
+        "captureSrcView();",
+        "route.valueId = 'v2';",
+        "det.children = []; det.scrollTop = 0;",
+        "var fold4 = seeTheCheck({ name: 'quote_match', result: 'fail', reason: 'nearly matches', compared: { looked_for: 'x' } });",
+        "det.append(fold4);",
+        "restoreSrcView();",
+        "if (fold4.open !== false || det.scrollTop !== 0) { console.error('stale restore'); process.exit(6); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
 def test_ticker_intake_pins():
     # TICKER-INTAKE-001: the New run sheet intakes pasted tickers through the
     # server — no hard-coded list, plain words, inline errors (the red line)
