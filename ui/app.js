@@ -4138,6 +4138,10 @@
   // read) and captured names you ticked. The old captured names stay available
   // unticked under a quiet 'Previously captured' heading. Nothing pre-ticked.
   var nrChosen = {};    // captured symbols the person ticked
+  // prepared tickers the person unticked, keyed by symbol within the current
+  // intake — a refused start or a keystroke must never re-tick them (the run
+  // would silently include a company the person excluded)
+  var nrPrepUnticked = {};
   // the prepared tickers for the box's current text (done intake only)
   function nrPreparedTickers() {
     var text = document.getElementById('nr-tickers').value.trim();
@@ -4153,9 +4157,15 @@
       if (tk.state === 'ready') {
         var l = el('label', 'tk2');
         var i = el('input');
-        i.type = 'checkbox'; i.className = 'nr-ik'; i.value = tk.symbol; i.checked = true;
+        i.type = 'checkbox'; i.className = 'nr-ik'; i.value = tk.symbol;
+        i.checked = !nrPrepUnticked[tk.symbol];
         l.append(i, document.createTextNode(' ' + tk.symbol + (tk.company ? ' · ' + tk.company : '')));
-        i.addEventListener('change', function () { nrError(''); syncStartButton(); });
+        i.addEventListener('change', function () {
+          // the untick is state, not just DOM — it survives re-renders
+          if (i.checked) delete nrPrepUnticked[tk.symbol];
+          else nrPrepUnticked[tk.symbol] = true;
+          nrError(''); syncStartButton();
+        });
         cos.append(l);
       } else {
         // a ticker that could not be read: a greyed box with its plain reason
@@ -4179,6 +4189,8 @@
       cos.append(l);
     });
     if (!any) cos.append(el('div', 'hint', 'Tick a company below, or paste tickers above.'));
+    applyPasteDisable();
+    syncStartButton();
   }
   var nrPrevUnreadable = [];
   // the quiet 'Previously captured' list: available names, nothing pre-ticked
@@ -4192,11 +4204,6 @@
       renderChosen();
       return;
     }
-    var all = el('label', 'tk2');
-    var allInput = el('input');
-    allInput.type = 'checkbox'; allInput.id = 'nr-all'; allInput.checked = false;
-    all.append(allInput, document.createTextNode(' All ' + companies.length));
-    host.append(all);
     companies.forEach(function (t) {
       if (nrChosen[t]) return;   // chosen names live in the Companies grid
       var l = el('label', 'tk2');
@@ -4210,12 +4217,6 @@
         renderPrevCompanies(companies, unreadable);
       });
       host.append(l);
-    });
-    allInput.addEventListener('change', function () {
-      companies.forEach(function (t) { if (allInput.checked) nrChosen[t] = true; else delete nrChosen[t]; });
-      nrError('');
-      renderChosen();
-      renderPrevCompanies(companies, unreadable);
     });
     // companies the server names but holds no page for: plain names, nothing to tick
     (unreadable || []).forEach(function (t) {
@@ -4347,8 +4348,11 @@
     var prep = document.getElementById('nr-preparing');
     var st = intakeDoneN();
     if (st === null) {
-      btn.textContent = 'Run now';
-      btn.disabled = !!nrBusy;
+      // the start counts the ticked captured names and never offers an active
+      // button that would refuse at zero
+      var n = document.querySelectorAll('.nr-co:checked').length;
+      btn.textContent = 'Run now · ' + n + ' compan' + (n === 1 ? 'y' : 'ies');
+      btn.disabled = !!nrBusy || !n;
       prep.hidden = true;
     } else if (st === 'none') {
       // pasted but not prepared (or the text changed): nothing to continue —
@@ -4383,10 +4387,15 @@
   // says so; the start button becomes 'Continue with N ready'. With the box
   // empty everything is as before. The intake list shows only while the box
   // holds the text it was prepared from.
+  // while the paste box holds text the run reads only the pasted tickers —
+  // every captured box (chosen or previously captured) stays disabled
+  function applyPasteDisable() {
+    var pasted = !!document.getElementById('nr-tickers').value.trim();
+    document.querySelectorAll('.nr-pc, .nr-co, #nr-all').forEach(function (c) { c.disabled = pasted; });
+  }
   function syncPasteMode() {
     var text = document.getElementById('nr-tickers').value.trim();
     var pasted = !!text;
-    document.querySelectorAll('.nr-pc, .nr-co, #nr-all').forEach(function (c) { c.disabled = pasted; });
     renderChosen();
     syncStartButton();
     var note = document.getElementById('nr-paste-note');
@@ -4487,6 +4496,7 @@
     var seq = ++nrIntake.seq;
     nrIntake.last = null;
     nrIntake.text = raw;
+    nrPrepUnticked = {};
     var out = document.getElementById('nr-intake-out');
     clear(out).append(el('div', 'hint', 'Preparing — finding the companies and capturing documents…'));
     out.hidden = false;

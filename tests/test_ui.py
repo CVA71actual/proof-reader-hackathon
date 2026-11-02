@@ -1049,7 +1049,6 @@ def test_new_run_company_list_is_server_owned_pins():
     for word in ("return fetch('/api/companies')",
                  "function renderNewRunCompanies(companies, unreadable)",
                  "function loadNewRunCompanies()",
-                 "' All ' + companies.length",
                  "res.body.companies || []",
                  "failed('The company list could not be loaded. The server is not reachable.')",
                  "var NR_EMPTY = 'No company has a page to read yet.';",
@@ -1087,14 +1086,15 @@ def test_new_run_renders_the_server_company_list():
     # grabbed app.js clear only sets textContent, which stubs do not expand)
     fns = "\n".join(_grab_fn(js, n) for n in
                      ("el", "nrError", "renderNewRunCompanies", "renderChosen", "renderPrevCompanies",
-                      "nrPreparedTickers", "syncStartButton", "intakeDoneN", "tickedReadyCount"))
+                      "nrPreparedTickers", "syncStartButton", "intakeDoneN", "tickedReadyCount",
+                      "applyPasteDisable"))
     script = "\n".join([
         "var NR_EMPTY = 'No company has a page to read yet.';",
         "var INTAKE_STATE_WORDS = { ready: 'Ready', unresolved: 'Could not be resolved' };",
         "var nodes = {};",
         "var els = { 'nr-tickers': { value: '' }, 'nr-go': { textContent: 'Run now', disabled: false },",
         "            'nr-preparing': { textContent: '', hidden: true } };",
-        "var nrChosen = {}; var nrCompanies = [];",
+        "var nrChosen = {}; var nrPrepUnticked = {}; var nrCompanies = [];",
         "var nrBusy = false;",
         "var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null, usedRun: null };",
         "function make() { return { tag: 'div', className: '', textContent: '', children: [], value: '', checked: false,",
@@ -1122,36 +1122,34 @@ def test_new_run_renders_the_server_company_list():
         "  { console.error('cos=' + cos.children.length); process.exit(2); }",
         "var prev = nodes['nr-prev'];",
         "if (nodes['nr-prev-h'].hidden) { console.error('heading hidden'); process.exit(3); }",
-        "if (prev.children.length !== 4) { console.error('prev=' + prev.children.length); process.exit(4); }",
-        "var allLabel = prev.children[0];",
-        "if (allLabel.children[1].textContent !== ' All 3' || allLabel.children[0].id !== 'nr-all' ||",
-        "    allLabel.children[0].checked !== false) process.exit(5);",
-        "var boxes = prev.children.slice(1).map(function (l) { return l.children[0]; });",
+        # Manus overwatch: there is no 'All N' — one box per name, nothing else
+        "if (prev.children.length !== 3) { console.error('prev=' + prev.children.length); process.exit(4); }",
+        "var boxes = prev.children.map(function (l) { return l.children[0]; });",
         "if (!boxes.every(function (b) { return b.checked === false && b.className === 'nr-pc'; })) process.exit(6);",
         # tick one: it moves to the Companies grid, the prev list shrinks
         "boxes[1].checked = true; boxes[1].onchange();",
         "var chosen = nodes['nr-cos'].children;",
         "if (chosen.length !== 1 || chosen[0].children[0].value !== 'PTGX' || chosen[0].children[0].className !== 'nr-co')",
         "  { console.error('chosen=' + chosen.length); process.exit(7); }",
-        "if (nodes['nr-prev'].children.length !== 3) process.exit(8);",
+        "if (nodes['nr-prev'].children.length !== 2) process.exit(8);",
         # untick it: back under Previously captured
         "chosen[0].children[0].checked = false; chosen[0].children[0].onchange();",
         "if (nodes['nr-cos'].children.length !== 1 || nodes['nr-cos'].children[0].tag !== 'div') process.exit(9);",
-        "if (nodes['nr-prev'].children.length !== 4) process.exit(10);",
-        # 'All N' ticks every captured name: they all move up
-        "nodes['nr-prev'].children[0].children[0].checked = true; nodes['nr-prev'].children[0].children[0].onchange();",
+        "if (nodes['nr-prev'].children.length !== 3) process.exit(10);",
+        # tick every captured name: they all move up
+        "nodes['nr-prev'].children.forEach(function (l) { l.children[0].checked = true; l.children[0].onchange(); });",
         "if (nodes['nr-cos'].children.length !== 3) { console.error('all=' + nodes['nr-cos'].children.length); process.exit(11); }",
-        "if (nodes['nr-prev'].children.length !== 1) process.exit(12);",
+        "if (nodes['nr-prev'].children.length !== 0) process.exit(12);",
         # a different server list renders as-is — nothing hard-coded
         "nrChosen = {};",
         "renderNewRunCompanies(['ZYXI']);",
-        "if (nodes['nr-prev'].children.length !== 2) process.exit(13);",
+        "if (nodes['nr-prev'].children.length !== 1) process.exit(13);",
         # LOW-4: a company listed without pages is a plain name with the plain sentence, no checkbox
         "nrChosen = {};",
         "renderNewRunCompanies(['IONS'], ['CRTX']);",
         "var kids = nodes['nr-prev'].children;",
-        "if (kids.length !== 3) { console.error('kids=' + kids.length); process.exit(14); }",
-        "var np = kids[2];",
+        "if (kids.length !== 2) { console.error('kids=' + kids.length); process.exit(14); }",
+        "var np = kids[1];",
         "if (np.tag !== 'span' || np.textContent !== 'CRTX — No pages read yet' || np.children.length) process.exit(15);",
         "if (np.className.indexOf('tk2') !== -1) process.exit(16);",
         # an empty list says so in plain words, with no 'All 0' box
@@ -1381,7 +1379,8 @@ def test_research_instructions_both_start_paths_send_the_exact_text():
     fns = "\n".join(_grab_fn(js, n) for n in
                     ("el", "clear", "nrError", "nrModels", "researchReady", "notePayload", "startRunFromIntake", "syncPasteMode",
                      "renderIntakeStatus", "intakeScopeLine", "dayMonth", "intakeDoneN", "syncStartButton",
-                     "renderChosen", "renderPrevCompanies", "nrPreparedTickers", "tickedReadyCount"))
+                     "renderChosen", "renderPrevCompanies", "nrPreparedTickers", "tickedReadyCount",
+                     "applyPasteDisable"))
     script = "\n".join([
         "var NEW_RUN_TYPES = [['trial_results', 'Trial results']];",
         "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',",
@@ -1398,10 +1397,11 @@ def test_research_instructions_both_start_paths_send_the_exact_text():
         "var nrResearch = { defaultText: 'Read the 8-K exhibits.', maxLength: 4000, loaded: true };",
         "var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null, usedRun: null };",
         "var nrBusy = false;",
-        "var nrChosen = {}; var nrCompanies = [];",
+        "var nrChosen = {}; var nrPrepUnticked = {}; var nrCompanies = [];",
         "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
         "  querySelectorAll: function (sel) {",
         "    if (sel === '.nr-ik:checked') return [{ value: 'ACME', checked: true }];",
+        "    if (sel === '.nr-co:checked') return [];",
         "    return []; },",
         "  getElementById: function (id) { if (els[id]) return els[id]; if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
         "var newrunWrap = { hidden: false };",
@@ -1522,6 +1522,122 @@ def test_newrun_accepted_run_survives_a_failed_runs_refresh():
         "  console.log('ok');",
         "}).catch(function (err) { fail(99, err && err.stack); });",
     ]))
+
+
+def test_pr171_review_tick_state_survives_refusal():
+    # Claude review of #171 (findings 1-3): prepared unticks are state — a 422
+    # never re-ticks them and the retry sends only the ticked symbols; Run now
+    # counts the ticked captured names and sleeps at zero; captured names
+    # ticked before a paste stay disabled and are never counted in the intake.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    names = ("el", "nrError", "renderChosen", "renderPrevCompanies", "nrPreparedTickers", "syncStartButton",
+             "intakeDoneN", "tickedReadyCount", "applyPasteDisable", "syncPasteMode", "startRunFromIntake",
+             "nrStartClick", "researchReady", "notePayload", "nrModels", "stopIntakePoll",
+             "renderIntakeStatus", "intakeScopeLine", "dayMonth")
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    script = "\n".join([
+        "var NR_PASTE_ONLY = 'paste only';",
+        "var NEW_RUN_TYPES = [['trial_results', 'Trial results']];",
+        "var INTAKE_STATE_WORDS = { ready: 'Ready', unresolved: 'Could not be resolved' };",
+        "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, dataset: {}, hidden: false,",
+        "  value: '', checked: false, disabled: false,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  querySelector: function () { return null; }, focus: function () {} }; }",
+        "var els = { 'nr-tickers': { value: '' }, 'nr-go': { textContent: '', disabled: false },",
+        "            'nr-preparing': { textContent: '', hidden: true } };",
+        "var nodes = {};",
+        "var nrChosen = {}; var nrPrepUnticked = {}; var nrCompanies = []; var nrBusy = false;",
+        "var nrResearch = { defaultText: null, maxLength: null, loaded: true };",
+        "var nrIntake = { id: 'ik1', seq: 1, timer: null, last: null, text: null, usedId: null, usedRun: null };",
+        "var DONE = { intake_id: 'ik1', status: 'done', ready_count: 2, failed_count: 0,",
+        "  requested: ['PTGX', 'CRNX'], tickers: [",
+        "    { symbol: 'PTGX', company: 'Protagonist', state: 'ready', reason: null, documents: 1, pages: 1 },",
+        "    { symbol: 'CRNX', company: 'Crinetics', state: 'ready', reason: null, documents: 1, pages: 1 } ] };",
+        "var posts = [];",
+        "var ANSWER = { ok: true, status: 202, body: { id: 'run9', number: 9, label: 'Run 9' } };",
+        "var A = { newRun: function (body) { posts.push(body); return Promise.resolve(ANSWER); },",
+        "          runs: function () { return Promise.resolve([]); } };",
+        "function currentRunId() { return 'run1'; }",
+        "function toast() {}",
+        "function switchRun() {}",
+        "var newrunWrap = { hidden: false };",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  createTextNode: function (t) { return { nodeType: 3, textContent: t, children: [] }; },",
+        "  getElementById: function (id) { if (els[id]) return els[id]; if (!nodes[id]) nodes[id] = make(); return nodes[id]; },",
+        "  querySelectorAll: function (sel) {",
+        "    var out = [];",
+        "    function match(c) {",
+        "      if (sel === '.nr-ik:checked') return c.tag === 'input' && c.className === 'nr-ik' && c.checked;",
+        "      if (sel === '.nr-co:checked') return c.tag === 'input' && c.className === 'nr-co' && c.checked;",
+        "      if (sel === '.nr-pc, .nr-co, #nr-all') return c.tag === 'input' && (c.className === 'nr-pc' || c.className === 'nr-co' || c.id === 'nr-all');",
+        "      return false; }",
+        "    (function walk(n) { (n.children || []).forEach(function (c) { if (!c) return; if (match(c)) out.push(c); walk(c); }); })(",
+        "      { children: [nodes['nr-cos'], nodes['nr-prev']] });",
+        "    return out; } };",
+        "function clear(n) { n.children = []; n.textContent = ''; return n; }",
+        fns,
+        "function ikBoxes() { return global.document.querySelectorAll('.nr-ik:checked'); }",
+        # --- finding 1: untick CRNX, refuse, retry sends only PTGX
+        "els['nr-tickers'].value = 'PTGX, CRNX';",
+        "nrIntake.text = 'PTGX, CRNX'; nrIntake.last = DONE;",
+        "syncPasteMode();",
+        "var boxes = [];",
+        "(function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'input' && c.className === 'nr-ik') boxes.push(c); walk(c); }); })(nodes['nr-cos']);",
+        "if (boxes.length !== 2 || !boxes[0].checked || !boxes[1].checked) { console.error('prepared boxes'); process.exit(2); }",
+        "boxes[1].checked = false; boxes[1].onchange();",
+        "if (els['nr-go'].textContent !== 'Continue with 1 ready') { console.error('count: ' + els['nr-go'].textContent); process.exit(3); }",
+        "ANSWER = { ok: false, status: 422, body: { detail: 'Choose at least one company.' } };",
+        "nrStartClick();",
+        "if (posts.length !== 1 || posts[0].companies.join(',') !== 'PTGX') { console.error(JSON.stringify(posts)); process.exit(4); }",
+        "later().then(function () {",
+        # the refusal re-rendered the sheet: CRNX must still be unticked
+        "  var boxes2 = [];",
+        "  (function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'input' && c.className === 'nr-ik') boxes2.push(c); walk(c); }); })(nodes['nr-cos']);",
+        "  if (boxes2.length !== 2 || boxes2[1].checked) { console.error('re-ticked after 422'); process.exit(5); }",
+        "  if (els['nr-go'].textContent !== 'Continue with 1 ready') { console.error('count after 422: ' + els['nr-go'].textContent); process.exit(6); }",
+        # retry with the server accepting: only the ticked symbol goes
+        "  ANSWER = { ok: true, status: 202, body: { id: 'run9', number: 9, label: 'Run 9' } };",
+        "  nrStartClick();",
+        "  return later();",
+        "}).then(function () {",
+        "  if (posts.length !== 2 || posts[1].companies.join(',') !== 'PTGX') { console.error('retry: ' + JSON.stringify(posts)); process.exit(7); }",
+        # --- finding 2: Run now counts and sleeps at zero
+        "  nrPrepUnticked = {}; nrIntake.last = null; nrIntake.text = null; els['nr-tickers'].value = '';",
+        "  nrChosen = {}; nrCompanies = ['IONS', 'PTGX'];",
+        "  renderPrevCompanies(['IONS', 'PTGX'], []);",
+        "  syncPasteMode();",
+        "  if (els['nr-go'].textContent !== 'Run now · 0 companies' || !els['nr-go'].disabled)",
+        "    { console.error('zero: ' + els['nr-go'].textContent + '/' + els['nr-go'].disabled); process.exit(8); }",
+        "  syncPasteMode();",
+        "  var pc = global.document.querySelectorAll('.nr-pc, .nr-co, #nr-all');",
+        "  if (pc.length !== 2) { console.error('prev boxes: ' + pc.length); process.exit(14); }",
+        "  pc[0].checked = true; pc[0].onchange();",
+        "  if (els['nr-go'].textContent !== 'Run now · 1 company' || els['nr-go'].disabled)",
+        "    { console.error('one: ' + els['nr-go'].textContent + '/' + els['nr-go'].disabled); process.exit(9); }",
+        # --- finding 3: a captured tick before pasting stays disabled, not counted
+        "  els['nr-tickers'].value = 'PTGX, CRNX';",
+        "  nrIntake.text = 'PTGX, CRNX'; nrIntake.last = DONE;",
+        "  syncPasteMode();",
+        "  var chosenCo = global.document.querySelectorAll('.nr-pc, .nr-co, #nr-all').filter(function (b) { return b.className === 'nr-co'; });",
+        "  if (!chosenCo.length || !chosenCo[0].disabled || !chosenCo[0].checked)",
+        "    { console.error('chosen captured box not disabled+ticked'); process.exit(10); }",
+        "  var pc2 = global.document.querySelectorAll('.nr-pc, .nr-co, #nr-all').filter(function (b) { return b.className === 'nr-pc'; });",
+        "  if (!pc2.every(function (b) { return b.disabled; })) { console.error('prev boxes enabled'); process.exit(11); }",
+        "  if (els['nr-go'].textContent !== 'Continue with 2 ready') { console.error('captured counted: ' + els['nr-go'].textContent); process.exit(12); }",
+        # unticking the chosen captured box re-renders: everything stays disabled
+        "  chosenCo[0].checked = false; chosenCo[0].onchange();",
+        "  var pc3 = global.document.querySelectorAll('.nr-pc, .nr-co, #nr-all').filter(function (b) { return b.className === 'nr-pc'; });",
+        "  if (!pc3.every(function (b) { return b.disabled; })) { console.error('prev boxes re-enabled'); process.exit(13); }",
+        "  console.log('ok');",
+        "}).catch(function (e) { console.error(e && e.message); process.exit(99); });",
+        "function later() { return new Promise(function (r) { setTimeout(r, 0); }); }",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
 
 
 def test_ticker_intake_pins():
@@ -1667,7 +1783,7 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
                     ("el", "clear", "nrError", "dayMonth", "intakeScopeLine", "renderIntakeStatus",
                      "syncPasteMode", "stopIntakePoll", "pollIntake", "startIntake", "startRunFromIntake",
                      "nrModels", "notePayload", "researchReady", "intakeDoneN", "syncStartButton", "nrStartClick",
-                     "renderChosen", "nrPreparedTickers", "tickedReadyCount"))
+                     "renderChosen", "nrPreparedTickers", "tickedReadyCount", "applyPasteDisable"))
     script = "\n".join([
         "var NR_PASTE_ONLY = 'This run reads only the pasted tickers. Clear the box to choose from the captured names instead.';",
         "var nrBusy = false;",
@@ -1705,6 +1821,7 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
         "var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null };",
         "var nrResearch = { defaultText: null, maxLength: null, loaded: true };",
         "var nrChosen = {};",
+        "var nrPrepUnticked = {};",
         "var nrCompanies = [];",
         "var PREPARING = { intake_id: 'ik1', status: 'preparing', ready_count: 0, failed_count: 0,",
         "  requested: ['ACME', 'BTBR'], tickers: [",
@@ -5458,7 +5575,8 @@ def _new_run_sheet_script(body_lines, extra_fns=()):
              "syncPasteMode", "stopIntakePoll", "pollIntake", "startIntake", "startRunFromIntake",
              "startRunNow", "nrModels", "notePayload", "researchReady",
              "intakeDoneN", "syncStartButton", "nrStartClick",
-             "renderChosen", "renderPrevCompanies", "nrPreparedTickers", "tickedReadyCount") + tuple(extra_fns)
+             "renderChosen", "renderPrevCompanies", "nrPreparedTickers", "tickedReadyCount",
+             "applyPasteDisable") + tuple(extra_fns)
     fns = "\n".join(_grab_fn(js, n) for n in names)
     consts = "\n".join(re.search(r"var %s = '[^']*';" % n, js).group(0)
                        for n in ("NR_PASTE_ONLY", "NR_PREPARE_FIRST", "NR_EMPTY"))
@@ -5478,6 +5596,7 @@ def _new_run_sheet_script(body_lines, extra_fns=()):
         "var boxes = [{ value: 'IONS', checked: true, disabled: false }, { value: 'PTGX', checked: true, disabled: false }];",
         "var allBox = { checked: true, disabled: false };",
         "var nrChosen = {};",
+        "var nrPrepUnticked = {};",
         "var ikBoxes = [{ value: 'PTGX', checked: true }];",
         "var els = { 'nr-tickers': { value: '' }, 'nr-limit': { value: '' },",
         "            'nr-note': { value: '' }, 'nr-tools': { checked: false },",
@@ -5554,7 +5673,7 @@ def test_pr162_unprepared_paste_and_run_now_is_refused():
         # box cleared: Run now behaves as before, the captured names
         "  els['nr-tickers'].value = '';",
         "  syncPasteMode();",
-        "  if (els['nr-go'].disabled || els['nr-go'].textContent !== 'Run now') fail(7, 'Run now not restored');",
+        "  if (els['nr-go'].disabled || els['nr-go'].textContent !== 'Run now · 2 companies') fail(7, 'Run now not restored: ' + els['nr-go'].textContent);",
         "  if (!nodes['nr-intake-out'].hidden) fail(8, 'intake list shown with the box empty');",
         "  startRunNow();",
         "  if (posts.length !== 1 || posts[0].companies.join(',') !== 'IONS,PTGX' || 'intake_id' in posts[0])",
@@ -5571,8 +5690,8 @@ def test_pr162_captured_boxes_disabled_while_the_box_has_text():
     _run_node(_new_run_sheet_script([
         "els['nr-tickers'].value = '  ';",
         "syncPasteMode();",
-        "if (els['nr-go'].disabled || els['nr-go'].textContent !== 'Run now' || boxes[0].disabled || allBox.disabled)",
-        "  fail(2, 'blank box disabled things');",
+        "if (els['nr-go'].disabled || els['nr-go'].textContent !== 'Run now · 2 companies' || boxes[0].disabled || allBox.disabled)",
+        "  fail(2, 'blank box disabled things: ' + els['nr-go'].textContent + '/' + els['nr-go'].disabled);",
         "if (!nodes['nr-paste-note'].hidden) fail(3, 'note shown for a blank box');",
         "els['nr-tickers'].value = 'PTGX, QUIET';",
         "syncPasteMode();",
@@ -5583,7 +5702,12 @@ def test_pr162_captured_boxes_disabled_while_the_box_has_text():
         "  fail(6, n.textContent);",
         "els['nr-tickers'].value = '';",
         "syncPasteMode();",
-        "if (els['nr-go'].disabled || boxes[1].disabled || allBox.disabled || !n.hidden) fail(7, 'not restored');",
+        "if (els['nr-go'].disabled || els['nr-go'].textContent !== 'Run now · 2 companies' || boxes[1].disabled || allBox.disabled || !n.hidden)",
+        "  fail(7, 'not restored: ' + els['nr-go'].textContent + '/' + els['nr-go'].disabled);",
+        # zero ticked: the button sleeps — never an active Run now that refuses
+        "boxes[0].checked = false; boxes[1].checked = false; syncPasteMode();",
+        "if (!els['nr-go'].disabled || els['nr-go'].textContent !== 'Run now · 0 companies')",
+        "  fail(8, 'zero-tick button awake');",
         "console.log('ok');",
     ]))
     # the box listens for edits, and the note has its place in the sheet
