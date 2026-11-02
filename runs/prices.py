@@ -30,6 +30,12 @@ PRICES_PER_HOUR_USD = {
     "Muse Voice Transcribe": 0.18,
 }
 
+# US dollars per 1,000 built-in web searches, for a model whose Responses API call can run its own web_search tool
+# (search grounding). Muse Spark 1.3: $2.50 per 1,000 searches on top of tokens (dev.meta.ai, read 2026-11-02).
+PRICES_PER_1K_SEARCHES_USD = {
+    "Muse Spark": 2.50,
+}
+
 # Where each price comes from. "confirmed ..." was read from the vendor's price list; nothing is a placeholder now.
 PRICE_STATUS = {
     "Muse Spark": "confirmed 2026-10-29, dev.meta.ai",
@@ -38,15 +44,24 @@ PRICE_STATUS = {
     "Muse Spark Open": "confirmed 2026-10-29, baseten.co",
     "Muse Voice Transcribe": "confirmed 2026-10-29, dev.meta.ai",
 }
+SEARCH_PRICE_STATUS = {
+    "Muse Spark": "confirmed 2026-11-02, dev.meta.ai/docs/search-grounding ($2.50 per 1,000 searches)",
+}
 
 ROUND_TO = 6  # cost figures are kept to a millionth of a dollar
+
+
+def _count(n) -> bool:
+    """A count a cost may be computed from: a whole number from 0. Booleans, negatives, floats and None are not
+    counts (the call is then unpriced, never a negative or zero spend)."""
+    return type(n) is int and n >= 0
 
 
 def cost_usd(model: str, prompt_tokens: int | None, completion_tokens: int | None) -> float | None:
     """The cost of one call: prompt tokens at the input price plus completion tokens at the output price.
     None when the model is not in the table or a token count was not recorded."""
     price = PRICES_PER_1M_USD.get(model)
-    if price is None or not isinstance(prompt_tokens, int) or not isinstance(completion_tokens, int):
+    if price is None or not _count(prompt_tokens) or not _count(completion_tokens):
         return None
     return round((prompt_tokens * price["input"] + completion_tokens * price["output"]) / 1_000_000, ROUND_TO)
 
@@ -55,7 +70,7 @@ def image_cost_usd(model: str, images: int | None) -> float | None:
     """The cost of a call to a model priced per image; None when the model is not priced that way or the count is
     unknown."""
     price = PRICES_PER_IMAGE_USD.get(model)
-    if price is None or not isinstance(images, int):
+    if price is None or not _count(images):
         return None
     return round(images * price, ROUND_TO)
 
@@ -63,9 +78,40 @@ def image_cost_usd(model: str, images: int | None) -> float | None:
 def audio_cost_usd(model: str, audio_ms: int | None) -> float | None:
     """The cost of a call to a model priced per hour of audio, from the audio length the service reports."""
     price = PRICES_PER_HOUR_USD.get(model)
-    if price is None or not isinstance(audio_ms, int) or isinstance(audio_ms, bool):
+    if price is None or not _count(audio_ms):
         return None
     return round(audio_ms / 3_600_000 * price, ROUND_TO)
+
+
+def search_cost_usd(model: str, searches: int | None) -> float | None:
+    """The cost of a call's built-in web searches. 0.0 for zero searches on a model priced for search; None when the
+    count is unknown or the model has no search price (an unknown search cost is never priced as zero)."""
+    if not _count(searches):
+        return None
+    if searches == 0:
+        return 0.0
+    price = PRICES_PER_1K_SEARCHES_USD.get(model)
+    if price is None:
+        return None
+    return round(searches * price / 1000, ROUND_TO)
+
+
+def responses_cost_usd(model: str, input_tokens: int | None, output_tokens: int | None,
+                       searches: int | None) -> float | None:
+    """One Responses API call: tokens at the token prices plus its searches at the search price. None when any
+    part cannot be priced (the whole call is then unpriced, never partly counted)."""
+    tokens = cost_usd(model, input_tokens, output_tokens)
+    search = search_cost_usd(model, searches)
+    if tokens is None or search is None:
+        return None
+    return round(tokens + search, ROUND_TO)
+
+
+def responses_worst_case_usd(model: str, max_input_tokens: int, max_output_tokens: int,
+                             max_searches: int) -> float | None:
+    """The most one Responses call can cost under its own bounds (input tokens are bounded by the request's bytes,
+    output by max_output_tokens, searches by max_tool_calls). None when the model has no price."""
+    return responses_cost_usd(model, max_input_tokens, max_output_tokens, max_searches)
 
 
 def snapshot() -> dict:
@@ -73,6 +119,11 @@ def snapshot() -> dict:
     recomputed later at the prices it was tallied at."""
     return {"per_1m_tokens_usd": {m: dict(p) for m, p in PRICES_PER_1M_USD.items()},
             "per_image_usd": dict(PRICES_PER_IMAGE_USD), "per_hour_usd": dict(PRICES_PER_HOUR_USD)}
+
+
+def search_snapshot() -> dict:
+    """The search prices in force, added to run.prices by a research run (page-mode snapshots are unchanged)."""
+    return dict(PRICES_PER_1K_SEARCHES_USD)
 
 
 def has_price(model: str) -> bool:
@@ -84,7 +135,7 @@ def model_cost_fields(model: str, prompt_tokens: int | None, completion_tokens: 
                       call_rows: int | None = None) -> dict:
     """The `tokens` and `cost_usd` fields for one Model trail step. `call_rows` is set when one call proposed
     several rows and this step carries its share of that call's tokens."""
-    if not isinstance(prompt_tokens, int) or not isinstance(completion_tokens, int):
+    if not _count(prompt_tokens) or not _count(completion_tokens):
         return {"tokens": None, "cost_usd": None}
     tokens = {"prompt": prompt_tokens, "completion": completion_tokens}
     if call_rows is not None and call_rows > 1:
