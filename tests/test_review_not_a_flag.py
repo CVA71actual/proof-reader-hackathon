@@ -50,10 +50,10 @@ def test_stale_saved_failure_is_history_not_an_issue():
 
 def test_open_disagreement_is_an_issue_until_kept():
     _, run = make_run(CASES[0])
-    run["rows"][0]["disagreement"] = {"field": "event_type", "first_reader": "earnings_release",
-                                      "second_reader": "clinical_readout"}
+    run["rows"][0]["disagreement"] = {"field": "date", "first_reader": "2026-11-12",
+                                      "second_reader": "2026-11-13"}
     t = target(run)
-    assert t["issues"] == ["The two readers disagree on the event type"]
+    assert t["issues"] == ["The two readers disagree on the date"]
     keep = kept_decision(run)
     assert target(run, [keep])["issues"] == []
 
@@ -135,3 +135,17 @@ def test_api_target_state_and_run_list_carry_issues(tmp_path):
         # A failed row is still a proposal that needs review; the issue is separate.
         assert listed["synthetic"]["unresolved"] == 1
         json.dumps(body)
+
+
+def test_free_text_disagreement_is_not_an_issue():
+    _, run = make_run(CASES[0])
+    run["rows"][0]["disagreement"] = {
+        "field": "type_hint", "first_reader": "earnings release", "second_reader": "quarterly results",
+        "also": [{"field": "title", "first_reader": "Q3 results", "second_reader": "Third-quarter results"}]}
+    t = target(run)
+    assert t["status"] == "undecided"  # still held for review; only the issue flag is withheld
+    assert t["issues"] == []
+    # A factual field among the "also" entries is still an issue.
+    run["rows"][0]["disagreement"]["also"].append(
+        {"field": "program", "first_reader": "CB-100", "second_reader": "CB-200"})
+    assert target(run)["issues"] == ["The two readers disagree on the program"]

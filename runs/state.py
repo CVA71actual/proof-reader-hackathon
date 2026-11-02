@@ -655,6 +655,9 @@ def current_state(run: dict, decisions: list) -> dict:
 
 
 EXPIRED_KEEP_LABEL = "Previous Keep — needs your review"
+# Fields where the two readers' values are facts that can be compared. Free-text fields (type_hint, title,
+# event type wording, context prose) differ by wording alone and are never an issue.
+DISAGREEMENT_ISSUE_FIELDS = ("date", "date_end", "date_text", "program", "indication", "company", "ticker", "quote")
 
 
 def _page_key(row: dict | None):
@@ -677,7 +680,7 @@ def row_issues(s: dict, *, page_unreadable: bool = False, second_reader_mistake:
     """REVIEW-NOT-A-FLAG-001: every proposal needs review by design, so needing review is not an issue. The
     issues are the real problems on a target, in short plain English; empty when there are none:
       - a current effective check failed ("<check name> failed");
-      - the readers' disagreement is still open, or the second reader caught a mistake on this target;
+      - the readers' disagreement on a factual field is still open, or the second reader caught a mistake on this target;
       - the page could not be read, or the reader's answer could not be read (status unreadable);
       - a previous Keep expired because the proposal or evidence changed.
     A check that could not run, was not needed or was not checked is not an issue. An accepted or excluded
@@ -693,7 +696,11 @@ def row_issues(s: dict, *, page_unreadable: bool = False, second_reader_mistake:
             out.append(f"{c.get('label') or _plain_field(c.get('name') or 'A check')} failed")
     dis = s.get("disagreement")
     if dis and s.get("_disagreement_open", True):
-        out.append(f"The two readers disagree on the {_plain_field(dis.get('field')).lower()}")
+        # Only a factual field: free text (type hint, title, ...) is each reader's own wording, not a problem.
+        factual = [x.get("field") for x in [dis, *(dis.get("also") or [])]
+                   if x.get("field") in DISAGREEMENT_ISSUE_FIELDS]
+        if factual:
+            out.append(f"The two readers disagree on the {_plain_field(factual[0]).lower()}")
     if second_reader_mistake:
         out.append("The second reader caught a mistake on this row")
     if page_unreadable:
