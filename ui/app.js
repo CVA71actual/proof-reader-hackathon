@@ -4140,13 +4140,14 @@
     } else {
       var all = el('label', 'tk2');
       var allInput = el('input');
-      allInput.type = 'checkbox'; allInput.id = 'nr-all'; allInput.checked = true;
+      // NEWRUN-ONE-START-001: nothing pre-ticked — the person chooses; 'All N' ticks every box
+      allInput.type = 'checkbox'; allInput.id = 'nr-all'; allInput.checked = false;
       all.append(allInput, document.createTextNode(' All ' + companies.length));
       cos.append(all);
       companies.forEach(function (t) {
         var l = el('label', 'tk2');
         var i = el('input');
-        i.type = 'checkbox'; i.className = 'nr-co'; i.value = t; i.checked = true;
+        i.type = 'checkbox'; i.className = 'nr-co'; i.value = t; i.checked = false;
         l.append(i, document.createTextNode(' ' + t));
         cos.append(l);
       });
@@ -4260,16 +4261,59 @@
   var nrBusy = false;
   var NR_PASTE_ONLY = 'This run reads only the pasted tickers. Clear the box to choose from the captured names instead.';
   var NR_PREPARE_FIRST = 'Prepare the pasted tickers first, or clear the box.';
+  // NEWRUN-ONE-START-001: ONE start button at the bottom. With the paste box
+  // empty it is 'Run now' (the captured names ticked above). With text it is
+  // 'Continue with N ready' and only wakes when the intake for that text is
+  // done — it is never active-looking while it would refuse. While preparing,
+  // 'Preparing… (n of N done)' rides beside it.
+  var INTAKE_FINISHED = ('ready unresolved no_documents unsupported failed').split(' ');
+  // the box's situation: null (box empty -> 'Run now'), 'none' (text pasted
+  // but no intake prepared for it), 'preparing', or the finished record
+  function intakeDoneN() {
+    var text = document.getElementById('nr-tickers').value.trim();
+    if (!text) return null;
+    var st = nrIntake.last;
+    if (!st || text !== nrIntake.text) return 'none';
+    return st.status === 'done' ? st : 'preparing';
+  }
+  function syncStartButton() {
+    var btn = document.getElementById('nr-go');
+    var prep = document.getElementById('nr-preparing');
+    var st = intakeDoneN();
+    if (st === null) {
+      btn.textContent = 'Run now';
+      btn.disabled = !!nrBusy;
+      prep.hidden = true;
+    } else if (st === 'none') {
+      // pasted but not prepared (or the text changed): nothing to continue —
+      // the button sleeps until Prepare finishes, it never reads 'Run now'
+      btn.textContent = 'Continue with 0 ready';
+      btn.disabled = true;
+      prep.hidden = true;
+    } else if (st === 'preparing') {
+      var fin = (nrIntake.last.tickers || []).filter(function (t) {
+        return INTAKE_FINISHED.indexOf(t.state) >= 0;
+      }).length;
+      btn.textContent = 'Continue with ' + nrIntake.last.ready_count + ' ready';
+      btn.disabled = true;
+      prep.hidden = false;
+      prep.textContent = 'Preparing… (' + fin + ' of ' + (nrIntake.last.requested || []).length + ' done)';
+    } else {
+      btn.textContent = 'Continue with ' + st.ready_count + ' ready';
+      btn.disabled = !!st.run_id || st.intake_id === nrIntake.usedId || !st.ready_count || !!nrBusy;
+      prep.hidden = true;
+    }
+  }
   // Operator ruling: when the paste box has any text, the run reads only the
-  // pasted tickers — Run now and the captured-name boxes are disabled, one plain
-  // line says so, and 'Continue with N ready' is the only start. With the box
+  // pasted tickers — the captured-name boxes are disabled and one plain line
+  // says so; the start button becomes 'Continue with N ready'. With the box
   // empty everything is as before. The intake list shows only while the box
   // holds the text it was prepared from.
   function syncPasteMode() {
     var text = document.getElementById('nr-tickers').value.trim();
     var pasted = !!text;
     document.querySelectorAll('.nr-co, #nr-all').forEach(function (c) { c.disabled = pasted; });
-    document.getElementById('nr-go').disabled = pasted || nrBusy;
+    syncStartButton();
     var note = document.getElementById('nr-paste-note');
     note.textContent = pasted ? NR_PASTE_ONLY : '';
     note.hidden = !pasted;
@@ -4337,11 +4381,8 @@
         }
         host.append(used);
       } else {
-        var go = el('button', 'btn pri', 'Continue with ' + st.ready_count + ' ready');
-        go.id = 'nr-intake-continue';
-        go.disabled = !st.ready_count || nrBusy;
-        go.addEventListener('click', function () { startRunFromIntake(st, go); });
-        foot.append(go);
+        // NEWRUN-ONE-START-001: no second start button here — the ONE start
+        // button at the bottom becomes 'Continue with N ready'
         host.append(foot);
       }
     }
@@ -4529,7 +4570,16 @@
       });
     }, function () { done(); nrError('The server is not reachable.'); });
   }
-  document.getElementById('nr-go').addEventListener('click', startRunNow);
+  // NEWRUN-ONE-START-001: the one start button — 'Continue with N ready' once
+  // the pasted intake is done, 'Run now' with the box empty
+  function nrStartClick() {
+    var st = intakeDoneN();
+    if (st && st !== 'preparing') startRunFromIntake(st, document.getElementById('nr-go'));
+    else startRunNow();
+  }
+  document.getElementById('nr-go').addEventListener('click', nrStartClick);
+  // the clear close (Esc and Cancel keep working)
+  document.getElementById('nr-close').addEventListener('click', function () { newrunWrap.hidden = true; });
 
   // the job bar: status, turns and spend from run.json while a run goes, and the
   // stop reason with a Resume when it pauses

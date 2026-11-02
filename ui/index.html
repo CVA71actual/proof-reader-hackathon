@@ -126,7 +126,7 @@
 
 <div class="sheetwrap" id="newrun-wrap" hidden>
   <div class="sheet sheet-wide">
-    <div class="sh-t">New run</div>
+    <div class="sh-t">New run <button class="sh-x" id="nr-close" aria-label="Close">×</button></div>
     <div class="sh-s">Choices only — nothing here calls a model until the run starts, and the checks never change.</div>
     <h4>Companies</h4>
     <div class="sh-grid" id="nr-cos"></div>
@@ -150,6 +150,7 @@
     <div class="errline" id="nr-error" hidden></div>
     <div class="btnrow" style="margin-top:16px">
       <button class="btn pri" id="nr-go">Run now</button>
+      <span class="hint" id="nr-preparing" hidden></span>
       <button class="btn" id="nr-cancel">Cancel</button>
     </div>
   </div>

@@ -1076,7 +1076,8 @@ def test_new_run_company_list_is_server_owned_pins():
 
 def test_new_run_renders_the_server_company_list():
     # the rendered list is exactly what the server returned: [all] first with
-    # the count, then one checked checkbox per company
+    # the count, then one checkbox per company — NEWRUN-ONE-START-001: nothing
+    # pre-ticked; the person chooses (or ticks 'All N')
     import subprocess
 
     js = (UI / "app.js").read_text()
@@ -1102,11 +1103,11 @@ def test_new_run_renders_the_server_company_list():
         "if (cos.children.length !== 4) { console.error('children=' + cos.children.length); process.exit(2); }",
         "var allLabel = cos.children[0];",
         "if (allLabel.children[1].textContent !== ' All 3') { console.error('all=' + allLabel.children[1].textContent); process.exit(3); }",
-        "if (allLabel.children[0].id !== 'nr-all' || allLabel.children[0].checked !== true) process.exit(4);",
+        "if (allLabel.children[0].id !== 'nr-all' || allLabel.children[0].checked !== false) process.exit(4);",
         "var names = cos.children.slice(1).map(function (l) { return l.children[1].textContent.trim(); });",
         "if (names.join(',') !== 'IONS,PTGX,ABVX') { console.error('names=' + names); process.exit(5); }",
         "var boxes = cos.children.slice(1).map(function (l) { return l.children[0]; });",
-        "if (!boxes.every(function (b) { return b.checked === true && b.className === 'nr-co'; })) process.exit(6);",
+        "if (!boxes.every(function (b) { return b.checked === false && b.className === 'nr-co'; })) process.exit(6);",
         # a different server list renders as-is — nothing hard-coded
         "renderNewRunCompanies(['ZYXI']);",
         "if (nodes['nr-cos'].children.length !== 2) process.exit(7);",
@@ -1307,7 +1308,7 @@ def test_research_instructions_both_start_paths_send_the_exact_text():
     js = (UI / "app.js").read_text()
     fns = "\n".join(_grab_fn(js, n) for n in
                     ("el", "clear", "nrError", "nrModels", "researchReady", "notePayload", "startRunFromIntake", "syncPasteMode",
-                     "renderIntakeStatus", "intakeScopeLine", "dayMonth"))
+                     "renderIntakeStatus", "intakeScopeLine", "dayMonth", "intakeDoneN", "syncStartButton"))
     script = "\n".join([
         "var NEW_RUN_TYPES = [['trial_results', 'Trial results']];",
         "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',",
@@ -1317,7 +1318,9 @@ def test_research_instructions_both_start_paths_send_the_exact_text():
         "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
         "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
         "var els = { 'nr-note': { value: 'Focus on catalysts.' }, 'nr-limit': { value: '' }, 'nr-tools': { checked: false },",
-        "            'nr-tickers': { value: '' } };",
+        "            'nr-tickers': { value: '' }, 'nr-go': { textContent: '', disabled: false },",
+        "            'nr-preparing': { textContent: '', hidden: true } };",
+        "var INTAKE_FINISHED = ('ready unresolved no_documents unsupported failed').split(' ');",
         "var nodes = {};",
         "var nrResearch = { defaultText: 'Read the 8-K exhibits.', maxLength: 4000, loaded: true };",
         "var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null, usedRun: null };",
@@ -1360,6 +1363,53 @@ def test_research_instructions_both_start_paths_send_the_exact_text():
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
     assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_newrun_one_start_ruling():
+    # NEWRUN-ONE-START-001 + the CVA addendum: ONE start button at the bottom;
+    # the dialog closes and opens the run ONLY after the server accepts the
+    # start (202) — on failure it stays open with the paste text, the spending
+    # limit and the instructions intact, error inline in red; the start button
+    # disables the instant it is clicked. Plus the clear close and unticked
+    # captured boxes.
+    html = (UI / "index.html").read_text()
+    assert 'id="nr-close"' in html and '×' in html
+    assert 'id="nr-preparing"' in html
+    js = (UI / "app.js").read_text()
+    for word in ("function intakeDoneN(", "function syncStartButton(", "function nrStartClick(",
+                 "getElementById('nr-close').addEventListener('click'",
+                 "Preparing… (",
+                 # the sheet keeps its closing doors: Esc handler and Cancel
+                 "if (newrunWrap && !newrunWrap.hidden) { newrunWrap.hidden = true; return; }"):
+        assert word in js, word
+    _run_node(_new_run_sheet_script([
+        # Run now refused by the server: dialog stays open, everything intact
+        "global.NEXT_RUN_ANSWER = { ok: false, status: 422, body: { detail: 'Choose at least one company.' } };",
+        "els['nr-tickers'].value = '';",
+        "els['nr-limit'].value = '2.00';",
+        "els['nr-note'].value = 'Focus on catalysts.';",
+        "boxes[0].checked = true;",
+        "syncPasteMode();",
+        "nrStartClick();",
+        "if (!els['nr-go'].disabled) fail(2, 'button not disabled on click');",
+        "later().then(function () {",
+        "  if (posts.length !== 1) fail(3, 'no post');",
+        "  if (newrunWrap.hidden) fail(4, 'dialog closed on a refused start');",
+        "  if (els['nr-tickers'].value !== '' || els['nr-limit'].value !== '2.00' || els['nr-note'].value !== 'Focus on catalysts.')",
+        "    fail(5, 'settings lost on failure');",
+        "  var e = nodes['nr-error'];",
+        "  if (e.hidden || e.textContent !== 'Choose at least one company.') fail(6, e.textContent);",
+        # the server accepts: only now the dialog closes and the run opens
+        "  global.NEXT_RUN_ANSWER = { ok: true, status: 202, body: { id: 'run9', number: 9, label: 'Run 9' } };",
+        "  boxes[0].checked = true;",
+        "  nrStartClick();",
+        "  return later();",
+        "}).then(function () {",
+        "  if (posts.length !== 2 || switched !== 'run9') fail(7, 'run did not open: ' + JSON.stringify(posts));",
+        "  if (!newrunWrap.hidden) fail(8, 'dialog open after the 202');",
+        "  console.log('ok');",
+        "}).catch(function (err) { fail(99, err && err.stack); });",
+    ]))
 
 
 def test_ticker_intake_pins():
@@ -1471,10 +1521,11 @@ def test_ticker_intake_renders_states_scope_and_continue_button():
         "if (text.indexOf('CRNX') === -1 || text.indexOf('DRMA') === -1) { console.error('failures lost'); process.exit(7); }",
         "if (text.indexOf('Read: the first 2 pages of each 8-K press release filed 4 Aug 2026 to 2 Nov 2026 (90 days).') === -1) { console.error('scope: ' + text); process.exit(8); }",
         "if (text.indexOf('2 ready · 2 could not be prepared') === -1) { console.error('counts'); process.exit(9); }",
-        # the continue button
+        # NEWRUN-ONE-START-001: no start button inside the list — the ONE
+        # start button is nr-go at the bottom of the sheet
         "var btns = []; (function walk(n) { (n.children || []).forEach(function (c) {",
         "  if (c.tag === 'button') btns.push(c); walk(c); }); })(nodes['nr-intake-out']);",
-        "if (btns.length !== 1 || btns[0].textContent !== 'Continue with 2 ready') { console.error('button'); process.exit(10); }",
+        "if (btns.length !== 0) { console.error('mid-dialog button survives'); process.exit(10); }",
         # nothing ready: no run can start (the stub's clear() only mirrors the
         # DOM's textContent reset, so drop the children the real DOM would drop)
         "nodes['nr-intake-out'].children = [];",
@@ -1484,7 +1535,8 @@ def test_ticker_intake_renders_states_scope_and_continue_button():
         "renderIntakeStatus(nodes['nr-intake-out'], none);",
         "btns = []; (function walk(n) { (n.children || []).forEach(function (c) {",
         "  if (c.tag === 'button') btns.push(c); walk(c); }); })(nodes['nr-intake-out']);",
-        "if (btns.length !== 1 || !btns[0].disabled) { console.error('disabled'); process.exit(11); }",
+        "if (btns.length !== 0) { console.error('mid-dialog button survives'); process.exit(11); }",
+        "if (none.ready_count !== 0) { console.error('fixture'); process.exit(12); }",
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
@@ -1502,7 +1554,7 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
     fns = "\n".join(_grab_fn(js, n) for n in
                     ("el", "clear", "nrError", "dayMonth", "intakeScopeLine", "renderIntakeStatus",
                      "syncPasteMode", "stopIntakePoll", "pollIntake", "startIntake", "startRunFromIntake",
-                     "nrModels", "notePayload", "researchReady"))
+                     "nrModels", "notePayload", "researchReady", "intakeDoneN", "syncStartButton", "nrStartClick"))
     script = "\n".join([
         "var NR_PASTE_ONLY = 'This run reads only the pasted tickers. Clear the box to choose from the captured names instead.';",
         "var nrBusy = false;",
@@ -1518,11 +1570,14 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
         "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
         "var nodes = {};",
         "var els = { 'nr-tickers': { value: 'acme, BTBR' }, 'nr-limit': { value: '' },",
-        "            'nr-note': { value: '' }, 'nr-tools': { checked: false } };",
+        "            'nr-note': { value: '' }, 'nr-tools': { checked: false },",
+        "            'nr-go': { textContent: 'Run now', disabled: false },",
+        "            'nr-preparing': { textContent: '', hidden: true } };",
         "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
         "  getElementById: function (id) { if (els[id]) return els[id]; if (!nodes[id]) nodes[id] = make(); return nodes[id]; },",
         "  createTextNode: function (t) { return { nodeType: 3, textContent: t }; },",
         "  querySelectorAll: function () { return []; } };",
+        "var INTAKE_FINISHED = ('ready unresolved no_documents unsupported failed').split(' ');",
         "var newrunWrap = { hidden: false };",
         "var runs = []; var switched = null;",
         "function toast() {}",
@@ -1554,18 +1609,22 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
         "  if (intakeText !== 'acme, BTBR') { console.error('posted text: ' + intakeText); process.exit(2); }",
         "  var t1 = textOf(nodes['nr-intake-out']);",
         "  if (t1.indexOf('Capturing documents') === -1) { console.error('preparing render: ' + t1); process.exit(3); }",
+        # NEWRUN-ONE-START-001 (4): while preparing the button sleeps with the
+        # progress line beside it
+        "  if (els['nr-go'].disabled !== true || els['nr-preparing'].hidden ||",
+        "      els['nr-preparing'].textContent !== 'Preparing… (0 of 2 done)')",
+        "    { console.error('preparing line: ' + els['nr-go'].textContent + ' / ' + els['nr-preparing'].textContent); process.exit(14); }",
         "  return pollIntake(1);",
         "}).then(function () {",
         "  var t2 = textOf(nodes['nr-intake-out']);",
-        "  if (t2.indexOf('Continue with 1 ready') === -1) { console.error('done render: ' + t2); process.exit(4); }",
         "  if (t2.indexOf('1 ready · 1 could not be prepared') === -1) { console.error('counts: ' + t2); process.exit(5); }",
         "  if (t2.indexOf('No company matches this symbol.') === -1) { console.error('failure lost'); process.exit(6); }",
         "  if (t2.indexOf('Read: 8-K press releases filed 4 Aug 2026 to 2 Nov 2026 (90 days).') === -1) { console.error('scope'); process.exit(7); }",
-        "  var btns = []; (function walk(n) { (n.children || []).forEach(function (c) {",
-        "    if (c.tag === 'button') btns.push(c); walk(c); }); })(nodes['nr-intake-out']);",
-        "  var cont = btns.filter(function (b) { return b.textContent === 'Continue with 1 ready'; })[0];",
-        "  if (!cont || cont.disabled) { console.error('continue button'); process.exit(8); }",
-        "  cont.onclick();",
+        # NEWRUN-ONE-START-001: the ONE start button is nr-go — now 'Continue with 1 ready'
+        "  if (!els['nr-preparing'].hidden) { console.error('preparing line stuck'); process.exit(15); }",
+        "  if (els['nr-go'].textContent !== 'Continue with 1 ready' || els['nr-go'].disabled)",
+        "    { console.error('one button: ' + els['nr-go'].textContent + '/' + els['nr-go'].disabled); process.exit(8); }",
+        "  nrStartClick();",
         "  if (!posted) { console.error('no post'); process.exit(9); }",
         "  if (posted.intake_id !== 'ik1' || posted.companies.join(',') !== 'ACME') { console.error(JSON.stringify(posted)); process.exit(10); }",
         "  if (posted.accept_ready_subset !== true) { console.error('subset flag'); process.exit(11); }",
@@ -5278,7 +5337,8 @@ def _new_run_sheet_script(body_lines, extra_fns=()):
     js = (UI / "app.js").read_text()
     names = ("el", "nrError", "dayMonth", "intakeScopeLine", "renderIntakeStatus",
              "syncPasteMode", "stopIntakePoll", "pollIntake", "startIntake", "startRunFromIntake",
-             "startRunNow", "nrModels", "notePayload", "researchReady") + tuple(extra_fns)
+             "startRunNow", "nrModels", "notePayload", "researchReady",
+             "intakeDoneN", "syncStartButton", "nrStartClick") + tuple(extra_fns)
     fns = "\n".join(_grab_fn(js, n) for n in names)
     consts = "\n".join(re.search(r"var %s = '[^']*';" % n, js).group(0)
                        for n in ("NR_PASTE_ONLY", "NR_PREPARE_FIRST", "NR_EMPTY"))
@@ -5289,6 +5349,7 @@ def _new_run_sheet_script(body_lines, extra_fns=()):
         "  ready: 'Ready', unresolved: 'Could not be resolved', no_documents: 'No documents found',",
         "  unsupported: 'Not supported', failed: 'Preparation failed' };",
         "var NEW_RUN_TYPES = [['trial_results', 'Trial results'], ['filing', 'Filing']];",
+        "var INTAKE_FINISHED = ('ready unresolved no_documents unsupported failed').split(' ');",
         consts,
         "function make() { return { tag: 'div', className: '', textContent: '', children: [], hidden: false, disabled: false,",
         "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
@@ -5297,7 +5358,9 @@ def _new_run_sheet_script(body_lines, extra_fns=()):
         "var boxes = [{ value: 'IONS', checked: true, disabled: false }, { value: 'PTGX', checked: true, disabled: false }];",
         "var allBox = { checked: true, disabled: false };",
         "var els = { 'nr-tickers': { value: '' }, 'nr-limit': { value: '' },",
-        "            'nr-note': { value: '' }, 'nr-tools': { checked: false } };",
+        "            'nr-note': { value: '' }, 'nr-tools': { checked: false },",
+        "            'nr-go': { textContent: 'Run now', disabled: false },",
+        "            'nr-preparing': { textContent: '', hidden: true } };",
         "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
         "  getElementById: function (id) { if (els[id]) return els[id]; if (!nodes[id]) nodes[id] = make(); return nodes[id]; },",
         "  createTextNode: function (t) { return { nodeType: 3, textContent: t }; },",
@@ -5346,49 +5409,57 @@ def _run_node(script):
 
 
 def test_pr162_unprepared_paste_and_run_now_is_refused():
-    # Finding 1: paste ABVX QUIET, skip Prepare, click Run now -> no POST, the
+    # Finding 1 + NEWRUN-ONE-START-001: paste ABVX QUIET, skip Prepare — the
+    # ONE start button sleeps as 'Continue with 0 ready' (never an active Run
+    # now that refuses); a direct startRunNow still posts nothing and shows the
     # inline red line; the captured names are not run instead
     _run_node(_new_run_sheet_script([
         "els['nr-tickers'].value = 'ABVX QUIET';",
         "syncPasteMode();",
+        "if (els['nr-go'].textContent !== 'Continue with 0 ready' || !els['nr-go'].disabled)",
+        "  fail(2, 'one button awake for unprepared paste: ' + els['nr-go'].textContent + '/' + els['nr-go'].disabled);",
         "startRunNow();",
-        "if (posts.length) fail(2, 'posted: ' + JSON.stringify(posts));",
+        "if (posts.length) fail(3, 'posted: ' + JSON.stringify(posts));",
         "var e = nodes['nr-error'];",
-        "if (e.hidden || e.textContent !== 'Prepare the pasted tickers first, or clear the box.') fail(3, e.textContent);",
+        "if (e.hidden || e.textContent !== 'Prepare the pasted tickers first, or clear the box.') fail(4, e.textContent);",
         # prepared text still never starts from Run now: Continue is the only start
         "startIntake().then(later).then(function () {",
         "  startRunNow();",
-        "  if (posts.length) fail(4, 'Run now posted with prepared text');",
-        "  if (e.textContent !== NR_PASTE_ONLY) fail(5, e.textContent);",
+        "  if (posts.length) fail(5, 'Run now posted with prepared text');",
+        "  if (e.textContent !== NR_PASTE_ONLY) fail(6, e.textContent);",
         # box cleared: Run now behaves as before, the captured names
         "  els['nr-tickers'].value = '';",
         "  syncPasteMode();",
-        "  if (nodes['nr-go'].disabled) fail(6, 'Run now still disabled');",
-        "  if (!nodes['nr-intake-out'].hidden) fail(7, 'intake list shown with the box empty');",
+        "  if (els['nr-go'].disabled || els['nr-go'].textContent !== 'Run now') fail(7, 'Run now not restored');",
+        "  if (!nodes['nr-intake-out'].hidden) fail(8, 'intake list shown with the box empty');",
         "  startRunNow();",
         "  if (posts.length !== 1 || posts[0].companies.join(',') !== 'IONS,PTGX' || 'intake_id' in posts[0])",
-        "    fail(8, JSON.stringify(posts));",
+        "    fail(9, JSON.stringify(posts));",
         "  console.log('ok');",
         "}).catch(function (err) { fail(99, err && err.stack); });",
     ]))
 
 
-def test_pr162_captured_boxes_and_run_now_disabled_while_the_box_has_text():
+def test_pr162_captured_boxes_disabled_while_the_box_has_text():
+    # NEWRUN-ONE-START-001: with text in the box the captured boxes sleep and
+    # the one button is a disabled 'Continue with 0 ready' — never an active
+    # Run now; with the box blank everything wakes as before
     _run_node(_new_run_sheet_script([
         "els['nr-tickers'].value = '  ';",
         "syncPasteMode();",
-        "if (nodes['nr-go'].disabled || boxes[0].disabled || allBox.disabled) fail(2, 'blank box disabled things');",
+        "if (els['nr-go'].disabled || els['nr-go'].textContent !== 'Run now' || boxes[0].disabled || allBox.disabled)",
+        "  fail(2, 'blank box disabled things');",
         "if (!nodes['nr-paste-note'].hidden) fail(3, 'note shown for a blank box');",
         "els['nr-tickers'].value = 'PTGX, QUIET';",
         "syncPasteMode();",
-        "if (!nodes['nr-go'].disabled) fail(4, 'Run now enabled');",
+        "if (!els['nr-go'].disabled || els['nr-go'].textContent !== 'Continue with 0 ready') fail(4, 'button not asleep');",
         "if (!boxes.every(function (b) { return b.disabled; }) || !allBox.disabled) fail(5, 'tick boxes enabled');",
         "var n = nodes['nr-paste-note'];",
         "if (n.hidden || n.textContent !== 'This run reads only the pasted tickers. Clear the box to choose from the captured names instead.')",
         "  fail(6, n.textContent);",
         "els['nr-tickers'].value = '';",
         "syncPasteMode();",
-        "if (nodes['nr-go'].disabled || boxes[1].disabled || allBox.disabled || !n.hidden) fail(7, 'not restored');",
+        "if (els['nr-go'].disabled || boxes[1].disabled || allBox.disabled || !n.hidden) fail(7, 'not restored');",
         "console.log('ok');",
     ]))
     # the box listens for edits, and the note has its place in the sheet
@@ -5398,15 +5469,15 @@ def test_pr162_captured_boxes_and_run_now_disabled_while_the_box_has_text():
 
 
 def test_pr162_double_click_sends_exactly_one_post():
-    # Finding 2: two clicks before the answer arrives -> one POST, for both buttons
+    # Finding 2 + NEWRUN-ONE-START-001: two clicks on the ONE button before the
+    # answer -> one POST, for both its forms (Continue and Run now)
     _run_node(_new_run_sheet_script([
         "els['nr-tickers'].value = 'PTGX QUIET';",
         "syncPasteMode();",
         "startIntake().then(later).then(function () {",
-        "  var cont = buttons().filter(function (b) { return b.textContent === 'Continue with 1 ready'; })[0];",
-        "  if (!cont) fail(2, 'no continue');",
-        "  cont.onclick(); cont.onclick();",
-        "  if (!cont.disabled) fail(3, 'Continue not disabled in flight');",
+        "  if (els['nr-go'].textContent !== 'Continue with 1 ready' || els['nr-go'].disabled) fail(2, 'one button not ready');",
+        "  nrStartClick(); nrStartClick();",
+        "  if (!els['nr-go'].disabled) fail(3, 'Continue not disabled in flight');",
         "  if (posts.length !== 1) fail(4, 'continue posts: ' + posts.length);",
         "  return later();",
         "}).then(function () {",
@@ -5414,12 +5485,12 @@ def test_pr162_double_click_sends_exactly_one_post():
         # Run now, box empty, double click
         "  posts = []; newrunWrap.hidden = false;",
         "  els['nr-tickers'].value = ''; syncPasteMode();",
-        "  startRunNow(); startRunNow();",
-        "  if (!nodes['nr-go'].disabled) fail(6, 'Run now not disabled in flight');",
+        "  nrStartClick(); nrStartClick();",
+        "  if (!els['nr-go'].disabled) fail(6, 'Run now not disabled in flight');",
         "  if (posts.length !== 1) fail(7, 'run now posts: ' + posts.length);",
         "  return later();",
         "}).then(function () {",
-        "  if (posts.length !== 1 || nodes['nr-go'].disabled) fail(8, 'after answer: ' + posts.length);",
+        "  if (posts.length !== 1 || els['nr-go'].disabled) fail(8, 'after answer: ' + posts.length);",
         "  console.log('ok');",
         "}).catch(function (err) { fail(99, err && err.stack); });",
     ]))
@@ -5430,18 +5501,18 @@ def test_pr162_used_intake_has_no_continue_after_202_or_reopen():
         "els['nr-tickers'].value = 'PTGX QUIET';",
         "syncPasteMode();",
         "startIntake().then(later).then(function () {",
-        "  buttons()[0].onclick();",
+        "  nrStartClick();",
         "  return later();",
         "}).then(function () {",
         "  if (posts.length !== 1 || switched !== 'run9') fail(2, 'run did not start');",
         "  var t = textOf(nodes['nr-intake-out']);",
-        "  if (buttons().length) fail(3, 'Continue still offered after 202');",
+        "  if (!els['nr-go'].disabled) fail(3, 'start button still awake after 202');",
         "  if (t.indexOf('A run was started from these tickers.') === -1) fail(4, t);",
         "  if (t.indexOf('QUIET') === -1 || t.indexOf('No 8-K in the window.') === -1) fail(5, 'failures lost');",
         # reopen New run: the newrun handler redraws the last intake
         "  renderIntakeStatus(nodes['nr-intake-out'], nrIntake.last);",
         "  syncPasteMode();",
-        "  if (buttons().length) fail(6, 'Continue offered on reopen');",
+        "  if (!els['nr-go'].disabled) fail(6, 'start button awake on reopen');",
         "  if (textOf(nodes['nr-intake-out']).indexOf('A run was started from these tickers.') === -1) fail(7, 'used line lost');",
         "  startRunFromIntake(nrIntake.last);",
         "  if (posts.length !== 1) fail(8, 'a used intake started a second run');",
@@ -5461,14 +5532,17 @@ def test_pr162_422_list_detail_is_shown_as_text():
         "els['nr-tickers'].value = 'PTGX QUIET';",
         "syncPasteMode();",
         "startIntake().then(later).then(function () {",
-        "  buttons()[0].onclick();",
+        "  nrStartClick();",
         "  return later();",
         "}).then(function () {",
         "  var e = nodes['nr-error'];",
         "  if (e.hidden || e.textContent !== 'The server answered 422.') fail(2, e.textContent);",
-        # a refused start leaves the intake usable: Continue is back
-        "  var b = buttons();",
-        "  if (b.length !== 1 || b[0].disabled) fail(3, 'continue not restored');",
+        # the addendum: a refused start leaves the dialog open with everything
+        # intact, and the one button is usable again
+        "  if (newrunWrap.hidden) fail(3, 'dialog closed on a refused start');",
+        "  if (els['nr-tickers'].value !== 'PTGX QUIET') fail(4, 'pasted text lost');",
+        "  if (els['nr-go'].disabled || els['nr-go'].textContent !== 'Continue with 1 ready')",
+        "    fail(5, 'start button not restored');",
         "  console.log('ok');",
         "}).catch(function (err) { fail(99, err && err.stack); });",
     ]))
@@ -5496,10 +5570,10 @@ def test_pr162_server_409_used_marks_the_intake_used_with_a_link_to_that_run():
         "els['nr-tickers'].value = 'PTGX QUIET';",
         "syncPasteMode();",
         "startIntake().then(later).then(function () {",
-        "  buttons()[0].onclick();",
+        "  nrStartClick();",
         "  return later();",
         "}).then(function () {",
-        "  if (buttons().length) fail(2, 'Continue offered after a used 409');",
+        "  if (!els['nr-go'].disabled) fail(2, 'start button awake after a used 409');",
         "  var t = textOf(nodes['nr-intake-out']);",
         "  if (t.indexOf('A run was started from these tickers.') === -1) fail(3, t);",
         "  if (!nodes['nr-error'].hidden && nodes['nr-error'].textContent) fail(4, nodes['nr-error'].textContent);",
@@ -5510,8 +5584,10 @@ def test_pr162_server_409_used_marks_the_intake_used_with_a_link_to_that_run():
         "  if (switched !== 'run7' || !newrunWrap.hidden) fail(6, 'link did not open run7');",
         # an intake the server reports as used (reopen, other tab) has no Continue either
         "  nrIntake.usedId = null;",
-        "  renderIntakeStatus(nodes['nr-intake-out'], Object.assign({}, DONE, { run_id: 'run7' }));",
-        "  if (buttons().length) fail(7, 'Continue offered for a server-used intake');",
+        "  nrIntake.last = Object.assign({}, DONE, { run_id: 'run7' });",
+        "  renderIntakeStatus(nodes['nr-intake-out'], nrIntake.last);",
+        "  syncPasteMode();",
+        "  if (!els['nr-go'].disabled) fail(7, 'start button awake for a server-used intake');",
         "  console.log('ok');",
         "}).catch(function (err) { fail(99, err && err.stack); });",
     ]))
