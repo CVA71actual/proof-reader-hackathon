@@ -959,3 +959,50 @@ def test_csp_comes_first_without_a_head_and_escaped_css_urls_do_not_survive():
     assert "url(" not in snap.lower() and "\\72" not in snap
     assert counts["css_escapes_removed"] == 2
     assert "--host-resolver-rules=MAP * ~NOTFOUND" in rs.ISOLATION_FLAGS
+
+
+# ---------------------------------------------------------------- Manus 15:27: the timing check binds its own span
+
+TP2 = "https://ir.example.com/timing-note"
+
+
+def _two_source_timing_run(runs_dir):
+    spans = [{"source_id": "src-r1-ptgx", "page_number": 1, "quote": "plans to report topline data from ICARUS.",
+              "word_ids": None, "roles": ["action", "program"]},
+             {"source_id": "src-r2-ptgx", "page_number": 1, "quote": "These topline results are expected in Q1 2027.",
+              "word_ids": None, "roles": ["timing"]}]
+    ev = F.event("ICARUS topline", spans[0]["quote"], date_text="Q1 2027", date="2027-01-01", date_end="2027-03-31",
+                 spans=spans)
+    pages = {TP: (200, "text/html", F.html("Protagonist plans to report topline data from ICARUS.")),
+             TP2: (200, "text/html", F.html("These topline results are expected in Q1 2027."))}
+    reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": TP, "purpose": "x"}, "c0")]),
+                              F.body([F.call("fetch_url", {"url": TP2, "purpose": "x"}, "c1")]),
+                              F.body([F.call("propose_events", {"events": [ev]}, "c2")]),
+                              F.body([F.call("finish_draft", {"dispositions": [
+                                  {"row_id": "e1", "disposition": "proposal", "related_row_id": None,
+                                   "reason": "x"}], "limitations": []}, "c3")])])
+    _, rid, _ = start(runs_dir, reader, pages=pages)
+    return run_json(runs_dir, rid)
+
+
+@pytest.mark.parametrize("mutate", ["timing_words_hash", "timing_document_hash", "timing_published_date",
+                                    "timing_wording"])
+def test_the_date_check_goes_stale_when_the_timing_evidence_changes(runs_dir, mutate):
+    from runs.state import current_state
+    run = _two_source_timing_run(runs_dir)
+    row = next(r for r in run["rows"] if r["id"] == "e1")
+    date_check = {c["name"]: c for c in row["checks"]}["date_match"]
+    assert date_check["result"] == "pass" and row["research"]["timing"]["source_id"] == "src-r2-ptgx"
+    assert date_check["assessment"]["inputs"]["timing_span"]["source_id"] == "src-r2-ptgx"
+    assert current_state(run, [])["targets"]["e1"]["checks_stale"] is False
+    second = next(s for s in run["sources"] if s["id"] == "src-r2-ptgx")
+    if mutate == "timing_words_hash":
+        second["pages"][0]["words_sha256"] = "0" * 64
+    elif mutate == "timing_document_hash":
+        second["sha256"] = "1" * 64
+    elif mutate == "timing_published_date":
+        second["published_date"] = "2026-01-01"
+    else:
+        row["research"]["timing"]["quote"] = "These topline results are expected in Q3 2027."
+    st = current_state(run, [])["targets"]["e1"]
+    assert st["checks_stale"] is True and st["effective_checks"] == []

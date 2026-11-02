@@ -1043,8 +1043,11 @@ def make_job_class():
                         "conditions_state": ("not_established" if ev["conditions"] is None else
                                              "none_stated" if ev["conditions"] == [] else "stated"),
                         "near_duplicates": [], "revisions": [], "evidence_key": rc.evidence_key(ev)}
+            timing_snap = (row.get("research") or {}).get("timing")
             row["research"] = research
             research["timing_span_index"] = timing_k
+            if timing_snap is not None:
+                research["timing"] = timing_snap      # the date check is bound to it (claim_assessment)
             research["issues"] = rc.research_issues(row, spans, words_by_span, k, timing_k)
             if existing is None:
                 research["feedback"] = {"repair_open": bool(research["issues"]),
@@ -1084,7 +1087,10 @@ def make_job_class():
             date_res = replace(date_res, reason=f"Date compared against timing span {span['source_id']} p"
                                                 f"{span['page_number']} (“{span['quote'][:120]}”): {date_res.reason}")
             results = recheck.row_checks(row, one_page, words_by_span[k], consumed_artifact=consumed)
-            from runs.claim_assessment import bind_checks
+            from runs.claim_assessment import bind_checks, timing_snapshot
+            tpage = next(p for p in tsrc["pages"] if p["page_number"] == span["page_number"])
+            _, t_consumed = sources.load_page_evidence(self.dir, tpage)
+            row["research"] = {"timing": timing_snapshot(tsrc, tpage, span["quote"], t_consumed)}
             bound = bind_checks([date_res], row, one_page, consumed_artifact=consumed)[0]
             results = [bound if r.check == event_checks.DATE_ID else r for r in results]
             status = event_checks.row_status(results)
