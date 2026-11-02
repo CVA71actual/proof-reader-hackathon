@@ -1217,6 +1217,35 @@ def test_ticker_intake_pins():
         assert name not in js, name
 
 
+def test_intake_scope_line_states_the_page_cap():
+    # INTAKE-PAGE-CAP-001: the scope line says the run reads only the first
+    # pages of each document; it never claims every page was read
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in ("dayMonth", "intakeScopeLine"))
+    base = {"form_scope": ["8-K"], "lookback_days": 90, "window_start": "2026-07-30", "cutoff": "2026-10-28"}
+    script = "\n".join([
+        "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',",
+        "  'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];",
+        fns,
+        "console.log(JSON.stringify([",
+        "  intakeScopeLine(" + json.dumps({**base, "pages_per_document": 2}) + "),",
+        "  intakeScopeLine(" + json.dumps({**base, "pages_per_document": 1}) + "),",
+        "  intakeScopeLine(" + json.dumps(base) + ")]));",
+    ])
+    out = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    two, one, legacy = json.loads(out.stdout)
+    assert two == "Read: the first 2 pages of each 8-K press release filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
+    assert one == "Read: the first page of each 8-K press release filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
+    # an intake recorded before the cap read every page it captured: the older line stays
+    assert legacy == "Read: 8-K press releases filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
+    for line in (two, one):
+        assert "every" not in line.lower() and "all " not in line.lower() and "complete" not in line.lower()
+
+
 def test_ticker_intake_renders_states_scope_and_continue_button():
     # every ticker renders its company, plain state and the server's reason;
     # the scope line reads in words; done offers 'Continue with N ready' and
@@ -1230,6 +1259,7 @@ def test_ticker_intake_renders_states_scope_and_continue_button():
     done = {
         "intake_id": "ik1", "status": "done", "ready_count": 2, "failed_count": 2,
         "form_scope": ["8-K"], "lookback_days": 90, "window_start": "2026-08-04", "cutoff": "2026-11-02",
+        "pages_per_document": 2,
         "tickers": [
             {"symbol": "ACME", "company": "Acme Corporation", "state": "ready", "reason": None,
              "documents": 3, "pages": 2, "form_scope": ["8-K"], "lookback_days": 90,
@@ -1268,7 +1298,7 @@ def test_ticker_intake_renders_states_scope_and_continue_button():
         "if (text.indexOf('No company matches this symbol.') === -1) { console.error('reason'); process.exit(6); }",
         # the failure rows stay listed
         "if (text.indexOf('CRNX') === -1 || text.indexOf('DRMA') === -1) { console.error('failures lost'); process.exit(7); }",
-        "if (text.indexOf('Read: 8-K press releases filed 4 Aug 2026 to 2 Nov 2026 (90 days).') === -1) { console.error('scope: ' + text); process.exit(8); }",
+        "if (text.indexOf('Read: the first 2 pages of each 8-K press release filed 4 Aug 2026 to 2 Nov 2026 (90 days).') === -1) { console.error('scope: ' + text); process.exit(8); }",
         "if (text.indexOf('2 ready · 2 could not be prepared') === -1) { console.error('counts'); process.exit(9); }",
         # the continue button
         "var btns = []; (function walk(n) { (n.children || []).forEach(function (c) {",

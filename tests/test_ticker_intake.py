@@ -358,3 +358,102 @@ def test_one_intake_admits_one_run_even_for_concurrent_posts(runs_dir, prep, mon
     r = client.post("/api/runs/new", json={**body, "intake_id": rec2["intake_id"]})
     assert r.status_code == 202, r.text
     assert len(reader.prompts) == 2 * one_run_calls
+
+
+# ---------------------------------------------------------------- INTAKE-PAGE-CAP-001: the first pages of each document
+
+MULTI_CIK = "1000008"
+
+
+def _paged_render(html_path: Path, pdf_path: Path, chrome: Path | None = None) -> str:
+    """A stub render with as many pages as the HTML's PAGES=<n> marker says (one page without a marker)."""
+    import re
+
+    import pymupdf
+    text = html_path.read_text(encoding="utf-8", errors="replace")
+    m = re.search(r"PAGES=(\d+)", text)
+    doc = pymupdf.open()
+    for k in range(int(m.group(1)) if m else 1):
+        doc.new_page(width=612, height=792).insert_text((72, 72), f"page {k + 1} of {html_path.name}", fontsize=11)
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(pdf_path)
+    doc.close()
+    return "stub-renderer headless print-to-pdf"
+
+
+@pytest.fixture
+def multi_prep(tmp_path):
+    """MULTI: one 8-K with two exhibits, a 5-page deck and a 1-page release; CRNX: one 3-page exhibit."""
+    samples = sec_samples()
+    tickers = json.loads(samples[ff.COMPANY_TICKERS_URL])
+    tickers["99"] = {"cik_str": int(MULTI_CIK), "ticker": "MULTI", "title": "Multi Co."}
+    samples[ff.COMPANY_TICKERS_URL] = json.dumps(tickers).encode()
+    acc = "0001000008-26-000001"
+    samples[ff.SUBMISSIONS_URL.format(cik=MULTI_CIK)] = json.dumps({"cik": MULTI_CIK, "name": "Multi Co.", "filings": {
+        "recent": {"accessionNumber": [acc], "filingDate": ["2026-10-01"], "form": ["8-K"],
+                   "primaryDocument": ["m.htm"]}}}).encode()
+    base = _archive(MULTI_CIK, acc)
+    samples[base + "index.json"] = json.dumps(
+        {"directory": {"item": [{"name": "multi_ex99-1.htm"}, {"name": "multi_ex99-2.htm"}]}}).encode()
+    samples[base + f"{acc}-index-headers.html"] = b""
+    samples[base + "multi_ex99-1.htm"] = b"<html><body><p>Multi deck PAGES=5</p></body></html>"
+    samples[base + "multi_ex99-2.htm"] = b"<html><body><p>Multi release, one page.</p></body></html>"
+    cbase = _archive(CRNX_CIK, "0001658247-26-000010")
+    samples[cbase + "crnx_ex99-1.htm"] = b"<html><body><p>Crinetics readout PAGES=3</p></body></html>"
+    cache = tmp_path / "company_tickers.json"
+    cache.write_text(json.dumps({}))
+    return intake.Preparer(fetcher=FakeFetcher(samples), render=_paged_render, filings_root=tmp_path / "intake-docs",
+                           today=lambda: TODAY, tickers_cache=cache, background=False)
+
+
+def test_cap_pages_is_per_document_and_keeps_short_documents_whole():
+    def pg(acc, ex, n):
+        return {"accession": acc, "exhibit": ex, "page_number": n}
+    pages = [pg("A", "99.1", n) for n in (3, 1, 2, 4)] + [pg("A", "99.2", 1)] + [pg("B", "99.1", n) for n in (1, 2)]
+    kept = intake.cap_pages(pages)
+    assert [(p["accession"], p["exhibit"], p["page_number"]) for p in kept] == [
+        ("A", "99.1", 1), ("A", "99.1", 2), ("A", "99.2", 1), ("B", "99.1", 1), ("B", "99.1", 2)]
+    assert intake.PAGES_PER_DOCUMENT == 2
+    assert intake.cap_pages([pg("C", "99.1", 1)]) == [pg("C", "99.1", 1)]
+
+
+def test_intake_index_holds_the_first_pages_of_each_document_with_honest_counts(runs_dir, multi_prep):
+    client, reader = client_for(runs_dir, multi_prep)
+    rec = post_intake(client, "MULTI CRNX")
+    t = by_symbol(rec)
+    assert t["MULTI"]["state"] == "ready" and t["CRNX"]["state"] == "ready"
+    # per document, not per ticker: MULTI keeps 2 of the deck's 5 and the whole 1-page release (3, not 2)
+    assert (t["MULTI"]["documents"], t["MULTI"]["pages_captured"], t["MULTI"]["pages_in_run"]) == (2, 6, 3)
+    assert (t["CRNX"]["documents"], t["CRNX"]["pages_captured"], t["CRNX"]["pages_in_run"]) == (1, 3, 2)
+    assert t["MULTI"]["pages"] == 6 and t["MULTI"]["pages_per_document"] == 2
+    assert t["MULTI"]["reason"] == ("2 documents, 6 pages captured; the run reads the first 2 pages of each "
+                                    "(3 pages).")
+    assert t["CRNX"]["reason"] == "1 document, 3 pages captured; the run reads the first 2 pages of each (2 pages)."
+    assert (rec["pages_per_document"], rec["pages_captured"], rec["pages_in_run"]) == (2, 9, 5)
+    for x in t.values():
+        assert "every page" not in x["reason"] and "all pages" not in x["reason"]
+    index = sources.load_index(runs_dir / "intake" / rec["intake_id"] / "sources_index.json")
+    got = sorted((p["record"]["exhibit"], p["record"]["page_number"]) for p in index.pages("MULTI"))
+    assert got == [("99.1", 1), ("99.1", 2), ("99.2", 1)]
+    assert sorted(p["record"]["page_number"] for p in index.pages("CRNX")) == [1, 2]
+    # pages over the cap are still captured on disk, only left out of the index
+    on_disk = list((multi_prep.filings_root / rec["intake_id"]).rglob("*_p*.pdf"))
+    assert len(on_disk) == 9 and any(f.name.endswith("_p5.pdf") for f in on_disk)
+    assert reader.prompts == []
+
+
+def test_run_snapshot_holds_only_the_capped_pages(runs_dir, multi_prep):
+    client, _ = client_for(runs_dir, multi_prep)
+    rec = post_intake(client, "MULTI CRNX")
+    r = client.post("/api/runs/new", json={**PTGX_ONLY, "companies": ["MULTI", "CRNX"], "intake_id": rec["intake_id"]})
+    assert r.status_code == 202, r.text
+    run_dir = runs_dir / r.json()["id"]
+    freeze = json.loads((run_dir / "job.json").read_text())["source_freeze"]
+    assert len(freeze["pages"]) == 5
+    snap = sources.load_index(run_dir / "sources_index.json")
+    assert sum(len(snap.pages(t)) for t in snap.tickers) == 5
+    for t in snap.tickers:
+        assert all(p["record"]["page_number"] <= 2 for p in snap.pages(t))
+    meta = json.loads((run_dir / "intake.json").read_text())
+    assert meta["pages_per_document"] == 2
+    assert {x["symbol"]: x["pages_in_run"] for x in meta["tickers"]} == {"MULTI": 3, "CRNX": 2}

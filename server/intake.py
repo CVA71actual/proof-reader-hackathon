@@ -11,7 +11,10 @@ Record (runs/intake/<id>/intake.json):
     status          preparing | done
     requested       the symbols after normalising (upper case) and removing repeats, in the order pasted
     tickers         one per requested symbol: symbol, cik, company, state, reason, documents, pages, form_scope,
-                    lookback_days, window_start, cutoff, failed_documents
+                    lookback_days, window_start, cutoff, failed_documents, pages_per_document, pages_captured,
+                    pages_in_run (pages = pages_captured: every page captured; pages_in_run: the capped pages a run
+                    made from the intake reads)
+    pages_per_document, pages_captured, pages_in_run   the same, over the whole intake
     ready_count     tickers whose state is "ready"; failed_count every other finished state
 state, per ticker:
     resolving       looking the symbol up in SEC identity data
@@ -25,6 +28,11 @@ None of these is "no catalysts": that is a finding of a run, and only a run that
 
 Scope (recorded on every ticker so a calendar comparison is meaningful): 8-K EX-99 HTML exhibits filed in the
 LOOKBACK_DAYS days up to the cutoff date. That is recent press releases and decks, not complete company research.
+
+Page cap (INTAKE-PAGE-CAP-001): every page of every document is captured, but the ready-pages index keeps only the
+first PAGES_PER_DOCUMENT pages of each document (by page_number, per accession and exhibit), where the catalysts are;
+the rest are mostly financial tables. A page over the cap is never in a run's index, so no run reads it or shows it
+as read, and the counts (pages_captured, pages_in_run) and the reason say so.
 
 When the preparation is done it writes runs/intake/<id>/sources_index.json (read-only) holding the ready tickers'
 pages only, with absolute file paths into the intake's own filings folder (~/proof-reader-docs/intake/<id>/filings),
@@ -58,6 +66,7 @@ STATES = ("resolving", "capturing", "ready", "unresolved", "no_documents", "unsu
 FINISHED = ("ready", "unresolved", "no_documents", "unsupported", "failed")
 INTAKE_DIR = "intake"
 INTAKE_FILE = "intake.json"
+PAGES_PER_DOCUMENT = 2
 INDEX_FILE = "sources_index.json"
 _ID = re.compile(r"^in-[0-9a-f]{12}$")
 _SPLIT = re.compile(r"[\s,;]+")
@@ -204,6 +213,23 @@ def _counts(rec: dict) -> None:
     states = [t["state"] for t in rec["tickers"]]
     rec["ready_count"] = states.count("ready")
     rec["failed_count"] = sum(1 for s in states if s in FINISHED and s != "ready")
+    rec["pages_per_document"] = PAGES_PER_DOCUMENT
+    rec["pages_captured"] = sum(t.get("pages_captured", 0) for t in rec["tickers"])
+    rec["pages_in_run"] = sum(t.get("pages_in_run", 0) for t in rec["tickers"])
+
+
+def cap_pages(pages: list[dict], per_document: int = PAGES_PER_DOCUMENT) -> list[dict]:
+    """The first per_document pages of each document (accession, exhibit) by page_number, in their captured order.
+    A document with fewer pages is kept whole."""
+    by_doc: dict[tuple, list[int]] = {}
+    for p in pages:
+        by_doc.setdefault((p["accession"], p["exhibit"]), []).append(p["page_number"])
+    keep = {k: set(sorted(v)[:per_document]) for k, v in by_doc.items()}
+    return [p for p in pages if p["page_number"] in keep[(p["accession"], p["exhibit"])]]
+
+
+def _n(count: int, word: str) -> str:
+    return f"{count} {word}" + ("" if count == 1 else "s")
 
 
 def _save(d: Path, rec: dict) -> None:
@@ -214,7 +240,8 @@ def _save(d: Path, rec: dict) -> None:
 
 def _ticker(symbol: str, window_start: date, cutoff: date) -> dict:
     return {"symbol": symbol, "cik": None, "company": None, "state": "resolving", "reason": "Looking up the company.",
-            "documents": 0, "pages": 0, "form_scope": list(FORM_SCOPE), "lookback_days": LOOKBACK_DAYS,
+            "documents": 0, "pages": 0, "pages_per_document": PAGES_PER_DOCUMENT,
+            "pages_captured": 0, "pages_in_run": 0, "form_scope": list(FORM_SCOPE), "lookback_days": LOOKBACK_DAYS,
             "window_start": window_start.isoformat(), "cutoff": cutoff.isoformat(), "failed_documents": []}
 
 
@@ -317,13 +344,15 @@ def prepare(d: Path, prep: Preparer) -> None:
                     pass
                 docs = len({(p["accession"], p["exhibit"]) for p in pages})
                 if pages:
-                    pages_by_ticker[symbol] = pages
-                    reason = (f"{docs} document(s), {len(pages)} page(s): 8-K exhibits filed {rec['window_start']} "
-                              f"to {rec['cutoff']}.")
+                    in_run = cap_pages(pages)
+                    pages_by_ticker[symbol] = in_run
+                    reason = (f"{_n(docs, 'document')}, {_n(len(pages), 'page')} captured; the run reads the first "
+                              f"{PAGES_PER_DOCUMENT} pages of each ({_n(len(in_run), 'page')}).")
                     if failures:
                         reason += f" {len(failures)} more document(s) could not be captured."
                     _set(d, rec, i, company=company, state="ready", reason=reason, documents=docs,
-                         pages=len(pages), failed_documents=failures)
+                         pages=len(pages), pages_captured=len(pages), pages_in_run=len(in_run),
+                         failed_documents=failures)
                 elif failures:
                     _set(d, rec, i, company=company, state="failed", failed_documents=failures,
                          reason=f"Every document found ({len(failures)}) failed to capture; first: {failures[0]}")
@@ -335,8 +364,8 @@ def prepare(d: Path, prep: Preparer) -> None:
                                                        f"({type(e).__name__}).")
         if pages_by_ticker:
             doc = ff.build_index(pages_by_ticker)
-            doc["note"] = (f"Written by server/intake.py for intake {d.name}: the ready tickers' pages only; files "
-                           f"under {filings_root}.")
+            doc["note"] = (f"Written by server/intake.py for intake {d.name}: the ready tickers' pages only, the "
+                           f"first {PAGES_PER_DOCUMENT} pages of each document; files under {filings_root}.")
             for body in doc["companies"].values():
                 for p in body["pages"]:
                     tick = filings_root / p["ticker"]
@@ -357,7 +386,8 @@ def prepare(d: Path, prep: Preparer) -> None:
 def view(rec: dict) -> dict:
     """What GET /api/intake/{id} returns."""
     keys = ("intake_id", "status", "started_at", "finished_at", "requested", "tickers", "ready_count", "failed_count",
-            "form_scope", "lookback_days", "window_start", "cutoff", "run_id")
+            "form_scope", "lookback_days", "window_start", "cutoff", "run_id", "pages_per_document", "pages_captured",
+            "pages_in_run")
     return {k: rec.get(k) for k in keys}
 
 
@@ -427,5 +457,6 @@ def snapshot_into_run(run_dir: Path, runs_dir: Path, rec: dict, companies: list[
     jobs._write(Path(run_dir) / "intake.json", {
         "intake_id": rec["intake_id"], "requested": rec["requested"], "companies": companies, "left_out": left_out,
         "tickers": rec["tickers"], "form_scope": rec["form_scope"], "lookback_days": rec["lookback_days"],
+        "pages_per_document": rec.get("pages_per_document"),
         "window_start": rec["window_start"], "cutoff": rec["cutoff"], "index_sha256": jobs._file_sha(dst)})
     return sources.load_index(dst)

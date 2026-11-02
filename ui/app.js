@@ -4219,14 +4219,20 @@
     nrIntake.timer = null;
   }
   // the window every ticker was captured over, in plain words, once per intake
-  // "Read: 8-K press releases filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
+  // "Read: the first 2 pages of each 8-K press release filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
+  // INTAKE-PAGE-CAP-001: the run reads only the first pages of each document;
+  // an intake without the cap recorded keeps the older line
   function intakeScopeLine(st) {
     if (!st || typeof st.cutoff !== 'string' || typeof st.window_start !== 'string') return '';
     var from = dayMonth(st.window_start), to = dayMonth(st.cutoff);
     if (!from || !to) return '';
     var forms = (st.form_scope || []).join(', ') || '8-K';
     var days = (typeof st.lookback_days === 'number') ? ' (' + st.lookback_days + ' days)' : '';
-    return 'Read: ' + forms + ' press releases filed ' + from + ' ' + st.window_start.slice(0, 4) +
+    var cap = st.pages_per_document;
+    var what = (typeof cap === 'number' && cap > 0)
+      ? 'the first ' + (cap === 1 ? 'page' : cap + ' pages') + ' of each ' + forms + ' press release'
+      : forms + ' press releases';
+    return 'Read: ' + what + ' filed ' + from + ' ' + st.window_start.slice(0, 4) +
            ' to ' + to + ' ' + st.cutoff.slice(0, 4) + days + '.';
   }
   function renderIntakeStatus(host, st) {
