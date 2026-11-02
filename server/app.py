@@ -47,7 +47,7 @@ from runs.ids import require_unique_target_ids
 from runs.recheck import recheck_cell, recheck_row
 from report.data import report_filenames
 from runs.state import PERSON_ACTIONS, UNRESOLVED_REASON, as_of_note, current_state
-from server import jobs
+from server import intake as intake_mod, jobs
 
 REPO = Path(__file__).resolve().parent.parent
 RUNS_DIR = REPO / "runs"
@@ -246,14 +246,18 @@ def _summary(state: dict) -> dict:
 
 def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, background: bool = True,
                second_reader="default", coverage_as_of=None, wonder_reader="default",
-               sam_reader="default", index=None, transcriber=None, default_run=None) -> FastAPI:
+               sam_reader="default", index=None, transcriber=None, default_run=None,
+               intake_preparer=None) -> FastAPI:
     """`reader`: what a run's job calls (default: Muse Spark, needs a key). `second_reader`: the independent second
     read (default: Muse Spark Open when no `reader` was given, none when one was, so a test with a fake reader never
     reaches the network; None: one reader). `background`: False runs a job to its stop inside the request, which is
     how the tests use it. `coverage_as_of`: a date; the dated-sentence coverage counts dates after it (default: each
     source's published date). `wonder_reader`: the escalation model (default: Muse Wonder when no `reader` was given,
     none when one was; None: no escalation). `sam_reader`: SAM 3.1 for scanned pages (same default rule). `index`: the sources index
-    (runs/sources.py; default: runs/sources_index.json, else the built-in one), which says what pages each company has."""
+    (runs/sources.py; default: runs/sources_index.json, else the built-in one), which says what pages each company has.
+    `intake_preparer`: what POST /api/intake uses to reach the SEC (server/intake.py Preparer; default: the live SEC
+    fetcher and headless Chrome, in the background)."""
+    intake_preparer = intake_preparer or intake_mod.Preparer()
     transcriber = transcriber or voice.transcribe
     voice_locks: dict[str, asyncio.Lock] = {}   # one lock per run_id: voice calls on a run go one at a time
     store = RunStore(runs_dir)
@@ -269,15 +273,16 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         sam_reader = SamReader() if reader is None else None
     reader = reader or LiveReader()
 
-    def start_job(run_id: str) -> None:
+    def start_job(run_id: str, run_index=None) -> None:
         job_second = SecondReader() if default_second_for_job else second_reader
+        job_index = run_index if run_index is not None else index
         if background:
             threading.Thread(target=jobs.run_job, args=(store.runs_dir, run_id, reader, job_second, coverage_as_of, wonder_reader,
-                                   sam_reader, index),
+                                   sam_reader, job_index),
                              daemon=True).start()
         else:
             jobs.run_job(store.runs_dir, run_id, reader, job_second, coverage_as_of, wonder_reader, sam_reader,
-                         index)
+                         job_index)
 
     validator = Draft202012Validator(json.loads(DECISION_SCHEMA.read_text()))
     app = FastAPI(title="Proof Reader decisions server", docs_url=None, redoc_url=None, openapi_url=None)
@@ -331,17 +336,66 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
             list_cache.pop(stale_id, None)
         return out
 
+    @app.post("/api/intake", status_code=202)
+    def new_intake(body: dict = Body(...)) -> dict:
+        """TICKER-INTAKE-001: resolve and capture pasted tickers (server/intake.py). No model call."""
+        if not isinstance(body, dict) or set(body) != {"tickers"}:
+            raise HTTPException(422, 'An intake takes only "tickers": the pasted text.')
+        try:
+            rec = intake_mod.start(store.runs_dir, body["tickers"], intake_preparer)
+        except intake_mod.IntakeError as e:
+            raise HTTPException(e.status, e.detail) from None
+        return {"intake_id": rec["intake_id"]}
+
+    @app.get("/api/intake/{intake_id}")
+    def get_intake(intake_id: str) -> dict:
+        try:
+            return intake_mod.view(intake_mod.read(store.runs_dir, intake_id))
+        except intake_mod.IntakeError as e:
+            raise HTTPException(e.status, e.detail) from None
+
     @app.post("/api/runs/new", status_code=202)
     def new_run(body: dict = Body(...)) -> dict:
+        """With "intake_id", the run reads only that finished intake's ready pages (a copy in the run's own folder);
+        a run that leaves out a requested ticker also needs "accept_ready_subset": true."""
         try:
             body = dict(body)
             as_of = jobs.validate_as_of(body.pop("as_of", None))
-            choices = jobs.validate_choices(body, index)
+            intake_id = body.pop("intake_id", None)
+            accept_subset = body.pop("accept_ready_subset", None)
+            rec = left_out = None
+            if intake_id is None:
+                if accept_subset is not None:
+                    raise ValueError("accept_ready_subset goes with an intake_id.")
+                choices = jobs.validate_choices(body, index)
+            else:
+                rec, intake_index = intake_mod.ready_index(store.runs_dir, intake_id)
+                choices = jobs.validate_choices(body, intake_index)
+                left_out = intake_mod.check_subset(rec, choices["companies"],
+                                                   False if accept_subset is None else accept_subset)
         except ValueError as e:
             raise HTTPException(422, str(e)) from None
-        run = jobs.create_run(store.runs_dir, choices, as_of=as_of)
-        start_job(run["run"]["id"])
-        return jobs_view(store, run["run"]["id"])
+        except intake_mod.IntakeError as e:
+            return intake_refusal(e)
+        run_index = None
+        if rec is None:
+            run_id = jobs.create_run(store.runs_dir, choices, as_of=as_of)["run"]["id"]
+        else:
+            # one run per intake: a replay (lost response, double click, second tab) gets 409 and the first run's id
+            try:
+                run_id = intake_mod.bind_run(store.runs_dir, intake_id, lambda: jobs.create_run(
+                    store.runs_dir, choices, as_of=as_of)["run"]["id"])
+            except intake_mod.IntakeError as e:
+                return intake_refusal(e)
+            run_index = intake_mod.snapshot_into_run(store.runs_dir / run_id, store.runs_dir, rec,
+                                                     choices["companies"], left_out)
+        start_job(run_id, run_index)
+        return jobs_view(store, run_id)
+
+    def intake_refusal(e: "intake_mod.IntakeError"):
+        if e.run_id is None:
+            raise HTTPException(e.status, e.detail) from None
+        return JSONResponse({"detail": e.detail, "run_id": e.run_id}, status_code=e.status)
 
     @app.post("/api/runs/{run_id}/resume", status_code=202)
     def resume_run(run_id: str, body: dict | None = Body(None)) -> dict:

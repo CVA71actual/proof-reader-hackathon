@@ -372,6 +372,22 @@
         });
       },
       settings: function () { return getJSON('/api/settings').catch(function () { return {}; }); },
+      intake: function (text) {
+        // TICKER-INTAKE-001: pasted tickers the server resolves and captures; no model call
+        return fetch('/api/intake', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tickers: text })
+        }).then(function (r) {
+          return r.json().catch(function () { return {}; })
+            .then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+        });
+      },
+      intakeStatus: function (id) {
+        return fetch('/api/intake/' + encodeURIComponent(id)).then(function (r) {
+          return r.json().catch(function () { return {}; })
+            .then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+        });
+      },
       run: function (id) { return getJSON('/api/runs/' + encodeURIComponent(id)); },
       decisions: function (id) { return getJSON('/api/runs/' + encodeURIComponent(id) + '/decisions'); },
       newRun: function (body) {
@@ -4154,6 +4170,7 @@
       nrState = 'ready';
       nrError('');
       renderNewRunCompanies(nrCompanies, res.body.listed_without_pages || []);
+      syncPasteMode();
     }).catch(function () {
       failed('The company list could not be loaded. The server is not reachable.');
     });
@@ -4163,17 +4180,236 @@
     e.textContent = msg;
     e.hidden = !msg;
   }
+  // ---------------- ticker intake (TICKER-INTAKE-001): paste any list; the
+  // server resolves each symbol against SEC records and captures its documents.
+  // The run starts from the intake with the ready names only — the failures
+  // stay listed beside it. Every state word is plain; the reason is the
+  // server's own sentence.
+  var INTAKE_STATE_WORDS = {
+    resolving: 'Finding the company', capturing: 'Capturing documents',
+    ready: 'Ready', unresolved: 'Could not be resolved', no_documents: 'No documents found',
+    unsupported: 'Not supported', failed: 'Preparation failed'
+  };
+  // text: the pasted text the intake was prepared from; usedId: the intake a
+  // run has already started from (it offers no second Continue)
+  var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null, usedRun: null };
+  // one start in flight at a time, from either button (a double click sends one POST)
+  var nrBusy = false;
+  var NR_PASTE_ONLY = 'This run reads only the pasted tickers. Clear the box to choose from the captured names instead.';
+  var NR_PREPARE_FIRST = 'Prepare the pasted tickers first, or clear the box.';
+  // Operator ruling: when the paste box has any text, the run reads only the
+  // pasted tickers — Run now and the captured-name boxes are disabled, one plain
+  // line says so, and 'Continue with N ready' is the only start. With the box
+  // empty everything is as before. The intake list shows only while the box
+  // holds the text it was prepared from.
+  function syncPasteMode() {
+    var text = document.getElementById('nr-tickers').value.trim();
+    var pasted = !!text;
+    document.querySelectorAll('.nr-co, #nr-all').forEach(function (c) { c.disabled = pasted; });
+    document.getElementById('nr-go').disabled = pasted || nrBusy;
+    var note = document.getElementById('nr-paste-note');
+    note.textContent = pasted ? NR_PASTE_ONLY : '';
+    note.hidden = !pasted;
+    var out = document.getElementById('nr-intake-out');
+    if (!pasted || text !== nrIntake.text) out.hidden = true;
+    else if (out.children && out.children.length) out.hidden = false;
+  }
+  function stopIntakePoll() {
+    if (nrIntake.timer) clearInterval(nrIntake.timer);
+    nrIntake.timer = null;
+  }
+  // the window every ticker was captured over, in plain words, once per intake
+  // "Read: 8-K press releases filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
+  function intakeScopeLine(st) {
+    if (!st || typeof st.cutoff !== 'string' || typeof st.window_start !== 'string') return '';
+    var from = dayMonth(st.window_start), to = dayMonth(st.cutoff);
+    if (!from || !to) return '';
+    var forms = (st.form_scope || []).join(', ') || '8-K';
+    var days = (typeof st.lookback_days === 'number') ? ' (' + st.lookback_days + ' days)' : '';
+    return 'Read: ' + forms + ' press releases filed ' + from + ' ' + st.window_start.slice(0, 4) +
+           ' to ' + to + ' ' + st.cutoff.slice(0, 4) + days + '.';
+  }
+  function renderIntakeStatus(host, st) {
+    clear(host);
+    host.hidden = false;
+    (st.tickers || []).forEach(function (tk) {
+      var row = el('div', 'ik-row');
+      var head = el('div', 'ik-head');
+      head.append(el('b', null, tk.symbol || ''));
+      if (tk.company) head.append(el('span', 'ik-co', tk.company));
+      head.append(el('span', 'ik-st ik-' + tk.state, INTAKE_STATE_WORDS[tk.state] || tk.state));
+      row.append(head);
+      // the server's own plain sentence: what is happening, or why it failed
+      if (tk.reason) row.append(el('div', 'ik-why', tk.reason));
+      host.append(row);
+    });
+    var scope = intakeScopeLine(st);
+    if (scope) host.append(el('div', 'ik-scope', scope));
+    if (st.status === 'done') {
+      var foot = el('div', 'ik-foot');
+      foot.append(el('span', 'ik-counts', st.ready_count + ' ready' +
+        (st.failed_count ? ' · ' + st.failed_count + ' could not be prepared' : '')));
+      var isUsed = !!st.run_id || (!!st.intake_id && st.intake_id === nrIntake.usedId);
+      var usedRun = (typeof st.run_id === 'string' && st.run_id) || (isUsed && nrIntake.usedRun) || '';
+      if (isUsed) {
+        // a run already started from this intake (here, in another tab, or a
+        // lost answer): no second start from it, and a link to that run
+        host.append(foot);
+        var used = el('div', 'ik-scope', 'A run was started from these tickers.');
+        if (usedRun) {
+          var open = el('a', 'link', 'Open that run');
+          open.href = '#';
+          open.addEventListener('click', function (e) {
+            if (e && e.preventDefault) e.preventDefault();
+            newrunWrap.hidden = true;
+            switchRun(usedRun);
+          });
+          used.append(document.createTextNode(' '), open);
+        }
+        host.append(used);
+      } else {
+        var go = el('button', 'btn pri', 'Continue with ' + st.ready_count + ' ready');
+        go.id = 'nr-intake-continue';
+        go.disabled = !st.ready_count || nrBusy;
+        go.addEventListener('click', function () { startRunFromIntake(st, go); });
+        foot.append(go);
+        host.append(foot);
+      }
+    }
+    return host;
+  }
+  function pollIntake(seq) {
+    return A.intakeStatus(nrIntake.id).then(function (res) {
+      if (seq !== nrIntake.seq) return;
+      if (!res.ok) {
+        stopIntakePoll();
+        nrError('The intake status could not be read. ' +
+                ((res.body && typeof res.body.detail === 'string' && res.body.detail) ||
+                 ('The server answered ' + res.status + '.')));
+        return;
+      }
+      nrIntake.last = res.body;
+      renderIntakeStatus(document.getElementById('nr-intake-out'), res.body);
+      syncPasteMode();
+      if (res.body.status === 'done') stopIntakePoll();
+    }).catch(function () { /* the next poll retries; the last render stays */ });
+  }
+  function startIntake() {
+    var raw = document.getElementById('nr-tickers').value.trim();
+    nrError('');
+    if (!raw) { nrError('Paste at least one ticker first.'); return; }
+    stopIntakePoll();
+    var seq = ++nrIntake.seq;
+    nrIntake.last = null;
+    nrIntake.text = raw;
+    var out = document.getElementById('nr-intake-out');
+    clear(out).append(el('div', 'hint', 'Preparing — finding the companies and capturing documents…'));
+    out.hidden = false;
+    return A.intake(raw).then(function (res) {
+      if (seq !== nrIntake.seq) return;
+      if (!res.ok) {
+        out.hidden = true;
+        nrError('The tickers could not be prepared. ' +
+                ((res.body && typeof res.body.detail === 'string' && res.body.detail) ||
+                 ('The server answered ' + res.status + '.')));
+        return;
+      }
+      nrIntake.id = res.body.intake_id;
+      nrIntake.timer = setInterval(function () { pollIntake(seq); }, 1500);
+      return pollIntake(seq);
+    }).catch(function () {
+      out.hidden = true;
+      nrError('The server is not reachable.');
+    });
+  }
+  // Continue with N ready: the run reads only this intake's captured pages —
+  // the ready names; accept_ready_subset when a requested name is left out
+  function startRunFromIntake(st, btn) {
+    if (nrBusy) return;
+    if ((st.intake_id && st.intake_id === nrIntake.usedId) || st.run_id) return;
+    var ready = (st.tickers || []).filter(function (t) { return t.state === 'ready'; })
+                                   .map(function (t) { return t.symbol; });
+    if (!ready.length) { nrError('No ticker is ready, so there is nothing for a run to read.'); return; }
+    var limit = null;
+    var limitRaw = document.getElementById('nr-limit').value.trim();
+    if (limitRaw !== '') {
+      limit = Number(limitRaw);
+      // Red Team round 8: 'Infinity' and '1e309' are not numbers of dollars
+      if (!Number.isFinite(limit) || limit < 0) {
+        nrError('The spending limit must be a number of dollars, zero or more.');
+        return;
+      }
+    }
+    nrError('');
+    nrBusy = true;
+    if (btn) btn.disabled = true;
+    syncPasteMode();
+    function done() {
+      nrBusy = false;
+      if (btn) btn.disabled = !st.ready_count;
+      syncPasteMode();
+    }
+    return A.newRun({ intake_id: st.intake_id, companies: ready,
+               accept_ready_subset: st.failed_count > 0,
+               event_types: NEW_RUN_TYPES.map(function (t) { return t[0]; }),
+               time_window_months: null,
+               spending_limit_usd: limit,
+               note_for_agent: document.getElementById('nr-note').value.trim() || null,
+               reader_tools: document.getElementById('nr-tools').checked }).then(function (res) {
+      if (!res.ok && res.status === 409 && res.body && typeof res.body.run_id === 'string') {
+        // the server already bound a run to this intake: it is used, link to that run
+        nrBusy = false;
+        nrIntake.usedId = st.intake_id;
+        nrIntake.usedRun = res.body.run_id;
+        renderIntakeStatus(document.getElementById('nr-intake-out'), st);
+        syncPasteMode();
+        return;
+      }
+      if (!res.ok) {
+        done();
+        nrError((res.body && typeof res.body.detail === 'string' && res.body.detail) ||
+                ('The server answered ' + res.status + '.'));
+        return;
+      }
+      stopIntakePoll();
+      // the intake is used: redraw without Continue, the failures stay listed
+      nrIntake.usedId = st.intake_id;
+      nrIntake.usedRun = res.body.id;
+      nrBusy = false;
+      renderIntakeStatus(document.getElementById('nr-intake-out'), st);
+      syncPasteMode();
+      newrunWrap.hidden = true;
+      var id = res.body.id;
+      toast((res.body.label || 'Run ' + res.body.number) + ' — started.');
+      return A.runs().then(function (list) {
+        runs = list;
+        switchRun(id);
+      });
+    }, function () { done(); nrError('The server is not reachable.'); });
+  }
+  document.getElementById('nr-intake-go').addEventListener('click', startIntake);
+  document.getElementById('nr-tickers').addEventListener('input', syncPasteMode);
   document.getElementById('newrun').addEventListener('click', function () {
     nrError('');
     newrunWrap.hidden = false;
     loadNewRunCompanies();
+    // reopening keeps the last intake result (the failures stay listed)
+    if (nrIntake.last) renderIntakeStatus(document.getElementById('nr-intake-out'), nrIntake.last);
+    syncPasteMode();
   });
   document.getElementById('nr-cancel').addEventListener('click', function () { newrunWrap.hidden = true; });
   // G4-6: one wording in both limit boxes, and the red line clears as soon as
   // the box is edited
   document.getElementById('nr-limit').addEventListener('input', function () { nrError(''); });
   newrunWrap.addEventListener('click', function (e) { if (e.target === newrunWrap) newrunWrap.hidden = true; });
-  document.getElementById('nr-go').addEventListener('click', function () {
+  // Run now: the captured names ticked above; refused while the paste box has text
+  function startRunNow() {
+    if (nrBusy) return;
+    var pastedText = document.getElementById('nr-tickers').value.trim();
+    if (pastedText) {
+      nrError(pastedText === nrIntake.text && nrIntake.last ? NR_PASTE_ONLY : NR_PREPARE_FIRST);
+      return;
+    }
     // the list comes from the server: nothing selectable until it lands
     if (nrState === 'failed') { nrError(nrLoadError + ' Close this and open New run again to try again.'); return; }
     if (nrState !== 'ready') { nrError('The company list is still loading.'); return; }
@@ -4192,10 +4428,14 @@
     }
     var note = document.getElementById('nr-note').value.trim() || null;
     nrError('');
-    A.newRun({ companies: companies, event_types: types,
+    nrBusy = true;
+    syncPasteMode();
+    function done() { nrBusy = false; syncPasteMode(); }
+    return A.newRun({ companies: companies, event_types: types,
                time_window_months: null,
                spending_limit_usd: limit, note_for_agent: note,
                reader_tools: document.getElementById('nr-tools').checked }).then(function (res) {
+      done();
       if (!res.ok) { nrError((res.body && res.body.detail) || ('HTTP ' + res.status)); return; }
       newrunWrap.hidden = true;
       var id = res.body.id;
@@ -4204,8 +4444,9 @@
         runs = list;
         switchRun(id);
       });
-    }).catch(function () { nrError('The server is not reachable.'); });
-  });
+    }, function () { done(); nrError('The server is not reachable.'); });
+  }
+  document.getElementById('nr-go').addEventListener('click', startRunNow);
 
   // the job bar: status, turns and spend from run.json while a run goes, and the
   // stop reason with a Resume when it pauses

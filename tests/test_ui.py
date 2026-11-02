@@ -1146,6 +1146,7 @@ def test_new_run_company_load_failure_is_an_inline_error_not_a_toast():
         "var nrCompanies = null, nrState = 'loading', nrLoadError = '', nrLoadSeq = 0;",
         "var rendered = null;",
         "function renderNewRunCompanies(c, u) { rendered = [c, u]; nodes['nr-cos'].children = [el('label', 'tk2', 'x')]; }",
+        "function syncPasteMode() {}",  # the paste mode is covered by the PR #162 tests
         "var resolveFirst;",
         "var A = { companies: function () { return new Promise(function (r) { resolveFirst = r; }); } };",
         fns,
@@ -1190,7 +1191,221 @@ def test_new_run_company_load_failure_is_an_inline_error_not_a_toast():
     assert got.returncode == 0, got.stdout + got.stderr
 
 
-def test_u24_g1r7_citation_box_bottom_edge_sits_lower():
+def test_ticker_intake_pins():
+    # TICKER-INTAKE-001: the New run sheet intakes pasted tickers through the
+    # server — no hard-coded list, plain words, inline errors (the red line)
+    html = (UI / "index.html").read_text()
+    for marker in ('id="nr-tickers"', 'id="nr-intake-go"', 'id="nr-intake-out"'):
+        assert marker in html, marker
+    js = (UI / "app.js").read_text()
+    for word in ("fetch('/api/intake'",
+                 "intakeStatus: function (id)",
+                 "function intakeScopeLine(",
+                 "function renderIntakeStatus(",
+                 "function startRunFromIntake(",
+                 "accept_ready_subset: st.failed_count > 0",
+                 "'Continue with ' + st.ready_count + ' ready'",
+                 "no_documents: 'No documents found'",
+                 "unresolved: 'Could not be resolved'",
+                 "unsupported: 'Not supported'",
+                 "failed: 'Preparation failed'",
+                 # the run starts from the intake id, never a rebuilt list
+                 "intake_id: st.intake_id"):
+        assert word in js, word
+    # no captured name is hard-coded anywhere in the UI
+    for name in ("PTGX", "ABVX", "CRNX", "NEW_RUN_COMPANIES"):
+        assert name not in js, name
+
+
+def test_ticker_intake_renders_states_scope_and_continue_button():
+    # every ticker renders its company, plain state and the server's reason;
+    # the scope line reads in words; done offers 'Continue with N ready' and
+    # the failures stay listed; with nothing ready the button is disabled
+    import json
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("el", "clear", "dayMonth", "intakeScopeLine", "renderIntakeStatus"))
+    done = {
+        "intake_id": "ik1", "status": "done", "ready_count": 2, "failed_count": 2,
+        "form_scope": ["8-K"], "lookback_days": 90, "window_start": "2026-08-04", "cutoff": "2026-11-02",
+        "tickers": [
+            {"symbol": "ACME", "company": "Acme Corporation", "state": "ready", "reason": None,
+             "documents": 3, "pages": 2, "form_scope": ["8-K"], "lookback_days": 90,
+             "window_start": "2026-08-04", "cutoff": "2026-11-02"},
+            {"symbol": "BTBR", "company": "Biotab Pharmaceuticals", "state": "ready", "reason": None,
+             "documents": 1, "pages": 1, "form_scope": ["8-K"], "lookback_days": 90,
+             "window_start": "2026-08-04", "cutoff": "2026-11-02"},
+            {"symbol": "CRNX", "company": None, "state": "unresolved",
+             "reason": "No company matches this symbol.", "documents": 0, "pages": 0},
+            {"symbol": "DRMA", "company": None, "state": "no_documents",
+             "reason": "No document of this kind was filed in the window.", "documents": 0, "pages": 0},
+        ],
+    }
+    script = "\n".join([
+        "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',",
+        "  'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];",
+        "var INTAKE_STATE_WORDS = { resolving: 'Finding the company', capturing: 'Capturing documents',",
+        "  ready: 'Ready', unresolved: 'Could not be resolved', no_documents: 'No documents found',",
+        "  unsupported: 'Not supported', failed: 'Preparation failed' };",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], hidden: false,",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "var nodes = {};",
+        "var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null }, nrBusy = false;",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        fns,
+        "renderIntakeStatus(document.getElementById('nr-intake-out'), " + json.dumps(done) + ");",
+        "function textOf(n, out) { out = out || []; if (n && n.textContent) out.push(n.textContent);",
+        "  ((n && n.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        "var text = textOf(nodes['nr-intake-out']);",
+        "if (text.indexOf('Acme Corporation') === -1) { console.error('company missing'); process.exit(2); }",
+        "if (text.indexOf('Ready') === -1) { console.error('ready word missing'); process.exit(3); }",
+        "if (text.indexOf('Could not be resolved') === -1) { console.error('unresolved word'); process.exit(4); }",
+        "if (text.indexOf('No documents found') === -1) { console.error('no_documents word'); process.exit(5); }",
+        "if (text.indexOf('No company matches this symbol.') === -1) { console.error('reason'); process.exit(6); }",
+        # the failure rows stay listed
+        "if (text.indexOf('CRNX') === -1 || text.indexOf('DRMA') === -1) { console.error('failures lost'); process.exit(7); }",
+        "if (text.indexOf('Read: 8-K press releases filed 4 Aug 2026 to 2 Nov 2026 (90 days).') === -1) { console.error('scope: ' + text); process.exit(8); }",
+        "if (text.indexOf('2 ready · 2 could not be prepared') === -1) { console.error('counts'); process.exit(9); }",
+        # the continue button
+        "var btns = []; (function walk(n) { (n.children || []).forEach(function (c) {",
+        "  if (c.tag === 'button') btns.push(c); walk(c); }); })(nodes['nr-intake-out']);",
+        "if (btns.length !== 1 || btns[0].textContent !== 'Continue with 2 ready') { console.error('button'); process.exit(10); }",
+        # nothing ready: no run can start (the stub's clear() only mirrors the
+        # DOM's textContent reset, so drop the children the real DOM would drop)
+        "nodes['nr-intake-out'].children = [];",
+        "var none = " + json.dumps(dict(done, ready_count=0, failed_count=4,
+                                        tickers=[dict(t, state="failed", reason="The SEC could not be reached.")
+                                                 for t in done["tickers"]])) + ";",
+        "renderIntakeStatus(nodes['nr-intake-out'], none);",
+        "btns = []; (function walk(n) { (n.children || []).forEach(function (c) {",
+        "  if (c.tag === 'button') btns.push(c); walk(c); }); })(nodes['nr-intake-out']);",
+        "if (btns.length !== 1 || !btns[0].disabled) { console.error('disabled'); process.exit(11); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
+    # the flow end to end with stubbed routes: paste -> POST /api/intake ->
+    # poll GET /api/intake/{id} -> done -> 'Continue with 1 ready' posts
+    # /api/runs/new with the intake id, the ready names only, and
+    # accept_ready_subset true because a requested ticker failed
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("el", "clear", "nrError", "dayMonth", "intakeScopeLine", "renderIntakeStatus",
+                     "syncPasteMode", "stopIntakePoll", "pollIntake", "startIntake", "startRunFromIntake"))
+    script = "\n".join([
+        "var NR_PASTE_ONLY = 'This run reads only the pasted tickers. Clear the box to choose from the captured names instead.';",
+        "var nrBusy = false;",
+        "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',",
+        "  'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];",
+        "var INTAKE_STATE_WORDS = { resolving: 'Finding the company', capturing: 'Capturing documents',",
+        "  ready: 'Ready', unresolved: 'Could not be resolved', no_documents: 'No documents found',",
+        "  unsupported: 'Not supported', failed: 'Preparation failed' };",
+        "var NEW_RUN_TYPES = [['trial_results', 'Trial results'], ['regulatory_decision', 'Regulatory decision'],",
+        "  ['launch', 'Launch'], ['conference', 'Conference'], ['filing', 'Filing'], ['milestone', 'Milestone']];",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], hidden: false, disabled: false,",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "var nodes = {};",
+        "var els = { 'nr-tickers': { value: 'acme, BTBR' }, 'nr-limit': { value: '' },",
+        "            'nr-note': { value: '' }, 'nr-tools': { checked: false } };",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (els[id]) return els[id]; if (!nodes[id]) nodes[id] = make(); return nodes[id]; },",
+        "  createTextNode: function (t) { return { nodeType: 3, textContent: t }; },",
+        "  querySelectorAll: function () { return []; } };",
+        "var newrunWrap = { hidden: false };",
+        "var runs = []; var switched = null;",
+        "function toast() {}",
+        "function switchRun(id) { switched = id; }",
+        "function setInterval() { return 1; }",
+        "function clearInterval() {}",
+        "var posted = null, intakeText = null, statusCalls = 0;",
+        "var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null };",
+        "var PREPARING = { intake_id: 'ik1', status: 'preparing', ready_count: 0, failed_count: 0,",
+        "  requested: ['ACME', 'BTBR'], tickers: [",
+        "    { symbol: 'ACME', company: 'Acme Corporation', state: 'capturing', reason: 'Capturing 8-K exhibits filed 2026-08-04 to 2026-11-02.', documents: 1, pages: 0 },",
+        "    { symbol: 'BTBR', company: null, state: 'resolving', reason: 'Looking up the company.', documents: 0, pages: 0 } ] };",
+        "var DONE = { intake_id: 'ik1', status: 'done', ready_count: 1, failed_count: 1,",
+        "  requested: ['ACME', 'BTBR'], form_scope: ['8-K'], lookback_days: 90,",
+        "  window_start: '2026-08-04', cutoff: '2026-11-02', tickers: [",
+        "    { symbol: 'ACME', company: 'Acme Corporation', state: 'ready', reason: null, documents: 2, pages: 2 },",
+        "    { symbol: 'BTBR', company: null, state: 'unresolved', reason: 'No company matches this symbol.', documents: 0, pages: 0 } ] };",
+        "var A = {",
+        "  intake: function (text) { intakeText = text; return Promise.resolve({ ok: true, status: 202, body: { intake_id: 'ik1' } }); },",
+        "  intakeStatus: function (id) { statusCalls++; return Promise.resolve({ ok: true, status: 200,",
+        "    body: statusCalls === 1 ? PREPARING : DONE }); },",
+        "  newRun: function (body) { posted = body; return Promise.resolve({ ok: true, status: 202, body: { id: 'run9', number: 9, label: 'Run 9' } }); },",
+        "  runs: function () { return Promise.resolve([]); } };",
+        fns,
+        "function textOf(n, out) { out = out || []; if (n && n.textContent) out.push(n.textContent);",
+        "  ((n && n.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        "startIntake().then(function () {",
+        "  if (intakeText !== 'acme, BTBR') { console.error('posted text: ' + intakeText); process.exit(2); }",
+        "  var t1 = textOf(nodes['nr-intake-out']);",
+        "  if (t1.indexOf('Capturing documents') === -1) { console.error('preparing render: ' + t1); process.exit(3); }",
+        "  return pollIntake(1);",
+        "}).then(function () {",
+        "  var t2 = textOf(nodes['nr-intake-out']);",
+        "  if (t2.indexOf('Continue with 1 ready') === -1) { console.error('done render: ' + t2); process.exit(4); }",
+        "  if (t2.indexOf('1 ready · 1 could not be prepared') === -1) { console.error('counts: ' + t2); process.exit(5); }",
+        "  if (t2.indexOf('No company matches this symbol.') === -1) { console.error('failure lost'); process.exit(6); }",
+        "  if (t2.indexOf('Read: 8-K press releases filed 4 Aug 2026 to 2 Nov 2026 (90 days).') === -1) { console.error('scope'); process.exit(7); }",
+        "  var btns = []; (function walk(n) { (n.children || []).forEach(function (c) {",
+        "    if (c.tag === 'button') btns.push(c); walk(c); }); })(nodes['nr-intake-out']);",
+        "  var cont = btns.filter(function (b) { return b.textContent === 'Continue with 1 ready'; })[0];",
+        "  if (!cont || cont.disabled) { console.error('continue button'); process.exit(8); }",
+        "  cont.onclick();",
+        "  if (!posted) { console.error('no post'); process.exit(9); }",
+        "  if (posted.intake_id !== 'ik1' || posted.companies.join(',') !== 'ACME') { console.error(JSON.stringify(posted)); process.exit(10); }",
+        "  if (posted.accept_ready_subset !== true) { console.error('subset flag'); process.exit(11); }",
+        "  if (posted.event_types.length !== 6 || posted.time_window_months !== null) { console.error('options'); process.exit(12); }",
+        "  return new Promise(function (r) { setTimeout(r, 0); });",
+        "}).then(function () {",
+        "  if (switched !== 'run9' || !newrunWrap.hidden) { console.error('switch'); process.exit(13); }",
+        "  console.log('ok');",
+        "}).catch(function (e) { console.error(e && e.message); process.exit(99); });",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_ticker_intake_refusal_shows_the_servers_sentence_in_the_red_line():
+    # a refused intake (422/409 with the server's own sentence) is an inline
+    # red line, never a toast; the list area stays empty
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in ("el", "clear", "nrError", "stopIntakePoll", "startIntake"))
+    script = "\n".join([
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], hidden: false,",
+        "  addEventListener: function () {},",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "var nodes = {};",
+        "var els = { 'nr-tickers': { value: 'ACME' } };",
+        "var nrIntake = { id: null, seq: 0, timer: null, last: null };",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (els[id]) return els[id]; if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        "var A = { intake: function () { return Promise.resolve({ ok: false, status: 422,",
+        "  body: { detail: 'An intake takes at most 25 tickers.' } }); } };",
+        fns,
+        "startIntake().then(function () {",
+        "  var e = nodes['nr-error'];",
+        "  if (e.hidden || e.textContent !== 'The tickers could not be prepared. An intake takes at most 25 tickers.') {",
+        "    console.error(e.textContent); process.exit(2); }",
+        "  if (!nodes['nr-intake-out'].hidden) { console.error('list area visible on failure'); process.exit(3); }",
+        "  console.log('ok');",
+        "}).catch(function (e) { console.error(e && e.message); process.exit(99); });",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
     # Re-glass 1 finding 9 (nit): the citation box was drawn exactly on the
     # word rectangle, so its bottom edge clipped date descenders by 1-2 px.
     # The box now extends 2 pt lower; top, left and width are untouched.
@@ -4848,3 +5063,251 @@ def test_job50b_the_409_clears_key_sealed_and_planted_and_shows_the_plain_reason
                             "detail": "field detail: run_sha256"}, status=409)
     assert "does not match the run's current inputs. Re-score to show it." in mismatch
     assert "run_sha256" not in mismatch and "field detail" not in mismatch
+
+
+# ---- PR #162 Claude review findings 1-5 (Operator ruling: a pasted box means
+# the run reads only the pasted tickers; Continue is the only start for an intake)
+
+def _new_run_sheet_script(body_lines, extra_fns=()):
+    """Node script over a stub New run sheet: captured boxes IONS/PTGX, the
+    paste box, Run now, the intake list; every POST /api/runs/new is counted
+    and answered after a tick, the way a real server answers later."""
+    js = (UI / "app.js").read_text()
+    names = ("el", "nrError", "dayMonth", "intakeScopeLine", "renderIntakeStatus",
+             "syncPasteMode", "stopIntakePoll", "pollIntake", "startIntake", "startRunFromIntake",
+             "startRunNow") + tuple(extra_fns)
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    consts = "\n".join(re.search(r"var %s = '[^']*';" % n, js).group(0)
+                       for n in ("NR_PASTE_ONLY", "NR_PREPARE_FIRST", "NR_EMPTY"))
+    return "\n".join([
+        "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',",
+        "  'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];",
+        "var INTAKE_STATE_WORDS = { resolving: 'Finding the company', capturing: 'Capturing documents',",
+        "  ready: 'Ready', unresolved: 'Could not be resolved', no_documents: 'No documents found',",
+        "  unsupported: 'Not supported', failed: 'Preparation failed' };",
+        "var NEW_RUN_TYPES = [['trial_results', 'Trial results'], ['filing', 'Filing']];",
+        consts,
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], hidden: false, disabled: false,",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "var nodes = {};",
+        "var boxes = [{ value: 'IONS', checked: true, disabled: false }, { value: 'PTGX', checked: true, disabled: false }];",
+        "var allBox = { checked: true, disabled: false };",
+        "var els = { 'nr-tickers': { value: '' }, 'nr-limit': { value: '' },",
+        "            'nr-note': { value: '' }, 'nr-tools': { checked: false } };",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (els[id]) return els[id]; if (!nodes[id]) nodes[id] = make(); return nodes[id]; },",
+        "  createTextNode: function (t) { return { nodeType: 3, textContent: t }; },",
+        "  querySelectorAll: function (sel) {",
+        "    if (sel === '.nr-co:checked') return boxes.filter(function (b) { return b.checked; });",
+        "    if (sel === '.nr-co, #nr-all') return boxes.concat([allBox]);",
+        "    return []; } };",
+        "var newrunWrap = { hidden: false };",
+        "var runs = []; var switched = null; var nrState = 'ready'; var nrLoadError = '';",
+        "var nrCompanies = ['IONS', 'PTGX'];",
+        "function toast() {}",
+        "function switchRun(id) { switched = id; }",
+        "function setInterval() { return 1; }",
+        "function clearInterval() {}",
+        "var nrBusy = false;",
+        "var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null };",
+        "var posts = [];",
+        "var DONE = { intake_id: 'ik1', status: 'done', ready_count: 1, failed_count: 1,",
+        "  form_scope: ['8-K'], lookback_days: 90, window_start: '2026-07-30', cutoff: '2026-10-28', tickers: [",
+        "    { symbol: 'PTGX', company: 'Protagonist', state: 'ready', documents: 1, pages: 1,",
+        "      reason: '1 document(s), 1 page(s): 8-K exhibits filed in the window.' },",
+        "    { symbol: 'QUIET', company: null, state: 'no_documents', reason: 'No 8-K in the window.', documents: 0, pages: 0 } ] };",
+        "var A = {",
+        "  intake: function () { return Promise.resolve({ ok: true, status: 202, body: { intake_id: 'ik1' } }); },",
+        "  intakeStatus: function () { return Promise.resolve({ ok: true, status: 200, body: DONE }); },",
+        "  newRun: function (body) { posts.push(body); return new Promise(function (r) { setTimeout(function () {",
+        "    r(global.NEXT_RUN_ANSWER || { ok: true, status: 202, body: { id: 'run9', number: 9, label: 'Run 9' } }); }, 5); }); },",
+        "  runs: function () { return Promise.resolve([]); } };",
+        fns,
+        # the real DOM drops the children when textContent is reset; the stub does too
+        "function clear(node) { node.textContent = ''; node.children = []; return node; }",
+        "function textOf(n, out) { out = out || []; if (n && n.textContent) out.push(n.textContent);",
+        "  ((n && n.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        "function buttons() { var b = []; (function walk(n) { (n.children || []).forEach(function (c) {",
+        "  if (c.tag === 'button') b.push(c); walk(c); }); })(nodes['nr-intake-out']); return b; }",
+        "function later() { return new Promise(function (r) { setTimeout(r, 20); }); }",
+        "function fail(code, msg) { console.error(msg); process.exit(code); }",
+    ] + body_lines)
+
+
+def _run_node(script):
+    import subprocess
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_pr162_unprepared_paste_and_run_now_is_refused():
+    # Finding 1: paste ABVX QUIET, skip Prepare, click Run now -> no POST, the
+    # inline red line; the captured names are not run instead
+    _run_node(_new_run_sheet_script([
+        "els['nr-tickers'].value = 'ABVX QUIET';",
+        "syncPasteMode();",
+        "startRunNow();",
+        "if (posts.length) fail(2, 'posted: ' + JSON.stringify(posts));",
+        "var e = nodes['nr-error'];",
+        "if (e.hidden || e.textContent !== 'Prepare the pasted tickers first, or clear the box.') fail(3, e.textContent);",
+        # prepared text still never starts from Run now: Continue is the only start
+        "startIntake().then(later).then(function () {",
+        "  startRunNow();",
+        "  if (posts.length) fail(4, 'Run now posted with prepared text');",
+        "  if (e.textContent !== NR_PASTE_ONLY) fail(5, e.textContent);",
+        # box cleared: Run now behaves as before, the captured names
+        "  els['nr-tickers'].value = '';",
+        "  syncPasteMode();",
+        "  if (nodes['nr-go'].disabled) fail(6, 'Run now still disabled');",
+        "  if (!nodes['nr-intake-out'].hidden) fail(7, 'intake list shown with the box empty');",
+        "  startRunNow();",
+        "  if (posts.length !== 1 || posts[0].companies.join(',') !== 'IONS,PTGX' || 'intake_id' in posts[0])",
+        "    fail(8, JSON.stringify(posts));",
+        "  console.log('ok');",
+        "}).catch(function (err) { fail(99, err && err.stack); });",
+    ]))
+
+
+def test_pr162_captured_boxes_and_run_now_disabled_while_the_box_has_text():
+    _run_node(_new_run_sheet_script([
+        "els['nr-tickers'].value = '  ';",
+        "syncPasteMode();",
+        "if (nodes['nr-go'].disabled || boxes[0].disabled || allBox.disabled) fail(2, 'blank box disabled things');",
+        "if (!nodes['nr-paste-note'].hidden) fail(3, 'note shown for a blank box');",
+        "els['nr-tickers'].value = 'PTGX, QUIET';",
+        "syncPasteMode();",
+        "if (!nodes['nr-go'].disabled) fail(4, 'Run now enabled');",
+        "if (!boxes.every(function (b) { return b.disabled; }) || !allBox.disabled) fail(5, 'tick boxes enabled');",
+        "var n = nodes['nr-paste-note'];",
+        "if (n.hidden || n.textContent !== 'This run reads only the pasted tickers. Clear the box to choose from the captured names instead.')",
+        "  fail(6, n.textContent);",
+        "els['nr-tickers'].value = '';",
+        "syncPasteMode();",
+        "if (nodes['nr-go'].disabled || boxes[1].disabled || allBox.disabled || !n.hidden) fail(7, 'not restored');",
+        "console.log('ok');",
+    ]))
+    # the box listens for edits, and the note has its place in the sheet
+    js = (UI / "app.js").read_text()
+    assert "getElementById('nr-tickers').addEventListener('input', syncPasteMode)" in js
+    assert 'id="nr-paste-note"' in (UI / "index.html").read_text()
+
+
+def test_pr162_double_click_sends_exactly_one_post():
+    # Finding 2: two clicks before the answer arrives -> one POST, for both buttons
+    _run_node(_new_run_sheet_script([
+        "els['nr-tickers'].value = 'PTGX QUIET';",
+        "syncPasteMode();",
+        "startIntake().then(later).then(function () {",
+        "  var cont = buttons().filter(function (b) { return b.textContent === 'Continue with 1 ready'; })[0];",
+        "  if (!cont) fail(2, 'no continue');",
+        "  cont.onclick(); cont.onclick();",
+        "  if (!cont.disabled) fail(3, 'Continue not disabled in flight');",
+        "  if (posts.length !== 1) fail(4, 'continue posts: ' + posts.length);",
+        "  return later();",
+        "}).then(function () {",
+        "  if (posts.length !== 1) fail(5, 'continue posts after answer: ' + posts.length);",
+        # Run now, box empty, double click
+        "  posts = []; newrunWrap.hidden = false;",
+        "  els['nr-tickers'].value = ''; syncPasteMode();",
+        "  startRunNow(); startRunNow();",
+        "  if (!nodes['nr-go'].disabled) fail(6, 'Run now not disabled in flight');",
+        "  if (posts.length !== 1) fail(7, 'run now posts: ' + posts.length);",
+        "  return later();",
+        "}).then(function () {",
+        "  if (posts.length !== 1 || nodes['nr-go'].disabled) fail(8, 'after answer: ' + posts.length);",
+        "  console.log('ok');",
+        "}).catch(function (err) { fail(99, err && err.stack); });",
+    ]))
+
+
+def test_pr162_used_intake_has_no_continue_after_202_or_reopen():
+    _run_node(_new_run_sheet_script([
+        "els['nr-tickers'].value = 'PTGX QUIET';",
+        "syncPasteMode();",
+        "startIntake().then(later).then(function () {",
+        "  buttons()[0].onclick();",
+        "  return later();",
+        "}).then(function () {",
+        "  if (posts.length !== 1 || switched !== 'run9') fail(2, 'run did not start');",
+        "  var t = textOf(nodes['nr-intake-out']);",
+        "  if (buttons().length) fail(3, 'Continue still offered after 202');",
+        "  if (t.indexOf('A run was started from these tickers.') === -1) fail(4, t);",
+        "  if (t.indexOf('QUIET') === -1 || t.indexOf('No 8-K in the window.') === -1) fail(5, 'failures lost');",
+        # reopen New run: the newrun handler redraws the last intake
+        "  renderIntakeStatus(nodes['nr-intake-out'], nrIntake.last);",
+        "  syncPasteMode();",
+        "  if (buttons().length) fail(6, 'Continue offered on reopen');",
+        "  if (textOf(nodes['nr-intake-out']).indexOf('A run was started from these tickers.') === -1) fail(7, 'used line lost');",
+        "  startRunFromIntake(nrIntake.last);",
+        "  if (posts.length !== 1) fail(8, 'a used intake started a second run');",
+        "  console.log('ok');",
+        "}).catch(function (err) { fail(99, err && err.stack); });",
+    ]))
+    js = (UI / "app.js").read_text()
+    # the reopen path redraws through the same renderer, then the paste mode
+    assert ("if (nrIntake.last) renderIntakeStatus(document.getElementById('nr-intake-out'), nrIntake.last);\n"
+            "    syncPasteMode();") in js
+
+
+def test_pr162_422_list_detail_is_shown_as_text():
+    # Finding 3: FastAPI's list-shaped 422 never reads '[object Object]'
+    _run_node(_new_run_sheet_script([
+        "global.NEXT_RUN_ANSWER = { ok: false, status: 422, body: { detail: [{ loc: ['body'], msg: 'Field required', type: 'missing' }] } };",
+        "els['nr-tickers'].value = 'PTGX QUIET';",
+        "syncPasteMode();",
+        "startIntake().then(later).then(function () {",
+        "  buttons()[0].onclick();",
+        "  return later();",
+        "}).then(function () {",
+        "  var e = nodes['nr-error'];",
+        "  if (e.hidden || e.textContent !== 'The server answered 422.') fail(2, e.textContent);",
+        # a refused start leaves the intake usable: Continue is back
+        "  var b = buttons();",
+        "  if (b.length !== 1 || b[0].disabled) fail(3, 'continue not restored');",
+        "  console.log('ok');",
+        "}).catch(function (err) { fail(99, err && err.stack); });",
+    ]))
+
+
+def test_pr162_scope_wording_and_no_duplicate_counts():
+    # Findings 4 and 5: one plain scope line, no 'lookback'/'cutoff'/'Forms';
+    # the ready row says its counts once (the server's reason)
+    _run_node(_new_run_sheet_script([
+        "renderIntakeStatus(document.getElementById('nr-intake-out'), DONE);",
+        "var t = textOf(nodes['nr-intake-out']);",
+        "if (t.indexOf('Read: 8-K press releases filed 30 Jul 2026 to 28 Oct 2026 (90 days).') === -1) fail(2, t);",
+        "if (/lookback|cutoff|Forms/.test(t)) fail(3, t);",
+        "if (t.indexOf('1 document · 1 page') !== -1) fail(4, 'duplicate counts line');",
+        "if (t.indexOf('1 document(s), 1 page(s)') === -1) fail(5, 'server reason lost');",
+        "console.log('ok');",
+    ]))
+
+
+def test_pr162_server_409_used_marks_the_intake_used_with_a_link_to_that_run():
+    # a second tab or a lost answer: the server says the intake already started
+    # run7; the sheet shows it used (no Continue, no red line) and links to run7
+    _run_node(_new_run_sheet_script([
+        "global.NEXT_RUN_ANSWER = { ok: false, status: 409, body: { detail: 'A run was already started from these tickers.', run_id: 'run7' } };",
+        "els['nr-tickers'].value = 'PTGX QUIET';",
+        "syncPasteMode();",
+        "startIntake().then(later).then(function () {",
+        "  buttons()[0].onclick();",
+        "  return later();",
+        "}).then(function () {",
+        "  if (buttons().length) fail(2, 'Continue offered after a used 409');",
+        "  var t = textOf(nodes['nr-intake-out']);",
+        "  if (t.indexOf('A run was started from these tickers.') === -1) fail(3, t);",
+        "  if (!nodes['nr-error'].hidden && nodes['nr-error'].textContent) fail(4, nodes['nr-error'].textContent);",
+        "  var links = []; (function walk(n) { (n.children || []).forEach(function (c) {",
+        "    if (c.tag === 'a') links.push(c); walk(c); }); })(nodes['nr-intake-out']);",
+        "  if (links.length !== 1 || links[0].textContent !== 'Open that run') fail(5, 'no link');",
+        "  links[0].onclick({ preventDefault: function () {} });",
+        "  if (switched !== 'run7' || !newrunWrap.hidden) fail(6, 'link did not open run7');",
+        # an intake the server reports as used (reopen, other tab) has no Continue either
+        "  nrIntake.usedId = null;",
+        "  renderIntakeStatus(nodes['nr-intake-out'], Object.assign({}, DONE, { run_id: 'run7' }));",
+        "  if (buttons().length) fail(7, 'Continue offered for a server-used intake');",
+        "  console.log('ok');",
+        "}).catch(function (err) { fail(99, err && err.stack); });",
+    ]))

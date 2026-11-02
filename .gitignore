@@ -31,3 +31,6 @@ runs/run-*/
 # Indexes of filings that live outside the repo
 runs/sources_index.json
 runs/sources_index.eval2.json
+
+# Ticker intakes (server/intake.py): local records and indexes; pages live under ~/proof-reader-docs/intake
+runs/intake/
