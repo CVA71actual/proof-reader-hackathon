@@ -2424,8 +2424,9 @@
     // CALENDAR-RULE-001: the calendar holds kept rows and rows placed automatically; the headline names neither
     // as the other, and splits them from the server's counts.inclusion when it sends them
     var inc = detail.state && detail.state.counts && detail.state.counts.inclusion;
+    // (a server without counts.inclusion keeps the old kept-only calendar and its old words)
     var split = inc ? ' · kept by you ' + inc.kept + ' · included automatically ' + inc.included : '';
-    subrow.append(el('div', 'sub', 'Events on the calendar, by date · ' + total + ' row' +
+    subrow.append(el('div', 'sub', (inc ? 'Events on the calendar, by date · ' : 'Kept events, by date · ') + total + ' row' +
       (total === 1 ? '' : 's') + split + ' · ' + (w.unresolved ? w.reason : w.anchor + ' – ' + w.end)));
     head.append(subrow);
     var rl = el('div', 'runlabel' + (meta.sample ? ' sample' : ''), meta.label || '');
@@ -2433,7 +2434,9 @@
     host.append(head);
 
     if (!rows.length && !past.length && !nodates.length && !undated.length && !timingUnresolved.length && !later.length && !lastEvents.length) {
-      host.append(el('div', 'empty', 'Nothing on the calendar yet. Rows with no issues are placed here automatically, and rows you keep appear here too.'));
+      host.append(el('div', 'empty', inc
+        ? 'Nothing on the calendar yet. Rows with no issues are placed here automatically, and rows you keep appear here too.'
+        : 'Nothing kept yet — the calendar fills as rows are kept or corrected.'));
       det.append(el('div', 'empty', 'Pick an event to see its details.'));
       return;
     }
