@@ -9,9 +9,10 @@ REVIEW ONLY (RESEARCHER-FULL-001 S2): review an EXISTING run's saved draft, with
     python -m tools.research_smoke --review RUN_DIR --cap-usd 1 --i-have-the-operator-go [--runs-dir DIR]
 
 RUN_DIR is never modified: it is copied to --runs-dir first (default: a new folder under /tmp) and the copy is reviewed.
---cap-usd is the review's budget on top of what the run already spent (the copy's cap becomes spent + cap). Claude
-Opus 5.5 (ANTHROPIC_API_KEY, the anthropic SDK; the declared fallback Muse Spark Open on Baseten runs only if Claude is
-unavailable or refuses the key) reviews each company's draft with Brave Search (BRAVE_API_KEY) as its own search;
+--cap-usd is the review's budget on top of what the run already spent (the copy's cap becomes spent + cap). The
+reviewer chain is tried once per run: DeepSeek V4 Pro on Baseten (BASETEN_DEEPSEEK_API_KEY), then Claude Opus 5.5
+(ANTHROPIC_API_KEY, the anthropic SDK), then the declared same-family fallback Muse Spark Open (BASETEN_API_KEY); it
+reviews each company's draft with Brave Search (BRAVE_API_KEY) as its own search;
 disputed findings go to Muse Wonder (MODEL_API_KEY). Keys are never printed.
 
 It creates one research run (mode "research", the default research assignment, the given spending cap; every other
@@ -161,9 +162,14 @@ def reviewer_line(research: dict) -> str:
         refused = fb.get("primary_refused") or {}
         status = refused.get("http_status") or acc.get("http_status")
         reason = refused.get("reason") or acc.get("reason")
-        why = (f" (fallback: {reason})" if reason else
-               f" (fallback: {fb.get('primary')} " + (f"refused {status}" if status else
-                                                      f"unavailable: {fb.get('primary_unavailable')}") + ")")
+        skipped = fb.get("skipped") or []
+        if len(skipped) > 1:
+            why = " (fallback: " + "; ".join(f"{x['name']} " + (x.get("access_reason") or (
+                f"refused {x['http_status']}" if x.get("http_status") else x["reason"])) for x in skipped) + ")"
+        else:
+            why = (f" (fallback: {reason})" if reason else
+                   f" (fallback: {fb.get('primary')} " + (f"refused {status}" if status else
+                                                          f"unavailable: {fb.get('primary_unavailable')}") + ")")
     return f"Reviewer: {' and '.join(ran)}{why}"
 
 
@@ -171,12 +177,13 @@ def review_main(args) -> int:
     from runs import research
     from capture import research_reviewer as rv
     tools = research.ResearchTools()
-    model, choice = rv.choose_reviewer(tools.reviewer, tools.reviewer_fallback)      # a free model-list check only
-    if model.ready():
-        print(f"reviewer: {model.ready()}")
+    chain = tools.reviewer_chain() + [tools.reviewer_fallback]
+    if all(m.ready() for m in chain):          # key presence only; nothing is called here
+        print("reviewer: no reviewer key is available (" + "; ".join(m.ready() for m in chain) + ")")
         return 2
-    print(f"Configured reviewer: {rv.identity(tools.reviewer)['name']} (declared fallback "
-          f"{rv.identity(tools.reviewer_fallback)['name']}); which one runs is decided at the start of the run.")
+    print("Configured reviewers, in order: " + ", then ".join(rv.identity(m)["name"] for m in chain[:-1])
+          + f" (declared fallback {rv.identity(chain[-1])['name']}); which one runs is decided by an access check at "
+          f"the start of the run.")
     for what, problem in (("Brave Search", tools.brave.ready()), ("adjudicator", tools.adjudicator.ready())):
         if problem:
             print(f"{what}: {problem}")

@@ -30,7 +30,7 @@ REVIEWER_PRICES_PER_1M_USD = {
 REVIEWER_PRICE_STATUS = {
     "Claude Opus 5.5": "set by the Operator 2026-11-03 (CVA's reviewer decision): $4.00 input / $20.00 output / $0.20 "
                        "cache read per 1M tokens, Anthropic's published Opus 5.5 rates",
-    "DeepSeek V4 Pro": ("listed by Baseten's own model list (GET inference.baseten.co/v1/models, pricing per token: "
+    "DeepSeek V4 Pro": ("from Baseten model list, unconfirmed: listed by Baseten's own model list (GET inference.baseten.co/v1/models, pricing per token: "
                         "prompt 0.00000132, completion 0.00000396), read 2026-11-02; the public baseten.co pricing "
                         "page could not be read by machine, so it is not yet confirmed against that page"),
 }

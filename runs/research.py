@@ -210,7 +210,7 @@ class ResearchTools:
     renderer and the ticker -> (cik, company) resolver. Tests pass fakes; the defaults are live."""
 
     def __init__(self, fetcher=None, render_html=None, resolve=None, brave=None, reviewer=None, adjudicator=None,
-                 reviewer_fallback=None, support_detector=None):
+                 reviewer_fallback=None, reviewers=None, support_detector=None):
         from capture import research_reviewer as rv
         from capture.brave_search import LiveBrave
         self.fetcher = fetcher or rs.LiveFetcher()
@@ -218,13 +218,22 @@ class ResearchTools:
         self.resolve = resolve or self._resolve
         self.brave = brave if brave is not None else LiveBrave()      # BRAVE-PRIMARY-001: the primary search
         # S2: the independent reviewer (Muse Spark Open) and the adjudicator (Muse Wonder); tests pass fakes
-        self.reviewer = reviewer if reviewer is not None else rv.reviewer_model()
+        # the reviewer chain, tried in order once per run (CVA 2026-11-03): DeepSeek V4 Pro (Baseten, its own key),
+        # then Claude Opus 5.5; a reviewer passed alone is a chain of one
+        if reviewers is None and reviewer is None:
+            reviewers = [rv.deepseek_reviewer_model(), rv.reviewer_model()]
+        self.reviewers = list(reviewers) if reviewers is not None else None
+        self.reviewer = reviewer if reviewer is not None else (self.reviewers[0] if self.reviewers
+                                                               else rv.reviewer_model())
         self.reviewer_fallback = (reviewer_fallback if reviewer_fallback is not None
                                   else rv.fallback_reviewer_model())       # declared; used only if the reviewer is not
         # LETTUCE-OPTION: the support detector (None: the out-of-process worker, capture/support_process.py, with
         # LETTUCE_PYTHON and LETTUCE_WEIGHTS_PATH; could_not_run without them); tests pass a fake
         self.support_detector = support_detector
         self.adjudicator = adjudicator if adjudicator is not None else rv.adjudicator_model()
+
+    def reviewer_chain(self) -> list:
+        return list(self.reviewers) if self.reviewers else [self.reviewer]
 
     def _resolve(self, ticker: str) -> tuple[str, str]:
         from capture.fetch_filings import resolve_cik
@@ -518,7 +527,7 @@ def make_job_class():
         def reviewer_problem(self) -> str | None:
             """Why the independent reviewer cannot run in this process, or None."""
             problems = []
-            for reviewer in (getattr(self.tools, "reviewer", None), getattr(self.tools, "reviewer_fallback", None)):
+            for reviewer in self.reviewer_chain() + [getattr(self.tools, "reviewer_fallback", None)]:
                 if reviewer is None:
                     continue
                 try:
@@ -802,32 +811,97 @@ def make_job_class():
             return rv.disputes_from_findings(record.get("findings") or [],
                                              [self.review_proposal(r) for r in rows_by_id.values()], ticker)
 
+        def reviewer_chain(self) -> list:
+            """The reviewers to try, in order (CVA 2026-11-03: DeepSeek V4 Pro, then Claude Opus 5.5); the declared
+            same-family fallback (Muse Spark Open) is separate and runs only when none of them can."""
+            chain = getattr(self.tools, "reviewer_chain", None)
+            return list(chain()) if callable(chain) else [self.tools.reviewer]
+
         def reviewer_for_run(self, ticker: str) -> tuple:
-            """The reviewer for this run, decided ONCE: the primary unless it is not in the provider's model list or
-            the provider refuses the key for it (a 401/403 on a one-token access check); then the declared fallback.
-            The model list does not reflect key permissions, so the access check is a request."""
-            from capture import research_reviewer as rv
+            """The reviewer for this run, decided ONCE: the first in the chain that is available and passes the
+            one-token access check (the model list does not reflect key permissions; a 401/403 or a billing refusal
+            is a refusal). Each one skipped is recorded with its reason in run.research.reviewer_access; when none
+            can run, the declared fallback reviews."""
             with self._access_lock:
-                if self._reviewer_pick is not None:
-                    return self._reviewer_pick
-                primary, fallback = self.tools.reviewer, getattr(self.tools, "reviewer_fallback", None)
-                model, choice = rv.choose_reviewer(primary, fallback)
-                access = {"checked": False, "reason": "No access check was made."}
-                if not choice["fallback_used"] and callable(getattr(primary, "probe", None)):
-                    access = self.probe_reviewer(primary)
-                with jobs.RUN_LOCK:
-                    self.research.setdefault("reviewer_access", {}).update(
-                        {"model": getattr(primary, "model", None), "name": rv.identity(primary)["name"], **access})
-                if access.get("refused") and fallback is not None:
-                    self._reviewer_pick = self.refused_reviewer(ticker, access, locked=True)
-                    return self._reviewer_pick
-                if choice.get("fallback_used"):
-                    self.step(ticker, "review", "Code", "runs.research",
-                              f"{choice['primary']} is unavailable ({choice['primary_unavailable']}); the declared "
-                              f"fallback {choice['name']} reviews instead. It is the researcher's own model family, so "
-                              f"the review is not called independent.", stage=REVIEW_STAGE)
-                self._reviewer_pick = (model, choice)
+                if self._reviewer_pick is None:
+                    self._chain = self.reviewer_chain()
+                    self._skipped: list[dict] = []
+                    self._pick_from(ticker, 0)
                 return self._reviewer_pick
+
+        def _record_access(self, entry: dict, top: bool) -> None:
+            with jobs.RUN_LOCK:
+                acc = self.research.setdefault("reviewer_access", {})
+                acc.setdefault("candidates", []).append(entry)
+                if top:      # the first choice's own result stays at the top level (as before)
+                    acc.update({k: v for k, v in entry.items() if k != "position"})
+
+        def _pick_from(self, ticker: str, start: int) -> tuple:
+            from capture import research_reviewer as rv
+            fallback = getattr(self.tools, "reviewer_fallback", None)
+            for i in range(start, len(self._chain)):
+                cand = self._chain[i]
+                who = rv.identity(cand)
+                check = getattr(cand, "available", None)
+                why = check() if callable(check) else cand.ready()
+                if why:
+                    entry = {"name": who["name"], "model": who["model"], "position": i, "checked": False,
+                             "refused": False, "skipped": True, "reason": why}
+                else:
+                    access = (self.probe_reviewer(cand) if callable(getattr(cand, "probe", None))
+                              else {"checked": False, "reason": "No access check was made."})
+                    entry = {"name": who["name"], "model": who["model"], "position": i, **access,
+                             "skipped": bool(access.get("refused"))}
+                self._record_access(entry, top=(i == 0))
+                if entry["skipped"]:
+                    reason = entry.get("reason") if entry.get("refused") is False or not entry.get("http_status") \
+                        else (entry.get("reason") or f"refused by the provider (HTTP {entry.get('http_status')})")
+                    self._skipped.append({"name": who["name"], "reason": reason, "message": entry.get("message"),
+                                          "http_status": entry.get("http_status"),
+                                          "access_reason": entry.get("reason") if entry.get("refused") else None})
+                    continue
+                self._chain_index = i
+                choice = {**who, "fallback_used": False, "position": i,
+                          "skipped": list(self._skipped), "primary": rv.identity(self._chain[0])["name"]}
+                if self._skipped:
+                    self.step(ticker, "review", "Code", "runs.research",
+                              "Reviewer skipped: " + "; ".join(f"{x['name']} ({x['reason']})" for x in self._skipped)
+                              + f". {who['name']} reviews.", stage=REVIEW_STAGE)
+                with jobs.RUN_LOCK:
+                    self.research["reviewer_access"]["chosen"] = who["name"]
+                self._reviewer_pick = (cand, choice)
+                return self._reviewer_pick
+            if fallback is None:      # nothing else to try: the last candidate runs and its failure is recorded
+                cand = self._chain[-1]
+                self._reviewer_pick = (cand, {**rv.identity(cand), "fallback_used": False,
+                                              "skipped": list(self._skipped)})
+                return self._reviewer_pick
+            first = self._skipped[0] if self._skipped else {}
+            last_refused = next((x for x in reversed(self._skipped) if x.get("http_status") or x.get("message")), {})
+            if len(self._skipped) == 1:
+                x = self._skipped[0]
+                why = f"{x['reason']}: {x.get('message') or 'access refused'}"
+            else:
+                why = "; ".join(f"{x['name']}: {x['reason']}" + (f" ({x['message']})" if x.get("message") else "")
+                                for x in self._skipped) or "unavailable"
+            choice = {**rv.identity(fallback), "fallback_used": True, "primary": rv.identity(self._chain[0])["name"],
+                      "primary_unavailable": why, "skipped": list(self._skipped),
+                      "primary_refused": {"http_status": last_refused.get("http_status"),
+                                          "message": last_refused.get("message"),
+                                          "reason": (first.get("access_reason") if len(self._skipped) == 1
+                                                     else None)}}
+            with jobs.RUN_LOCK:
+                acc = self.research.setdefault("reviewer_access", {})
+                acc.update({"fallback": choice["name"], "chosen": choice["name"]})
+                if any(x.get("http_status") or x.get("message") for x in self._skipped):
+                    acc["refused"] = True
+            self.step(ticker, "review", "Code", "runs.research",
+                      f"No reviewer of another model family could run ({why}). It is not retried; the declared "
+                      f"fallback {choice['name']} reviews instead. It is the researcher's own model family, so the "
+                      f"review is not called independent (MULTI-FAMILY-001 not met for this run).", stage=REVIEW_STAGE)
+            self._chain_index = len(self._chain)
+            self._reviewer_pick = (fallback, choice)
+            return self._reviewer_pick
 
         def probe_reviewer(self, primary) -> dict:
             """One request with a one-token reply, through the run's gate; records whether the key may use the
@@ -861,26 +935,33 @@ def make_job_class():
                     "message": reply.error if reply.error else None, **({"reason": reason} if reason else {})}
 
         def refused_reviewer(self, ticker: str, refusal: dict, locked: bool = False) -> tuple:
-            """The provider refused the key for the primary reviewer: record it, never retry it, and use the declared
-            fallback for the rest of the run (same family: the label says so; MULTI-FAMILY-001 is not met)."""
+            """The provider refused the key for the reviewer that was running (on a real call): record it, never
+            retry it, and move to the next in the chain (or the declared fallback) for the rest of the run."""
             from capture import research_reviewer as rv
-            primary, fallback = self.tools.reviewer, self.tools.reviewer_fallback
-            why = (refusal.get("reason") or f"refused by the provider (HTTP {refusal.get('http_status')})") + \
-                f": {refusal.get('message') or 'access refused'}"
-            choice = {**rv.identity(fallback), "fallback_used": True, "primary": rv.identity(primary)["name"],
-                      "primary_unavailable": why, "primary_refused": {k: refusal.get(k) for k in
-                                                                      ("http_status", "message", "reason")}}
-            with jobs.RUN_LOCK:
-                self.research.setdefault("reviewer_access", {}).update(
-                    {"refused": True, "http_status": refusal.get("http_status"), "message": refusal.get("message"),
-                     **({"reason": refusal["reason"]} if refusal.get("reason") else {}),
-                     "fallback": choice["name"]})
-            self.step(ticker, "review", "Code", "runs.research",
-                      f"{choice['primary']} was {why}. It is not retried; the declared fallback {choice['name']} "
-                      f"reviews instead. It is the researcher's own model family, so the review is not called "
-                      f"independent (MULTI-FAMILY-001 not met for this run).", stage=REVIEW_STAGE)
-            self._reviewer_pick = (fallback, choice)
-            return self._reviewer_pick
+            with self._access_lock:
+                if self._reviewer_pick is None:
+                    self._chain, self._skipped = self.reviewer_chain(), []
+                    self._chain_index = 0
+                i = getattr(self, "_chain_index", 0)
+                cand = self._chain[i] if i < len(self._chain) else None
+                if cand is not None:
+                    who = rv.identity(cand)
+                    reason = refusal.get("reason") or f"refused by the provider (HTTP {refusal.get('http_status')})"
+                    self._skipped.append({"name": who["name"], "reason": reason, "message": refusal.get("message"),
+                                          "http_status": refusal.get("http_status"),
+                                          "access_reason": refusal.get("reason")})
+                    self._record_access({"name": who["name"], "model": who["model"], "position": i, "checked": True,
+                                         "refused": True, "skipped": True, "on": "review call",
+                                         "http_status": refusal.get("http_status"), "message": refusal.get("message"),
+                                         **({"reason": refusal["reason"]} if refusal.get("reason") else {})},
+                                        top=(i == 0))
+                    with jobs.RUN_LOCK:
+                        acc = self.research["reviewer_access"]
+                        acc.update({"refused": True, "http_status": refusal.get("http_status"),
+                                    "message": refusal.get("message")})
+                        if refusal.get("reason"):
+                            acc["reason"] = refusal["reason"]
+                return self._pick_from(ticker, i + 1)
 
         def review_company(self, ticker: str, ended_kind: str, ended_reason: str) -> dict:
             """After a company's research ends (for any reason but a person's stop), the independent reviewer attacks
