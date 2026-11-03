@@ -306,6 +306,12 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
                 "research_instructions_default": research_instructions.DEFAULT,
                 "research_instructions_max_length": research_instructions.MAX_LENGTH}
 
+    @app.get("/api/research/options")
+    def research_options() -> dict:
+        """LETTUCE-OPTION: the optional research settings a New Run screen can offer (support_check, off by default)."""
+        from runs import research
+        return research.support_check_options()
+
     @app.get("/api/companies")
     def get_companies() -> dict:
         """The selectable companies of the sources index a new run will read. The New

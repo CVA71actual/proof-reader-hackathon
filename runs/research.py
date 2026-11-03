@@ -42,6 +42,7 @@ kill_conditions and the draft audit. Exact requests and responses are kept under
 from __future__ import annotations
 
 import concurrent.futures
+import os
 import copy
 import hashlib
 import json
@@ -119,6 +120,36 @@ def now_utc() -> str:
 # ---------------------------------------------------------------- choices
 
 
+SUPPORT_CHECKS = ("lettucedetect",)
+SUPPORT_UNSUPPORTED = "unsupported_spans"
+
+
+def validate_support_check(raw) -> dict:
+    """{} when off (absent, null, "off"); {"support_check": "lettucedetect"} when a person turns it on."""
+    if raw is None or raw == "off":
+        return {}
+    if raw not in SUPPORT_CHECKS:
+        raise ValueError('support_check must be "lettucedetect" or null (off).')
+    return {"support_check": raw}
+
+
+def support_check_options() -> dict:
+    """What the New Run screen can offer (GET /api/research/options): the choice, its default (off), and whether
+    the pinned local weights are present in this process. Nothing is downloaded or installed."""
+    import importlib.util
+    from capture import support_signal as ss
+    weights = os.environ.get(ss.WEIGHTS_ENV, "")
+    have_pkg = importlib.util.find_spec("lettucedetect") is not None
+    have_weights = bool(weights) and Path(weights).is_dir()
+    reason = (None if have_pkg and have_weights else
+              "the lettucedetect package is not installed" if not have_pkg else
+              f"the pinned weights are not installed ({ss.WEIGHTS_ENV} is not a directory)")
+    return {"support_check": {"choices": list(SUPPORT_CHECKS), "default": None, "available": reason is None,
+                              "unavailable_reason": reason, "model": ss.MODEL, "model_revision": ss.MODEL_REVISION,
+                              "note": "Findings only: an unsupported span is a row issue for review; could not run "
+                                      "is a recorded limitation; it never blocks or fails a run."}}
+
+
 def validate_limits(raw) -> dict:
     """choices.research_limits: every key present, null = off. Unknown keys and wrong types are refused."""
     raw = {} if raw is None else raw
@@ -178,7 +209,8 @@ class ResearchTools:
     """What the loop reaches outside the process with: a fetcher (get(url) -> research_sources.Fetched), the HTML
     renderer and the ticker -> (cik, company) resolver. Tests pass fakes; the defaults are live."""
 
-    def __init__(self, fetcher=None, render_html=None, resolve=None, brave=None, reviewer=None, adjudicator=None):
+    def __init__(self, fetcher=None, render_html=None, resolve=None, brave=None, reviewer=None, adjudicator=None,
+                 support_detector=None):
         from capture import research_reviewer as rv
         from capture.brave_search import LiveBrave
         self.fetcher = fetcher or rs.LiveFetcher()
@@ -187,6 +219,9 @@ class ResearchTools:
         self.brave = brave if brave is not None else LiveBrave()      # BRAVE-PRIMARY-001: the primary search
         # S2: the independent reviewer (Muse Spark Open) and the adjudicator (Muse Wonder); tests pass fakes
         self.reviewer = reviewer if reviewer is not None else rv.reviewer_model()
+        # LETTUCE-OPTION: the support detector (None: capture/support_signal.py loads the pinned local weights from
+        # LETTUCE_WEIGHTS_PATH, or reports could_not_run); tests pass a fake
+        self.support_detector = support_detector
         self.adjudicator = adjudicator if adjudicator is not None else rv.adjudicator_model()
 
     def _resolve(self, ticker: str) -> tuple[str, str]:
@@ -1110,6 +1145,12 @@ def make_job_class():
                 self.save_ledger()
             self.step(ticker, "limit" if kind not in ("finished",) else "finish", "Code", "runs.research",
                       f"{ticker}: {reason}")
+            if self.choices.get("support_check") in SUPPORT_CHECKS:
+                try:      # LETTUCE-OPTION: findings only, before the reviewer; never blocks or fails the run
+                    self.support_check_company(ticker)
+                except Exception as e:  # the type only
+                    self.step(ticker, "check", "Code", "runs.research",
+                              f"The support check of {ticker} could not be recorded ({type(e).__name__}).")
             try:      # S2: the independent review runs after research ends, for any reason but a person's stop
                 self.review_company(ticker, kind, reason)
             except Exception as e:  # the type only
@@ -1118,6 +1159,62 @@ def make_job_class():
                           stage=REVIEW_STAGE)
 
         # ------------------------------------------------------------ one company's loop
+
+        def support_check_company(self, ticker: str) -> None:
+            """LETTUCE-OPTION (OUTCOME-001, UNKNOWN-001, CLAIM-001): run capture/support_signal.py on every proposal of
+            this company: the claim (title, timing and conditions as proposed) against the text of its cited evidence
+            spans, the same quotes the checks read. The result is recorded on row.research.support_check, bound to
+            the proposal revision and evidence. unsupported_spans is a row issue (it goes to review); no_finding is not
+            'supported'; could_not_run is a recorded limitation, never an issue and never a pass."""
+            from capture import support_signal as ss
+            det = self.tools.support_detector
+            rows = [r for r in self.run["rows"] if (r.get("research") or {}).get("ticker") == ticker]
+            counts = {"no_finding": 0, SUPPORT_UNSUPPORTED: 0, "could_not_run": 0}
+            for row in rows:
+                claim = support_claim(row)
+                evidence = "\n".join(s["quote"] for s in row["research"]["evidence"])
+                try:
+                    out = ss.support_signal({"claim": claim}, evidence, detector=det)
+                except Exception as e:  # the adapter never raises; this keeps the promise if it ever did
+                    out = {"result": "could_not_run", "spans": [], "model": ss.MODEL, "weights_sha256": None,
+                           "detail": f"{type(e).__name__}"}
+                result = out.get("result") if out.get("result") in counts else "could_not_run"
+                counts[result] += 1
+                record = {"engine": "lettucedetect", "result": result, "spans": out.get("spans") or [],
+                          "reason": out.get("detail") or {"no_finding": "No span was flagged; this is not a "
+                                                                        "statement that the claim is supported.",
+                                                          SUPPORT_UNSUPPORTED: "Spans of the claim were flagged as "
+                                                                               "not supported by the cited text."
+                                                          }.get(result),
+                          "model": out.get("model"), "weights_sha256": out.get("weights_sha256"),
+                          "claim": claim, "checked_at": now_utc(),
+                          "basis": {"revision": row["research"]["revision"],
+                                    "evidence_sha256": hashlib.sha256(evidence.encode("utf-8")).hexdigest(),
+                                    "claim_sha256": hashlib.sha256(claim.encode("utf-8")).hexdigest()},
+                          "findings_only": True}
+                with jobs.RUN_LOCK:
+                    row["research"]["support_check"] = record
+                    issues = [i for i in row["research"]["issues"] if i.get("code") != "unsupported_spans"]
+                    if result == SUPPORT_UNSUPPORTED:
+                        issues.append(rc.issue("unsupported_spans", "LettuceDetect flagged claim wording as not "
+                                               "supported by the cited text: " + "; ".join(
+                                                   f"“{sp['text']}”" for sp in record["spans"][:5]), row["id"]))
+                    row["research"]["issues"] = issues
+                self.step(ticker, "check", "Code", "capture.support_signal",
+                          f"Support check {row['id']}: {result.replace('_', ' ')}"
+                          + (f" ({record['reason']})" if result == "could_not_run" else "") + ".",
+                          row_id=row["id"], result=result)
+            with jobs.RUN_LOCK:
+                agg = self.research.setdefault("support_check", {"engine": "lettucedetect", "companies": {}})
+                agg["companies"][ticker] = counts
+                total = {k: sum(c[k] for c in agg["companies"].values()) for k in counts}
+                agg["totals"] = total
+                checked = sum(total.values())
+                agg["label"] = (f"Support check could not run for {total['could_not_run']} of {checked} proposals"
+                                if total["could_not_run"] else
+                                f"Support check ran on {checked} proposals: {total[SUPPORT_UNSUPPORTED]} with "
+                                f"unsupported spans (findings only)")
+                self.save_ledger()
 
         def research_company(self, ticker: str) -> None:
             c = self.company(ticker)
@@ -2257,6 +2354,16 @@ def make_job_class():
             return rc.envelope(cid, "ok" if not issues else "partial", {"finished": True}, issues), True
 
     return ResearchJob
+
+
+def support_claim(row: dict) -> str:
+    """The claim a support check reads: the proposal's own wording (title, printed timing, stated conditions)."""
+    parts = [row.get("title") or ""]
+    if row.get("date_text"):
+        parts.append(f"({row['date_text']})")
+    if row.get("conditions"):
+        parts.append("Conditions: " + "; ".join(row["conditions"]))
+    return " ".join(p for p in parts if p).strip()
 
 
 def _nullish(v):
