@@ -7112,6 +7112,68 @@ def test_support_attempt_renders_once_in_the_trail():
     _run_node(script)
 
 
+def test_new_run_shows_the_full_instruction_set_served_by_the_server():
+    # CVA 16:44: New Run shows the full instruction set — a read-only
+    # 'Also sent on every research run:' section with the six Where-to-look
+    # points, served by the server (one source of truth). The shown text must
+    # equal the block research_instructions appends to every assignment.
+    import json
+    import subprocess
+
+    from fastapi.testclient import TestClient
+
+    from capture import research_instructions
+    from server.app import create_app
+
+    # the six points, straight from the data file the assignment appends
+    want = research_instructions.where_to_look_points()
+    assert len(want) == 6, want
+    block = research_instructions.WHERE_TO_LOOK
+    for p in want:
+        assert "- " + p in block
+    # and the assignment path really appends them
+    assignment = research_instructions.research_assignment("Focus on catalysts.")
+    for p in want:
+        assert p in assignment
+
+    # the server serves them next to /api/research/options
+    served = TestClient(create_app(runs_dir=REPO / "runs", ui_dir=UI)).get("/api/research/options").json()
+    assert served["where_to_look"] == want
+
+    # the sheet renders the served list verbatim
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("el", "clear", "supportFromOptions", "applySupportOptions", "nrSupportValue"))
+    script = "\n".join([
+        "var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };",
+        "var nrSupportSeq = 0; var nrSupportPending = false;",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, hidden: false,",
+        "  disabled: false, checked: false, title: '', value: '',",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  removeAttribute: function (k) { delete this[k]; } }; }",
+        "var nodes = {};",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        fns,
+        "function textOf(node, out) { out = out || []; if (node && node.textContent) out.push(node.textContent);",
+        "  ((node && node.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        "applySupportOptions(" + json.dumps(served) + ");",
+        "if (nodes['nr-wtl-sec'].hidden) { console.error('section hidden with served points'); process.exit(2); }",
+        "var shown = textOf(nodes['nr-wtl']);",
+        "var want = " + json.dumps(want) + ";",
+        "for (var i = 0; i < want.length; i++)",
+        "  if (shown.indexOf(want[i]) === -1) { console.error('point ' + i + ' missing: ' + shown.slice(0, 200)); process.exit(3); }",
+        # an older server without the field hides the section — nothing guessed
+        "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: null, available: true,",
+        "                                        unavailable_reason: null } });",
+        "if (!nodes['nr-wtl-sec'].hidden) { console.error('section shown without served points'); process.exit(4); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
 def test_checks_on_every_run_section_renders_with_default_on_checkbox():
     # CVA-approved 16:50 order: one 'Checks on every run' section — read-only
     # fact lines, then the wording-check checkbox ON by default; the old

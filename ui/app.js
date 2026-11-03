@@ -4846,6 +4846,20 @@
     var fresh = supportFromOptions(body);
     fresh.touched = nrSupport.touched;
     nrSupport = fresh;
+    // CVA: the full instruction set — the Where-to-look points the server
+    // appends to every research assignment, shown verbatim (one source of
+    // truth in the options answer); an older server without the field hides
+    // the section rather than guessing
+    var wtl = body && body.where_to_look;
+    var wtlSec = document.getElementById('nr-wtl-sec');
+    var wtlHost = document.getElementById('nr-wtl');
+    if (Array.isArray(wtl) && wtl.length && wtlHost && wtlSec) {
+      clear(wtlHost);
+      wtl.forEach(function (p) { wtlHost.append(el('div', null, String(p))); });
+      wtlSec.hidden = false;
+    } else if (wtlSec) {
+      wtlSec.hidden = true;
+    }
     var box = document.getElementById('nr-support');
     var hint = document.getElementById('nr-support-hint');
     // a stale tooltip never survives a later answer (e.g. available after
