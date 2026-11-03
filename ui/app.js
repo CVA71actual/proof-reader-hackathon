@@ -4715,6 +4715,9 @@
     nrSupport = fresh;
     var box = document.getElementById('nr-support');
     var hint = document.getElementById('nr-support-hint');
+    // a stale tooltip never survives a later answer (e.g. available after
+    // unavailable) — the title is per-answer
+    hint.removeAttribute('title');
     box.disabled = !nrSupport.available;
     // an unavailable (or not-yet-loaded) check never shows a tick the run
     // would not read
@@ -4723,9 +4726,10 @@
         nrSupport.choices.indexOf(body.support_check.default) >= 0) box.checked = true;
     if (!nrSupport.loaded) hint.textContent = 'This choice could not be loaded. Close and open New run to try again.';
     else if (!nrSupport.available) {
-      // plain words only — the server's sentence (env var names and all) is
-      // the hover title, off the screen
-      hint.textContent = 'LettuceDetect is not available on this computer.';
+      // plain words only, no product name — the name lives in the trail; the
+      // server's sentence (env var names and all) is the hover title, off the
+      // screen
+      hint.textContent = 'The wording check is not set up on this computer.';
       if (nrSupport.reason) hint.title = nrSupport.reason;
       else hint.removeAttribute('title');
     }

@@ -6265,6 +6265,7 @@ def _new_run_sheet_script(body_lines, extra_fns=()):
         consts,
         "function make() { return { tag: 'div', className: '', textContent: '', children: [], hidden: false, disabled: false,",
         "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  removeAttribute: function (k) { delete this[k]; },",
         "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
         "var nodes = {};",
         "var boxes = [{ value: 'IONS', checked: true, disabled: false }, { value: 'PTGX', checked: true, disabled: false }];",
@@ -6623,12 +6624,14 @@ def test_lettuce_new_run_checkbox_unavailable_shows_reason_and_never_sends():
         "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: null, available: false,",
         "                                        unavailable_reason: 'the pinned weights are not installed (LETTUCE_WEIGHTS_PATH is not a directory)' } });",
         "if (!els['nr-support'].disabled) fail(2, 'unavailable box enabled');",
-        # plain words on screen; the server's sentence (env var names and all) is the hover title only
-        "if (nodes['nr-support-hint'].textContent !== 'LettuceDetect is not available on this computer.')",
+        # plain words on screen, no product name; the server's sentence (env var
+        # names and all) is the hover title only
+        "if (nodes['nr-support-hint'].textContent !== 'The wording check is not set up on this computer.')",
         "  fail(3, nodes['nr-support-hint'].textContent);",
         "if (nodes['nr-support-hint'].title !== 'the pinned weights are not installed (LETTUCE_WEIGHTS_PATH is not a directory)')",
         "  fail(9, nodes['nr-support-hint'].title);",
         "if (/[A-Z_]{6,}/.test(nodes['nr-support-hint'].textContent)) fail(10, 'env var name on screen');",
+        "if (/LettuceDetect/.test(nodes['nr-support-hint'].textContent)) fail(13, 'product name on screen');",
         # a tick never survives the answer that the check is unavailable
         "if (els['nr-support'].checked) fail(11, 'unavailable box stays ticked');",
         "if (nrSupportValue() !== null) fail(4, 'unavailable must send off');",
@@ -6640,6 +6643,11 @@ def test_lettuce_new_run_checkbox_unavailable_shows_reason_and_never_sends():
         "if (els['nr-support'].checked) fail(12, 'not-loaded box ticked');",
         "if (nodes['nr-support-hint'].textContent.indexOf('could not be loaded') === -1) fail(7);",
         "if (nrSupportValue() !== null) fail(8, 'not-loaded must send off');",
+        # a stale tooltip never survives a later answer: available after
+        # unavailable clears the title
+        "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: null, available: true } });",
+        "if (nodes['nr-support-hint'].title) fail(14, 'stale tooltip: ' + nodes['nr-support-hint'].title);",
+        "if (els['nr-support'].disabled) fail(15, 'available box disabled');",
         "console.log('ok');",
     ], extra_fns=('supportFromOptions', 'applySupportOptions', 'nrSupportValue')))
 
