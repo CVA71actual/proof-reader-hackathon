@@ -232,3 +232,46 @@ def test_export_summary_uses_one_model_label():
     got = subprocess.run(["node", "-"], input=script,text=True,capture_output=True)
     assert got.returncode == 0, got.stderr
     assert json.loads(got.stdout) == [["Second reader",NO_SECOND_READER], ["Mistakes caught by the second reader","0"]]
+
+
+# ---------------------------------------------------------------- PROJECTION-002: research runs
+
+
+def test_research_run_export_counters_derive_from_the_review_record():
+    # A research run is choices.models "one" by construction (the reviewer is stage S2).
+    # The export must never read that as 'No second reader in this run': the counters
+    # line derives from run.research.review, and the page-mode one-model line stays off.
+    import copy
+
+    from report.data import build_view
+
+    run = json.loads((REPO / "tests" / "fixtures" / "e2e_saved_run" / "brief" / "run.json").read_text())
+    assert run["run"]["choices"]["models"] == "one" and run["run"]["choices"]["mode"] == "research"
+    decisions = [json.loads(line) for line in
+                 (REPO / "tests" / "fixtures" / "e2e_saved_run" / "brief" / "decisions.jsonl")
+                 .read_text().splitlines() if line.strip()]
+
+    # the S1 placeholder holds no per-company review entries
+    view = build_view(run, decisions, generated_at="2026-11-03T10:00:00+00:00")
+    assert NO_SECOND_READER not in view["counters_line"]
+    assert "no research review recorded" in view["counters_line"]
+    assert view["models_line"] is None
+
+    # a completed S2 review with two stored findings: the line names reviewer and findings
+    reviewed = copy.deepcopy(run)
+    reviewed["run"]["research"]["review"] = {"PTGX": {
+        "status": "complete", "reviewer": "Muse Spark Open",
+        "review": {"findings": [{"finding_id": "f1"}, {"finding_id": "f2"}]}}}
+    view2 = build_view(reviewed, decisions, generated_at="2026-11-03T10:00:00+00:00")
+    assert "research review findings 2 by Muse Spark Open" in view2["counters_line"]
+    assert NO_SECOND_READER not in view2["counters_line"] and "(review incomplete)" not in view2["counters_line"]
+
+    # an incomplete review says so; a clean complete review says no findings
+    partial = copy.deepcopy(reviewed)
+    partial["run"]["research"]["review"]["PTGX"]["status"] = "incomplete"
+    view3 = build_view(partial, decisions, generated_at="2026-11-03T10:00:00+00:00")
+    assert "(review incomplete)" in view3["counters_line"]
+    clean = copy.deepcopy(reviewed)
+    clean["run"]["research"]["review"]["PTGX"]["review"]["findings"] = []
+    view4 = build_view(clean, decisions, generated_at="2026-11-03T10:00:00+00:00")
+    assert "research review by Muse Spark Open: no findings" in view4["counters_line"]

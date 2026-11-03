@@ -2804,8 +2804,9 @@ def test_ticker_intake_pins():
 
 
 def test_intake_scope_line_states_the_page_cap():
-    # INTAKE-PAGE-CAP-001: the scope line says the run reads only the first
-    # pages of each document; it never claims every page was read
+    # INTAKE-PAGE-CAP-001 + research mode: the scope line describes the captured
+    # starting material (the agent loop goes on from there) and the page cap;
+    # it never claims the run "read" the documents, nor every page
     import json
     import subprocess
 
@@ -2824,11 +2825,12 @@ def test_intake_scope_line_states_the_page_cap():
     out = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0, out.stderr
     two, one, legacy = json.loads(out.stdout)
-    assert two == "Read: the first 2 pages of each 8-K press release filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
-    assert one == "Read: the first page of each 8-K press release filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
-    # an intake recorded before the cap read every page it captured: the older line stays
-    assert legacy == "Read: 8-K press releases filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
-    for line in (two, one):
+    assert two == "Captured starting material: the first 2 pages of each 8-K press release filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
+    assert one == "Captured starting material: the first page of each 8-K press release filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
+    # an intake recorded before the cap captured whole documents: the older line stays
+    assert legacy == "Captured starting material: 8-K press releases filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
+    for line in (two, one, legacy):
+        assert line.startswith("Captured starting material: ") and not line.startswith("Read: ")
         assert "every" not in line.lower() and "all " not in line.lower() and "complete" not in line.lower()
 
 
@@ -2884,7 +2886,7 @@ def test_ticker_intake_renders_states_scope_and_continue_button():
         "if (text.indexOf('No company matches this symbol.') === -1) { console.error('reason'); process.exit(6); }",
         # the failure rows stay listed
         "if (text.indexOf('CRNX') === -1 || text.indexOf('DRMA') === -1) { console.error('failures lost'); process.exit(7); }",
-        "if (text.indexOf('Read: the first 2 pages of each 8-K press release filed 4 Aug 2026 to 2 Nov 2026 (90 days).') === -1) { console.error('scope: ' + text); process.exit(8); }",
+        "if (text.indexOf('Captured starting material: the first 2 pages of each 8-K press release filed 4 Aug 2026 to 2 Nov 2026 (90 days).') === -1) { console.error('scope: ' + text); process.exit(8); }",
         "if (text.indexOf('2 ready · 2 could not be prepared') === -1) { console.error('counts'); process.exit(9); }",
         # NEWRUN-ONE-START-001: no start button inside the list — the ONE
         # start button is nr-go at the bottom of the sheet
@@ -2995,7 +2997,7 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
         "  var t2 = textOf(nodes['nr-intake-out']);",
         "  if (t2.indexOf('1 ready · 1 could not be prepared') === -1) { console.error('counts: ' + t2); process.exit(5); }",
         "  if (t2.indexOf('No company matches this symbol.') === -1) { console.error('failure lost'); process.exit(6); }",
-        "  if (t2.indexOf('Read: 8-K press releases filed 4 Aug 2026 to 2 Nov 2026 (90 days).') === -1) { console.error('scope'); process.exit(7); }",
+        "  if (t2.indexOf('Captured starting material: 8-K press releases filed 4 Aug 2026 to 2 Nov 2026 (90 days).') === -1) { console.error('scope'); process.exit(7); }",
         # NEWRUN-ONE-START-001: the ONE start button is nr-go — now 'Continue with 1 ready'
         "  if (!els['nr-preparing'].hidden) { console.error('preparing line stuck'); process.exit(15); }",
         "  if (els['nr-go'].textContent !== 'Continue with 1 ready' || els['nr-go'].disabled)",
@@ -3041,11 +3043,11 @@ def test_new_run_posts_mode_research_and_the_server_accepts_it(tmp_path):
         "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
         "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
         "var els = { 'nr-tickers': { value: '' }, 'nr-limit': { value: '' },",
-        "            'nr-note': { value: 'Focus on catalysts.' }, 'nr-tools': { checked: false },",
-        "            'nr-support': { checked: false } };",
+        "            'nr-note': { value: 'Focus on catalysts.' }, 'nr-tools': { checked: false } };",
         "var nodes = {};",
         "var nrResearch = { defaultText: null, maxLength: null, loaded: true };",
-        "var nrSupport = { loaded: true, available: true, reason: null, choices: ['lettucedetect'], touched: false };",
+        # availability not loaded in this stub: a start sends no support_check
+        "var nrSupport = { loaded: false, available: false, reason: null, choices: [] };",
         "var nrSupportSeq = 0; var nrSupportPending = false;",
         "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
         "  getElementById: function (id) { if (els[id]) return els[id]; if (!nodes[id]) nodes[id] = make(); return nodes[id]; },",
@@ -4311,9 +4313,17 @@ def test_u31_glass8_rulings_2_and_3_and_the_caveat():
     # the Choose-a-run list
     js = (UI / "app.js").read_text()
     assert "Run finished · " in js
-    assert "need review' : 'nothing left to review'" in js
+    assert "need review" in js and "nothing left to review" in js
+    # PROJECTION-004: a finished research run never reads as reviewed — at zero
+    # unresolved both the card and the list say 'no rows waiting on you'
+    assert js.count("'no rows waiting on you'") == 2
+    assert "(meta.choices || {}).mode === 'research' || !!meta.research" in js
+    assert "r.research ? 'no rows waiting on you' : 'nothing left to review'" in js
     assert "el('span', 'dot' + (left > 0 ? ' grey' : ''))" in js
     assert "if (r.status === 'done')" in js
+    # the list entry carries the research flag the wording reads
+    server_app = (UI.parent / "server" / "app.py").read_text()
+    assert '"research": bool(meta.get("research"))' in server_app
     css = (UI / "styles.css").read_text()
     assert ".jb-row1 .dot.grey{background:var(--faint);animation:none}" in css
     # G8-9: (a) the right pane collapses until a row is picked
@@ -6919,7 +6929,8 @@ def _new_run_sheet_script(body_lines, extra_fns=()):
              "applyPasteDisable", "nrSupportValue") + tuple(extra_fns)
     fns = "\n".join(_grab_fn(js, n) for n in names)
     consts = "\n".join(re.search(r"var %s = '[^']*';" % n, js).group(0)
-                       for n in ("NR_PASTE_ONLY", "NR_PREPARE_FIRST", "NR_EMPTY"))
+                       for n in ("NR_PASTE_ONLY", "NR_PREPARE_FIRST", "NR_EMPTY",
+                                 "SUPPORT_LINE_ON", "SUPPORT_LINE_OFF", "SUPPORT_LINE_UNKNOWN"))
     return "\n".join([
         "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',",
         "  'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];",
@@ -7146,7 +7157,7 @@ def test_pr162_scope_wording_and_no_duplicate_counts():
     _run_node(_new_run_sheet_script([
         "renderIntakeStatus(document.getElementById('nr-intake-out'), DONE);",
         "var t = textOf(nodes['nr-intake-out']);",
-        "if (t.indexOf('Read: 8-K press releases filed 30 Jul 2026 to 28 Oct 2026 (90 days).') === -1) fail(2, t);",
+        "if (t.indexOf('Captured starting material: 8-K press releases filed 30 Jul 2026 to 28 Oct 2026 (90 days).') === -1) fail(2, t);",
         "if (/lookback|cutoff|Forms/.test(t)) fail(3, t);",
         "if (t.indexOf('1 document · 1 page') !== -1) fail(4, 'duplicate counts line');",
         "if (t.indexOf('1 document(s), 1 page(s)') === -1) fail(5, 'server reason lost');",
@@ -7188,15 +7199,19 @@ def test_pr162_server_409_used_marks_the_intake_used_with_a_link_to_that_run():
 # ---- LETTUCE-OPTION (quiet advisory, Codex's contract): the claim/evidence
 # pane note shows ONLY a current unsupported_spans finding, understated, with
 # the exact suspect text and source; 'LettuceDetect' attribution and run status
-# live in the trail only; the New run checkbox is offered from
-# GET /api/research/options (server default; unavailable shows its reason).
+# live in the trail only; the New run sheet has NO toggle (CVA): the fifth line
+# under 'Checks on every run' states the check, availability comes from
+# GET /api/research/options, and every start sends it when available.
 
 def test_lettuce_ui_shell_and_finding_helpers():
     js = (UI / "app.js").read_text()
     html = (UI / "index.html").read_text()
     css = (UI / "styles.css").read_text()
-    # the New run checkbox + hint, and the understated pane note style (no badge)
-    assert 'id="nr-support"' in html and 'id="nr-support-hint"' in html
+    # no checkbox anywhere — one read-only line, and the understated pane note style
+    assert 'id="nr-support-line"' in html
+    assert '<input type="checkbox" id="nr-support"' not in html
+    assert 'id="nr-support-hint"' not in html
+    assert "document.getElementById('nr-support-line')" in js
     assert '.supportnote' in css and 'badge' not in css.split('.supportnote')[1][:80]
     assert "getJSON('/api/research/options')" in js
     # helpers exist and are wired into the pane and the trail (definition + call)
@@ -7582,9 +7597,10 @@ def test_later_section_sorts_by_start_date():
     js = (UI / "app.js").read_text()
     cal = _grab_fn(js, "renderCalendar")
     assert "later.slice().sort(" in cal
-def test_checks_on_every_run_section_renders_with_default_on_checkbox():
-    # CVA-approved 16:50 order: one 'Checks on every run' section — read-only
-    # fact lines, then the wording-check checkbox ON by default; the old
+def test_checks_on_every_run_section_renders_the_hallucination_line():
+    # CVA ruling: one 'Checks on every run' section — four read-only fact lines,
+    # then a fifth read-only line for the hallucination check on the wording.
+    # No toggle, no checkbox: available means it runs on every start; the old
     # 'PROPOSED WORDING (optional)' heading is gone. No invented claims: the
     # review line records which model ran and whether it is a different
     # family — it never promises one.
@@ -7597,93 +7613,85 @@ def test_checks_on_every_run_section_renders_with_default_on_checkbox():
         assert line in html, line
     review_line = [l for l in html.splitlines() if "Independent review by a second model" in l][0]
     assert "the run records which one ran and whether it is a different family" in review_line
-    assert "Wording check by a hallucination model (advisory; on by default)" in html
-    assert ("Flags proposed wording the cited source may not support. "
-            "A flag changes no check, count or decision.") in html
+    support = [l for l in html.splitlines() if 'id="nr-support-line"' in l][0]
+    assert ("&#10003; Hallucination check on the wording (advisory &mdash; "
+            "a flag changes no check, count or decision)") in support
+    # the fifth line sits under 'Checks on every run', after the review line
+    assert html.index(review_line) < html.index(support)
+    assert "Wording check by a hallucination model" not in html
+    assert '<input type="checkbox" id="nr-support"' not in html
     assert "Proposed wording" not in html
     assert "Check the proposed wording against the cited source" not in html
 
 
-def test_lettuce_new_run_checkbox_offered_from_options():
-    # available: enabled, ON by default (the CVA ruling); a person's untick
-    # survives reopens and delayed answers
+def test_lettuce_new_run_available_sends_on_every_start_with_no_toggle():
+    # CVA: no toggle. Available means the fifth line states the check and every
+    # start sends lettucedetect — there is nothing to tick or untick, and a
+    # later options answer cannot switch it off while it stays available
     _run_node(_new_run_sheet_script([
-        "els['nr-support'] = { checked: false, disabled: true };",
         "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: null, available: true,",
         "                                        unavailable_reason: null } });",
-        "if (els['nr-support'].disabled) fail(2, 'available box disabled');",
-        # CVA ruling: ON by default whenever the check is offered — the body
-        # carries support_check with no click at all
-        "if (!els['nr-support'].checked) fail(3, 'available should be on by default');",
-        "if (nrSupportValue() !== 'lettucedetect') fail(4, 'default-on should send the choice');",
+        "if (nodes['nr-support-line'].hidden) fail(2, 'line still hidden');",
+        "if (nodes['nr-support-line'].textContent !== SUPPORT_LINE_ON) fail(3, nodes['nr-support-line'].textContent);",
+        "if (nrSupportValue() !== 'lettucedetect') fail(4, 'available must send the choice');",
         "startRunNow();",
         "if (!posts.length || posts[0].support_check !== 'lettucedetect') fail(6, JSON.stringify(posts));",
-        # the person can still turn it off; a later answer keeps that choice
-        "els['nr-support'].checked = false;",
-        "nrSupport.touched = true;",
+        # a re-open's fresh answer: still on, still sent — no person choice exists
         "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: 'lettucedetect', available: true } });",
-        "if (els['nr-support'].checked) fail(8, 'person choice reset by a re-open');",
-        "if (nrSupportValue() !== null) fail(9, 'person off should send off');",
+        "if (nodes['nr-support-line'].textContent !== SUPPORT_LINE_ON) fail(8, nodes['nr-support-line'].textContent);",
+        "if (nrSupportValue() !== 'lettucedetect') fail(9, 're-open must keep sending');",
         "console.log('ok');",
     ], extra_fns=('supportFromOptions', 'applySupportOptions', 'nrSupportValue')))
 
 
-def test_lettuce_new_run_checkbox_unavailable_shows_reason_and_never_sends():
+def test_lettuce_new_run_unavailable_shows_reason_and_never_sends():
     _run_node(_new_run_sheet_script([
-        "els['nr-support'] = { checked: true, disabled: false };",
         "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: null, available: false,",
         "                                        unavailable_reason: 'the pinned weights are not installed (LETTUCE_WEIGHTS_PATH is not a directory)' } });",
-        "if (!els['nr-support'].disabled) fail(2, 'unavailable box enabled');",
         # plain words on screen, no product name; the server's sentence (env var
         # names and all) is the hover title only
-        "if (nodes['nr-support-hint'].textContent !== 'The wording check is not set up on this computer.')",
-        "  fail(3, nodes['nr-support-hint'].textContent);",
-        "if (nodes['nr-support-hint'].title !== 'the pinned weights are not installed (LETTUCE_WEIGHTS_PATH is not a directory)')",
-        "  fail(9, nodes['nr-support-hint'].title);",
-        "if (/[A-Z_]{6,}/.test(nodes['nr-support-hint'].textContent)) fail(10, 'env var name on screen');",
-        "if (/LettuceDetect/.test(nodes['nr-support-hint'].textContent)) fail(13, 'product name on screen');",
-        # a tick never survives the answer that the check is unavailable
-        "if (els['nr-support'].checked) fail(11, 'unavailable box stays ticked');",
-        "if (nrSupportValue() !== null) fail(4, 'unavailable must send off');",
+        "if (nodes['nr-support-line'].textContent !== '– Hallucination check: not set up on this computer')",
+        "  fail(3, nodes['nr-support-line'].textContent);",
+        "if (nodes['nr-support-line'].title !== 'the pinned weights are not installed (LETTUCE_WEIGHTS_PATH is not a directory)')",
+        "  fail(9, nodes['nr-support-line'].title);",
+        "if (/[A-Z_]{6,}/.test(nodes['nr-support-line'].textContent)) fail(10, 'env var name on screen');",
+        "if (/LettuceDetect/.test(nodes['nr-support-line'].textContent)) fail(13, 'product name on screen');",
+        "if (nrSupportValue() !== null) fail(4, 'unavailable must send nothing');",
         "startRunNow();",
         "if (!posts.length || posts[0].support_check !== null) fail(5, JSON.stringify(posts));",
-        # a failed options read: disabled with the retry line, still off
+        # a failed options read: the retry line, still nothing sent
         "applySupportOptions(null);",
-        "if (!els['nr-support'].disabled) fail(6, 'not-loaded box enabled');",
-        "if (els['nr-support'].checked) fail(12, 'not-loaded box ticked');",
-        "if (nodes['nr-support-hint'].textContent.indexOf('could not be loaded') === -1) fail(7);",
-        "if (nrSupportValue() !== null) fail(8, 'not-loaded must send off');",
+        "if (nodes['nr-support-line'].textContent.indexOf('could not be loaded') === -1) fail(7);",
+        "if (nrSupportValue() !== null) fail(8, 'not-loaded must send nothing');",
         # a stale tooltip never survives a later answer: available after
-        # unavailable clears the title
+        # unavailable clears the title and states the check
         "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: null, available: true } });",
-        "if (nodes['nr-support-hint'].title) fail(14, 'stale tooltip: ' + nodes['nr-support-hint'].title);",
-        "if (els['nr-support'].disabled) fail(15, 'available box disabled');",
+        "if (nodes['nr-support-line'].title) fail(14, 'stale tooltip: ' + nodes['nr-support-line'].title);",
+        "if (nodes['nr-support-line'].textContent !== SUPPORT_LINE_ON) fail(15, nodes['nr-support-line'].textContent);",
+        "if (nrSupportValue() !== 'lettucedetect') fail(16, 'available again must send');",
         "console.log('ok');",
     ], extra_fns=('supportFromOptions', 'applySupportOptions', 'nrSupportValue')))
 
 
-def test_lettuce_pending_reopen_sends_off_until_the_fresh_answer():
-    # NR-002 (Manus 05:31): reopening while the options GET is pending must
-    # leave the box disabled AND unticked, and a start reads no stale value —
-    # off/null ships until the fresh answer lands
+def test_lettuce_pending_reopen_sends_nothing_until_the_fresh_answer():
+    # NR-002 (Manus 05:31): reopening while the options GET is pending must not
+    # ship a stale availability answer — a start sends nothing until the fresh
+    # answer lands, then every start sends while the check is available
     _run_node(_new_run_sheet_script([
-        # a ticked, available box left over from a previous open
-        "els['nr-support'] = { checked: true, disabled: false };",
-        "nrSupport = { loaded: true, available: true, reason: null, choices: ['lettucedetect'], touched: true };",
+        # an available answer left over from a previous open
+        "nrSupport = { loaded: true, available: true, reason: null, choices: ['lettucedetect'] };",
         "var deferred = [];",
         "A.researchOptions = function () { return new Promise(function (r) { deferred.push(r); }); };",
         "refreshSupportOptions();",
-        "if (els['nr-support'].checked) fail(2, 'pending box stays ticked');",
-        "if (!els['nr-support'].disabled) fail(3, 'pending box enabled');",
         "startRunNow();",
         "if (!posts.length || posts[0].support_check !== null) fail(4, JSON.stringify(posts));",
         "posts.length = 0;",
-        # the fresh available answer re-enables the box; the person's tick ships
+        # the fresh available answer: the line states the check and starts send it
         "deferred[0]({ support_check: { choices: ['lettucedetect'], default: null, available: true,",
         "                               unavailable_reason: null } });",
         "Promise.resolve().then(function () {",
-        "  if (els['nr-support'].disabled) fail(5, 'box still disabled after the answer');",
-        "  els['nr-support'].checked = true;",
+        "  if (nodes['nr-support-line'].textContent !== SUPPORT_LINE_ON)",
+        "    fail(5, nodes['nr-support-line'].textContent);",
         "  return later();",   # the first start's deferred server reply frees nrBusy
         "}).then(function () {",
         "  startRunNow();",
@@ -7696,9 +7704,8 @@ def test_lettuce_pending_reopen_sends_off_until_the_fresh_answer():
 def test_lettuce_older_options_answer_never_overrides_the_newer():
     # NR-003 (Manus 05:31): two opens in flight; the newer request's
     # unavailable answer owns the state — the older request's late available
-    # answer must not enable the box or restore the availability hint
+    # answer must not flip the line or leak a value
     _run_node(_new_run_sheet_script([
-        "els['nr-support'] = { checked: false, disabled: true };",
         "var deferred = [];",
         "A.researchOptions = function () { return new Promise(function (r) { deferred.push(r); }); };",
         "refreshSupportOptions();",   # request 1
@@ -7706,16 +7713,14 @@ def test_lettuce_older_options_answer_never_overrides_the_newer():
         "deferred[1]({ support_check: { choices: ['lettucedetect'], default: null, available: false,",
         "                               unavailable_reason: 'NEW_UNAVAILABLE' } });",
         "Promise.resolve().then(function () {",
-        "  if (!els['nr-support'].disabled) fail(2, 'unavailable box enabled');",
-        "  if (nodes['nr-support-hint'].textContent !== 'The wording check is not set up on this computer.')",
-        "    fail(3, nodes['nr-support-hint'].textContent);",
+        "  if (nodes['nr-support-line'].textContent !== SUPPORT_LINE_OFF)",
+        "    fail(3, nodes['nr-support-line'].textContent);",
         # the older request's late available answer: ignored
         "  deferred[0]({ support_check: { choices: ['lettucedetect'], default: null, available: true,",
         "                                unavailable_reason: null } });",
         "  return Promise.resolve().then(function () {",
-        "    if (!els['nr-support'].disabled) fail(4, 'stale answer enabled the box');",
-        "    if (nodes['nr-support-hint'].textContent !== 'The wording check is not set up on this computer.')",
-        "      fail(5, nodes['nr-support-hint'].textContent);",
+        "    if (nodes['nr-support-line'].textContent !== SUPPORT_LINE_OFF)",
+        "      fail(5, nodes['nr-support-line'].textContent);",
         "    if (nrSupportValue() !== null) fail(6, 'stale answer leaked a value');",
         "    console.log('ok');",
         "  });",

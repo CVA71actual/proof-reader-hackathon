@@ -352,6 +352,9 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
             item = {"id": run_id, "number": meta.get("number"), "label": meta.get("label"),
                     "sample": meta.get("sample"), "started_at": meta.get("started_at"),
                     "finished_at": meta.get("finished_at"), "status": meta.get("status"),
+                    # PROJECTION-004: the Choose-a-run list words a finished research run
+                    # differently — it must not read as reviewed
+                    "research": bool(meta.get("research")) or (meta.get("choices") or {}).get("mode") == "research",
                     "as_of_note": as_of_note(run), "counts": state["counts"],
                     "unresolved": state["unresolved"]}
             list_cache[run_id] = (stamp, item)

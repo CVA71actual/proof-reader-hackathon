@@ -4920,16 +4920,19 @@
       noteHintText(document.getElementById('nr-note').value, nrResearch);
   }
   document.getElementById('nr-note').addEventListener('input', function () { nrError(''); updateNoteHint(); });
-  // ---------------- LETTUCE-OPTION: the proposed-wording check, offered from
-  // GET /api/research/options — the server's choices and its availability.
-  // Nothing is offered that the server does not list; a person's untick is
-  // never reset by a re-open or a delayed options answer.
-  var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };
-  // NR-002: while a fresh options request is in flight a start reads no value —
-  // the displayed disabled box is unticked too, so a stale tick never ships.
+  // ---------------- LETTUCE-OPTION (CVA: no toggle): the hallucination check on
+  // the wording is not a choice. It is SENT ON EVERY START when the server
+  // (/api/research/options) says it is available; otherwise nothing is sent.
+  // The fifth line under "Checks on every run" says which, in plain words.
+  var nrSupport = { loaded: false, available: false, reason: null, choices: [] };
+  // NR-002: while a fresh options request is in flight a start sends nothing —
+  // a stale availability answer never ships.
   // NR-003: only the newest request may apply (the company-list loader's rule).
   var nrSupportSeq = 0;
   var nrSupportPending = false;
+  var SUPPORT_LINE_ON = '✓ Hallucination check on the wording (advisory — a flag changes no check, count or decision)';
+  var SUPPORT_LINE_OFF = '– Hallucination check: not set up on this computer';
+  var SUPPORT_LINE_UNKNOWN = '– Hallucination check: availability could not be loaded. Close and open New run to try again.';
   function supportFromOptions(body) {
     var o = body && body.support_check;
     var choices = o && Array.isArray(o.choices) ? o.choices : null;
@@ -4939,50 +4942,31 @@
   }
   function applySupportOptions(body) {
     nrSupportPending = false;    // the accepted answer ends the pending window
-    var fresh = supportFromOptions(body);
-    fresh.touched = nrSupport.touched;
-    nrSupport = fresh;
-    var box = document.getElementById('nr-support');
-    var hint = document.getElementById('nr-support-hint');
-    // a stale tooltip never survives a later answer (e.g. available after
-    // unavailable) — the title is per-answer
-    hint.removeAttribute('title');
-    box.disabled = !nrSupport.available;
-    // an unavailable (or not-yet-loaded) check never shows a tick the run
-    // would not read
-    if (!nrSupport.available) box.checked = false;
-    // CVA ruling: the wording check is ON by default whenever it is offered —
-    // a person who unticked keeps it off across reopens and delayed answers
-    if (!nrSupport.touched && nrSupport.available) box.checked = true;
-    if (!nrSupport.loaded) hint.textContent = 'This choice could not be loaded. Close and open New run to try again.';
-    else if (!nrSupport.available) {
-      // plain words only, no product name — the name lives in the trail; the
-      // server's sentence (env var names and all) is the hover title, off the
-      // screen
-      hint.textContent = 'The wording check is not set up on this computer.';
-      if (nrSupport.reason) hint.title = nrSupport.reason;
-      else hint.removeAttribute('title');
+    nrSupport = supportFromOptions(body);
+    var line = document.getElementById('nr-support-line');
+    // a stale tooltip never survives a later answer — the title is per-answer;
+    // the server's reason (env var names and all) stays on hover, off the screen
+    line.removeAttribute('title');
+    line.textContent = !nrSupport.loaded ? SUPPORT_LINE_UNKNOWN
+      : nrSupport.available ? SUPPORT_LINE_ON : SUPPORT_LINE_OFF;
+    if (!nrSupport.loaded || !nrSupport.available) {
+      if (nrSupport.reason) line.title = nrSupport.reason;
     }
-    else hint.textContent = 'Advisory only — a flag changes no check, count or decision.';
+    line.hidden = false;
   }
-  document.getElementById('nr-support').addEventListener('change', function () { nrSupport.touched = true; });
-  // what a start sends: the server's choice word only when the person ticked
-  // an offered, available box — otherwise absent (the server's own off).
-  // A refresh in flight (reopen) reads nothing until the fresh answer lands.
+  // what a start sends: the server's choice word whenever the check is
+  // available — the person has no toggle. Unavailable, not loaded, or a refresh
+  // still in flight: nothing is sent (the server's own off).
   function nrSupportValue() {
-    var box = document.getElementById('nr-support');
     if (nrSupportPending) return null;
-    if (nrSupport.loaded && nrSupport.available && box.checked &&
+    if (nrSupport.loaded && nrSupport.available &&
         nrSupport.choices.indexOf('lettucedetect') >= 0) return 'lettucedetect';
     return null;
   }
-  // the sheet's open handler: refresh the wording-check offer every open, the
-  // way the company list does — seq-guarded, and pending (disabled + unticked)
+  // the sheet's open handler: refresh the wording-check availability every open,
+  // the way the company list does — seq-guarded, and pending (nothing sent)
   // until the fresh answer applies
   function refreshSupportOptions() {
-    var box = document.getElementById('nr-support');
-    box.disabled = true;
-    box.checked = false;
     nrSupportPending = true;
     var seq = ++nrSupportSeq;
     return A.researchOptions().then(function (o) {
@@ -5088,9 +5072,11 @@
     if (nrIntake.timer) clearInterval(nrIntake.timer);
     nrIntake.timer = null;
   }
-  // the window every ticker was captured over, in plain words, once per intake
-  // "Read: the first 2 pages of each 8-K press release filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
-  // INTAKE-PAGE-CAP-001: the run reads only the first pages of each document;
+  // the starting material captured for every ticker, in plain words, once per intake
+  // "Captured starting material: the first 2 pages of each 8-K press release filed 30 Jul 2026 to 28 Oct 2026 (90 days)."
+  // Research mode runs the agent loop after preparation: the intake is the captured
+  // starting material, not what the run "reads" — the agent goes on from there.
+  // INTAKE-PAGE-CAP-001: preparation captures only the first pages of each document;
   // an intake without the cap recorded keeps the older line
   function intakeScopeLine(st) {
     if (!st || typeof st.cutoff !== 'string' || typeof st.window_start !== 'string') return '';
@@ -5102,7 +5088,7 @@
     var what = (typeof cap === 'number' && cap > 0)
       ? 'the first ' + (cap === 1 ? 'page' : cap + ' pages') + ' of each ' + forms + ' press release'
       : forms + ' press releases';
-    return 'Read: ' + what + ' filed ' + from + ' ' + st.window_start.slice(0, 4) +
+    return 'Captured starting material: ' + what + ' filed ' + from + ' ' + st.window_start.slice(0, 4) +
            ' to ' + to + ' ' + st.cutoff.slice(0, 4) + days + '.';
   }
   function renderIntakeStatus(host, st) {
@@ -5288,8 +5274,8 @@
     // the hint promises; a loaded default is never overwritten
     if (!nrResearch.loaded) A.settings().then(function (s) { applyResearchSettings(s); });
     else updateNoteHint();
-    // the wording-check choice: refresh each open, like the company list —
-    // pending (disabled + unticked) until the fresh options answer
+    // the wording-check availability: refresh each open, like the company list —
+    // pending (nothing sent on a start) until the fresh options answer
     refreshSupportOptions();
   });
   document.getElementById('nr-cancel').addEventListener('click', function () { newrunWrap.hidden = true; });
@@ -5424,8 +5410,12 @@
     if (st === 'done') {
       var left = (detail.state && detail.state.unresolved) || 0;
       row1.append(el('span', 'dot' + (left > 0 ? ' grey' : '')));
+      // PROJECTION-004: a research run is not independently reviewed by finishing —
+      // at zero unresolved it says nothing is waiting, never that nothing needs review
+      var researchMode = (meta.choices || {}).mode === 'research' || !!meta.research;
       row1.append(el('span', null, 'Run finished · ' +
-        (left > 0 ? left + ' need review' : 'nothing left to review')));
+        (left > 0 ? left + ' need review'
+                  : (researchMode ? 'no rows waiting on you' : 'nothing left to review'))));
     } else {
       row1.append(el('span', null, JOB_STATUS_WORDS[st] || st));
     }
@@ -5571,8 +5561,9 @@
       var tail = 'needs attention ' + r.unresolved +
         (r.status ? ' · ' + (JOB_STATUS_WORDS[r.status] || r.status) : '');
       if (r.status === 'done') {
+        // PROJECTION-004: same research wording as the card — no 'reviewed' claim
         tail = 'Run finished · ' + (r.unresolved > 0
-          ? r.unresolved + ' need review' : 'nothing left to review');
+          ? r.unresolved + ' need review' : (r.research ? 'no rows waiting on you' : 'nothing left to review'));
       }
       b.append(el('div', 'm', 'Run ' + r.number + ' · ' + dateTimeWords(r.started_at) + ' · ' + tail +
         (r.as_of_note ? ' · ' + r.as_of_note : '')));
