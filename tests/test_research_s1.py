@@ -947,7 +947,7 @@ def test_strict_admission_refuses_a_call_whose_bound_would_cross_the_cap(runs_di
     reason = meta["research"]["companies"]["PTGX"]["limitation"]["reason"]
     assert "would exceed the $30.00 cap" in reason
     assert meta["research"]["reservation"]["assumptions"]["searches_per_request"] == 5
-    assert meta["research"]["reservation"]["assumptions"]["search_context_tokens_per_search"] == 8000
+    assert meta["research"]["reservation"]["assumptions"]["search_context_tokens_per_search"] == 20000
 
 
 def test_csp_comes_first_without_a_head_and_escaped_css_urls_do_not_survive():
@@ -1169,3 +1169,17 @@ def test_an_incomplete_answer_with_finish_draft_never_finalizes_the_company(runs
     assert any(x["tool"] == "finish_draft" and x["issues"][0]["code"] == "incomplete_answer"
                for x in run["run"]["research"]["refusals"])
     assert len(reader.requests) == 2 and run["run"]["status"] == "needs_input"
+
+
+def test_the_reservation_covers_the_live_reply_that_exceeded_it():
+    """Live smoke 2026-11-02: a reply used 88,011 input tokens; the old bound (8,000 per search) reserved 57,279. The
+    same request is now reserved above what it used. max_tool_calls stays unsent (no search limit is on)."""
+    old_bound = 57_279
+    request_bytes = old_bound - 5 * 8000 - research.REQUEST_OVERHEAD_TOKENS      # 13,183 bytes
+    body = rr.build_request(instructions="", input_items=[], functions=[], searches_left=10 ** 9)
+    body.pop("max_tool_calls")
+    body["input"] = [{"role": "user", "content": "x" * (request_bytes - rr.request_size(body) - 30)}]
+    assert abs(rr.request_size(body) - request_bytes) < 40
+    bound, searches = research.input_token_bound(body)
+    assert searches == research.ASSUMED_SEARCHES_PER_REQUEST and bound > 88_011
+    assert research.SEARCH_CONTEXT_TOKENS == 20000

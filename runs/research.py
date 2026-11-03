@@ -65,7 +65,9 @@ LIMIT_KEYS = ("max_spend_per_company_usd", "max_requests_per_company", "max_sear
               "max_minutes_per_company", "stop_on_empty_rate", "concurrency")
 # Reservation assumptions (not limits): tokens the provider may add per search and per request beyond the bytes sent.
 ASSUMED_SEARCHES_PER_REQUEST = 5
-SEARCH_CONTEXT_TOKENS = 8000
+# 20,000 (was 8,000): the first live smoke run had a reply of 88,011 input tokens against a 57,279 reservation, so
+# 8,000 per search understated the context web_search adds. Not a limit: it makes the reserved worst case honest.
+SEARCH_CONTEXT_TOKENS = 20000
 REQUEST_OVERHEAD_TOKENS = 4096
 EDGAR_PAGE = 40
 LINE_WORDS_MAX = 40
@@ -254,6 +256,16 @@ class Stop(Exception):
         self.kind, self.reason = kind, reason
 
 
+def input_token_bound(body: dict, history_bytes: int = 0) -> tuple[int, int]:
+    """(input-token bound, search bound) reserved for one request: its bytes (plus the stored history with
+    previous_response_id), the assumed search context per search, and a fixed overhead."""
+    searches = 0
+    if any(t.get("type") == "web_search" for t in body.get("tools", [])):
+        searches = body.get("max_tool_calls") or ASSUMED_SEARCHES_PER_REQUEST
+    size = rr.request_size(body) + (history_bytes if body.get("previous_response_id") else 0)
+    return size + searches * SEARCH_CONTEXT_TOKENS + REQUEST_OVERHEAD_TOKENS, searches
+
+
 def make_job_class():
     jobs = _jobs()
 
@@ -332,14 +344,7 @@ def make_job_class():
 
         def worst_case(self, body: dict, ticker: str) -> tuple[float | None, int, int]:
             """(worst-case dollars, input-token bound, search bound) of one request."""
-            st = self.state[ticker]
-            searches = 0
-            if any(t.get("type") == "web_search" for t in body.get("tools", [])):
-                searches = body.get("max_tool_calls") or ASSUMED_SEARCHES_PER_REQUEST
-            size = rr.request_size(body)
-            if body.get("previous_response_id"):
-                size += st["history_bytes"]
-            input_bound = size + searches * SEARCH_CONTEXT_TOKENS + REQUEST_OVERHEAD_TOKENS
+            input_bound, searches = input_token_bound(body, self.state[ticker]["history_bytes"])
             worst = prices.responses_worst_case_usd(jobs.price_name(body["model"]), input_bound,
                                                     body["max_output_tokens"], searches)
             return worst, input_bound, searches
