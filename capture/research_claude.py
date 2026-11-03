@@ -8,9 +8,9 @@ translates the loop's chat messages to the Messages API and back:
     model claude-opus-5-5; max_tokens 16384 (LIMITS-005); tool_choice auto only (forced choice 400s on Opus 5.5);
     thinking {"type": "adaptive"} (it cannot be disabled on Opus 5.5) with block_binding drop_block (below);
     output_config {"effort": "high"} set explicitly (the model's default is medium);
-    betas server-side-fallback-2026-07-01 with fallbacks "default" (a declined request is re-run server-side on
-    Anthropic's recommended fallback model; the model that answered is recorded), and
-    thinking-binding-controls-2026-08-01.
+    betas thinking-binding-controls-2026-08-01. No server-side fallback (Codex ruling, CAP-001): one request is one
+    attempt; the model that answered and every attempt the API reports are still recorded and priced at their own
+    rates (an unknown model is unpriced).
 
 Every assistant turn's full response content (thinking blocks included) is put back into the history unchanged
 (ChatReply.raw_content -> the loop's assistant message "provider_content"); all tool results of a turn go back in ONE
@@ -42,9 +42,15 @@ FAMILY = "Claude"
 KEY_ENV = "ANTHROPIC_API_KEY"
 MAX_TOKENS = 16384
 EFFORT = "high"
-BETAS = ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"]
+# Codex ruling for S2-01 / CAP-001 (2026-11-03): NO automatic server-side fallback. One request is one attempt and the
+# gate reserves exactly that; a refusal is a recorded stop with its category; the only fallback is the explicitly
+# admitted Muse Spark Open reviewer, honestly labelled.
+BETAS = ["thinking-binding-controls-2026-08-01"]
 THINKING = {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
 PROBE_MAX_TOKENS = 64          # the access check's reply allowance (thinking is always on)
+# Each attempt the API reports is priced at its own model's rates. With no server-side fallback there is one attempt
+# on claude-opus-5-5; any other model answering has no price here, so that call is unpriced (never priced low).
+PRICE_NAME_OF = {"claude-opus-5-5": "Claude Opus 5.5"}
 NO_SDK = ("The anthropic Python SDK is not installed in this environment, so the Claude reviewer cannot run "
           "(installing it is pending CVA's approval).")
 STOP_TO_FINISH = {"tool_use": "tool_calls", "end_turn": "stop", "max_tokens": "length", "refusal": "refusal",
@@ -122,34 +128,88 @@ def to_anthropic(messages: list[dict]) -> tuple[str, list[dict]]:
     return "\n\n".join(system), out
 
 
+class Malformed(ValueError):
+    pass
+
+
+def _component(part, key, required: bool) -> int | None:
+    """One usage count. Absent optional -> 0; absent required -> None (unknown); an explicit invalid value (a bool, a
+    negative, a string, a float) -> Malformed, so the whole call's accounting is unknown (S2-03)."""
+    v = _get(part, key)
+    if v is None:
+        return None if required else 0
+    if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+        raise Malformed(key)
+    return v
+
+
+def _attempt_usage(part) -> tuple[int, int] | None:
+    try:
+        i = _component(part, "input_tokens", True)
+        o = _component(part, "output_tokens", True)
+        w = _component(part, "cache_creation_input_tokens", False)
+        r = _component(part, "cache_read_input_tokens", False)
+    except Malformed:
+        return None
+    if i is None or o is None:
+        return None
+    # cache writes cost 1.25x input; reads are counted at the full input price (never priced low)
+    return i + (-(-w * 5 // 4)) + r, o
+
+
+def _tool_calls(blocks: list[dict]) -> list[dict]:
+    """Every tool_use block, validated (S2-02): a non-empty string id and name and an object input. Anything else is
+    a malformed reply, never a clean completion."""
+    calls = []
+    for b in blocks:
+        if b.get("type") != "tool_use":
+            continue
+        tid, name, args = b.get("id"), b.get("name"), b.get("input")
+        if not (isinstance(tid, str) and tid and isinstance(name, str) and name and isinstance(args, dict)):
+            raise Malformed("tool_use")
+        calls.append({"id": tid, "name": name, "arguments": json.dumps(args)})
+    return calls
+
+
 def parse_message(msg, requested: str) -> ChatReply:
     """A ChatReply from a Messages API message (an SDK object or a dict). Unknown usage stays None."""
     blocks = [_block_dict(b) for b in (_get(msg, "content") or [])]
-    calls = [{"id": b.get("id"), "name": b.get("name"), "arguments": json.dumps(b.get("input") or {})}
-             for b in blocks if b.get("type") == "tool_use"]
+    try:
+        calls = _tool_calls(blocks)
+    except Malformed:
+        return ChatReply(_get(msg, "model") or requested, may_have_been_billed=True,
+                         error="The reply had a malformed tool call (a tool_use without an id, a name or an object "
+                               "input), so nothing in it was used.")
     text = "".join(b.get("text") or "" for b in blocks if b.get("type") == "text") or None
     stop = _get(msg, "stop_reason")
     usage = _get(msg, "usage")
     iterations = _get(usage, "iterations") or []
-    # billing: usage.iterations is the per-attempt source of truth (a declined attempt plus the fallback's);
-    # top-level usage covers only the attempt that produced the message
-    parts = list(iterations) if iterations else [usage]
-    p = c = 0
-    for part in parts:
-        ins = [_count(_get(part, k)) for k in ("input_tokens", "cache_creation_input_tokens",
-                                               "cache_read_input_tokens")]
-        out_ = _count(_get(part, "output_tokens"))
-        if ins[0] is None or out_ is None:
-            p = c = None
-            break
-        # cache writes cost 1.25x input; reads are counted at the full input price (never priced low)
-        p += ins[0] + (-(-(ins[1] or 0) * 5 // 4)) + (ins[2] or 0)
-        c += out_
     served = _get(msg, "model") or requested
+    served = served if isinstance(served, str) else requested
+    # billing: usage.iterations is the per-attempt source of truth (declined attempts are plain "message" entries,
+    # the serving fallback attempt is "fallback_message"); top-level usage covers only the attempt that answered.
+    # Each attempt is priced at its own model's rates (a declined attempt at the requested model's).
+    parts = list(iterations) if iterations else [usage]
+    attempts: list[dict] | None = []
+    for part in parts:
+        got = _attempt_usage(part)
+        if got is None:
+            attempts = None
+            break
+        fb = _get(part, "type") == "fallback_message"
+        # a declined attempt ran on the requested model; the serving one (or a reply with no iterations, including a
+        # sticky fallback turn) on the model that answered
+        model = served if (fb or not iterations) else requested
+        attempts.append({"kind": "fallback" if fb else "attempt", "model": model,
+                         "price_name": PRICE_NAME_OF.get(model),
+                         "prompt_tokens": got[0], "completion_tokens": got[1]})
+    p = sum(a["prompt_tokens"] for a in attempts) if attempts else None
+    c = sum(a["completion_tokens"] for a in attempts) if attempts else None
     fallback_ran = any(_get(i, "type") == "fallback_message" for i in iterations)
     details = _get(msg, "stop_details")
-    reply = ChatReply(served if isinstance(served, str) else requested, content=text, tool_calls=calls,
+    reply = ChatReply(served, content=text, tool_calls=calls,
                       finish_reason=STOP_TO_FINISH.get(stop, stop), prompt_tokens=p, completion_tokens=c)
+    reply.attempts = attempts
     reply.raw_content = blocks
     reply.stop_details = ({"category": _get(details, "category"), "explanation": _get(details, "explanation")}
                           if details is not None else None)
@@ -199,8 +259,7 @@ class ClaudeChat:
     def request(self, messages: list[dict], tools: list[dict] | None, max_tokens: int | None) -> dict:
         system, msgs = to_anthropic(messages)
         req: dict[str, Any] = {"model": MODEL, "max_tokens": max_tokens or MAX_TOKENS, "messages": msgs,
-                               "thinking": THINKING, "output_config": {"effort": EFFORT}, "betas": list(BETAS),
-                               "fallbacks": "default"}
+                               "thinking": THINKING, "output_config": {"effort": EFFORT}, "betas": list(BETAS)}
         if system:
             req["system"] = system
         if tools:

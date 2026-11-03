@@ -622,6 +622,10 @@ def make_job_class():
                             cost = t["worst"] if billed else 0.0
                         elif t.get("kind") == "search":
                             cost = prices.request_cost_usd(t["name"], usage.get("searches"))
+                        elif req.get("attempts"):      # each attempt at its own model's rates
+                            parts = [prices.cost_usd(a.get("price_name"), a.get("prompt_tokens"),
+                                                     a.get("completion_tokens")) for a in req["attempts"]]
+                            cost = None if any(x is None for x in parts) else round(sum(parts), prices.ROUND_TO)
                         else:
                             cost = prices.cost_usd(t["name"], usage.get("prompt_tokens"), usage.get("completion_tokens"))
                         u = self.review_usage(ticker)
@@ -811,7 +815,9 @@ def make_job_class():
                       "usage": {"prompt_tokens": getattr(reply, "prompt_tokens", None),
                                 "completion_tokens": getattr(reply, "completion_tokens", None), "searches": 0},
                       "error": getattr(reply, "error", None) if reply is not None else "No access check reply.",
-                      "may_have_been_billed": bool(getattr(reply, "may_have_been_billed", False))})
+                      "may_have_been_billed": bool(getattr(reply, "may_have_been_billed", False)),
+                      **({"attempts": reply.attempts} if reply is not None and not reply.error
+                         and getattr(reply, "attempts", None) else {})})
             if reply is None:
                 return {"checked": False, "reason": "The reviewer model has no access check."}
             refused = reply.http_status in rv.REFUSED_STATUSES
@@ -883,9 +889,19 @@ def make_job_class():
                                          spend_gate=self.review_gate(ticker), model=reviewer)
                 refused = record.get("access_refused")
                 fallback = getattr(self.tools, "reviewer_fallback", None)
-                if refused and not choice.get("fallback_used") and fallback is not None:
-                    # the provider refused the key for this model on a real call: never retried; the declared fallback
-                    # reviews this company and every later one in the run
+                first_call = (record.get("turns") or 0) <= 1 and not record.get("findings") \
+                    and not record.get("assessments") and not record.get("rejected")
+                if refused and not choice.get("fallback_used") and fallback is not None and not first_call:
+                    # OUTCOME-001 (live review d313da2): refused MID-review. That reviewer's validated work is kept and
+                    # its review ends incomplete with the reason; the fallback reviews only later companies.
+                    record["reason"] = (f"Incomplete: {choice['name']} was refused by the provider mid-review (HTTP "
+                                        f"{refused.get('http_status')}) after {record.get('turns')} turn(s); its "
+                                        f"{len(record.get('findings') or [])} validated finding(s) are kept. "
+                                        f"{refused.get('message') or ''}").strip()
+                    self.refused_reviewer(ticker, refused)
+                elif refused and not choice.get("fallback_used") and fallback is not None:
+                    # the provider refused the key on the FIRST call (no work done): never retried; the declared
+                    # fallback reviews this company and every later one in the run
                     reviewer, choice = self.refused_reviewer(ticker, refused)
                     record = rv.review_draft(company=company, assignment=self.choices.get("note_for_agent") or "",
                                              proposals=[self.review_proposal(r) for r in rows], sources=given,

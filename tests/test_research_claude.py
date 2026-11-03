@@ -120,8 +120,7 @@ def test_a_normal_claude_review_sends_the_documented_request_and_passes_thinking
     assert r1["model"] == "claude-opus-5-5" and r1["max_tokens"] == 16384
     assert r1["thinking"] == {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
     assert r1["output_config"] == {"effort": "high"} and r1["tool_choice"] == {"type": "auto"}
-    assert r1["betas"] == ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"]
-    assert r1["fallbacks"] == "default"
+    assert r1["betas"] == ["thinking-binding-controls-2026-08-01"] and "fallbacks" not in r1   # Codex ruling
     assert "independent reviewer" in r1["system"] and all(m["role"] != "system" for m in r1["messages"])
     assert {t["name"] for t in r1["tools"]} >= {"search", "fetch", "read_source_pages", "assess_rows",
                                                 "nothing_material", "report_finding", "finish_review"}
@@ -163,29 +162,17 @@ def test_a_refusal_is_a_recorded_stop_with_its_category(runs_dir):
     assert e["review"]["refusal"] == {"category": "cyber", "explanation": "declined", "model": "claude-opus-5-5"}
 
 
-def test_a_server_side_fallback_model_answering_is_recorded_and_its_attempts_are_counted(runs_dir):
-    iters = [{"type": "message", "input_tokens": 600, "output_tokens": 0},
-             {"type": "fallback_message", "input_tokens": 600, "output_tokens": 120}]
-
+def test_an_unexpected_other_model_answering_is_recorded_and_unpriced_never_priced_low(runs_dir):
+    """No server-side fallback is requested; if another model nonetheless answers, it is recorded and its call is
+    unpriced (no price is known for it), so the gate stops paid work instead of under-counting."""
     def first(kw):
         m = _assess(kw)
-        m.update(model="claude-opus-4-8", usage=_usage(600, 120, iterations=iters))
-        m["content"].insert(0, {"type": "fallback", "from": {"model": "claude-opus-5-5"},
-                                "to": {"model": "claude-opus-4-8"}})
+        m.update(model="claude-opus-4-8")
         return m
-    fake, rid, run = _run(runs_dir, [first, message([tool_use("finish_review", {"summary": "x"}, "t-f")],
-                                                    model="claude-opus-4-8")])
+    fake, rid, run = _run(runs_dir, [first])
     rec = run["run"]["research"]["review"]["PTGX"]["review"]
-    served = rec["served_by"][0]
-    assert served["model"] == "claude-opus-4-8" and served["fallback_ran"] is True
-    assert served["requested"] == "claude-opus-5-5"
-    usage = run["run"]["research"]["companies"]["PTGX"]["review_usage"]
-    from runs import prices
-    # both attempts are charged (the declined one and the fallback's), at the reviewer's rates
-    assert usage["spend_usd"] == pytest.approx(prices.cost_usd("Claude Opus 5.5", 1200, 120)
-                                               + prices.cost_usd("Claude Opus 5.5", 600, 120))
-    assistant = next(m for m in fake.requests[1]["messages"] if m["role"] == "assistant")
-    assert assistant["content"][0]["type"] == "fallback"                  # echoed back unchanged
+    assert rec["served_by"][0]["model"] == "claude-opus-4-8"
+    assert run["run"]["research"]["companies"]["PTGX"]["review_usage"]["unpriced_calls"] == 1
 
 
 def test_a_403_falls_back_to_muse_spark_open_and_the_label_says_same_family(runs_dir):
@@ -236,3 +223,42 @@ def test_without_the_sdk_the_claude_reviewer_says_so_and_the_fallback_runs(monke
 def test_the_reviewer_reserves_its_own_reply_allowance_on_the_gate(runs_dir):
     fake, rid, run = _run(runs_dir, [_assess, message([tool_use("finish_review", {"summary": "ok"}, "t-fin")])])
     assert rc_claude.ClaudeChat.max_tokens == 16384 == fake.requests[0]["max_tokens"]
+
+
+# ------------------------------------------------------------------ CAP-001 (live review 0b1b2d2) and Manus S2-02/03
+
+def test_one_request_is_one_attempt_and_settles_within_its_reservation(runs_dir):
+    """CAP-001 (Codex ruling): no server-side fallback, so one request bills one attempt, reserved exactly; a reply
+    that used its whole reply allowance still settles within the reservation."""
+    def full(kw):
+        m = _assess(kw)
+        m["usage"] = _usage(1000, 16384)
+        return m
+    fake, rid, run = _run(runs_dir, [full, message([tool_use("finish_review", {"summary": "x"}, "t")])])
+    r = run["run"]["research"]
+    assert all("fallbacks" not in q for q in fake.requests)
+    assert r["review"]["PTGX"]["status"] == "complete" and not r.get("reservation_exceeded")
+
+
+@pytest.mark.parametrize("bad", [{"id": None}, {"id": ""}, {"name": None}, {"input": None}, {"input": []},
+                                 {"input": False}])
+def test_a_malformed_tool_use_is_never_a_clean_completion(runs_dir, bad):
+    block = {**tool_use("finish_review", {"summary": "done"}, "t-fin"), **bad}
+    fake, rid, run = _run(runs_dir, [message([block])])
+    e = run["run"]["research"]["review"]["PTGX"]
+    assert e["status"] == "incomplete" and "malformed tool call" in e["reason"] and e["clean"] is False
+
+
+@pytest.mark.parametrize("bad", [{"cache_creation_input_tokens": -5}, {"input_tokens": True},
+                                 {"output_tokens": "100"}, {"cache_read_input_tokens": 1.5}])
+def test_an_invalid_usage_component_is_unknown_accounting_never_a_tiny_price(runs_dir, bad):
+    fake, rid, run = _run(runs_dir, [_assess, message([tool_use("finish_review", {"summary": "ok"}, "t-fin")],
+                                                      usage={**_usage(), **bad})])
+    u = run["run"]["research"]["companies"]["PTGX"]["review_usage"]
+    assert u["unpriced_calls"] == 1 and run["run"]["unpriced_calls"] >= 1
+
+
+def test_absent_optional_cache_fields_are_fine():
+    reply = rc_claude.parse_message(message([tool_use("finish_review", {"summary": "ok"}, "t")],
+                                            usage={"input_tokens": 10, "output_tokens": 3}), rc_claude.MODEL)
+    assert reply.prompt_tokens == 10 and reply.completion_tokens == 3 and reply.error is None
