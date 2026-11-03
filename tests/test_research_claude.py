@@ -120,8 +120,7 @@ def test_a_normal_claude_review_sends_the_documented_request_and_passes_thinking
     assert r1["model"] == "claude-opus-5-5" and r1["max_tokens"] == 16384
     assert r1["thinking"] == {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
     assert r1["output_config"] == {"effort": "high"} and r1["tool_choice"] == {"type": "auto"}
-    assert r1["betas"] == ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"]
-    assert r1["fallbacks"] == "default"
+    assert r1["betas"] == ["thinking-binding-controls-2026-08-01"] and "fallbacks" not in r1   # Codex ruling
     assert "independent reviewer" in r1["system"] and all(m["role"] != "system" for m in r1["messages"])
     assert {t["name"] for t in r1["tools"]} >= {"search", "fetch", "read_source_pages", "assess_rows",
                                                 "nothing_material", "report_finding", "finish_review"}
@@ -163,29 +162,17 @@ def test_a_refusal_is_a_recorded_stop_with_its_category(runs_dir):
     assert e["review"]["refusal"] == {"category": "cyber", "explanation": "declined", "model": "claude-opus-5-5"}
 
 
-def test_a_server_side_fallback_model_answering_is_recorded_and_its_attempts_are_counted(runs_dir):
-    iters = [{"type": "message", "input_tokens": 600, "output_tokens": 0},
-             {"type": "fallback_message", "input_tokens": 600, "output_tokens": 120}]
-
+def test_an_unexpected_other_model_answering_is_recorded_and_unpriced_never_priced_low(runs_dir):
+    """No server-side fallback is requested; if another model nonetheless answers, it is recorded and its call is
+    unpriced (no price is known for it), so the gate stops paid work instead of under-counting."""
     def first(kw):
         m = _assess(kw)
-        m.update(model="claude-opus-4-8", usage=_usage(600, 120, iterations=iters))
-        m["content"].insert(0, {"type": "fallback", "from": {"model": "claude-opus-5-5"},
-                                "to": {"model": "claude-opus-4-8"}})
+        m.update(model="claude-opus-4-8")
         return m
-    fake, rid, run = _run(runs_dir, [first, message([tool_use("finish_review", {"summary": "x"}, "t-f")],
-                                                    model="claude-opus-4-8")])
+    fake, rid, run = _run(runs_dir, [first])
     rec = run["run"]["research"]["review"]["PTGX"]["review"]
-    served = rec["served_by"][0]
-    assert served["model"] == "claude-opus-4-8" and served["fallback_ran"] is True
-    assert served["requested"] == "claude-opus-5-5"
-    usage = run["run"]["research"]["companies"]["PTGX"]["review_usage"]
-    from runs import prices
-    # both attempts are charged (the declined one and the fallback's), at the reviewer's rates
-    assert usage["spend_usd"] == pytest.approx(prices.cost_usd("Claude Opus 5.5", 1200, 120)
-                                               + prices.cost_usd("Claude Opus 5.5", 600, 120))
-    assistant = next(m for m in fake.requests[1]["messages"] if m["role"] == "assistant")
-    assert assistant["content"][0]["type"] == "fallback"                  # echoed back unchanged
+    assert rec["served_by"][0]["model"] == "claude-opus-4-8"
+    assert run["run"]["research"]["companies"]["PTGX"]["review_usage"]["unpriced_calls"] == 1
 
 
 def test_a_403_falls_back_to_muse_spark_open_and_the_label_says_same_family(runs_dir):
@@ -236,3 +223,121 @@ def test_without_the_sdk_the_claude_reviewer_says_so_and_the_fallback_runs(monke
 def test_the_reviewer_reserves_its_own_reply_allowance_on_the_gate(runs_dir):
     fake, rid, run = _run(runs_dir, [_assess, message([tool_use("finish_review", {"summary": "ok"}, "t-fin")])])
     assert rc_claude.ClaudeChat.max_tokens == 16384 == fake.requests[0]["max_tokens"]
+
+
+# ------------------------------------------------------------------ CAP-001 (live review 0b1b2d2) and Manus S2-02/03
+
+def test_one_request_is_one_attempt_and_settles_within_its_reservation(runs_dir):
+    """CAP-001 (Codex ruling): no server-side fallback, so one request bills one attempt, reserved exactly; a reply
+    that used its whole reply allowance still settles within the reservation."""
+    def full(kw):
+        m = _assess(kw)
+        m["usage"] = _usage(1000, 16384)
+        return m
+    fake, rid, run = _run(runs_dir, [full, message([tool_use("finish_review", {"summary": "x"}, "t")])])
+    r = run["run"]["research"]
+    assert all("fallbacks" not in q for q in fake.requests)
+    assert r["review"]["PTGX"]["status"] == "complete" and not r.get("reservation_exceeded")
+
+
+@pytest.mark.parametrize("bad", [{"id": None}, {"id": ""}, {"name": None}, {"input": None}, {"input": []},
+                                 {"input": False}])
+def test_a_malformed_tool_use_is_never_a_clean_completion(runs_dir, bad):
+    block = {**tool_use("finish_review", {"summary": "done"}, "t-fin"), **bad}
+    fake, rid, run = _run(runs_dir, [message([block])])
+    e = run["run"]["research"]["review"]["PTGX"]
+    assert e["status"] == "incomplete" and "malformed tool call" in e["reason"] and e["clean"] is False
+
+
+@pytest.mark.parametrize("bad", [{"cache_creation_input_tokens": -5}, {"input_tokens": True},
+                                 {"output_tokens": "100"}, {"cache_read_input_tokens": 1.5}])
+def test_an_invalid_usage_component_is_unknown_accounting_never_a_tiny_price(runs_dir, bad):
+    fake, rid, run = _run(runs_dir, [_assess, message([tool_use("finish_review", {"summary": "ok"}, "t-fin")],
+                                                      usage={**_usage(), **bad})])
+    u = run["run"]["research"]["companies"]["PTGX"]["review_usage"]
+    assert u["unpriced_calls"] == 1 and run["run"]["unpriced_calls"] >= 1
+
+
+def test_absent_optional_cache_fields_are_fine():
+    reply = rc_claude.parse_message(message([tool_use("finish_review", {"summary": "ok"}, "t")],
+                                            usage={"input_tokens": 10, "output_tokens": 3}), rc_claude.MODEL)
+    assert reply.prompt_tokens == 10 and reply.completion_tokens == 3 and reply.error is None
+
+
+# ------------------------------------------------------------------ billing refusal (live 06:33 PT): no credit left
+
+class BadRequestError(Exception):
+    """The shape of anthropic.BadRequestError: status_code 400 and the API's error body."""
+    status_code = 400
+
+    def __init__(self, message, etype="invalid_request_error"):
+        super().__init__(message)
+        self.message = message
+        self.body = {"type": "error", "error": {"type": etype, "message": message}}
+
+
+CREDIT = ("Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or "
+          "purchase credits.")
+
+
+def _fallback_run(runs_dir, fake, fallback):
+    from fastapi.testclient import TestClient
+    from server.app import create_app
+    from tests.test_research_review_wire import PAGE1, PAGE2, PR1, PR2
+    tools = F.tools({PR1: (200, "text/html; charset=utf-8", PAGE1), PR2: (200, "text/html; charset=utf-8", PAGE2)})
+    tools.reviewer, tools.reviewer_fallback, tools.brave = rc_claude.ClaudeChat(client=fake), fallback, F.FakeBrave()
+    tools.adjudicator = F.FakeChat([F.verdict({"verdict": "unresolved", "reason": "x"})], model=F.ADJUDICATOR_MODEL)
+    reader = F.FakeResponses(happy_script())
+    app = create_app(runs_dir=runs_dir, reader=reader, background=False, second_reader=None, wonder_reader=None,
+                     sam_reader=None, research_tools=tools, research_reader=reader)
+    rid = TestClient(app).post("/api/runs/new", json={"mode": "research", "companies": ["PTGX"],
+                                                      "as_of": "2026-11-02"}).json()["id"]
+    return run_json(runs_dir, rid)
+
+
+def test_a_credit_balance_refusal_at_the_access_check_falls_back_like_a_403(runs_dir):
+    fake = FakeAnthropic([], probe=BadRequestError(CREDIT))
+    fallback = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"}))], **F.FALLBACK)
+    run = _fallback_run(runs_dir, fake, fallback)
+    r = run["run"]["research"]
+    acc = r["reviewer_access"]
+    assert fake.probes == 1 and fake.requests == [] and acc["refused"] is True
+    assert acc["reason"] == "Claude reviewer unavailable: API credit balance too low"
+    assert "credit balance is too low" in acc["message"]
+    e = r["review"]["PTGX"]
+    assert e["status"] == "complete" and e["reviewer"] == "Muse Spark Open" and e["multi_family"]["met"] is False
+    assert e["reviewer_choice"]["primary_unavailable"].startswith("Claude reviewer unavailable: API credit balance")
+    assert "same model family as the researcher" in e["label"] and "independently" not in e["label"]
+    from tools import research_smoke
+    assert research_smoke.reviewer_line(r) == ("Reviewer: Muse Spark Open (fallback: Claude reviewer unavailable: "
+                                               "API credit balance too low)")
+
+
+def test_a_credit_balance_refusal_mid_review_keeps_the_findings(runs_dir):
+    from tests.test_research_review_wire import CONDITION
+
+    def first(kw):
+        def lost(draft):
+            return tool_use("report_finding", {"kind": "lost_condition", "evidence": [
+                {"source_id": "src-r1-ptgx", "quote": CONDITION}], "text": "dropped", "row_revision_ids": [
+                {"row_id": draft[0]["row_id"], "revision_id": 1}]}, "t-find")
+        return _assess(kw, verdict="finding", before=(lost,))
+    fake = FakeAnthropic([first, BadRequestError(CREDIT)])
+    fallback = F.FakeChat([], **F.FALLBACK)
+    run = _fallback_run(runs_dir, fake, fallback)
+    e = run["run"]["research"]["review"]["PTGX"]
+    row = next(x for x in run["rows"] if x.get("research"))
+    assert fallback.sent == [] and e["status"] == "incomplete" and e["reviewer"] == "Claude Opus 5.5"
+    assert "mid-review (Claude reviewer unavailable: API credit balance too low)" in e["reason"]
+    assert [f["kind"] for f in row["research"]["review_findings"] if f["current"]] == ["lost_condition"]
+    assert run["run"]["research"]["reviewer_access"]["reason"].endswith("credit balance too low")
+
+
+@pytest.mark.parametrize("err,expected", [
+    (BadRequestError(CREDIT), True),
+    (BadRequestError("max_tokens: Field required"), False),                 # an ordinary bad request
+    (BadRequestError(CREDIT, etype="overloaded_error"), False),             # the message alone is not enough
+    (PermissionDeniedError(CREDIT), False),                                 # 403 has its own rule
+])
+def test_only_anthropics_credit_balance_400_is_a_billing_refusal(err, expected):
+    assert rc_claude.billing_refusal(err) is expected

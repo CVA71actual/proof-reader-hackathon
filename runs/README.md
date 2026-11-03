@@ -593,8 +593,10 @@ research ends, for any reason except a person's stop (finished, spend cap, a saf
 failure), `capture/research_reviewer.review_draft` attacks that company's draft. The reviewer is Claude Opus 5.5
 (`claude-opus-5-5`, Anthropic, family Claude; MULTI-FAMILY-001, CVA 2026-11-03 "Claude for reviewer for now") through
 `capture/research_claude.py` (the anthropic SDK, imported lazily; `client.beta.messages.stream` + `get_final_message`,
-adaptive thinking with `block_binding: drop_block`, effort high, max_tokens 16384, tool_choice auto, server-side
-fallbacks "default" with the served model recorded in `review.served_by`; every assistant turn's content goes back
+adaptive thinking with `block_binding: drop_block`, effort high, max_tokens 16384, tool_choice auto; NO server-side
+fallback (Codex ruling, CAP-001: one request is one attempt, reserved exactly), the model that answered recorded in
+`review.served_by` and any model without a known price unpriced; malformed tool_use blocks and invalid usage counts are
+never a clean or priced result; every assistant turn's content goes back
 unchanged; all tool results of a turn in one user message, `is_error` on failures; a `refusal` stop is recorded with its
 category). DeepSeek V4 Pro on Baseten stays a configured option (our Baseten key was refused for it, HTTP 403). Muse
 Spark Open is a declared fallback used only when Claude is unavailable or refused, and then the record

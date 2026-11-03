@@ -151,9 +151,12 @@ def reviewer_line(research: dict) -> str:
     choices = [e.get("reviewer_choice") or {} for e in entries]
     fb = next((c for c in choices if c.get("fallback_used")), None)
     if fb:
-        status = (fb.get("primary_refused") or {}).get("http_status") or acc.get("http_status")
-        why = (f" (fallback: {fb.get('primary')} " + (f"refused {status}" if status else
-                                                     f"unavailable: {fb.get('primary_unavailable')}") + ")")
+        refused = fb.get("primary_refused") or {}
+        status = refused.get("http_status") or acc.get("http_status")
+        reason = refused.get("reason") or acc.get("reason")
+        why = (f" (fallback: {reason})" if reason else
+               f" (fallback: {fb.get('primary')} " + (f"refused {status}" if status else
+                                                      f"unavailable: {fb.get('primary_unavailable')}") + ")")
     return f"Reviewer: {' and '.join(ran)}{why}"
 
 
