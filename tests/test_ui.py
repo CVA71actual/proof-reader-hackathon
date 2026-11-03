@@ -1638,7 +1638,7 @@ def test_pr171_review_tick_state_survives_refusal():
     names = ("el", "nrError", "renderChosen", "renderPrevCompanies", "nrPreparedTickers", "syncStartButton",
              "intakeDoneN", "tickedReadyCount", "applyPasteDisable", "syncPasteMode", "startRunFromIntake",
              "nrStartClick", "researchReady", "notePayload", "nrModels", "stopIntakePoll",
-             "renderIntakeStatus", "intakeScopeLine", "dayMonth")
+             "renderIntakeStatus", "intakeScopeLine", "dayMonth", "nrSupportValue")
     fns = "\n".join(_grab_fn(js, n) for n in names)
     script = "\n".join([
         "var NR_PASTE_ONLY = 'paste only';",
@@ -1655,6 +1655,7 @@ def test_pr171_review_tick_state_survives_refusal():
         "var nodes = {};",
         "var nrChosen = {}; var nrPrepUnticked = {}; var nrCompanies = []; var nrBusy = false;",
         "var nrResearch = { defaultText: null, maxLength: null, loaded: true };",
+        "var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };",
         "var nrIntake = { id: 'ik1', seq: 1, timer: null, last: null, text: null, usedId: null, usedRun: null };",
         "var DONE = { intake_id: 'ik1', status: 'done', ready_count: 2, failed_count: 0,",
         "  requested: ['PTGX', 'CRNX'], tickers: [",
@@ -1768,6 +1769,7 @@ def test_your_call_note_survives_background_polling():
              "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds", "restoreFolds", "judgmentDecidedPane",
              "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck", "listReasonLine",
              "shownDateText", "shownField", "whySection", "keptCurrent", "codeExclusionHistory", "detailsPane",
+             "supportFindingFor", "supportNoteText",
              "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "disagreementSection",
              "postDecision", "checkFnFor", "reportUrl", "reportRefusalReason", "dayInWords", "eventWord",
              "renderJudgment", "researchLabelLine", "researchContextSection")
