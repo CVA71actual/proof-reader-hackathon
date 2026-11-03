@@ -14,10 +14,15 @@ Limits (CVA ruling 2026-11-02: "I don't want any limits on anything without my a
     max_fetches_per_company, max_pages_per_company, max_minutes_per_company, stop_on_empty_rate.
     concurrency (default 3) is a rate-limit safety setting only: every company is queued and runs; none is dropped.
     There is no page cap on a fetched source.
+Stopping rule (STOP-RULE-001, CVA 2026-11-03, ON by default, settable in research_limits, 0 = off): a company's
+research ENDS AS FINISHED, then goes on to the review, adjudication and support check and publishes, when it has gone
+stall_turns_per_company (40) model turns with no new proposal, reaches turn_ceiling_per_company (250) model turns or
+minutes_ceiling_per_company (45) minutes, or a person chooses Finish now (request_finish). Each is recorded in
+run.research.kill_conditions, on the company (ended_by) and on the Agent trail.
 With the optional limits off, a company's loop ends only when: the model says it is done (finish_draft, or a final
-answer in prose after one reminder to use the tools), the spend cap is reached (a recorded limitation), a person
-stops the run (request_stop), or a technical failure (an error answer, a service that did not answer, an unexpected
-error). Two recorded safety stops were APPROVED by CVA (LIMITS-002, 2026-11-02): two empty replies in a row stop that
+answer in prose after one reminder to use the tools), a stopping rule above, the spend cap is reached (a recorded
+limitation), a person stops the run (request_stop: discard, nothing reviewed or published), or a technical failure
+(an error answer, a service that did not answer, an unexpected error). Two recorded safety stops were APPROVED by CVA (LIMITS-002, 2026-11-02): two empty replies in a row stop that
 company; a prose-only reply after one reminder counts as done. A third rule (stop after the same action with the same
 result three times) is a PROPOSAL only and is not applied: repeats are recorded, nothing more. A limit or a stop never publishes anything: rows stay proposals, the run is not
 "done", and the draft audit says the draft is partial. One company's failure is recorded and the others go on.
@@ -77,9 +82,19 @@ REVIEW_STAGE = "independent_review"
 DEFAULT_SPEND_CAP_USD = 30.0
 DEFAULT_CONCURRENCY = 3
 RESEARCH_TURN_LIMIT = 1_000_000     # a research run is not paused by the page-mode turn budget; turns are counted only
+# STOP-RULE-001 (CVA 2026-11-03, after live run 9: 283 turns, ~29 minutes, nothing new after turn 257, stopped by
+# hand so nothing was reviewed or published): "it has to have a rule for stopping." Three code defaults, ON, each a
+# recorded setting in research_limits (0 = off). Each ENDS a company's research as finished (not a limitation): the
+# run goes on to the independent review, adjudication and the support check, then publishes like a model finish.
+#   stall_turns_per_company: N model turns in a row with no new proposal (a new row or a new revision of one for that
+#       company; a refused proposal, an exact duplicate and a repeated search are no progress). Run 9's largest gap
+#       between new proposals was 30 turns.
+#   turn_ceiling_per_company: model turns per company.  minutes_ceiling_per_company: minutes per company.
+STOP_RULE_DEFAULTS = {"stall_turns_per_company": 40, "turn_ceiling_per_company": 250,
+                      "minutes_ceiling_per_company": 45}
 LIMIT_KEYS = ("max_spend_per_company_usd", "max_requests_per_company", "max_searches_per_company",
               "max_searches_per_request", "max_fetches_per_company", "max_pages_per_company",
-              "max_minutes_per_company", "stop_on_empty_rate", "concurrency")
+              "max_minutes_per_company", "stop_on_empty_rate", "concurrency") + tuple(STOP_RULE_DEFAULTS)
 # Reservation assumptions (not limits): tokens the provider may add per search and per request beyond the bytes sent.
 ASSUMED_SEARCHES_PER_REQUEST = 5
 # 20,000 (was 8,000): the first live smoke run had a reply of 88,011 input tokens against a 57,279 reservation, so
@@ -101,6 +116,7 @@ UNSETTLED_SOURCES_MAX = 1
 REPLAY_TURNS = 3
 LINE_WORDS_MAX = 40
 STOP_FILE = "STOP_REQUESTED.json"
+FINISH_FILE = "FINISH_REQUESTED.json"      # a person's "finish now": stop searching, review what was found, publish
 TICKER = re.compile(r"^[A-Z0-9.-]{1,10}$")
 NCT = re.compile(r"^NCT[0-9]{8}$")
 MAX_COMPANIES = 10
@@ -151,7 +167,8 @@ def support_check_options() -> dict:
 
 
 def validate_limits(raw) -> dict:
-    """choices.research_limits: every key present, null = off. Unknown keys and wrong types are refused."""
+    """choices.research_limits: every key present, null = off (the STOP_RULE_DEFAULTS keys: null = the default, 0 =
+    off). Unknown keys and wrong types are refused."""
     raw = {} if raw is None else raw
     if not isinstance(raw, dict):
         raise ValueError("research_limits must be an object.")
@@ -165,6 +182,14 @@ def validate_limits(raw) -> dict:
             v = DEFAULT_CONCURRENCY if v is None else v
             if not (isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= MAX_COMPANIES):
                 raise ValueError(f"concurrency must be a whole number from 1 to {MAX_COMPANIES}.")
+        elif k in STOP_RULE_DEFAULTS:
+            v = STOP_RULE_DEFAULTS[k] if v is None else v
+            ok = (isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0 and v == v
+                  and v != float("inf") and (k == "minutes_ceiling_per_company" or isinstance(v, int)))
+            if not ok:
+                raise ValueError(f"{k} must be a whole number of "
+                                 f"{'minutes' if k == 'minutes_ceiling_per_company' else 'turns'}, zero (off), "
+                                 f"or null (the default, {STOP_RULE_DEFAULTS[k]}).")
         elif k == "stop_on_empty_rate":
             v = bool(v) if v is not None else False
             if not isinstance(raw.get(k, False), (bool, type(None))):
@@ -198,6 +223,18 @@ def request_stop(runs_dir: Path, run_id: str, note: str | None = None) -> dict:
     path = Path(runs_dir) / run_id / "research" / STOP_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     rec = {"requested_at": now_utc(), "by": "person", "note": note}
+    path.write_text(json.dumps(rec) + "\n")
+    return rec
+
+
+def request_finish(runs_dir: Path, run_id: str, note: str | None = None) -> dict:
+    """A person's "finish now" (STOP-RULE-001): every company ends its research before its next model call, as
+    finished; the independent review, adjudication and the support check then run on what was found (under the
+    spending cap) and the run publishes like a normal finish. request_stop (discard) is unchanged and wins."""
+    path = Path(runs_dir) / run_id / "research" / FINISH_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rec = {"requested_at": now_utc(), "by": "person", "note": note,
+           "meaning": "Stop searching now; review and check what was found, then publish."}
     path.write_text(json.dumps(rec) + "\n")
     return rec
 
@@ -435,6 +472,9 @@ def make_job_class():
 
         def stop_requested(self) -> bool:
             return (self.dir / "research" / STOP_FILE).exists()
+
+        def finish_requested(self) -> bool:
+            return (self.dir / "research" / FINISH_FILE).exists()
 
         def worst_case(self, body: dict, ticker: str) -> tuple[float | None, int, int]:
             """(worst-case dollars, input-token bound, search bound) of one request."""
@@ -1315,7 +1355,10 @@ def make_job_class():
                 self.meta["status_reason"] = (f"Researched {len(companies)} compan{'y' if len(companies) == 1 else 'ies'}: "
                                               f"{rows} proposal{'s' if rows != 1 else ''}, "
                                               f"{len(self.run['sources'])} sources captured. "
-                                              f"{self.research['label']}.")
+                                              f"{self.research['label']}."
+                                              + "".join(f" {t}: research ended — {c['ended_by']['why']}, "
+                                                        f"it then went to review." for t, c in companies.items()
+                                                        if c.get("ended_by")))
                 self.save_ledger()
                 return
             parts = [f"{t}: {c['status_reason']}" for t, c in unfinished.items()]
@@ -1455,7 +1498,7 @@ def make_job_class():
                                        "calls": {}, "actions": {}, "leads": {}, "history_bytes": 0,
                                        "fetch_by_url": {}, "finish_attempts": 0, "as_of": as_of,
                                        "delivered": {}, "settled": {}, "compacted": set(), "turn_starts": [],
-                                       "brave_calls": {}, "brave_items": [],
+                                       "brave_calls": {}, "brave_items": [], "last_progress_turn": 0,
                                        "window_end": window_end, "started": time.monotonic()}
             from capture import research_instructions
             assignment = research_instructions.research_assignment(self.choices.get("note_for_agent"))
@@ -1483,6 +1526,8 @@ def make_job_class():
             while True:
                 self.retire_brave(ticker, c["requests"])       # every path: Brave payloads are delivered only once
                 self.check_company_limits(ticker)
+                if self.stop_rule_ended(ticker):
+                    return          # STOP-RULE-001: finished; the review and checks run next (run_company)
                 searches_left = self.searches_left(ticker)
                 items = (pending if (continuation == rr.CONTINUE_PREVIOUS and prev_id)
                          else self.replay_input(ticker, history, len(first)))
@@ -1679,6 +1724,43 @@ def make_job_class():
                     (time.monotonic() - st["started"]) / 60 >= L["max_minutes_per_company"]:
                 raise Stop("limit", f"Per-company time limit reached ({L['max_minutes_per_company']} minutes), a "
                                     f"setting a person turned on.")
+
+        def stop_rule_ended(self, ticker: str) -> bool:
+            """STOP-RULE-001, before each model call: a person's finish-now, the turn ceiling, the time ceiling or the
+            stall rule ends this company's research as FINISHED (recorded in kill_conditions, on the company and on
+            the trail). A person's discard stop is left to the gate (it wins: nothing is reviewed or published)."""
+            if self.stop_requested():
+                return False
+            c, L, st = self.company(ticker), self.limits, self.state[ticker]
+            turns, last = c["requests"], st["last_progress_turn"]
+            minutes = (time.monotonic() - st["started"]) / 60
+            stall, ceiling, mins = (L.get(k) for k in STOP_RULE_DEFAULTS)
+            if self.finish_requested():
+                code, setting, why = "finish_now", None, "a person chose Finish now"
+            elif ceiling and turns >= ceiling:
+                code, setting, why = "turn_ceiling", ceiling, f"the ceiling of {ceiling} model turns was reached"
+            elif mins and minutes >= mins:
+                code, setting, why = "minutes_ceiling", mins, f"the ceiling of {mins:g} minutes was reached"
+            elif stall and turns - last >= stall:
+                code, setting, why = "stall", stall, f"no new proposal in {stall} turns (stall rule)"
+            else:
+                return False
+            reason = f"Research ended — {why}; moving to review."
+            open_ = self.unsettled(ticker)
+            rec = {"code": code, "ticker": ticker, "at": now_utc(), "setting": setting, "turn": turns,
+                   "last_proposal_turn": last or None, "minutes": round(minutes, 2), "outcome": "finished",
+                   "detail": f"{ticker}: research ended — {why}; moving to review."}
+            with jobs.RUN_LOCK:
+                self.research["kill_conditions"].append(rec)
+                c["ended_by"] = {**{k: rec[k] for k in ("code", "setting", "turn", "last_proposal_turn", "minutes")},
+                                "why": why}
+                c["finish"] = {"by": code, "at": rec["at"], "limitations": [], "unsettled_sources": open_}
+                c["status_reason"] = reason + (f" {', '.join(open_)} was captured and not concluded."
+                                               if open_ else "")
+            self.step(ticker, "limit", "Code", "runs.research", rec["detail"], rule=code, turn=turns,
+                      last_proposal_turn=last or None)
+            self.save_ledger()
+            return True
 
         def note_attempt(self, empty: bool) -> None:
             with jobs.RUN_LOCK:
@@ -2379,6 +2461,7 @@ def make_job_class():
                     self.company(ticker)["proposals"] += 1
                 else:
                     self.run["rows"][self.run["rows"].index(existing)] = row
+                st["last_progress_turn"] = self.company(ticker)["requests"]     # STOP-RULE-001: progress
             checks = ", ".join(f"{c['label']} {c['result'].replace('_', ' ')}" for c in row["checks"])
             self.step(ticker, "proposal", "Model", "Muse Spark",
                       f"Proposed {row['id']} (revision {row['research']['revision']}): {row['title']} "

@@ -248,4 +248,8 @@ re-check without its re-check.
 tickers, `spending_limit_usd` (default $30, the only limit on), optional `research_limits` (all off by default) and the
 editable `note_for_agent`. `create_app(research_tools=..., research_reader=...)` injects the fetcher/renderer and the
 Responses reader (tests pass fakes; the default is live). `POST /api/runs/{id}/research-stop` asks every company to stop
-before its next model call; nothing is published. `POST /api/runs/{id}/resume` refuses a research run in S1.
+before its next model call; nothing is published. `POST /api/runs/{id}/research-finish` (body optional,
+`{"note": text}`; 202 with `{requested_at, by, note, meaning}`) is Finish now (STOP-RULE-001): every company ends
+its research before its next model call as finished, then the review, adjudication and support check run on what
+was found and the run publishes; research-stop wins if both are asked. Both answer 409 unless the run is a queued or
+running research run. `POST /api/runs/{id}/resume` refuses a research run in S1.

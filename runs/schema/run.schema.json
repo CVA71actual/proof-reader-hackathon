@@ -80,7 +80,10 @@
                                                "max_pages_per_company": {"type": ["integer", "null"], "minimum": 1},
                                                "max_minutes_per_company": {"type": ["number", "null"], "exclusiveMinimum": 0},
                                                "stop_on_empty_rate": {"type": "boolean"},
-                                               "concurrency": {"type": "integer", "minimum": 1, "maximum": 10}}}
+                                               "concurrency": {"type": "integer", "minimum": 1, "maximum": 10},
+                                               "stall_turns_per_company": {"type": "integer", "minimum": 0, "description": "STOP-RULE-001: research for a company ends as finished (then review) after this many model turns with no new proposal; default 40; 0 = off."},
+                                               "turn_ceiling_per_company": {"type": "integer", "minimum": 0, "description": "STOP-RULE-001: model turns per company before its research ends as finished (then review); default 250; 0 = off."},
+                                               "minutes_ceiling_per_company": {"type": "number", "minimum": 0, "description": "STOP-RULE-001: minutes per company before its research ends as finished (then review); default 45; 0 = off."}}}
           }
         },
         "spend_usd": {"type": ["number", "null"], "minimum": 0, "description": "The sum of the cost_usd of every Model step in the rows' trails; null when the spend was not recorded."},
