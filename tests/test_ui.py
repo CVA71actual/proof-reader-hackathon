@@ -7960,3 +7960,55 @@ def test_support_tag_absent_on_no_finding_stale_and_unrun_rows():
         "if (supportTag('e1')) fail(3, 'tag with no findings record');",
         "console.log('ok');",
     ]))
+
+
+# ---- Codex NOT ACCEPT 7bcb6ea item 1: the calendar wears the current values
+
+def test_calendar_row_and_pane_use_the_current_corrected_fields():
+    # Fix EXPAND title -> Keep -> reload: the calendar row must read the
+    # corrected title from state (t.values), never the raw row.title; a
+    # deliberately cleared field stays cleared (presence-aware shownField)
+    js = (UI / "app.js").read_text()
+    # both surfaces go through shownField — calRow and detailsPane
+    assert js.count("shownField(t, row, 'title')") == 2
+    assert "shownField(t, row, 'ticker')" in js and "shownField(t, row, 'program')" in js
+    assert "eventWord(shownField(t, row, 'event_type'))" in js
+    script = "\n".join([
+        "function el(tag, cls, text) { return { tag: tag, className: cls, textContent: text || '', title: '',",
+        "  style: {}, children: [], addEventListener: function () {},",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "function btn(cls) { return el('button', cls); }",
+        "function keptCurrent() { return false; }",
+        "function typeCategoryValue() { return null; }",
+        "function eventWord(v) { return ({ trial_results: 'Trial results' })[v] || v || ''; }",
+        "var calSel = null;",
+        "var detail = { run: { support_findings: null } };",
+        "function textOf(n, out) { out = out || []; if (n && n.textContent) out.push(n.textContent);",
+        "  ((n && n.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        _grab_fn(js, "shownField"),
+        _grab_fn(js, "shownDateText"),
+        _grab_fn(js, "supportFindingFor"),
+        _grab_fn(js, "supportTag"),
+        _grab_fn(js, "calRow"),
+        # the raw row still holds the reader's original wording
+        "var row = { id: 'e1', ticker: 'XPND', program: 'EXPAND',",
+        "  title: 'EXPAND topline data', event_type: 'trial_results' };",
+        # a person's Fix set the current title in state
+        "var fixed = { values: { title: 'EXPAND Phase 3 topline data (subject to FDA feedback)' } };",
+        "var out = textOf(calRow({ row: row, t: fixed, fold: [] }, '', false));",
+        "if (out.indexOf('EXPAND Phase 3 topline data (subject to FDA feedback)') === -1)",
+        "  fail(2, 'corrected title not shown: ' + out);",
+        "if (out.indexOf('EXPAND topline data') !== -1) fail(3, 'raw title still shown: ' + out);",
+        "if (out.indexOf('XPND') === -1) fail(4, 'ticker fell back wrongly');",
+        # a deliberately cleared title and program: cleared shows, never the raw value
+        "var cleared = { values: { title: null, program: null } };",
+        "var out2 = textOf(calRow({ row: row, t: cleared, fold: [] }, '', false));",
+        "if (out2.indexOf('(no title)') === -1) fail(5, 'cleared title resurrected: ' + out2);",
+        "if (out2.indexOf('EXPAND') !== -1) fail(6, 'cleared program resurrected: ' + out2);",
+        # no state values at all: the raw row is the answer (an untouched proposal)
+        "var out3 = textOf(calRow({ row: row, t: {}, fold: [] }, '', false));",
+        "if (out3.indexOf('EXPAND topline data') === -1) fail(7, 'untouched row lost its title');",
+        "if (out3.indexOf('EXPAND') === -1) fail(8, 'untouched row lost its program');",
+        "console.log('ok');",
+    ])
+    _run_node(script)

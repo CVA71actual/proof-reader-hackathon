@@ -1582,7 +1582,7 @@
 
     var sec1 = el('div', 'sec');
     if (t.decided_by_person) sec1.append(decidedBadge(t));
-    var ttl = el('div', 'ttl', row.title || '(no title)');
+    var ttl = el('div', 'ttl', shownField(t, row, 'title') || '(no title)');
     ttl.style.marginTop = t.decided_by_person ? '8px' : '0';
     sec1.append(ttl);
     host.append(sec1);
@@ -1594,8 +1594,10 @@
       r.append(node || el('span', 'v', v));
       sec2.append(r);
     }
-    kv('Company', (row.ticker || '') + ' · ' + (row.company || ''));
-    if (row.program) kv('Program', row.program);
+    // the pane wears the same current values as the calendar row (Codex item 1)
+    kv('Company', (shownField(t, row, 'ticker') || '') + ' · ' + (shownField(t, row, 'company') || ''));
+    var paneProgram = shownField(t, row, 'program');
+    if (paneProgram) kv('Program', paneProgram);
     // #52 type provenance: the server's label:value pairs when it sends them
     var typePairs = typePresentationPairs(t);
     if (typePairs) {
@@ -1607,7 +1609,7 @@
         kv(pr[0] === 'Category (from old keyword rule)' ? 'Category' : pr[0], pr[1]);
       });
     } else {
-      kv('Type', eventWord(row.event_type));
+      kv('Type', eventWord(shownField(t, row, 'event_type')));
     }
     kv('Event date', '', el('span', 'v mono', shownDateText(t, row) ||
       (projected(t) || partialProjection(t) ? 'Not stated' : '')));
@@ -3060,9 +3062,13 @@
     if (dayCell) cd.append(document.createTextNode(dayCell));
     b.append(cd);
     var c2 = el('span', 'ct2');
-    c2.append(el('span', 'tk', row.ticker || '—'));
-    if (row.program) c2.append(el('span', 'pg2', row.program));
-    c2.append(el('span', 'tt', row.title || '(no title)'));
+    // Codex NOT ACCEPT (7bcb6ea item 1): the calendar wears the CURRENT values,
+    // not the reader's original row — shownField is presence-aware, so a fix
+    // shows and a deliberately cleared field shows as cleared
+    c2.append(el('span', 'tk', shownField(t, row, 'ticker') || '—'));
+    var calProgram = shownField(t, row, 'program');
+    if (calProgram) c2.append(el('span', 'pg2', calProgram));
+    c2.append(el('span', 'tt', shownField(t, row, 'title') || '(no title)'));
     var wf = supportTag(row.id);   // CVA: visible without opening the row
     if (wf) c2.append(wf);
     if (t.contingent) c2.append(el('span', 'keepwarn', 'Contingent · explicit dependency'));
@@ -3090,7 +3096,7 @@
       if (wording) c2.append(el('span', 'dt', wording));
     }
     b.append(c2);
-    b.append(el('span', 'ty', typeCategoryValue(t) || eventWord(row.event_type)));
+    b.append(el('span', 'ty', typeCategoryValue(t) || eventWord(shownField(t, row, 'event_type'))));
     if (t.decided_by_person) b.append(decidedBadge(t));
     b.addEventListener('click', function () {
       calSel = row.id;
