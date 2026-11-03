@@ -34,6 +34,19 @@ from runs.state import current_state, run_reference_date
 NOT_CHECKED = ("Meaning, relevance and the relationship between spans are the model's proposal, not checked by code. "
                "Numbers other than dates are not compared. Independent review did not run (stage S2). "
                "Completeness of the web search is not established.")
+NOT_CHECKED_CODE = ("Meaning, relevance and the relationship between spans are the model's proposal, not checked by "
+                    "code. Numbers other than dates are not compared. Completeness of the web search is not "
+                    "established.")
+
+
+def review_scope(row: dict) -> str:
+    """The row's review scope from its recorded, derived label (never a fixed sentence): a model review is a
+    model's reading, not a proof."""
+    label = (row.get("research") or {}).get("label") or LABEL
+    if label.startswith(LABEL):
+        return "No completed independent review covers this row" + label[len(LABEL):] + "."
+    rest = label[len("Agent research — "):] if label.startswith("Agent research — ") else label
+    return f"{rest[:1].upper()}{rest[1:]}: a model's reading of the captured sources, not a proof."
 
 
 def _manifest_sources(run_dir: Path) -> dict:
@@ -76,7 +89,7 @@ def row_scope(row: dict, source: dict | None) -> dict:
                             for s in spans],
             "page_capture_checks": page.get("research_checks"),
             "issues": [i["code"] for i in row["research"].get("issues") or []],
-            "label": row["research"]["label"], "not_checked": NOT_CHECKED}
+            "label": row["research"]["label"], "not_checked": NOT_CHECKED_CODE + " " + review_scope(row)}
 
 
 def draft_audit(run_dir: Path, run: dict, decisions: list) -> dict:
