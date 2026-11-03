@@ -64,6 +64,7 @@ from checks import event_checks
 from runs.prices import cost_per_kept_row_usd
 from runs.ids import require_unique_target_ids
 from runs.claim_assessment import checks_current as bound_checks_current, page_evidence, row_source, visible_passage_assessment
+from runs.claim_assessment import timing_evidence_current
 from runs.page_outcomes import read_view as page_outcomes_view
 from runs.proposal import CONTEXT_FIELDS, type_presentation
 from datetime import date
@@ -226,7 +227,7 @@ def _base_targets(run: dict) -> dict:
         values = dict(candidate_values)
         source = sources.get(row.get("source_id"), {})
         checks = row.get("checks") or []
-        if bound_checks_current(checks, row, source):
+        if bound_checks_current(checks, row, source) and timing_evidence_current(row, sources):
             bounds = _period_bounds({**row, "checks": checks})
             if bounds:
                 values["date"], values["date_end"] = bounds
@@ -492,7 +493,7 @@ def current_state(run: dict, decisions: list) -> dict:
         row = copy.deepcopy(original)
         source = by_source.get(row.get("source_id"), {})
         checks = row.get("checks") or []
-        fresh = bound_checks_current(checks, row, source)
+        fresh = bound_checks_current(checks, row, source) and timing_evidence_current(row, by_source)
         if not fresh and row.get("group") != "removed":
             row["check_history"] = [*(row.get("check_history") or []), *checks]
             row["checks"] = []
@@ -557,7 +558,8 @@ def current_state(run: dict, decisions: list) -> dict:
         # from the check itself. Otherwise a valid period check invalidates itself.
         current = {**base["candidate"], **state["candidate_values"]}
         checks = state.get("effective_checks") or []
-        checks_current = bound_checks_current(checks, current, source)
+        checks_current = (bound_checks_current(checks, current, source)
+                          and timing_evidence_current(base["candidate"], by_source))
         state["checks_stale"] = not checks_current
         state["claim_assessments"] = {"visible_passage": visible_passage_assessment(current, source)}
         state["assessment_status"] = "not_checked" if checks_current else "unresolved"

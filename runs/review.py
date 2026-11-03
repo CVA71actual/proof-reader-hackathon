@@ -41,8 +41,36 @@ def review_basis(run: dict, row: dict, values: dict) -> dict:
         'timing_proposal': {key: (row.get('timing_proposal') or {}).get(key)
                             for key in ('model', 'source_id', 'page_number', 'proposal')},
     }
+    if row.get('research'):
+        # RESEARCHER-FULL-001: a research row's Keep binds its whole evidence selection, not only the primary page.
+        # Added only for research rows, so every other row's basis (and its digest) is byte-identical to before.
+        material['research'] = research_basis(run, row)
     raw = json.dumps(material, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
     return {'version': 1, 'sha256': hashlib.sha256(raw.encode()).hexdigest()}
+
+
+RESEARCH_MATERIAL = ('revision', 'primary_span_index', 'action', 'modality', 'relevance_kind',
+                     'placement_proposal', 'prior_row_ids', 'conditions_state')
+
+
+def research_basis(run: dict, row: dict) -> dict:
+    """The research proposal's material: its revision and research-only fields, and for every evidence span its
+    source, page, quote, roles and word ids with that source's document lineage and the page's artifact hashes.
+    Check results, issues, linked duplicates, costs and trail prose are not material and are left out."""
+    research = row['research']
+    sources = {s.get('id'): s for s in run.get('sources', [])}
+    spans = []
+    for span in research.get('evidence') or []:
+        src = sources.get(span.get('source_id')) or {}
+        page = next((p for p in src.get('pages', []) if p.get('page_number') == span.get('page_number')), {})
+        spans.append({
+            'source_id': span.get('source_id'), 'page_number': span.get('page_number'), 'quote': span.get('quote'),
+            'roles': span.get('roles'), 'word_ids': span.get('word_ids'),
+            'source_sha256': src.get('sha256'),
+            'original_sha256': (src.get('retrieval') or {}).get('original_sha256'),
+            'rendered_from': (src.get('rendered_from') or {}).get('sha256'),
+            'image_sha256': page.get('image_sha256'), 'words_sha256': page.get('words_sha256')})
+    return {**{key: research.get(key) for key in RESEARCH_MATERIAL}, 'evidence': spans}
 
 
 def matches_review_basis(stored, current: dict) -> bool:

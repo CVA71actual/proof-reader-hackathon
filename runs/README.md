@@ -543,3 +543,40 @@ run; the event types chosen on the New run panel apply to event pages only.
 Both builds are repeatable: the sample comes out byte for byte the same; the demo differs only in `finished_at`.
 A fake reading (`--reading fixtures/ions_ars_2026_p95.reading.fake.json`) is labelled as fake, never
 "Saved demo run".
+
+## Research runs (RESEARCHER-FULL-001 S1)
+
+A run whose `choices.mode` is `"research"` is driven by `runs/research.py` instead of the sources index: Muse Spark
+1.3 researches each company on the Responses API (`capture/responses_reader.py`) with built-in `web_search` and the
+function tools of `runs/research_contract.py` (`fetch_edgar`, `fetch_url`, `fetch_ctgov`, `read_source_pages`,
+`propose_events`, `record_coverage`, `finish_draft`). Everything it may cite is captured by code first
+(`capture/research_sources.py`): the exact bytes (kept under `research/captures/<source_id>/`), SHA-256, retrieval
+time, rendered pages and words, and per page `research_checks` (`capture_incomplete`, `hidden_text`: words under 2pt).
+Web HTML is rendered from a sanitized, isolated snapshot (no scripts, no network or file subresources); what was
+removed is recorded under `sources[].retrieval.rendered.limitations`. Search results and SEC/registry listings are
+leads, never evidence.
+
+Choices: `spending_limit_usd` is the only limit that is on (default $30 for a research run; strict admission: a
+call is made only if its worst case fits). `research_limits` holds the optional settings, every one null (off)
+unless a person turns it on: `max_spend_per_company_usd`, `max_requests_per_company`, `max_searches_per_company`,
+`max_searches_per_request`, `max_fetches_per_company`, `max_pages_per_company`, `max_minutes_per_company`,
+`stop_on_empty_rate`; `concurrency` (default 3) only queues companies. Up to 10 companies.
+
+Rows are ordinary event rows built by `runs.build_entry.build_row` (Keep, Remove, Undo, calendar and exports are
+unchanged), plus `rows[].research`: label "Agent research — not independently reviewed", `revision`, every evidence
+span with its own quote checks, `issues` (typed), `conditions_state` (null = not established, [] = none stated),
+`near_duplicates` (linked, never merged), `revisions` (history) and `feedback`. When a non-primary span has the role
+`timing`, `date_match` runs against that span and its reason names it. A research row's Keep binds its whole evidence
+set (`runs/review.py research_basis`); other rows' bases are unchanged.
+
+`run.research` (the server field the Agent trail reads): `label`; `limits`; `reservation` (the rule and its
+assumptions); `companies[ticker]` (status queued | researching | finished | stopped | failed, `status_reason`,
+counters `requests`/`searches`/`fetches`/`pages_delivered`/`sources`/`proposals`/`empty_answers`, `spend_usd`,
+`limitation` {kind, reason}, `capture_failures`, `finish`); `steps` (the Agent trail: one actor per step, `kind`
+request | search | fetch | proposal | check | coverage | finish | limit | repeat | error | prose, with `refs` such as
+`call_id`, `source_id`, `row_id`, `queries`, `results`); `manifest` (summary of the append-only
+`research/manifest.jsonl` with its checkpoint digests); `refusals`; `coverage` (including searched-not-found records
+with retrieval times); `consolidations`; `repeats`; `kill_conditions`; `reservation_exceeded`; `review`
+(`not_requested_by_mode` in S1); `audit` (the draft audit, `runs/research_audit.py`). Exact requests and responses
+are under `research/turns/`. A person stops a research run with `POST /api/runs/{id}/research-stop`. A research run
+is not resumed in S1.

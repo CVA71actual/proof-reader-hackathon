@@ -241,3 +241,11 @@ kept by a person beside a failed check still shows the failed check. Entries are
 the target's latest decision still in effect; undo of a fix also takes back its re-check. A fix writes two lines
 in one append (the person's fix, then code's re-check), so the file never holds a fix the server meant to
 re-check without its re-check.
+
+## Research runs (RESEARCHER-FULL-001 S1)
+
+`POST /api/runs/new` with `"mode": "research"` starts a research run (see `runs/README.md`, "Research runs"): up to 10
+tickers, `spending_limit_usd` (default $30, the only limit on), optional `research_limits` (all off by default) and the
+editable `note_for_agent`. `create_app(research_tools=..., research_reader=...)` injects the fetcher/renderer and the
+Responses reader (tests pass fakes; the default is live). `POST /api/runs/{id}/research-stop` asks every company to stop
+before its next model call; nothing is published. `POST /api/runs/{id}/resume` refuses a research run in S1.

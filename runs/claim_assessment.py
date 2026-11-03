@@ -83,6 +83,12 @@ def assessment_for(check_name: str, row: dict, source: dict, *, consumed_artifac
         if chosen:
             candidate["date"] = row.get("date")
             candidate["date_end"] = row.get("date_end")
+        timing = (row.get("research") or {}).get("timing")
+        if timing:
+            # RESEARCHER-FULL-001 (Manus 15:27): a research row whose date was compared against a separate timing span
+            # binds that span's own source, page, quote, published date and consumed words. Absent on every other
+            # row, so their bindings are byte-identical.
+            candidate["timing_span"] = timing
     # Every row check consumes the cited page's text or geometry; both hashes
     # are included so a rendered image change invalidates the visible evidence too.
     bound = {"inputs": candidate, "evaluation_mode": {"date_person_selected": bool(chosen)} if check_name == event_checks.DATE_ID else None,
@@ -201,4 +207,22 @@ def checks_current(checks: list[dict], row: dict, source: dict, *, consumed_arti
 
 def row_source(run: dict, row: dict) -> dict:
     return next((s for s in run.get("sources", []) if s.get("id") == row.get("source_id")), {})
+
+
+def timing_evidence_current(row: dict, sources_by_id: dict) -> bool:
+    """A research row's timing-span snapshot (row.research.timing) still names its source's current page artifacts and
+    published date. True for every row without one. Fail-closed when the source or page is gone."""
+    timing = (row.get("research") or {}).get("timing")
+    if not timing:
+        return True
+    src = sources_by_id.get(timing.get("source_id")) or {}
+    page = _page(src, timing.get("page_number"))
+    return bool(page) and timing == timing_snapshot(src, page, timing.get("quote"), timing.get("words_used"))
+
+
+def timing_snapshot(source: dict, page: dict, quote: str | None, words_used: dict | None) -> dict:
+    return {"source_id": source.get("id"), "page_number": page.get("page_number"), "quote": quote,
+            "published_date": source.get("published_date"), "source_sha256": source.get("sha256"),
+            "image_sha256": page.get("image_sha256"), "words_sha256": page.get("words_sha256"),
+            "words_used": words_used}
 

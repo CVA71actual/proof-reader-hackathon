@@ -121,6 +121,30 @@ def row_checks(row: dict, source: dict, words_doc: dict | None, chosen: bool = F
         event_checks.source_rule(source["kind"], []),
         event_checks.type_match(row.get("event_type"), row.get("quote")),
     ]
+    if page.get("text_capture"):
+        # RESEARCHER-FULL-001 (CVA 2026-11-02): a text capture has no rendered page image, so the citation box cannot
+        # be checked: a recorded limitation, never a pass. The quote is compared with the captured text.
+        why = page["text_capture"].get("reason") or "no reason recorded"
+        results = [replace(r, result=COULD_NOT_RUN, reason=f"not_applicable: text capture (page image not rendered). "
+                                                           f"Render failure: {why}")
+                   if r.check == SELECTOR_ID else
+                   replace(r, reason=("The quote appears in the captured text of the page, word for word."
+                                      if r.result == PASS else r.reason.replace("transcribed words", "captured text")))
+                   if r.check == event_checks.QUOTE_ID else r for r in results]
+    timing = (row.get("research") or {}).get("timing")
+    if timing:
+        # RESEARCHER-FULL-001 (Manus 15:03, 15:54): a research row whose timing sits in its own evidence span compares
+        # its date with THAT span, at intake and on every re-check of a person's fix alike; the check is bound to the
+        # span's evidence (claim_assessment, row.research.timing). Rows without one are unchanged.
+        res = event_checks.date_match(row.get("date_text"), as_iso(row.get("date")), timing.get("quote"),
+                                      date_end=as_iso(row.get("date_end")), chosen=chosen,
+                                      event_type=row.get("event_type"), title=row.get("title"),
+                                      program=row.get("program"), filed=timing.get("published_date"),
+                                      today=(row.get("research") or {}).get("timing_release_day"))
+        res = replace(res, reason=f"Date compared against timing span {timing.get('source_id')} p"
+                                  f"{timing.get('page_number')} (“{str(timing.get('quote') or '')[:120]}”): "
+                                  f"{res.reason}")
+        results = [res if r.check == event_checks.DATE_ID else r for r in results]
     if date_text_cleared is not None:
         # Attribute the person's explicit clear before binding/persisting the
         # result. The reader's before-check remains unchanged.
