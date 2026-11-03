@@ -216,14 +216,15 @@ SEARCH_DONE = frozenset({"completed", "complete", "ok"})
 def _search_outcome(out) -> tuple[list, int | None, str | None]:
     """(results, searches, failure reason). Well formed: a list (an empty list is a valid search that found nothing),
     or {"results": list, "searches"?: int, "status"?: completed}. Anything else (None, {}, a null or wrong-typed
-    results container, an unfinished status) is a failed search whose usage is unknown."""
+    results container, an unfinished status) is a failed search whose usage is unknown, whatever count it reports."""
     if isinstance(out, list):
         return out, 1, None
     if isinstance(out, dict) and isinstance(out.get("results"), list):
         status = out.get("status")
         n = _int_or_none(out.get("searches"))
         if status is not None and status not in SEARCH_DONE:
-            return [], n, f"The search did not complete (status {status!r})."
+            # An unfinished search's reported count is not final: its usage is unknown, never 0 or a partial count.
+            return [], None, f"The search did not complete (status {status!r})."
         return out["results"], n, None
     return [], None, "The search returned no readable results, so it did not count as a search."
 FINISH_NOT_ALONE = "finish_review ignored: issued alongside other tool calls"

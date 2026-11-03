@@ -624,3 +624,24 @@ def test_parse_keeps_finish_reason_as_given_and_drops_non_strings():
     assert rv.parse_chat_response(env, "r").finish_reason == "content_filter"
     env["choices"][0]["finish_reason"] = 5
     assert rv.parse_chat_response(env, "r").finish_reason is None
+
+
+# ------------------------------------------------------------------ Red Team PR174_8d822c0: unfinished count is unknown
+
+@pytest.mark.parametrize("count", [0, 3, None])
+@pytest.mark.parametrize("status", ["in_progress", "searching", "failed"])
+def test_unfinished_search_settles_unknown_usage_whatever_count_it_reports(status, count):
+    rec, _, gate = run([tools(call("search", {"query": "q"})), tools(finish())],
+                       search=lambda q: {"results": [], "status": status, "searches": count})
+    s = [e for e in gate.settles() if e["kind"] == "search"]
+    assert len(s) == 1 and s[0]["usage"]["searches"] is None
+    assert s[0]["error"] and s[0]["may_have_been_billed"] is True
+    assert rec["usage"]["searches"] is None and rec["usage"]["searches_unknown_requests"] == 1
+    assert rec["clean"] is False and rec["limitations"][0]["query"] == "q"
+
+
+def test_completed_search_keeps_its_reported_count():
+    _, _, gate = run([tools(call("search", {"query": "q"})), tools(finish())],
+                     search=lambda q: {"results": [], "status": "completed", "searches": 3})
+    s = [e for e in gate.settles() if e["kind"] == "search"][0]
+    assert s["usage"]["searches"] == 3 and s["error"] is None
