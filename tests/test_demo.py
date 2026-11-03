@@ -213,7 +213,8 @@ def test_every_committed_run_has_a_pdf_and_a_word_report_that_open():
 def test_the_default_run_setting_is_served_and_the_demo_prints_where_to_open(runs_dir, capsys):
     from server.app import create_app
 
-    fields = {"research_instructions_default": research_instructions.DEFAULT,
+    # CVA 2026-11-03: the New Run box (research mode) shows the full research brief
+    fields = {"research_instructions_default": research_instructions.RESEARCH_DEFAULT,
               "research_instructions_max_length": 4000}
     assert TestClient(create_app(runs_dir=runs_dir)).get("/api/settings").json() == {"default_run": None, **fields}
     assert TestClient(create_app(runs_dir=runs_dir, default_run="nope")).get("/api/settings").json() == {

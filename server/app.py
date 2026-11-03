@@ -303,7 +303,7 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     def get_settings() -> dict:
         """The run the app opens on when the address names none (`python -m runs.demo --run X`); null: the UI's own pick."""
         return {"default_run": default_run if default_run in store.ids() else None,
-                "research_instructions_default": research_instructions.DEFAULT,
+                "research_instructions_default": research_instructions.RESEARCH_DEFAULT,      # New Run: research mode
                 "research_instructions_max_length": research_instructions.MAX_LENGTH}
 
     @app.get("/api/companies")

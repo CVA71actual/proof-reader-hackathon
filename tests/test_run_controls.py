@@ -182,10 +182,7 @@ def test_exact_event_prompt_keeps_compact_schema_and_all_coordinates():
     entry = load_entry(read_events.PIN)
     prompt = read_events.build_prompt(words, entry, note=research_instructions.DEFAULT, as_of="2026-11-02")
     instructions, supplied_words = prompt.split("Words:\n", 1)
-    # CVA 2026-11-03 one box: the default assignment is now the full brief (about 1,800 characters), sent as written.
-    # The bound is on the schema and rules around it, which stay compact.
-    assert research_instructions.DEFAULT in instructions
-    assert len(instructions.replace(research_instructions.DEFAULT, "")) < 2200 - len(research_instructions.LEGACY_DEFAULT)
+    assert len(instructions) < 2200
     assert '"date_end":null' in instructions and "exact dates use" in instructions.lower()
     assert "single spaces, punctuation included" in instructions
     assert '"conditions":[]' in instructions and '"relevance":null' in instructions
@@ -246,7 +243,8 @@ def test_blank_research_assignment_selects_default_without_changing_table_extrac
 def test_research_assignment_length_is_bounded_and_settings_publish_contract(runs_dir):
     client, reader = make(runs_dir)
     settings = client.get("/api/settings").json()
-    assert settings["research_instructions_default"] == research_instructions.DEFAULT
+    # CVA 2026-11-03: New Run starts research mode only; its one box shows the full research brief
+    assert settings["research_instructions_default"] == research_instructions.RESEARCH_DEFAULT
     assert settings["research_instructions_max_length"] == 4000
     admitted = jobs.validate_choices({"companies": ["PTGX"], "note_for_agent": "x" * 4000})
     assert admitted["note_for_agent"] == "x" * 4000

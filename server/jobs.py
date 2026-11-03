@@ -371,7 +371,7 @@ def validate_research_choices(body: dict) -> dict:
     limit = research.DEFAULT_SPEND_CAP_USD if limit is None else limit
     if not _finite_limit(limit):
         raise ValueError("The spending limit must be a finite number of dollars, zero or more.")
-    note = research_instructions.validate(body.get("note_for_agent"))
+    note = research_instructions.validate(body.get("note_for_agent"), default=research_instructions.RESEARCH_DEFAULT)
     if body.get("reader_tools") not in (None, False):
         raise ValueError("reader_tools is a page-mode choice; a research run always uses its tools.")
     if body.get("models") not in (None, "one"):

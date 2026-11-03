@@ -1856,9 +1856,9 @@ def test_the_default_research_request_is_exactly_the_one_box(runs_dir):
     reader = F.FakeResponses([F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
     _, rid, _ = start(runs_dir, reader)
     assignment = reader.requests[0]["input"][0]["content"]
-    assert ri.DEFAULT == ri.LEGACY_DEFAULT + "\n\n" + ri.WHERE_TO_LOOK and len(ri.DEFAULT) <= ri.MAX_LENGTH
-    assert assignment == ASSIGNMENT_LABEL + ri.DEFAULT and assignment.count(ri.WHERE_TO_LOOK) == 1
-    assert run_json(runs_dir, rid)["run"]["choices"]["note_for_agent"] == ri.DEFAULT
+    assert ri.RESEARCH_DEFAULT == ri.LEGACY_DEFAULT + "\n\n" + ri.WHERE_TO_LOOK and len(ri.RESEARCH_DEFAULT) <= ri.MAX_LENGTH
+    assert assignment == ASSIGNMENT_LABEL + ri.RESEARCH_DEFAULT and assignment.count(ri.WHERE_TO_LOOK) == 1
+    assert run_json(runs_dir, rid)["run"]["choices"]["note_for_agent"] == ri.RESEARCH_DEFAULT
     assert "Regulators beyond the FDA: check the EMA, MHRA, PMDA, NMPA and TGA" in assignment
     # verbatim from glass-queue/prompts/BRIEF_V2_2026-11-02.txt; its only banned-pattern hit is the brief's own
     # "approved or filed assets" (regulatory approval), kept in a data file so the product-code rule still holds
@@ -1880,20 +1880,24 @@ def test_a_note_with_the_block_deleted_sends_no_block_and_none_is_doubled():
     from capture import research_instructions as ri
     without = ri.LEGACY_DEFAULT.replace("Cite the supporting passage. ", "")
     assert ri.research_assignment(without) == without and ri.WHERE_TO_LOOK not in ri.research_assignment(without)
-    assert ri.research_assignment(ri.DEFAULT).count(ri.WHERE_TO_LOOK) == 1
+    assert ri.research_assignment(ri.RESEARCH_DEFAULT).count(ri.WHERE_TO_LOOK) == 1
     edited = "My own focus.\n\n" + ri.WHERE_TO_LOOK
     assert ri.research_assignment(edited) == edited and ri.research_assignment(edited).count(ri.WHERE_TO_LOOK) == 1
     for blank in (None, "", "   "):
-        assert ri.research_assignment(blank) == ri.DEFAULT
+        assert ri.research_assignment(blank) == ri.RESEARCH_DEFAULT
 
 
 def test_the_old_short_default_maps_to_the_full_one(runs_dir):
     from capture import research_instructions as ri
-    assert ri.research_assignment(ri.LEGACY_DEFAULT) == ri.DEFAULT
-    assert ri.is_default(ri.LEGACY_DEFAULT) and ri.is_default(ri.DEFAULT) and not ri.is_default("x")
+    assert ri.research_assignment(ri.LEGACY_DEFAULT) == ri.RESEARCH_DEFAULT
+    assert ri.is_default(ri.LEGACY_DEFAULT) and ri.is_default(ri.RESEARCH_DEFAULT) and not ri.is_default("x")
+    # page mode (legacy, off the demo path) keeps the short default; New Run's box shows the research brief
+    from server import jobs
+    assert jobs.validate_choices({"companies": ["PTGX"]})["note_for_agent"] == ri.DEFAULT == ri.LEGACY_DEFAULT
+    assert jobs.validate_choices({"mode": "research", "companies": ["PTGX"]})["note_for_agent"] == ri.RESEARCH_DEFAULT
     reader = F.FakeResponses([F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
     start(runs_dir, reader, note_for_agent=ri.LEGACY_DEFAULT)               # a saved legacy note
-    assert reader.requests[0]["input"][0]["content"] == ASSIGNMENT_LABEL + ri.DEFAULT
+    assert reader.requests[0]["input"][0]["content"] == ASSIGNMENT_LABEL + ri.RESEARCH_DEFAULT
 
 
 def test_a_period_row_with_code_derived_bounds_is_placed_not_undated(runs_dir):
