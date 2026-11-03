@@ -97,6 +97,10 @@ def build_docx(view: dict) -> bytes:
     if view.get("as_of_note"):
         _line(doc, view["as_of_note"])
     _line(doc, f"Run status: {view['run_status']}")
+    if view.get("research_label"):
+        _line(doc, view["research_label"], bold=True)
+        for line in view.get("research_lines") or []:
+            _line(doc, line, size=8)
     if view.get("models_line"):
         _line(doc, view["models_line"])
     if view["page_outcomes_recorded"]:
