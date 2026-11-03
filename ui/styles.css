@@ -302,6 +302,11 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
 .instrbox{margin-top:6px}
 .instrbox .codeblk{display:block;white-space:pre-wrap;font-family:var(--mono);font-size:11.5px;line-height:1.55;color:var(--sub);background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:9px 11px;max-height:220px;overflow:auto}
 
+/* glass adviser (2): the judgment middle column carries the open row's
+   source and quote, not an empty placeholder */
+.jmidcard{padding:12px 14px;border-bottom:1px solid var(--line2)}
+.jmidcard .ttl{font-weight:600;font-size:13px;margin-bottom:4px}
+.jmidcard .srcq{font-style:italic;margin-top:5px;line-height:1.4;font-size:12.5px}
 /* catalyst calendar (U6) */
 #scr-calendar .pane.mid{background:var(--bg)}
 .calwrap{padding:8px 22px 30px;max-width:680px}
@@ -374,6 +379,8 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
    stacked directly under it */
 .savedruns{margin:6px 14px 0;width:calc(100% - 28px)}
 .sheet.sheet-wide{width:520px}
+/* glass adviser (6): the Run row stays visible while the long sheet scrolls */
+.sheet .nr-actions{position:sticky;bottom:-20px;margin:16px -22px -20px;padding:14px 22px 18px;background:var(--panel);border-top:1px solid var(--line);z-index:2}
 .sheet .opt{text-transform:none;letter-spacing:0;color:var(--faint);font-weight:500}
 .sh-grid{display:flex;flex-wrap:wrap;gap:6px}
 .tk2{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px;font-weight:500;background:var(--panel2);cursor:pointer}
