@@ -7112,27 +7112,48 @@ def test_support_attempt_renders_once_in_the_trail():
     _run_node(script)
 
 
+def test_checks_on_every_run_section_renders_with_default_on_checkbox():
+    # CVA-approved 16:50 order: one 'Checks on every run' section — read-only
+    # fact lines, then the wording-check checkbox ON by default; the old
+    # 'PROPOSED WORDING (optional)' heading is gone. No invented claims: the
+    # review line records which model ran and whether it is a different
+    # family — it never promises one.
+    html = (UI / "index.html").read_text()
+    assert "Checks on every run" in html
+    for line in ("Quote is printed on the cited page (code)",
+                 "Citation is where it says (code)",
+                 "Dates match the quote (code)",
+                 "Independent review by a second model"):
+        assert line in html, line
+    review_line = [l for l in html.splitlines() if "Independent review by a second model" in l][0]
+    assert "the run records which one ran and whether it is a different family" in review_line
+    assert "Wording check by a hallucination model (advisory; on by default)" in html
+    assert ("Flags proposed wording the cited source may not support. "
+            "A flag changes no check, count or decision.") in html
+    assert "Proposed wording" not in html
+    assert "Check the proposed wording against the cited source" not in html
+
+
 def test_lettuce_new_run_checkbox_offered_from_options():
-    # available: enabled, unticked (the server's default is off), payload word
+    # available: enabled, ON by default (the CVA ruling); a person's untick
+    # survives reopens and delayed answers
     _run_node(_new_run_sheet_script([
         "els['nr-support'] = { checked: false, disabled: true };",
         "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: null, available: true,",
         "                                        unavailable_reason: null } });",
         "if (els['nr-support'].disabled) fail(2, 'available box disabled');",
-        "if (els['nr-support'].checked) fail(3, 'default should be off');",
-        "if (nrSupportValue() !== null) fail(4, 'unticked should send off');",
-        "els['nr-support'].checked = true;",
-        "if (nrSupportValue() !== 'lettucedetect') fail(5, 'ticked should send the choice');",
+        # CVA ruling: ON by default whenever the check is offered — the body
+        # carries support_check with no click at all
+        "if (!els['nr-support'].checked) fail(3, 'available should be on by default');",
+        "if (nrSupportValue() !== 'lettucedetect') fail(4, 'default-on should send the choice');",
         "startRunNow();",
         "if (!posts.length || posts[0].support_check !== 'lettucedetect') fail(6, JSON.stringify(posts));",
-        # the server's default ticks it once; a person's later choice is kept
+        # the person can still turn it off; a later answer keeps that choice
         "els['nr-support'].checked = false;",
-        "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: 'lettucedetect', available: true } });",
-        "if (!els['nr-support'].checked) fail(7, 'server default not applied');",
         "nrSupport.touched = true;",
-        "els['nr-support'].checked = false;",
         "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: 'lettucedetect', available: true } });",
         "if (els['nr-support'].checked) fail(8, 'person choice reset by a re-open');",
+        "if (nrSupportValue() !== null) fail(9, 'person off should send off');",
         "console.log('ok');",
     ], extra_fns=('supportFromOptions', 'applySupportOptions', 'nrSupportValue')))
 
