@@ -320,15 +320,16 @@ def test_reviewer_reply_without_usage_is_unpriced_never_zero(runs_dir):
 # ------------------------------------------------------------------ the review reserve
 
 def test_research_stops_at_its_share_and_the_reserve_lets_the_review_run(runs_dir):
-    # $0.30 cap: a research call's worst case (~$0.29) exceeds research's 85% share ($0.255), so research stops at
-    # once; the reviewer's worst case (~$0.08) fits the whole cap, so the review of the (empty) draft runs.
+    # $0.12 cap: a research call's worst case (its 16,384-token reply cap alone is ~$0.07, plus input and searches)
+    # exceeds research's 85% share ($0.102), so research stops at once; the reviewer's worst case (~$0.08) fits the
+    # whole cap, so the review of the (empty) draft runs.
     reviewer = F.FakeChat([F.chat_tools(("finish_review", {"summary": "Nothing to review."}))])
-    _, rid, _ = start(runs_dir, F.FakeResponses([]), reviewer, limit=0.3)
+    _, rid, _ = start(runs_dir, F.FakeResponses([]), reviewer, limit=0.12)
     run = run_json(runs_dir, rid)
     r = run["run"]["research"]
     reserve = r["review_reserve"]
     assert reserve["held"] is True and reserve["fraction"] == research.REVIEW_RESERVE_FRACTION
-    assert reserve["usd"] == pytest.approx(0.045) and reserve["research_limit_usd"] == pytest.approx(0.255)
+    assert reserve["usd"] == pytest.approx(0.018) and reserve["research_limit_usd"] == pytest.approx(0.102)
     assert "not a hidden limit" in reserve["reason"]
     assert any("Review reserve" in s["text"] for s in steps(run, "review"))
     c = r["companies"]["PTGX"]
@@ -336,7 +337,7 @@ def test_research_stops_at_its_share_and_the_reserve_lets_the_review_run(runs_di
     rec = r["review"]["PTGX"]
     assert rec["research_ended"]["kind"] == "spend_cap"
     assert rec["status"] == "complete" and len(reviewer.sent) == 1
-    assert run["run"]["spend_usd"] <= 0.3
+    assert run["run"]["spend_usd"] <= 0.12
 
 
 def test_no_reserve_is_held_when_the_reviewer_cannot_run(runs_dir):
@@ -477,7 +478,7 @@ def test_incomplete_research_reply_with_a_valid_fetch_dispatches_nothing(runs_di
     cut = F.body([F.call("fetch_url", {"url": PR1, "purpose": "company release"}, "c1")], status="incomplete",
                  incomplete="max_output_tokens")
     reviewer = F.FakeChat([F.chat_tools(("finish_review", {"summary": "empty"}))])
-    _, rid, tools = start(runs_dir, F.FakeResponses([cut]), reviewer)
+    _, rid, tools = start(runs_dir, F.FakeResponses([cut, cut]), reviewer)      # LIMITS-005: two cut-offs stop it
     run = run_json(runs_dir, rid)
     assert tools.fetcher.asked == [] and run["sources"] == []
     c = run["run"]["research"]["companies"]["PTGX"]
@@ -637,3 +638,68 @@ def test_run5_copy_rows_get_verdicts_before_broad_search(tmp_path):
     assert len(rec["assessments"]) == 22 and rec["rows_not_assessed"] == []
     first_search_turn = 2
     assert sum(1 for a in rec["assessments"] if a["turn"] <= first_search_turn) >= min(22, 2 * rv.ASSESS_ROWS_PER_TURN)
+
+
+# ------------------------------------------------------------------ live test 21e10cd: adjudication room, duplicates
+
+def test_reviewing_keeps_room_for_adjudicating_its_findings(runs_dir):
+    def lost(draft):
+        return ("report_finding", {"kind": "lost_condition",
+                                   "row_revision_ids": [{"row_id": draft[0]["row_id"], "revision_id": 1}],
+                                   "evidence": [{"source_id": "src-r1-ptgx", "quote": CONDITION}],
+                                   "text": "The condition was dropped."})
+    # every reviewer reply uses nearly its whole 12,288-token reply allowance: left alone it would spend the whole cap
+    heavy = [F.chat_tools(("search", {"query": f"q{i}"}), c=12_000) for i in range(40)]
+    reviewer = F.FakeChat([F.assess_then(verdict="finding", before=(lost,), c=12_000)] + heavy)
+    wonder = F.FakeChat([F.verdict({"verdict": "resolved", "reading": 1, "resolution": "Keep the condition.",
+                                    "evidence": [{"source_id": "src-r1-ptgx", "quote": CONDITION}],
+                                    "reason": "The release states it."})], model=F.ADJUDICATOR_MODEL)
+    _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer, wonder, limit=1.0)
+    run = run_json(runs_dir, rid)
+    e = run["run"]["research"]["review"]["PTGX"]
+    assert e["status"] == "incomplete" and "keep" in e["reason"] and "adjudication of 1 finding" in e["reason"]
+    assert len(reviewer.sent) < 41                                    # it stopped before spending everything
+    assert len(wonder.sent) == 1 and e["adjudication"]["outcomes"][0]["outcome"] == rv.RESOLVED
+    (f,) = research_rows(run)[0]["research"]["review_findings"]
+    assert f["adjudication"]["outcome"] == rv.RESOLVED
+    assert run["run"]["spend_usd"] <= 1.0
+
+
+def test_adjudication_gets_only_the_pages_with_the_cited_quotes():
+    pages = [{"page_number": n, "text": f"Page {n} filler. " * 400} for n in range(1, 41)]
+    pages[22] = {"page_number": 23, "text": "NDA submission subject to FDA feedback, the company said."}
+    srcs = rv._Sources([{"source_id": "S1", "pages": pages}])
+    d = {"dispute_id": "X-F1", "component": "lost_condition", "readings": [{"by": "a", "text": "x"},
+                                                                           {"by": "b", "text": "y"}],
+         "evidence": [{"source_id": "S1", "quote": "subject to FDA feedback"}]}
+    messages, cited = rv.adjudication_messages(d, srcs)
+    body = json.loads(messages[1]["content"])
+    assert cited == ["S1"] and [p["page_number"] for p in body["captured_sources"][0]["pages"]] == [23]
+    assert rv._bytes(messages) < 5_000 < len(srcs.by_id["S1"]["text"])   # a page, not the 40-page document
+
+
+def test_a_second_finding_on_the_same_rows_and_kind_is_merged_not_new():
+    srcs = [{"source_id": "S1", "text": "PN-881 Phase 2 data are expected in H1 2027."},
+            {"source_id": "S2", "text": "PN-881 data now expected in H2 2027."},
+            {"source_id": "S3", "text": "Timing for PN-881 data is under review."}]
+    rows = [{"row_id": "e1", "revision_id": 2, "title": "PN-881 data",
+             "evidence": [{"source_id": "S1", "page_number": 1, "quote": "PN-881 Phase 2 data"}]}]
+
+    def conflict(sid, quote):
+        return ("report_finding", {"kind": "conflicting_guidance", "row_revision_ids": [{"row_id": "e1",
+                                                                                        "revision_id": 2}],
+                                   "evidence": [{"source_id": sid, "quote": quote}], "text": f"Conflict via {sid}."})
+    model = F.FakeChat([F.chat_tools(conflict("S2", "now expected in H2 2027"),
+                                     ("assess_rows", {"assessments": [{"row_id": "e1", "revision_id": 2,
+                                                                       "verdict": "finding"}]})),
+                        F.chat_tools(conflict("S3", "under review")),
+                        F.chat_tools(conflict("S2", "now expected in H2 2027")),
+                        F.chat_tools(("finish_review", {"summary": "one conflict"}))])
+    rec = rv.review_draft(company="X", assignment="a", proposals=rows, sources=srcs, search=lambda q: [],
+                          fetch_capture=lambda u: None, spend_gate=lambda ev: {"t": 1}, model=model)
+    (f,) = rec["findings"]
+    assert f["finding_id"] == "F1" and [e["source_id"] for e in f["evidence"]] == ["S2", "S3"]
+    assert len(f["merged"]) == 2
+    fed = json.loads(model.sent[2][-1]["content"])
+    assert fed["status"] == "merged" and fed["finding_id"] == "F1" and "added to it" in fed["message"]
+    assert "no new evidence" in json.loads(model.sent[3][-1]["content"])["message"]

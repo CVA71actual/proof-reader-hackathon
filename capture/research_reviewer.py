@@ -250,6 +250,11 @@ def reviewer_model() -> OneShotChat:
     return OneShotChat(REVIEWER_NAME, second_reader.BASETEN_BASE_URL, second_reader.BASETEN_MODEL, "BASETEN_API_KEY")
 
 
+def _adjudicator_model_id() -> str:
+    from capture import wonder
+    return wonder.MODEL
+
+
 def adjudicator_model() -> OneShotChat:
     from capture import read_table, wonder
     return OneShotChat(ADJUDICATOR_NAME, read_table.BASE_URL, wonder.MODEL, "MODEL_API_KEY")
@@ -269,9 +274,11 @@ class _Gate:
         self.calls: list[dict] = []
 
     def reserve(self, kind: str, model: str, price_name: str, request_bytes: int, max_output_tokens: int | None,
-                searches: int) -> Any:
+                searches: int, keep_back: list | None = None) -> Any:
         req = {"phase": "reserve", "stage": self.stage, "kind": kind, "model": model, "price_name": price_name,
                "request_bytes": request_bytes, "max_output_tokens": max_output_tokens, "searches": searches}
+        if keep_back:      # later requests this one must leave room for (the adjudication of findings so far)
+            req["keep_back"] = keep_back
         try:
             ticket = self.gate(req)
         except Exception as e:
@@ -541,6 +548,59 @@ def _ranges(numbers) -> str:
     return ",".join(f"{a}" if a == b else f"{a}-{b}" for a, b in out)
 
 
+# --------------------------------------------------------------------------------------------- disputes
+
+def disputes_from_findings(findings: list[dict], proposals: list[dict], prefix: str) -> list[dict]:
+    """A finding that contests a row's reading (every kind except omission, which names a missing event) is a dispute
+    between the researcher's row and the reviewer's finding: Muse Wonder gets both readings and the evidence of both."""
+    rows = {_row_key(p.get("row_id"), p.get("revision_id")): p for p in proposals if isinstance(p, dict)}
+    out = []
+    for f in findings:
+        if f["kind"] == "omission" or not f["row_revision_ids"]:
+            continue
+        readings, evidence = [], [{"source_id": e["source_id"], "quote": e["quote"]} for e in f["evidence"]]
+        for ref in f["row_revision_ids"]:
+            row = rows.get(_row_key(ref["row_id"], ref["revision_id"]))
+            if row is None:
+                continue
+            readings.append(f"{row['row_id']} revision {ref['revision_id']}: {row.get('title')}; timing "
+                            f"{row.get('date_text') or 'undated'}; conditions {json.dumps(row.get('conditions'))}; "
+                            f"quote: {row.get('quote')}")
+            evidence += [{"source_id": e["source_id"], "quote": e["quote"], "page_number": e.get("page_number")}
+                         for e in row.get("evidence") or [] if isinstance(e, dict) and e.get("source_id")]
+        out.append({"dispute_id": f"{prefix}-{f['finding_id']}", "finding_id": f["finding_id"],
+                    "row_revision_ids": f["row_revision_ids"], "component": f["kind"],
+                    "readings": [{"by": "Muse Spark (the researcher's draft)", "text": " | ".join(readings)},
+                                 {"by": f"{REVIEWER_NAME} (the independent reviewer)", "text": f["text"]}],
+                    "evidence": evidence})
+    return out
+
+
+def adjudication_messages(d: dict, srcs: "_Sources") -> tuple[list[dict], list[str]]:
+    """The one adjudication request for a dispute: only the PAGES of each cited source that hold a cited quote (or the
+    page a row's span names), never whole documents. Returns (messages, cited source ids)."""
+    cited, pages = [], {}
+    for e in d.get("evidence") or []:
+        sid = str(e.get("source_id")) if isinstance(e, dict) and e.get("source_id") is not None else None
+        if sid not in srcs.by_id:
+            continue
+        if sid not in cited:
+            cited.append(sid)
+        want = pages.setdefault(sid, set())
+        if isinstance(e.get("page_number"), int) and e["page_number"] in srcs.pages[sid]:
+            want.add(e["page_number"])
+        q = _norm(e.get("quote") or "")
+        if q:
+            want.update(n for n, t in srcs.pages[sid].items() if q in _norm(t))
+    body = {"component": d.get("component"), "row_revision_ids": d.get("row_revision_ids"),
+            "readings": d.get("readings"),
+            "captured_sources": [{"source_id": s, "pages": [{"page_number": n, "text": srcs.pages[s][n]}
+                                                           for n in sorted(pages.get(s) or ())]} for s in cited],
+            "note": "Only the pages that hold the cited quotes are included."}
+    return ([{"role": "system", "content": ADJUDICATOR_INSTRUCTIONS},
+             {"role": "user", "content": json.dumps(body, ensure_ascii=False, default=str)}], cited)
+
+
 # --------------------------------------------------------------------------------------------- review_draft
 
 @dataclass
@@ -599,7 +659,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                  spend_gate: Callable[[dict], Any], model=None, max_turns: int | None = None,
                  max_searches: int | None = None, max_fetches: int | None = None,
                  pages_per_read: int = PAGES_PER_READ, replay_turns: int = REPLAY_TURNS,
-                 assess_rows_per_turn: int = ASSESS_ROWS_PER_TURN) -> dict:
+                 assess_rows_per_turn: int = ASSESS_ROWS_PER_TURN, adjudicator_model_id: str | None = None) -> dict:
     """Run the independent review of one company's frozen draft; return its record (ReviewResult.to_record()).
 
     proposals: [{row_id, revision_id, ...}] (`id`/`revision` are accepted as the same fields). Findings bind to these
@@ -743,6 +803,18 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         return ("A-TO-Z-001: " + "; ".join(parts) + ". Conclude them (assess_rows, report_finding or "
                 "nothing_material), then finish_review.") if parts else None
 
+    def keep_back() -> list[dict]:
+        """CAP-001 / OUTCOME-001 (live test 21e10cd): before each reviewer request, the adjudication requests the
+        findings so far will need are kept back on the gate, so reviewing never starves adjudication."""
+        adj_id = adjudicator_model_id or _adjudicator_model_id()
+        out = []
+        for d in disputes_from_findings(findings, list(rows.values()), "keep"):
+            msgs, _ = adjudication_messages(d, srcs)
+            out.append({"stage": "adjudication", "model": adj_id, "price_name": ADJUDICATOR_NAME,
+                        "request_bytes": _bytes(msgs), "max_output_tokens": http.MAX_COMPLETION_TOKENS,
+                        "finding_id": d["finding_id"]})
+        return out
+
     def order_refused(tool: str, target) -> dict | None:
         need = min(len(rows), state["turns"] * assess_rows_per_turn)
         why = None
@@ -814,7 +886,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         if max_searches is not None and len(searches) >= max_searches:
             retrieval_failed("search", q, "The search limit a person set had been reached, so it was not run.")
             return {"status": "error", "message": "The search limit a person set has been reached."}
-        ticket = gate.reserve("search", "search", "search", _bytes(q), None, 1)
+        ticket = gate.reserve("search", "search", "search", _bytes(q), None, 1, keep_back())
         try:
             out = search(q)
         except Exception as e:
@@ -938,6 +1010,21 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
             rejected.append({"arguments": args, "problems": problems})
             return {"status": "rejected", "problems": problems,
                     "message": "Not recorded. Fix the problems and report it again."}
+        keys = sorted(_row_key(b["row_id"], b["revision_id"]) for b in bound)
+        same = next((x for x in findings if bound and x["kind"] == kind and
+                     sorted(_row_key(b["row_id"], b["revision_id"]) for b in x["row_revision_ids"]) == keys), None)
+        if same is not None:
+            # one finding per row(s) and kind: another source for it is added to it, never a new finding
+            added = [sp for sp in spans if (sp["source_id"], sp["quote"]) not in
+                     {(e["source_id"], e["quote"]) for e in same["evidence"]}]
+            same["evidence"].extend(added)
+            same.setdefault("merged", []).append({"text": text.strip(), "evidence": spans, "turn": state["turns"]})
+            if open_source[0] and any(sp["source_id"] == open_source[0] for sp in spans):
+                open_source[0] = None
+            return {"status": "merged", "finding_id": same["finding_id"],
+                    "message": f"Same row(s) and kind as {same['finding_id']}: "
+                               f"{'this evidence was added to it' if added else 'no new evidence'}; one finding per "
+                               f"row and kind, so no new finding was made."}
         f = {"finding_id": f"F{len(findings) + 1}", "kind": kind, "row_revision_ids": bound, "evidence": spans,
              "text": text.strip(), "by": REVIEWER_NAME}
         findings.append(f)
@@ -954,7 +1041,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         try:
             messages = request_messages()
             ticket = gate.reserve("model", model.model, REVIEWER_NAME, _bytes([messages, REVIEWER_TOOLS]),
-                                  http.MAX_COMPLETION_TOKENS, 0)
+                                  http.MAX_COMPLETION_TOKENS, 0, keep_back())
         except GateRefused as e:
             return result(INCOMPLETE, f"The spend gate refused the next reviewer call: {e}")
         reply = _chat(model, messages, tools=REVIEWER_TOOLS)
@@ -1129,16 +1216,7 @@ def adjudicate(*, disputes: list[dict], sources: list[dict], spend_gate: Callabl
             outcomes.extend(unresolved(x, f"Not adjudicated: the call limit a person set ({max_calls}) was reached.")
                             for x in real[i:])
             return done(INCOMPLETE, f"The adjudication call limit ({max_calls}) was reached.")
-        cited = []
-        for e in d.get("evidence") or []:
-            sid = str(e.get("source_id")) if isinstance(e, dict) and e.get("source_id") is not None else None
-            if sid in srcs.by_id and sid not in cited:
-                cited.append(sid)
-        body = {"component": d.get("component"), "row_revision_ids": d.get("row_revision_ids"),
-                "readings": d.get("readings"),
-                "captured_sources": [{"source_id": s, "text": srcs.by_id[s]["text"]} for s in cited]}
-        messages = [{"role": "system", "content": ADJUDICATOR_INSTRUCTIONS},
-                    {"role": "user", "content": json.dumps(body, ensure_ascii=False, default=str)}]
+        messages, cited = adjudication_messages(d, srcs)
         try:
             ticket = gate.reserve("model", model.model, ADJUDICATOR_NAME, _bytes(messages),
                                   http.MAX_COMPLETION_TOKENS, 0)

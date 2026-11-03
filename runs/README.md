@@ -629,6 +629,12 @@ already-captured URL (given or fetched) returns the same source_id with no reque
 assessed; rows without a verdict are listed in `rows_not_assessed`. `rows[].research.review.verdict` carries the row's
 verdict. These are recorded design defaults about order, not spend limits.
 
+Adjudication room (CAP-001, live test 21e10cd): every reviewer request and search is admitted only if its own bound
+PLUS the worst case of the adjudication requests the findings so far will need fits under the cap; otherwise the review
+stops (incomplete, the reason names the amount kept back) and adjudication runs. An adjudication request carries only
+the pages that hold the cited quotes (`adjudication_messages`), never whole documents. A second finding on the same
+row(s) and kind is merged into the first (its evidence added, `merged` keeps the text), never a new finding.
+
 Re-review (Manus 18:33): every attempt is numbered (`attempt`; earlier ones under `attempts`). A complete review
 replaces the rows' findings. An attempt that did not complete keeps every earlier finding: on an unchanged basis (the
 row's revision and whole evidence set, `basis`) it stays `current`; on a changed basis it is `stale: true` with a

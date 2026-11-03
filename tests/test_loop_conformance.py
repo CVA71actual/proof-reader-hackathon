@@ -120,13 +120,16 @@ class ResearchLoop:
     def incomplete(self, runs_dir):
         output = [F.message("Partial thoughts"), F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1"),
                   F.call("finish_draft", {"dispositions": [], "limitations": []}, "c2")]
-        reader = F.FakeResponses([F.body(output, status="incomplete", incomplete="max_output_tokens")])
+        cut = F.body(output, status="incomplete", incomplete="max_output_tokens")
+        reader = F.FakeResponses([cut, cut])       # LIMITS-005: a cut-off reply is followed by a fresh turn
         tools = _tools()
         rid = _app(runs_dir, reader, tools)
         run = _run(runs_dir, rid)
         c = run["run"]["research"]["companies"]["PTGX"]
+        later = json.dumps([q["input"] for q in reader.requests[1:]])
         return {"dispatched": bool(tools.fetcher.asked), "finish_accepted": c["status"] == "finished",
-                "replayed": len(reader.requests) > 1, "settled": c["requests"],
+                "replayed": "Partial thoughts" in later or '"c1"' in later,
+                "settled_once_each": c["requests"] == len(reader.requests),
                 "reservations_left": bool(jobs._RESERVED.get(rid))}
 
     def outcome(self, runs_dir):
@@ -258,9 +261,11 @@ class ReviewerLoop:
         cut = F.chat_tools(("fetch", {"url": PR2}), ("finish_review", {"summary": "done"}), finish="length")
         reviewer = F.FakeChat([cut])
         rid, tools, run, e = self._review(runs_dir, reviewer)
+        later = json.dumps(reviewer.sent[1:])
         return {"dispatched": PR2 in tools.fetcher.asked, "finish_accepted": e["status"] == "complete",
-                "replayed": len(reviewer.sent) > 1,
-                "settled": run["run"]["research"]["companies"]["PTGX"]["review_usage"]["model_requests"],
+                "replayed": PR2 in later,
+                "settled_once_each": run["run"]["research"]["companies"]["PTGX"]["review_usage"]["model_requests"]
+                == len(reviewer.sent),
                 "reservations_left": bool(jobs._RESERVED.get(rid))}
 
     def outcome(self, runs_dir):
@@ -374,7 +379,7 @@ def test_COMPACT_001_per_turn_input_stays_in_a_band_and_fresh_text_is_delivered(
 def test_INCOMPLETE_001_an_incomplete_reply_dispatches_nothing_and_settles_once(loop, runs_dir):
     o = loop.incomplete(runs_dir)
     assert o["dispatched"] is False and o["finish_accepted"] is False and o["replayed"] is False
-    assert o["settled"] == 1 and o["reservations_left"] is False
+    assert o["settled_once_each"] is True and o["reservations_left"] is False
 
 
 def test_OUTCOME_001_malformed_attempts_are_never_success(loop, runs_dir):

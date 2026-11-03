@@ -575,8 +575,21 @@ def make_job_class():
                 if worst is None:
                     return {"admitted": False, "reason": f"runs/prices.py has no price for {name}, so the spending cap "
                                                          f"cannot be kept."}
-                token, why = self.review_admit(worst)
+                keep, keep_usd = req.get("keep_back") or [], 0.0
+                for k in keep:
+                    kb = prices.cost_usd(jobs.price_name(str(k.get("model") or "")),
+                                         int(k.get("request_bytes") or 0) + REQUEST_OVERHEAD_TOKENS,
+                                         k.get("max_output_tokens"))
+                    if kb is None:
+                        return {"admitted": False, "reason": f"runs/prices.py has no price for {k.get('model')}, so "
+                                                             f"the adjudication still needed cannot be kept back."}
+                    keep_usd += kb
+                token, why = self.review_admit(worst + keep_usd)
                 if token is None:
+                    if keep:
+                        why = (f"Stopped to keep {jobs.money(keep_usd)} back for the adjudication of {len(keep)} "
+                               f"finding{'s' if len(keep) != 1 else ''} so far (CAP-001): the next reviewer request's "
+                               f"bound {jobs.money(worst)} plus that would exceed the cap. {why}")
                     return {"admitted": False, "reason": why}
                 return {"admitted": True, "token": token, "worst": worst, "name": name, "kind": kind,
                         "input_bound": bound, "stage": req.get("stage")}
@@ -727,32 +740,11 @@ def make_job_class():
                 "fetch_by_url": {(s["url"], s["retrieval"].get("original_sha256")): s for s in srcs.values()}}
             return st
 
-        @staticmethod
-        def review_disputes(ticker: str, record: dict, rows_by_id: dict) -> list[dict]:
-            """A finding that contests a row's reading (every kind except omission, which names a missing event) is a
-            dispute between the researcher's row and the reviewer's finding: Muse Wonder gets both readings and the
-            captured evidence of both."""
+        def review_disputes(self, ticker: str, record: dict, rows_by_id: dict) -> list[dict]:
+            """capture.research_reviewer.disputes_from_findings on the rows as the reviewer was given them."""
             from capture import research_reviewer as rv
-            out = []
-            for f in record.get("findings") or []:
-                if f["kind"] == "omission" or not f["row_revision_ids"]:
-                    continue
-                readings, evidence = [], [{"source_id": e["source_id"], "quote": e["quote"]} for e in f["evidence"]]
-                for ref in f["row_revision_ids"]:
-                    row = rows_by_id.get(ref["row_id"])
-                    if row is None:
-                        continue
-                    readings.append(f"{row['id']} revision {ref['revision_id']}: {row.get('title')}; timing "
-                                    f"{row.get('date_text') or 'undated'}; conditions "
-                                    f"{json.dumps(row.get('conditions'))}; quote: {row.get('quote')}")
-                    evidence += [{"source_id": s["source_id"], "quote": s["quote"]}
-                                 for s in row["research"].get("evidence") or []]
-                out.append({"dispute_id": f"{ticker}-{f['finding_id']}", "finding_id": f["finding_id"],
-                            "row_revision_ids": f["row_revision_ids"], "component": f["kind"],
-                            "readings": [{"by": "Muse Spark (the researcher's draft)", "text": " | ".join(readings)},
-                                         {"by": f"{rv.REVIEWER_NAME} (the independent reviewer)", "text": f["text"]}],
-                            "evidence": evidence})
-            return out
+            return rv.disputes_from_findings(record.get("findings") or [],
+                                             [self.review_proposal(r) for r in rows_by_id.values()], ticker)
 
         @staticmethod
         def company_review_label(status: str | None, clean: bool, has_findings: bool) -> str:
