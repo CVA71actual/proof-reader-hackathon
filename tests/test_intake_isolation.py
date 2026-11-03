@@ -345,3 +345,115 @@ def test_a_capture_without_a_fetcher_lists_no_assets(tmp_path):
                                filings_root=tmp_path)
     assert pages and "render_record" not in pages[0]
     assert ff.read_asset_ledger(cap)["exhibits"][HTML_NAME]["captured"] == []
+
+
+# ---------------------------------------------------------------- Red Team PR181 at 149f182 (ISOLATE-001)
+
+SVG_BYTES = b'<svg xmlns="http://www.w3.org/2000/svg"><image href="http://127.0.0.1:9/svg"/></svg>'
+HTML_BYTES = b"<html><script>fetch('http://127.0.0.1:9/html')</script></html>"
+
+
+def _b64(b: bytes) -> str:
+    return base64.b64encode(b).decode()
+
+
+def _rt1_pages() -> list[str]:
+    """Red Team #1: SVG or HTML bytes labelled data:image/png, in every CSS spelling and in an img src."""
+    out = []
+    for bad in (SVG_BYTES, HTML_BYTES):
+        uri = f"data:image/png;base64,{_b64(bad)}"
+        out += [f'<div style="background:url({uri})">x</div>',
+                f"<style>p{{background-image:url('{uri}')}}</style><p>x</p>",
+                f'<div style="background-image:image-set(&quot;{uri}&quot; 1x)">x</div>',
+                f"<style>p{{background:-webkit-image-set(url({uri}) 1x)}}</style><p>x</p>",
+                f'<img src="{uri}">', f'<img srcset="{uri} 1x" src="{uri}">',
+                f'<div style="background:url(data:image/svg+xml;base64,{_b64(SVG_BYTES)})">x</div>']
+    return out
+
+
+def _rt2_pages(host="127.0.0.1:9") -> list[str]:
+    """Red Team #2: URLs written as plain strings inside image-set() and other CSS functions."""
+    refs = (f"https://{host}/a.png", "file:///etc/passwd", f"//{host}/p.png", f"http://{host}/b.png")
+    out = []
+    for r in refs:
+        for fn in ("image-set", "-webkit-image-set", "cross-fade", "src", "image"):
+            out.append(f"<style>p{{background-image:{fn}(\"{r}\" 1x)}}</style><p>x</p>")
+            out.append(f"<div style=\"background-image:{fn}('{r}' 1x)\">x</div>")
+        out.append(f"<div style=\"background-image:image-set('ok.png' 1x, '{r}' 2x)\">x</div>")
+    return out
+
+
+@pytest.mark.parametrize("page", _rt1_pages())
+def test_rt1_no_non_raster_bytes_survive_as_a_data_uri_anywhere(page):
+    for resolver in (None, er.AssetResolver(Path("/nonexistent"), "x.htm", None)):
+        snap, counts = rs.sanitize_html(page, image_resolver=resolver)
+        body = snap[len(rs.CSP_META):]
+        assert _b64(SVG_BYTES) not in body and _b64(HTML_BYTES) not in body, (page, body)
+        assert "data:" not in body.lower(), (page, body)
+        assert (counts.get("css_dropped_data_uri") or counts.get("images_not_captured")
+                or counts.get("css_urls_removed")), counts
+
+
+@pytest.mark.parametrize("page", _rt2_pages())
+def test_rt2_no_url_string_survives_in_a_css_function(page):
+    snap, counts = rs.sanitize_html(page)
+    body = snap[len(rs.CSP_META):].lower()
+    for bad in ("https:", "http:", "file:", "//127.0.0.1", "etc/passwd", "image-set", "cross-fade"):
+        assert bad not in body, (page, body)
+    assert counts.get("css_dropped_url_string") == 1, counts
+
+
+def test_rt_a_real_raster_data_uri_in_css_is_kept():
+    real = _b64(png(8, 8, RED))
+    snap, counts = rs.sanitize_html(f'<div style="background:url(data:image/png;base64,{real})">x</div>'
+                                    f"<style>p{{background:image-set(\"data:image/png;base64,{real}\" 1x)}}</style>")
+    assert snap.count(real) == 2 and not counts.get("css_dropped_data_uri") and not counts.get("css_dropped_url_string")
+
+
+@needs_chrome
+def test_rt_the_default_renderer_loads_nothing_named_by_css_strings_or_labelled_data(tmp_path, loopback):
+    """Both Red Team cases through the intake's default renderer and real Chrome: nothing reaches the loopback
+    server, and the slide still shows."""
+    slide = png(900, 500, RED)
+    host = f"127.0.0.1:{loopback.port}"
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" '
+           f'fill="rgb(0,200,0)"/><image href="http://{host}/svg-inner"/></svg>').encode()
+    pages = "".join(p for p in _rt2_pages(host))
+    html = (f'<html><body><img src="{SLIDE}">'
+            f'<div style="width:300px;height:300px;background:url(data:image/png;base64,{_b64(svg)})">g</div>'
+            f'<div style="width:300px;height:300px;background-image:image-set(&quot;http://{host}/set&quot; 1x)">'
+            f's</div>{pages}</body></html>').encode()
+    cap = _capture_folder(tmp_path, {SLIDE: slide}, html=html)
+    er.render_captured_exhibit(cap / HTML_NAME, cap / "out.pdf")
+    colours = colour_pixels(cap / "out.pdf")
+    assert loopback.hits == [] and colours["red"] > 100 and colours["green"] == 0 and colours["yellow"] == 0
+    rec = json.loads((cap / "out.pdf.render.json").read_text())
+    assert rec["removed"]["css_dropped_data_uri"] >= 1 and rec["removed"]["css_dropped_url_string"] >= 1
+    assert any("not a decodable raster" in l for l in rec["limitations"])
+
+
+# ---------------------------------------------------------------- Red Team PR181 at ae6e9f1: the decode check alone decides
+
+def _spellings(uri: str) -> list[str]:
+    return [f'url("{uri}")', f"url('{uri}')", f"url({uri})", f"url( \"{uri}\" )",
+            f'image-set("{uri}" 1x)', f"-webkit-image-set('{uri}' 1x)", f'image-set(url("{uri}") 1x)',
+            f"image-set(url({uri}) 1x)"]
+
+
+@pytest.mark.parametrize("i", range(8))
+@pytest.mark.parametrize("where", ["attr", "block"])
+def test_rt3_a_real_png_survives_in_every_css_spelling_and_a_labelled_svg_never_does(i, where):
+    real = f"data:image/png;base64,{_b64(png(6, 6, RED))}"
+    fake = f"data:image/png;base64,{_b64(SVG_BYTES)}"
+    for resolver in (None, er.AssetResolver(Path("/nonexistent"), "x.htm", None)):
+        for uri, keep in ((real, True), (fake, False)):
+            css = f"background-image:{_spellings(uri)[i]}"
+            page = (f"<div style='{css}'>x</div>" if "'" not in css else f'<div style="{css.replace(chr(34), "&quot;")}">x</div>') \
+                if where == "attr" else f"<style>p{{{css}}}</style><p>x</p>"
+            snap, counts = rs.sanitize_html(page, image_resolver=resolver)
+            body = snap[len(rs.CSP_META):]
+            if keep:
+                assert uri in body, (page, body, counts)
+                assert not counts.get("css_urls_removed") and not counts.get("css_dropped_data_uri"), counts
+            else:
+                assert _b64(SVG_BYTES) not in body and "data:" not in body, (page, body)

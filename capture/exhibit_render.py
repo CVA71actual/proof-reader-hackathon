@@ -24,15 +24,12 @@ sanitized rendering never certifies that the capture is complete or that it matc
 from __future__ import annotations
 
 import base64
-import binascii
 import hashlib
 import json
 import posixpath
 import re
 from pathlib import Path
 from urllib.parse import unquote
-
-import pymupdf
 
 from capture import fetch_filings as ff
 from capture import research_sources as rs
@@ -47,28 +44,8 @@ LIMITATION = ("Sanitized rendering: scripts, external stylesheets, CSS images an
               "loaded; this rendering does not certify that the capture is complete or matches the original layout.")
 
 
-def raster_type(data: bytes) -> str | None:
-    """The raster media type the bytes begin with (PNG, JPEG, GIF, WebP), or None (SVG, HTML and anything else)."""
-    if data.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "image/png"
-    if data.startswith(b"\xff\xd8\xff"):
-        return "image/jpeg"
-    if data.startswith((b"GIF87a", b"GIF89a")):
-        return "image/gif"
-    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "image/webp"
-    return None
-
-
-def _pixels(data: bytes) -> tuple[int, int] | None:
-    try:
-        pix = pymupdf.Pixmap(data)
-    except Exception:
-        return None
-    try:
-        return int(pix.width), int(pix.height)
-    finally:
-        pix = None
+raster_type = rs.raster_type          # one raster check for every data: URI a snapshot carries (ISOLATE-001)
+_pixels = rs.raster_pixels
 
 
 def decode_html(raw: bytes) -> str:
@@ -129,13 +106,10 @@ class AssetResolver:
             return self._cache[src]
         m = _DATA.match(src)
         if m:
-            meta, payload = m.group(1), m.group(2)
-            if not meta.lower().rstrip().endswith(";base64"):
-                return self._omit(src, "inline data: image that is not base64 raster data")
-            try:
-                data = base64.b64decode(re.sub(r"\s+", "", unquote(payload)), validate=True)
-            except (binascii.Error, ValueError):
-                return self._omit(src, "inline data: image that does not decode")
+            decoded = rs.decode_raster_data_uri(src)
+            if decoded is None:
+                return self._omit(src, "inline data: image that is not a decodable PNG, JPEG, GIF or WebP raster")
+            data = decoded[1]
             got = self._inline(data)
             if isinstance(got, str):
                 return self._omit(src, f"inline data: image {got}")

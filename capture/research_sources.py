@@ -272,7 +272,9 @@ _DROP_WITH_CONTENT = {"script", "iframe", "frame", "frameset", "object", "embed"
 _DROP_TAG = {"base", "link", "source", "track", "portal"}
 _URL_ATTRS = {"src", "srcset", "data", "poster", "background", "formaction", "action", "lowsrc", "dynsrc",
               "xlink:href", "ping", "manifest", "codebase", "archive", "longdesc", "usemap", "icon"}
-_CSS_URL = __import__("re").compile(r"url\s*\(\s*(['\"]?)(?!data:)[^)]*\1\s*\)", __import__("re").I)
+# url(...) in each spelling: "double", 'single' or bare. A data: inner value is left for the raster decode check in
+# _clean_css (Red Team PR181 ae6e9f1: the old pattern backtracked over the quote and removed a quoted real PNG).
+_CSS_URL = __import__("re").compile(r"""url\s*\(\s*(?:"([^"]*)"|'([^']*)'|([^)'"\s]*))\s*\)""", __import__("re").I)
 _CSS_URL_OPEN = __import__("re").compile(r"url\s*\(", __import__("re").I)
 _CSS_IMPORT = __import__("re").compile(r"@import[^;]*;?", __import__("re").I)
 
@@ -281,23 +283,113 @@ CSP_META = f'<meta http-equiv="Content-Security-Policy" content="{CSP}">'
 _CSS_ESCAPE = __import__("re").compile(r"\\(?:[0-9a-fA-F]{1,6}\s?|.)", __import__("re").S)
 
 
+RASTER_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp")
+_DATA_URI = __import__("re").compile(r"(?is)^data:([^,]*),(.*)$")
+_CSS_DATA = __import__("re").compile(r"(?i)data:")
+_CSS_DATA_END = __import__("re").compile(r"['\")\s]")
+_CSS_STRING = __import__("re").compile(r"\"[^\"]*\"?|'[^']*'?")
+_CSS_URL_FUNC = __import__("re").compile(r"(?i)(?<![\w-])(?:-webkit-|-moz-|-o-|-ms-)?(?:image-set|cross-fade|image|"
+                                         r"element|src|paint)\s*\(")
+_REF_LIKE = __import__("re").compile(r"(?i)^\s*(?:[a-z][a-z0-9+.\-]*:|//|\\\\)")
+
+
+def raster_type(data: bytes) -> str | None:
+    """The raster media type the bytes begin with (PNG, JPEG, GIF, WebP), or None (SVG, HTML and anything else)."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def raster_pixels(data: bytes) -> tuple[int, int] | None:
+    """(width, height) when the bytes decode as an image, else None."""
+    try:
+        pix = pymupdf.Pixmap(data)
+    except Exception:
+        return None
+    try:
+        return int(pix.width), int(pix.height)
+    finally:
+        pix = None
+
+
+def decode_raster_data_uri(uri: str) -> tuple[str, bytes] | None:
+    """(media type, bytes) when the data: URI is base64 bytes, declared as a raster type, that really are a PNG, JPEG,
+    GIF or WebP image which decodes. None for anything else: SVG or HTML (whatever the label), plain-text data:,
+    broken base64, bytes that do not decode. ISOLATE-001: the only data: URIs a snapshot may carry."""
+    import base64
+    import binascii
+    from urllib.parse import unquote
+
+    m = _DATA_URI.match((uri or "").strip())
+    if not m:
+        return None
+    meta = [x.strip().lower() for x in m.group(1).split(";")]
+    if not meta or meta[0] not in RASTER_TYPES or meta[-1] != "base64":
+        return None
+    try:
+        data = base64.b64decode("".join(unquote(m.group(2)).split()), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    mtype = raster_type(data)
+    if mtype is None or raster_pixels(data) is None:
+        return None
+    return mtype, data
+
+
+def _css_drop(counts: dict, key: str) -> str:
+    counts[key] = counts.get(key, 0) + 1
+    return ""
+
+
 def _clean_css(css: str, counts: dict) -> str:
     if "\\" in css:          # CSS escapes (u\\72l(...)) are dropped, not decoded: the CSP blocks loads anyway
         counts["css_escapes_removed"] = counts.get("css_escapes_removed", 0) + len(_CSS_ESCAPE.findall(css))
         css = _CSS_ESCAPE.sub("", css)
-    n_url = len(_CSS_URL.findall(css))
+
+    def _url(m):
+        inner = next((g for g in m.groups() if g is not None), "")
+        if inner.strip().lower().startswith("data:"):
+            return m.group(0)
+        removed[0] += 1
+        return "none"
+
+    removed = [0]
     n_imp = len(_CSS_IMPORT.findall(css))
-    if n_url:
-        counts["css_urls_removed"] = counts.get("css_urls_removed", 0) + n_url
     if n_imp:
         counts["css_imports_removed"] = counts.get("css_imports_removed", 0) + n_imp
-    css = _CSS_URL.sub("none", _CSS_IMPORT.sub("", css))
+    css = _CSS_URL.sub(_url, _CSS_IMPORT.sub("", css))
+    if removed[0]:
+        counts["css_urls_removed"] = counts.get("css_urls_removed", 0) + removed[0]
     # Red Team b7bbc34: an UNCLOSED url( (url(file:///etc/passwd …) is not matched above. Any url( left that is not an
     # inline data: image drops the whole style text; the code-owned CSP stays as the second barrier.
     for m in _CSS_URL_OPEN.finditer(css):
         if not css[m.end():].lstrip(" \t\n'\"").lower().startswith("data:"):
             counts["css_dropped_unclosed_url"] = counts.get("css_dropped_unclosed_url", 0) + 1
             return ""
+    # Red Team PR181 #1: every data: URI left in the style must be a raster that really decodes, ending where the
+    # browser ends it (a quote or ')'). SVG or HTML bytes labelled image/png drop the whole style text.
+    for m in _CSS_DATA.finditer(css):
+        end = _CSS_DATA_END.search(css, m.start())
+        stop = end.start() if end else len(css)
+        if not end or css[stop] not in "'\")" or decode_raster_data_uri(css[m.start():stop]) is None:
+            return _css_drop(counts, "css_dropped_data_uri")
+    # Red Team PR181 #2: a URL can be written as a plain string (image-set("https://..."), src("file:...")). Any
+    # string that names a scheme or a protocol-relative host, other than a validated raster data: URI, drops the whole
+    # style text; so does any URL-bearing CSS function holding a string that is not one.
+    has_func = _CSS_URL_FUNC.search(css) is not None
+    for m in _CSS_STRING.finditer(css):
+        body = m.group(0)[1:]
+        body = body[:-1] if body.endswith(m.group(0)[0]) else body
+        if decode_raster_data_uri(body) is not None:
+            continue
+        if _REF_LIKE.match(body) or "://" in body or (has_func and body.strip()):
+            return _css_drop(counts, "css_dropped_url_string")
     return css
 
 
@@ -332,7 +424,7 @@ def sanitize_html(html_text: str, image_resolver: Callable[[str], str | None] | 
                 if k.startswith("on"):
                     bump("event_handlers_removed")
                     continue
-                if k in _URL_ATTRS and not (tag == "img" and k == "src" and v.strip().lower().startswith("data:")):
+                if k in _URL_ATTRS and not (tag == "img" and k == "src" and decode_raster_data_uri(v)):
                     if tag == "img" and k in ("src", "srcset"):
                         continue          # counted once per image below
                     bump("subresource_references_removed")
@@ -383,7 +475,7 @@ def sanitize_html(html_text: str, image_resolver: Callable[[str], str | None] | 
                         src = uri
                     else:
                         src = ""          # omitted: falls through to the placeholder below
-                if tag == "img" and src.strip().lower().startswith("data:"):
+                if tag == "img" and src.strip().lower().startswith("data:") and decode_raster_data_uri(src):
                     pass
                 elif tag in ("img", "image", "video", "audio") or (tag == "input" and
                                                                    dict(attrs).get("type", "").lower() == "image"):
@@ -476,7 +568,11 @@ def render_limitations(counts: dict) -> list[str]:
              "script_removed": "script(s) removed: content the site builds with JavaScript is not captured",
              "iframe_removed": "embedded frame(s) not captured", "frame_removed": "frame(s) not captured",
              "object_removed": "embedded object(s) not captured", "embed_removed": "embedded object(s) not captured",
-             "hidden_elements_removed": "element(s) the page hides (display:none, hidden) not captured"}
+             "hidden_elements_removed": "element(s) the page hides (display:none, hidden) not captured",
+             "css_dropped_data_uri": "style(s) not applied: they held a data: URI that is not a decodable raster image",
+             "css_dropped_url_string": "style(s) not applied: they named a resource as a plain string (image-set and "
+                                       "similar)",
+             "css_dropped_unclosed_url": "style(s) not applied: they held an unclosed url("}
     return [f"{n} {words[k]}" for k, n in sorted(counts.items()) if k in words and n]
 
 
