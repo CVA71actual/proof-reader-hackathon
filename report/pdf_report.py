@@ -41,6 +41,10 @@ def _styles():
             "RH1", parent=base["Heading1"], fontName="Helvetica-Bold",
             fontSize=13, leading=16, spaceBefore=14, spaceAfter=6,
         ),
+        "h2": ParagraphStyle(
+            "RH2", parent=base["Heading2"], fontName="Helvetica-Bold",
+            fontSize=11, leading=14, spaceBefore=10, spaceAfter=4,
+        ),
         "body": ParagraphStyle(
             "RBody", parent=base["BodyText"], fontName="Helvetica",
             fontSize=9, leading=12, spaceAfter=4,
@@ -123,7 +127,89 @@ def _p(text: str, style) -> Paragraph:
     return Paragraph(safe.replace("\n", "<br/>"), style)
 
 
+def _calendar_table(view: dict, styles) -> list:
+    """The calendar block: window, heading, then the table (columns, wording and status labels unchanged)."""
+    out = [_p("Calendar", styles["h1"]),
+           _p(f"Window: {view['calendar_window']}", styles["small"]),
+           _p(view["calendar_heading"], styles["small"])]
+    if not view["calendar"] and not view.get("past") and not view.get("contingent") and not view.get("undated") and not view.get("timing_unresolved") and not view.get("later"):
+        if view.get("no_accepted_rows_text"):
+            out.append(_p(view["no_accepted_rows_text"], styles["body"]))
+        return out
+    data = [[
+        _p("Date / period", styles["small"]),
+        _p("Ticker", styles["small"]),
+        _p("Program", styles["small"]),
+        _p("Event", styles["small"]),
+        _p("Source", styles["small"]),
+        _p("Status", styles["small"]),
+    ]]
+    for row in view["calendar"]:
+        status = row["review_label"]
+        if row.get("contingent"):
+            status += " · Contingent"
+        if row["person_tag"]:
+            status = f"{status} · {row['person_tag']}"
+        data.append([
+            _p(row["date_display"], styles["small"]),
+            _p(row["ticker"], styles["small"]),
+            _p(row["program"] or "—", styles["small"]),
+            _p(row["event"], styles["small"]),
+            _p(row["source"], styles["small"]),
+            _p(status, styles["small"]),
+        ])
+    table = Table(data, colWidths=[1.05 * inch, 0.55 * inch, 0.8 * inch, 1.5 * inch, 2.0 * inch, 1.1 * inch],
+                  repeatRows=1)
+    table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEEEEE")),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#CCCCCC")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    out.append(table)
+    return out
+
+
+def _run_record(view: dict, styles) -> list:
+    """The run's technical record, unchanged in wording: what the report opened with before EXPORT-LAYOUT-001 (run
+    label, date, status, the research log lines, page outcomes, stopping reason, build time)."""
+    out = [_p(f"Run {view['run_number']}: {view['run_label']}", styles["body"]),
+           _p(f"Run date: {view['run_date']}", styles["body"])]
+    if view.get("as_of_note"):
+        out.append(_p(view["as_of_note"], styles["body"]))
+    out.append(_p(f"Run status: {view['run_status']}", styles["body"]))
+    if view.get("research_label"):
+        out.append(_p(view["research_label"], styles["stamp"]))
+        for line in view.get("research_lines") or []:
+            out.append(_p(line, styles["small"]))
+    if view.get("models_line"):
+        out.append(_p(view["models_line"], styles["body"]))
+    if view["page_outcomes_recorded"]:
+        pc = view["page_outcome_counts"]
+        out.append(_p("Page outcomes: " + " · ".join(f"{label} {pc[key]}" for key, label in (
+            ("captured", "captured"), ("attempted", "attempted"), ("read", "read"),
+            ("unreadable", "unreadable"), ("skipped", "skipped"), ("unread", "unread"))), styles["body"]))
+        for company in view["page_outcomes_by_company"]:
+            out.append(_p(f"{company['ticker']} page outcomes: captured {company['captured']} · attempted "
+                          f"{company['attempted']} · read {company['read']} · unreadable {company['unreadable']} · "
+                          f"skipped {company['skipped']} · unread {company['unread']}", styles["small"]))
+    else:
+        out.append(_p("Page outcomes: not recorded for this saved run.", styles["body"]))
+    out.append(_p("Stopping reason: " + view["stopping_reason"], styles["body"]))
+    if view["sample_stamp"]:
+        out.append(_p(view["sample_stamp"], styles["stamp"]))
+    out.append(_p(f"{view['generated_at']}", styles["small"]))
+    return out
+
+
 def build_pdf(view: dict) -> bytes:
+    """EXPORT-LAYOUT-001 (CVA 2026-11-03): page 1 is the calendar. Order: title and one run line, the review label;
+    Calendar, then Summary; Needs your review; Undated, Later, Context (past); then the appendix (the run record and
+    research log that used to open the report, evidence and checks, corrections, edits, exclusions, sources)."""
     styles = _styles()
     buf = BytesIO()
     doc = BaseDocTemplate(
@@ -140,141 +226,23 @@ def build_pdf(view: dict) -> bytes:
     doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=_footer_canvas(view))])
 
     story = []
-    # Cover
+    # Page 1: title, one run line, the run's review label (and the sample stamp when the data is not real)
     story.append(_p(view["title"], styles["title"]))
-    story.append(_p(f"Run {view['run_number']}: {view['run_label']}", styles["body"]))
-    story.append(_p(f"Run date: {view['run_date']}", styles["body"]))
-    if view.get("as_of_note"):
-        story.append(_p(view["as_of_note"], styles["body"]))
-    story.append(_p(f"Run status: {view['run_status']}", styles["body"]))
+    story.append(_p(view["run_line"], styles["body"]))
     if view.get("research_label"):
         story.append(_p(view["research_label"], styles["stamp"]))
-        for line in view.get("research_lines") or []:
-            story.append(_p(line, styles["small"]))
-    if view.get("models_line"):
-        story.append(_p(view["models_line"], styles["body"]))
-    if view["page_outcomes_recorded"]:
-        pc = view["page_outcome_counts"]
-        story.append(_p("Page outcomes: " + " · ".join(f"{label} {pc[key]}" for key, label in (
-            ("captured", "captured"), ("attempted", "attempted"), ("read", "read"),
-            ("unreadable", "unreadable"), ("skipped", "skipped"), ("unread", "unread"))), styles["body"]))
-        for company in view["page_outcomes_by_company"]:
-            story.append(_p(f"{company['ticker']} page outcomes: captured {company['captured']} · attempted "
-                            f"{company['attempted']} · read {company['read']} · unreadable {company['unreadable']} · "
-                            f"skipped {company['skipped']} · unread {company['unread']}", styles["small"]))
-    else:
-        story.append(_p("Page outcomes: not recorded for this saved run.", styles["body"]))
-    story.append(_p("Stopping reason: " + view["stopping_reason"], styles["body"]))
     if view["sample_stamp"]:
         story.append(_p(view["sample_stamp"], styles["stamp"]))
-    story.append(_p(f"{view['generated_at']}", styles["small"]))
-    story.append(Spacer(1, 8))
 
-    # Summary
+    # Calendar
+    story.extend(_calendar_table(view, styles))
+
+    # Summary, directly under the calendar
     story.append(_p("Summary", styles["h1"]))
     for key, label in view["group_labels"].items():
         story.append(_p(f"{label}: {view['counts'][key]}", styles["body"]))
     story.append(_p(view["counters_line"], styles["body"]))
     story.append(_p(f"Unresolved (needs attention): {view['unresolved']}", styles["body"]))
-
-    # Calendar
-    story.append(_p("Calendar", styles["h1"]))
-    story.append(_p(f"Window: {view['calendar_window']}", styles["small"]))
-    story.append(_p(view["calendar_heading"], styles["small"]))
-    if not view["calendar"] and not view.get("past") and not view.get("contingent") and not view.get("undated") and not view.get("timing_unresolved") and not view.get("later"):
-        if view.get("no_accepted_rows_text"):
-            story.append(_p(view["no_accepted_rows_text"], styles["body"]))
-    else:
-        data = [[
-            _p("Date / period", styles["small"]),
-            _p("Ticker", styles["small"]),
-            _p("Program", styles["small"]),
-            _p("Event", styles["small"]),
-            _p("Source", styles["small"]),
-            _p("Status", styles["small"]),
-        ]]
-        for row in view["calendar"]:
-            status = row["review_label"]
-            if row.get("contingent"):
-                status += " · Contingent"
-            if row["person_tag"]:
-                status = f"{status} · {row['person_tag']}"
-            data.append([
-                _p(row["date_display"], styles["small"]),
-                _p(row["ticker"], styles["small"]),
-                _p(row["program"] or "—", styles["small"]),
-                _p(row["event"], styles["small"]),
-                _p(row["source"], styles["small"]),
-                _p(status, styles["small"]),
-            ])
-        table = Table(data, colWidths=[1.05 * inch, 0.55 * inch, 0.8 * inch, 1.5 * inch, 2.0 * inch, 1.1 * inch])
-        table.setStyle(TableStyle([
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEEEEE")),
-            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#CCCCCC")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 3),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ]))
-        story.append(table)
-    for key, label in view["placement_sections"]:
-        if view.get(key):
-            story.append(_p(f"{label} · {len(view[key])}", styles["h1"]))
-            for row in view[key]:
-                story.append(_p(f"{_status(row)} · {row['date_display']} · {row['ticker']} · {row['program']} · {row['event']} · "
-                        f"{row['id']} · {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
-                                f"indication: {row['indication'] or 'not stated'} · action: {row['action']} · "
-                                f"{_context(row)} · {row['reason']}" + (f" · {row['page_evidence_note']}" if row.get("page_evidence_note") else ""),
-                                styles["body"]))
-    for row in view["calendar"] + view.get("past", []) + view.get("undated", []) + view.get("timing_unresolved", []) + view.get("contingent", []) + view.get("later", []):
-        checks = "; ".join(_check_text(c)
-                            for c in row["check_limitations"])
-        if not checks and row.get("check_status_text"):
-            checks = row["check_status_text"]
-        history = "; ".join(_check_text(c)
-                              for c in row.get("check_history", []))
-        history_text = f" · {row.get('check_history_label') or 'Check history'}: {history}" if history else ""
-        story.append(_p(f"Evidence {row['id']}: {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
-                        f"indication {row['indication'] or 'not stated'} · action {row['action']} · "
-                        f"quote: {row['quote'] or 'not recorded'} · {_context(row)} · "
-                        f"current-value checks: {checks or 'not recorded'}"
-                        f"{history_text}" + (f" · {row['page_evidence_note']}" if row.get("page_evidence_note") else ""),
-                        styles["small"]))
-
-    # Corrections
-    story.append(_p("Corrections", styles["h1"]))
-    if not view["corrections"]:
-        story.append(_p("None.", styles["body"]))
-    else:
-        for c in view["corrections"]:
-            check = f" · check: {c['check']}" if c.get("check") else ""
-            story.append(_p(
-                f"{c['id']} · {c.get('ticker', '')} · {c.get('event', '')}: {c['before_after']} "
-                f"(caught by {c['caught_by']}{check}); "
-                f"latest re-check: {c.get('latest_recheck', 'not recorded')}"
-                + (f"; override reason: {c['override_reason']}" if c.get("override_reason") else ""),
-                styles["body"],
-            ))
-
-    story.append(_p("Other edits · no mistake demonstrated", styles["h1"]))
-    if not view.get("edits"):
-        story.append(_p("None.", styles["body"]))
-    else:
-        for edit in view["edits"]:
-            story.append(_p(f"{edit['id']} · {edit.get('ticker', '')} · {edit.get('event', '')}: "
-                            f"{edit['before_after']} ({edit['edit_status']}) · re-check: {edit['latest_recheck']}"
-                            + (f"; override reason: {edit['override_reason']}" if edit.get("override_reason") else ""),
-                            styles["body"]))
-
-    # Excluded
-    story.append(_p("Excluded", styles["h1"]))
-    if not view["exclusions"]:
-        story.append(_p("None.", styles["body"]))
-    else:
-        for x in view["exclusions"]:
-            story.append(_p(f"{x['id']}: {x['rule_words']}", styles["body"]))
 
     # Still open and unverified
     story.append(_p(view["needs_review_heading"], styles["h1"]))
@@ -301,8 +269,72 @@ def build_pdf(view: dict) -> bytes:
                 styles["body"],
             ))
 
+    # Undated, Later, Context (past)
+    for key, label in view["placement_sections"]:
+        if view.get(key):
+            story.append(_p(f"{label} · {len(view[key])}", styles["h1"]))
+            for row in view[key]:
+                story.append(_p(f"{_status(row)} · {row['date_display']} · {row['ticker']} · {row['program']} · {row['event']} · "
+                        f"{row['id']} · {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
+                                f"indication: {row['indication'] or 'not stated'} · action: {row['action']} · "
+                                f"{_context(row)} · {row['reason']}" + (f" · {row['page_evidence_note']}" if row.get("page_evidence_note") else ""),
+                                styles["body"]))
+
+    # Appendix: the run record and research log, then evidence and checks, corrections, edits, exclusions, sources
+    story.append(_p(view["appendix_heading"], styles["h1"]))
+    story.extend(_run_record(view, styles))
+
+    story.append(_p("Evidence and checks", styles["h2"]))
+    for row in view["calendar"] + view.get("past", []) + view.get("undated", []) + view.get("timing_unresolved", []) + view.get("contingent", []) + view.get("later", []):
+        checks = "; ".join(_check_text(c)
+                            for c in row["check_limitations"])
+        if not checks and row.get("check_status_text"):
+            checks = row["check_status_text"]
+        history = "; ".join(_check_text(c)
+                              for c in row.get("check_history", []))
+        history_text = f" · {row.get('check_history_label') or 'Check history'}: {history}" if history else ""
+        story.append(_p(f"Evidence {row['id']}: {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
+                        f"indication {row['indication'] or 'not stated'} · action {row['action']} · "
+                        f"quote: {row['quote'] or 'not recorded'} · {_context(row)} · "
+                        f"current-value checks: {checks or 'not recorded'}"
+                        f"{history_text}" + (f" · {row['page_evidence_note']}" if row.get("page_evidence_note") else ""),
+                        styles["small"]))
+
+    # Corrections
+    story.append(_p("Corrections", styles["h2"]))
+    if not view["corrections"]:
+        story.append(_p("None.", styles["body"]))
+    else:
+        for c in view["corrections"]:
+            check = f" · check: {c['check']}" if c.get("check") else ""
+            story.append(_p(
+                f"{c['id']} · {c.get('ticker', '')} · {c.get('event', '')}: {c['before_after']} "
+                f"(caught by {c['caught_by']}{check}); "
+                f"latest re-check: {c.get('latest_recheck', 'not recorded')}"
+                + (f"; override reason: {c['override_reason']}" if c.get("override_reason") else ""),
+                styles["body"],
+            ))
+
+    story.append(_p("Other edits · no mistake demonstrated", styles["h2"]))
+    if not view.get("edits"):
+        story.append(_p("None.", styles["body"]))
+    else:
+        for edit in view["edits"]:
+            story.append(_p(f"{edit['id']} · {edit.get('ticker', '')} · {edit.get('event', '')}: "
+                            f"{edit['before_after']} ({edit['edit_status']}) · re-check: {edit['latest_recheck']}"
+                            + (f"; override reason: {edit['override_reason']}" if edit.get("override_reason") else ""),
+                            styles["body"]))
+
+    # Excluded
+    story.append(_p("Excluded", styles["h2"]))
+    if not view["exclusions"]:
+        story.append(_p("None.", styles["body"]))
+    else:
+        for x in view["exclusions"]:
+            story.append(_p(f"{x['id']}: {x['rule_words']}", styles["body"]))
+
     # Sources
-    story.append(_p("Sources", styles["h1"]))
+    story.append(_p("Sources", styles["h2"]))
     for s in view["sources"]:
         block = []
         bits = [
