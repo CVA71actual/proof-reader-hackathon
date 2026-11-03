@@ -306,3 +306,44 @@ def test_an_unrelated_fix_keeps_the_finding_current(runs_dir):
                                                            "fix": {"field": "program", "from": row["program"],
                                                                    "to": "PN-X"}}).status_code == 200
     assert client.get(f"/api/runs/{rid}").json()["support_findings"]["e1"]["result"] == "unsupported_spans"
+
+
+# ---------------------------------------------------------------- LETTUCE-001 (Manus 05:31): one bounded communication
+
+
+def test_a_large_worker_answer_is_read_in_full(tmp_path):
+    items = [{"id": f"e{i}", "claim": "c", "passage": "p"} for i in range(64)]
+    w = _worker(tmp_path, "pad = 'x' * 2300\n"
+                          "print(json.dumps({'weights_sha256': '" + sp.PINNED_WEIGHTS_SHA256 + "', 'error': None, "
+                          "'results': {i['id']: {'result': 'no_finding', 'spans': [], 'pad': pad} "
+                          "for i in req['items']}}))\n")
+    results, meta = sp.run_batch(items, python=sys.executable, weights=_weights(tmp_path), worker=w, timeout_s=20)
+    assert meta["status"] == "ok", meta
+    assert len(results) == 64 and all(r["result"] == "no_finding" for r in results.values())
+    assert len(json.dumps(results)) > 140_000                      # past a 64 KB pipe buffer
+
+
+def test_a_worker_that_never_reads_a_large_request_cannot_pass_the_deadline(tmp_path):
+    items = [{"id": "e1", "claim": "c", "passage": "p" * 400_000}]          # far larger than a pipe buffer
+    w = tmp_path / "deaf.py"
+    w.write_text("import time\ntime.sleep(60)\n")                          # never reads stdin
+    began = time.monotonic()
+    results, meta = sp.run_batch(items, python=sys.executable, weights=_weights(tmp_path), worker=str(w),
+                                 timeout_s=1.0)
+    assert time.monotonic() - began < 15 and meta["reason"].startswith("timeout")
+    assert results["e1"]["result"] == "could_not_run"
+
+
+def test_a_stop_ends_a_blocked_request_write(tmp_path):
+    items = [{"id": "e1", "claim": "c", "passage": "p" * 400_000}]
+    w = tmp_path / "deaf.py"
+    w.write_text("import time\ntime.sleep(60)\n")
+    began = time.monotonic()
+    calls = {"n": 0}
+
+    def stop():
+        calls["n"] += 1
+        return calls["n"] > 2
+    results, meta = sp.run_batch(items, python=sys.executable, weights=_weights(tmp_path), worker=str(w),
+                                 timeout_s=60, should_stop=stop)
+    assert time.monotonic() - began < 15 and meta["reason"] == "stopped by a person"

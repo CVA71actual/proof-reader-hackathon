@@ -51,24 +51,25 @@ def run_batch(items: list[dict], *, python: str | None = None, weights: str | No
                                 env={**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"})
     except OSError as e:
         return _fail(items, f"the worker could not start ({type(e).__name__})")
-    try:
-        proc.stdin.write(request)
-        proc.stdin.close()
-    except OSError:
-        pass
-    while proc.poll() is None:
+    pending_input = request
+    while True:
         elapsed = time.monotonic() - began
         if should_stop is not None and should_stop():
             proc.kill()
-            proc.wait()
+            proc.communicate(timeout=5)
             return _fail(items, "stopped by a person", seconds=round(elapsed, 3))
-        if elapsed > timeout_s:
+        if elapsed >= timeout_s:
             proc.kill()
-            proc.wait()
+            proc.communicate(timeout=5)
             return _fail(items, f"timeout: the worker did not finish within {timeout_s:g}s", seconds=round(elapsed, 3))
-        time.sleep(POLL_S)
+        try:
+            # Bound delivery as well as inference, and drain both output pipes while
+            # the worker runs. Retrying communicate resumes the original input.
+            stdout, _ = proc.communicate(input=pending_input, timeout=min(POLL_S, timeout_s - elapsed))
+            break
+        except subprocess.TimeoutExpired:
+            pending_input = None
     seconds = round(time.monotonic() - began, 3)
-    stdout = proc.stdout.read()
     if proc.returncode != 0:
         return _fail(items, f"the worker exited with code {proc.returncode}", seconds=seconds)
     try:
