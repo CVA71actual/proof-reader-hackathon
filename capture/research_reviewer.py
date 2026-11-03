@@ -88,6 +88,7 @@ DEEPSEEK_NAME = "DeepSeek V4 Pro"
 DEEPSEEK_MODEL_ID = "deepseek-ai/DeepSeek-V4-Pro-0813"
 DEEPSEEK_FAMILY = "DeepSeek"
 FALLBACK_REVIEWER_NAME = "Muse Spark Open"
+FALLBACK_REVIEWER_PROVIDER = "baseten"
 FALLBACK_REVIEWER_FAMILY = "Muse Spark (Meta)"
 ADJUDICATOR_NAME = "Muse Wonder"
 ADJUDICATOR_PROVIDER = "meta"
@@ -125,6 +126,8 @@ class ChatReply:
     raw_content: list | None = None      # a Claude reply's content blocks, to go back into the history unchanged
     stop_details: dict | None = None     # a Claude refusal's category and explanation
     served_by: dict | None = None        # which model answered (a server-side fallback may have)
+    attempts: list | None = None         # per attempt: price_name, prompt_tokens, completion_tokens
+    access_reason: str | None = None     # set when the provider refused the KEY (not the request), e.g. billing
 
 
 def _int_or_none(v) -> int | None:
@@ -302,7 +305,7 @@ def deepseek_reviewer_model() -> OneShotChat:
 def fallback_reviewer_model() -> OneShotChat:
     from capture import second_reader
     return OneShotChat(FALLBACK_REVIEWER_NAME, second_reader.BASETEN_BASE_URL, second_reader.BASETEN_MODEL,
-                       "BASETEN_API_KEY", REVIEWER_PROVIDER, FALLBACK_REVIEWER_FAMILY)
+                       "BASETEN_API_KEY", FALLBACK_REVIEWER_PROVIDER, FALLBACK_REVIEWER_FAMILY)
 
 
 def identity(model) -> dict:
@@ -364,11 +367,13 @@ class _Gate:
 
     def settle(self, ticket, kind: str, model: str, price_name: str, prompt_tokens: int | None,
                completion_tokens: int | None, searches: int | None, error: str | None,
-               may_have_been_billed: bool | None) -> None:
+               may_have_been_billed: bool | None, attempts: list | None = None) -> None:
         rec = {"phase": "settle", "ticket": ticket, "stage": self.stage, "kind": kind, "model": model,
                "price_name": price_name,
                "usage": {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "searches": searches},
                "error": error, "may_have_been_billed": may_have_been_billed}
+        if attempts is not None:
+            rec["attempts"] = attempts
         self.calls.append({k: v for k, v in rec.items() if k not in ("phase", "ticket")})
         self.gate(rec)
 
@@ -1139,10 +1144,12 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         state["turns"] += 1
         state["model"] = reply.model or state["model"]
         gate.settle(ticket, "model", reply.model, who["price_name"], reply.prompt_tokens, reply.completion_tokens, 0,
-                    reply.error, reply.may_have_been_billed if reply.error else None)
+                    reply.error, reply.may_have_been_billed if reply.error else None,
+                    None if reply.error else reply.attempts)
         if reply.error:
-            if reply.http_status in REFUSED_STATUSES:
-                state["access_refused"] = {"http_status": reply.http_status, "message": reply.error}
+            if reply.http_status in REFUSED_STATUSES or reply.access_reason:
+                state["access_refused"] = {"http_status": reply.http_status, "message": reply.error,
+                                           "reason": reply.access_reason}
             return result(INCOMPLETE, reply.error)
         if reply.finish_reason == "refusal":
             # classified before any tool runs: a declined reply establishes nothing; its category is recorded

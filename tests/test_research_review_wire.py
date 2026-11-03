@@ -1012,3 +1012,38 @@ def test_the_smoke_tool_names_the_reviewer_that_ran_not_the_configured_one(runs_
     d.mkdir()
     r2 = _two_company_run(d, ok, F.FakeChat([], **F.FALLBACK))["run"]["research"]
     assert research_smoke.reviewer_line(r2) == "Reviewer: Claude Opus 5.5"
+
+
+def test_a_403_mid_review_keeps_the_validated_findings_and_ends_incomplete(runs_dir):
+    """OUTCOME-001 / CLAIM-001 (live review d313da2, probe_midreview_403): fall back only before any work."""
+    refused = ChatReply(F.REVIEWER_MODEL, error=REFUSED, http_status=403, may_have_been_billed=False)
+    primary = F.FakeChat([finding_script()[0], refused], probe=True)
+    fallback = F.FakeChat([], **F.FALLBACK)
+    wonder = F.FakeChat([F.verdict({"verdict": "unresolved", "reason": "x"})], model=F.ADJUDICATOR_MODEL)
+    tools = F.tools({PR1: (200, "text/html; charset=utf-8", PAGE1), PR2: (200, "text/html; charset=utf-8", PAGE2)})
+    tools.reviewer, tools.reviewer_fallback, tools.adjudicator, tools.brave = primary, fallback, wonder, F.FakeBrave()
+    reader = F.FakeResponses(happy_script())
+    app = create_app(runs_dir=runs_dir, reader=reader, background=False, second_reader=None, wonder_reader=None,
+                     sam_reader=None, research_tools=tools, research_reader=reader)
+    rid = TestClient(app).post("/api/runs/new", json={"mode": "research", "companies": ["PTGX"],
+                                                      "as_of": "2026-11-02"}).json()["id"]
+    run = run_json(runs_dir, rid)
+    e = run["run"]["research"]["review"]["PTGX"]
+    row = next(x for x in run["rows"] if x.get("research"))
+    assert fallback.sent == []                                      # this company was NOT re-run by the fallback
+    assert e["status"] == "incomplete" and "refused by the provider mid-review (HTTP 403)" in e["reason"]
+    assert "1 validated finding(s) are kept" in e["reason"] and e["reviewer"] == "Claude Opus 5.5"
+    assert [f["kind"] for f in row["research"]["review_findings"] if f["current"]] == ["lost_condition"]
+    assert "no findings" not in row["research"]["label"] and "partly reviewed by Claude Opus 5.5" in \
+        row["research"]["label"]
+    assert run["run"]["research"]["reviewer_access"]["refused"] is True     # later companies use the fallback
+
+
+def test_the_production_fallback_factory_records_its_own_provider():
+    """S2-04 (Manus 05:31): the real Muse Spark Open factory is Baseten, not Anthropic."""
+    model = rv.fallback_reviewer_model()
+    who = rv.identity(model)
+    assert who == {"name": "Muse Spark Open", "model": "meta-models/muse-spark-open-1026", "provider": "baseten",
+                   "family": "Muse Spark (Meta)"}
+    primary = rv.reviewer_model()
+    assert rv.identity(primary)["provider"] == "anthropic" and rv.identity(primary)["family"] == "Claude"

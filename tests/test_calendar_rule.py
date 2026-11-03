@@ -9,6 +9,7 @@ One inclusion predicate in runs.review.review_projection, no second status store
   - nothing ever says "Kept by you" for automatic inclusion, and counts keep the two apart.
 """
 import copy
+import json
 from io import BytesIO
 
 from docx import Document
@@ -342,3 +343,77 @@ def test_failed_secondary_span_support_from_the_real_intake_holds_the_row(tmp_pa
     from tests.pivot_assertions import fresh_keep
     kept = current_state(run, [fresh_keep(run, [], row["id"])])["targets"][row["id"]]
     assert kept["inclusion"] == "kept" and kept["issues"] == []
+
+
+def _two_page_research_run(tmp_path):
+    """The S1 intake on a two-page PDF: primary action/timing on page 1, the FDA condition on page 2."""
+    import pymupdf
+    from tests import research_fakes as F
+    from tests.test_research_s1 import PR1, QUOTE, _propose_run
+    doc = pymupdf.open()
+    for text in (QUOTE, "This timing is subject to FDA feedback."):
+        page = doc.new_page(width=612, height=792)
+        page.insert_text((54, 72), text, fontsize=11)
+    raw = doc.tobytes()
+    doc.close()
+    spans = [{"source_id": "src-r1-ptgx", "page_number": 1, "quote": QUOTE, "word_ids": None, "roles": ["action", "timing"]},
+             {"source_id": "src-r1-ptgx", "page_number": 2, "quote": "subject to FDA feedback.", "word_ids": None,
+              "roles": ["condition"]}]
+    ev = F.event("ICARUS readout", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30",
+                 spans=spans, conditions=["subject to FDA feedback"])
+    _, rid, run = _propose_run(tmp_path, [[ev]], pages={PR1: (200, "application/pdf", raw)})
+    return tmp_path / rid, run
+
+
+def _replace_secondary_words(directory, run, keep_condition):
+    """A correctly hashed, image-bound derived transcription replaces page 2's consumed words after intake."""
+    import hashlib
+    page = run["sources"][0]["pages"][1]
+    words = json.loads((directory / page["words"]).read_text())
+    for w in words["words"]:
+        if not keep_condition:
+            w["text"] = "unrelated"
+    encoded = (json.dumps(words) + "\n").encode()
+    rel = "pages/secondary-derived.words.json"
+    (directory / rel).write_bytes(encoded)
+    page["derived_words"] = {"file": rel, "sha256": hashlib.sha256(encoded).hexdigest(),
+                             "based_on_image_sha256": page["image_sha256"]}
+    (directory / "run.json").write_text(json.dumps(run) + "\n")
+
+
+def test_a_secondary_span_whose_consumed_words_change_after_intake_goes_to_review(tmp_path):
+    """Manus CALENDAR-NEW-001 (boundary_tests.py): the loader re-runs each span check on the words it consumes now."""
+    from report.data import load_run_dir
+    from tests.pivot_assertions import fresh_keep
+    directory, run = _two_page_research_run(tmp_path / "neg")
+    row_id = next(r for r in run["rows"] if r.get("research"))["id"]
+    before = current_state(run, [])["targets"][row_id]
+    assert before["inclusion"] == "included" and before["issues"] == []
+    old_keep = fresh_keep(run, [], row_id)
+    _replace_secondary_words(directory, run, keep_condition=False)
+    loaded, _ = load_run_dir(directory)
+    span = next(r for r in loaded["rows"] if r["id"] == row_id)["research"]["evidence"][1]
+    assert span["quote_match"] == "fail" and span["check_history"][0]["quote_match"] == "pass"
+    after = current_state(loaded, [])["targets"][row_id]
+    assert after["review_basis"] != before["review_basis"]
+    assert after["inclusion"] == "review" and not after["on_calendar"]
+    assert any("span 1 is not printed on src-r1-ptgx page 2" in i and "changed after it was first checked" in i
+               for i in after["issues"])
+    v = build_view(loaded, [], generated_at=AT)
+    assert row_id not in [r["id"] for r in v["calendar"]] and [r["id"] for r in v["open_rows"]] == [row_id]
+    for text in (pdf_text(v), docx_text(v)):
+        assert "Issues: Cited evidence: The quote of span 1" in " ".join(text.split())
+    # the Keep made before the change is history; a deliberate Keep of the changed proposal is kept
+    assert current_state(loaded, [old_keep])["targets"][row_id]["inclusion"] == "review"
+    kept = current_state(loaded, [old_keep, fresh_keep(loaded, [old_keep], row_id)])["targets"][row_id]
+    assert kept["inclusion"] == "kept"
+
+
+def test_a_changed_transcription_that_still_supports_the_span_stays_included(tmp_path):
+    from report.data import load_run_dir
+    directory, run = _two_page_research_run(tmp_path / "pos")
+    row_id = next(r for r in run["rows"] if r.get("research"))["id"]
+    _replace_secondary_words(directory, run, keep_condition=True)
+    loaded, _ = load_run_dir(directory)
+    t = current_state(loaded, [])["targets"][row_id]
+    assert t["issues"] == [] and t["inclusion"] == "included"

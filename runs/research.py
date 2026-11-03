@@ -457,7 +457,7 @@ def make_job_class():
                     # Strict admission (Manus 15:04): the call is made only if spend + every reservation in
                     # flight + its own worst case fits under the cap. Page mode keeps its own rule.
                     token = jobs.reserve_budget(self.dir.name, self.meta["spend_usd"], limit, worst,
-                                                alone_may_cross=False)
+                                                alone_may_cross=False, owner=self)
                     if token is not None:
                         return token, worst, input_bound
                     if not jobs._RESERVED.get(self.dir.name):
@@ -586,7 +586,7 @@ def make_job_class():
                                       "accept the unknown cost.")
                     limit = self.choices["spending_limit_usd"]
                     token = jobs.reserve_budget(self.dir.name, self.meta["spend_usd"], limit, worst,
-                                                alone_may_cross=False)
+                                                alone_may_cross=False, owner=self)
                     if token is not None:
                         return token, None
                     if not jobs._RESERVED.get(self.dir.name):
@@ -657,6 +657,10 @@ def make_job_class():
                             cost = t["worst"] if billed else 0.0
                         elif t.get("kind") == "search":
                             cost = prices.request_cost_usd(t["name"], usage.get("searches"))
+                        elif req.get("attempts"):      # each attempt at its own model's rates
+                            parts = [prices.cost_usd(a.get("price_name"), a.get("prompt_tokens"),
+                                                     a.get("completion_tokens")) for a in req["attempts"]]
+                            cost = None if any(x is None for x in parts) else round(sum(parts), prices.ROUND_TO)
                         else:
                             cost = prices.cost_usd(t["name"], usage.get("prompt_tokens"), usage.get("completion_tokens"))
                         u = self.review_usage(ticker)
@@ -846,26 +850,30 @@ def make_job_class():
                       "usage": {"prompt_tokens": getattr(reply, "prompt_tokens", None),
                                 "completion_tokens": getattr(reply, "completion_tokens", None), "searches": 0},
                       "error": getattr(reply, "error", None) if reply is not None else "No access check reply.",
-                      "may_have_been_billed": bool(getattr(reply, "may_have_been_billed", False))})
+                      "may_have_been_billed": bool(getattr(reply, "may_have_been_billed", False)),
+                      **({"attempts": reply.attempts} if reply is not None and not reply.error
+                         and getattr(reply, "attempts", None) else {})})
             if reply is None:
                 return {"checked": False, "reason": "The reviewer model has no access check."}
-            refused = reply.http_status in rv.REFUSED_STATUSES
+            reason = getattr(reply, "access_reason", None)
+            refused = reply.http_status in rv.REFUSED_STATUSES or bool(reason)
             return {"checked": True, "at": now_utc(), "refused": refused, "http_status": reply.http_status,
-                    "message": reply.error if reply.error else None}
+                    "message": reply.error if reply.error else None, **({"reason": reason} if reason else {})}
 
         def refused_reviewer(self, ticker: str, refusal: dict, locked: bool = False) -> tuple:
             """The provider refused the key for the primary reviewer: record it, never retry it, and use the declared
             fallback for the rest of the run (same family: the label says so; MULTI-FAMILY-001 is not met)."""
             from capture import research_reviewer as rv
             primary, fallback = self.tools.reviewer, self.tools.reviewer_fallback
-            why = (f"refused by the provider (HTTP {refusal.get('http_status')}): "
-                   f"{refusal.get('message') or 'access refused'}")
+            why = (refusal.get("reason") or f"refused by the provider (HTTP {refusal.get('http_status')})") + \
+                f": {refusal.get('message') or 'access refused'}"
             choice = {**rv.identity(fallback), "fallback_used": True, "primary": rv.identity(primary)["name"],
                       "primary_unavailable": why, "primary_refused": {k: refusal.get(k) for k in
-                                                                      ("http_status", "message")}}
+                                                                      ("http_status", "message", "reason")}}
             with jobs.RUN_LOCK:
                 self.research.setdefault("reviewer_access", {}).update(
                     {"refused": True, "http_status": refusal.get("http_status"), "message": refusal.get("message"),
+                     **({"reason": refusal["reason"]} if refusal.get("reason") else {}),
                      "fallback": choice["name"]})
             self.step(ticker, "review", "Code", "runs.research",
                       f"{choice['primary']} was {why}. It is not retried; the declared fallback {choice['name']} "
@@ -918,9 +926,20 @@ def make_job_class():
                                          spend_gate=self.review_gate(ticker), model=reviewer)
                 refused = record.get("access_refused")
                 fallback = getattr(self.tools, "reviewer_fallback", None)
-                if refused and not choice.get("fallback_used") and fallback is not None:
-                    # the provider refused the key for this model on a real call: never retried; the declared fallback
-                    # reviews this company and every later one in the run
+                first_call = (record.get("turns") or 0) <= 1 and not record.get("findings") \
+                    and not record.get("assessments") and not record.get("rejected")
+                if refused and not choice.get("fallback_used") and fallback is not None and not first_call:
+                    # OUTCOME-001 (live review d313da2): refused MID-review. That reviewer's validated work is kept and
+                    # its review ends incomplete with the reason; the fallback reviews only later companies.
+                    record["reason"] = (f"Incomplete: {choice['name']} was refused by the provider mid-review ("
+                                        f"{refused.get('reason') or 'HTTP ' + str(refused.get('http_status'))}) "
+                                        f"after {record.get('turns')} turn(s); its "
+                                        f"{len(record.get('findings') or [])} validated finding(s) are kept. "
+                                        f"{refused.get('message') or ''}").strip()
+                    self.refused_reviewer(ticker, refused)
+                elif refused and not choice.get("fallback_used") and fallback is not None:
+                    # the provider refused the key on the FIRST call (no work done): never retried; the declared
+                    # fallback reviews this company and every later one in the run
                     reviewer, choice = self.refused_reviewer(ticker, refused)
                     record = rv.review_draft(company=company, assignment=self.choices.get("note_for_agent") or "",
                                              proposals=[self.review_proposal(r) for r in rows], sources=given,
@@ -1430,15 +1449,31 @@ def make_job_class():
                 history += list(reply.output)
                 if not calls:
                     text = reply.text()
-                    if text:
-                        self.step(ticker, "prose", "Model", "Muse Spark",
-                                  "Answered in prose without a tool call (kept as uncommitted research): "
-                                  + text[:600], citations=reply.citations()[:20])
+                    if not (text or "").strip():
+                        # A-TO-Z-001 / OUTCOME-001 (Manus 05:35): a reply with only web searches is research activity,
+                        # not prose; it never ends the company. The searches are recorded above; the loop goes on
+                        # under the existing request and time limits.
+                        nudge = {"role": "user", "content": NUDGE_TOOLS}
+                        history.append(nudge)
+                        pending, prev_id = [nudge], reply.response_id
+                        continue
+                    self.step(ticker, "prose", "Model", "Muse Spark",
+                              "Answered in prose without a tool call (kept as uncommitted research): "
+                              + text[:600], citations=reply.citations()[:20])
                     if prose_nudged:
+                        # LIMITS-002 (prose after one reminder = done), with the same completion check as
+                        # finish_draft: a captured source never concluded leaves the company incomplete.
+                        open_ = self.unsettled(ticker)
+                        with jobs.RUN_LOCK:
+                            c["finish"] = {"by": "prose", "at": now_utc(), "text": text[:2000],
+                                           "unsettled_sources": open_}
+                        if open_:
+                            raise Stop("incomplete", f"Incomplete: the model ended in prose while {', '.join(open_)} "
+                                                     f"was captured and not concluded (no proposal citing it and "
+                                                     f"no nothing_material).")
                         with jobs.RUN_LOCK:
                             c["status_reason"] = ("The model ended with a final answer and no finish_draft; its "
                                                   "proposals are recorded, dispositions are missing.")
-                            c["finish"] = {"by": "prose", "at": now_utc(), "text": text[:2000]}
                         return
                     prose_nudged = True
                     nudge = {"role": "user", "content": NUDGE_TOOLS}     # LIMITS-002: prose after this = done
@@ -1477,6 +1512,14 @@ def make_job_class():
                 pending, prev_id = outputs, reply.response_id
                 self.save_ledger()
                 if finished:
+                    # OUTCOME-001 / CLAIM-001 (Manus 05:35): the one finish correction is spent; a finish that still
+                    # has disposition or reference issues, or an unconcluded captured source, is not a success.
+                    fin = c.get("finish") or {}
+                    left = [i["message"] for i in fin.get("issues") or []]
+                    if fin.get("unsettled_sources"):
+                        left.append(f"{', '.join(fin['unsettled_sources'])} was captured and not concluded")
+                    if left:
+                        raise Stop("incomplete", "Incomplete, not finished: " + "; ".join(m.rstrip(".") for m in left) + ".")
                     return
 
         def searches_left(self, ticker: str) -> int:
@@ -1605,7 +1648,7 @@ def make_job_class():
                         raise Stop("unpriced", "A call could not be priced, so the spending cap cannot be kept.")
                     limit = self.research_limit()
                     token = jobs.reserve_budget(self.dir.name, self.meta["spend_usd"], limit, worst,
-                                                alone_may_cross=False)
+                                                alone_may_cross=False, owner=self)
                     if token is not None:
                         return token
                     if not jobs._RESERVED.get(self.dir.name):
@@ -2446,11 +2489,6 @@ def make_job_class():
                       + [rc.issue("missing_disposition", f"{r} has no disposition.", r) for r in missing]
                       + [rc.issue("malformed_argument", f"{r} is marked duplicate of a row that is not one of this "
                                                         f"company's proposals.", r) for r in dup_bad])
-            open_ = self.unsettled(ticker)
-            # A-TO-Z-001 (register): a draft cannot end finished with an unconcluded unit
-            issues += [rc.issue("settle_first", f"A-TO-Z-001: {sid} was captured and not settled: propose_events "
-                                                f"citing it, or nothing_material with the reason, before finishing.",
-                                sid) for sid in open_]
             st["finish_attempts"] += 1
             if issues and st["finish_attempts"] == 1:
                 self.step(ticker, "check", "Code", "runs.research_contract",
@@ -2463,18 +2501,10 @@ def make_job_class():
                 c["finish"] = {"by": "finish_draft", "at": now_utc(), "call_id": cid,
                                "dispositions": args["dispositions"], "limitations": args["limitations"],
                                "missing_dispositions": missing, "issues": issues,
-                               "unsettled_sources": open_}
-                if not open_:
-                    c["status_reason"] = (f"The model finished: {len(mine)} proposal{'s' if len(mine) != 1 else ''}, "
-                                          f"{len(args['limitations'])} limitation"
-                                          f"{'s' if len(args['limitations']) != 1 else ''} stated by the model."
-                                          + (f" {len(missing)} without a disposition." if missing else ""))
-            if open_:
-                self.step(ticker, "check", "Code", "runs.research_contract",
-                          f"finish_draft not accepted as finished: {', '.join(open_)} still unsettled (A-TO-Z-001).",
-                          call_id=cid)
-                raise Stop("incomplete", f"Incomplete: the model finished with {', '.join(open_)} captured and not "
-                                         f"settled (A-TO-Z-001), so the draft is not complete.")
+                               "unsettled_sources": self.unsettled(ticker)}
+                c["status_reason"] = (f"The model finished: {len(mine)} proposal{'s' if len(mine) != 1 else ''}, "
+                                      f"{len(args['limitations'])} limitation{'s' if len(args['limitations']) != 1 else ''} "
+                                      f"stated by the model." + (f" {len(missing)} without a disposition." if missing else ""))
             self.step(ticker, "finish", "Model", "Muse Spark", c["status_reason"], call_id=cid)
             return rc.envelope(cid, "ok" if not issues else "partial", {"finished": True}, issues), True
 
@@ -2556,5 +2586,7 @@ def run_research(runs_dir: Path, run_id: str, reader, tools: ResearchTools | Non
     finally:
         with jobs.RUN_LOCK:
             jobs.ACTIVE_RUNS.discard(job.dir.name)
-            jobs._RESERVED.pop(job.dir.name, None)       # nothing of this run is in flight once its job has ended
+            # INTEGRATION-002: release only this job's own reservations; a sibling's ticket (a voice call in
+            # flight) stays until its owner settles it
+            jobs.release_owned(job.dir.name, job)
         job.remove_unrecorded_pages()

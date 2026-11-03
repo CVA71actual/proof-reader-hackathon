@@ -796,7 +796,10 @@ _SITE_STATE = (rf"\b{_SUBJECT}\s+(?:(?:is|are|has been|have been|was|were|will b
                r"(?:(?:currently|temporarily|now|briefly|still|being)\s+)*"
                r"(?:down|offline|unavailable|under (?:\w+ )?maintenance|undergoing (?:\w+ ){0,2}maintenance|"
                r"(?:being )?(?:updated|upgraded)|maintenance)\b")
-_BOT_WALL = (r"\bwe(?:'|’)?ll be back\b|\b(?:please )?(?:check|come) back (?:later|tomorrow|soon|shortly)\b|\baccess denied\b|\brequest blocked\b|\b(?:access|request|you|your (?:\w+ )?(?:ip|address|access|request))\s+(?:has|have)\s+been blocked\b|"
+# "check back later" is ordinary IR wording ("Please check back later for the archived replay"): it counts only in the
+# title or h1, or on a page that also carries a site-state statement or an access refusal (live review 7f0bb08).
+_CHECK_BACK = _re.compile(r"\b(?:please )?(?:check|come) back (?:later|tomorrow|soon|shortly)\b")
+_BOT_WALL = (r"\bwe(?:'|’)?ll be back\b|\baccess denied\b|\brequest blocked\b|\b(?:access|request|you|your (?:\w+ )?(?:ip|address|access|request))\s+(?:has|have)\s+been blocked\b|"
              r"\bare you a robot\b|\bcaptcha\b|\bunusual traffic\b|\battention required\b|\bjust a moment\b|"
              r"\bchecking your browser\b|\benable javascript and cookies\b|\bplease switch to a different browser\b|"
              r"\b403 forbidden\b|\byou don(?:'|’)?t have permission to access\b|\bbot detection\b|"
@@ -807,19 +810,22 @@ _HEADLINE = _re.compile(r"(?is)<(title|h1)\b[^>]*>(.*?)</\1\s*>")
 _SENTENCE_BREAK = _re.compile(r"(?<=[.!?…])\s+")
 
 
-def _block_hit(text: str) -> str | None:
-    m = _BLOCK_WORDING.search(" ".join(text.lower().split()))
+def _block_hit(text: str, weak: bool = False) -> str | None:
+    """The block wording in `text`; with `weak`, "check back later" wording counts too."""
+    low = " ".join(text.lower().split())
+    m = _BLOCK_WORDING.search(low) or (_CHECK_BACK.search(low) if weak else None)
     return m.group(0) if m else None
 
 
 def _prose_sentences(text: str) -> list[str]:
     """The page's prose: sentences (ending in . ! ? …) on its readable lines; navigation and link lists, which carry
-    no sentence punctuation, are not prose."""
+    no sentence punctuation, are not prose. A page with no sentence punctuation at all ("Site Maintenance" / "our
+    site is temporarily unavailable") is judged by its readable lines instead: each line ends a sentence."""
     out = []
     for line in text.splitlines():
         out += [p for p in _SENTENCE_BREAK.split(line.strip())        # linear: no backtracking on long lines
                 if p.endswith((".", "!", "?", "…")) and len(p.split()) > 1]
-    return out
+    return out or [line.strip() for line in text.splitlines() if len(line.split()) > 1]
 
 
 def block_reason(fetched: "Fetched") -> str | None:
@@ -838,12 +844,13 @@ def block_reason(fetched: "Fetched") -> str | None:
     if not text.strip():
         return "site served a block/maintenance page (no readable text)"
     for tag, inner in _HEADLINE.findall(sanitized):
-        hit = _block_hit(_html.unescape(_TAG.sub(" ", inner)))
+        hit = _block_hit(_html.unescape(_TAG.sub(" ", inner)), weak=True)
         if hit:
             where = "title" if tag.lower() == "title" else "headline"
             return f"site served a block/maintenance page (“{hit}” in the {where}, {len(text)} characters of text)"
     prose = _prose_sentences(text)
-    hits = [h for h in map(_block_hit, prose) if h]
+    strong = any(_block_hit(line) for line in text.splitlines())    # a site-state statement or access refusal
+    hits = [h for h in (_block_hit(p, weak=strong) for p in prose) if h]
     if hits and len(prose) - len(hits) < BLOCK_OTHER_SENTENCES:
         return (f"site served a block/maintenance page (“{hits[0]}”, with {len(prose) - len(hits)} other prose "
                 f"sentence{'s' if len(prose) - len(hits) != 1 else ''}, {len(text)} characters of text)")

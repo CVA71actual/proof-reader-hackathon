@@ -659,7 +659,8 @@ def test_repeated_identical_action_is_recorded_and_the_loop_goes_on(runs_dir):
         F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")]),
         F.body([F.call("read_source_pages", read, "c1")]),
         F.body([F.call("read_source_pages", read, "c2")]),
-        F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "nothing material (A-TO-Z-001)"}, "nm"), F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")]),
+        F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "x"}, "nm")]),     # A-TO-Z-001 (Manus 05:35): conclude before finishing
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")]),
     ])
     _, rid, _ = start(runs_dir, reader)
     r = run_json(runs_dir, rid)["run"]["research"]
@@ -694,7 +695,9 @@ def test_kill_condition_empty_answer_rate_is_recorded_and_surfaced(runs_dir):
     empty = F.body([F.reasoning()])         # a finished answer with no tool call and no text
     script = [empty, F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")]), empty,
               F.body([F.call("read_source_pages", {"source_id": "src-r1-ptgx", "pages": [1], "purpose": "x"}, "c2")]),
-              F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "nothing material (A-TO-Z-001)"}, "nm"), F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")])]
+              # A-TO-Z-001 (Manus 05:35): a finish with the captured source unconcluded is incomplete, so conclude it
+              F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "x"}, "nm")]),
+              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")])]
     reader = F.FakeResponses(script)
     _, rid, _ = start(runs_dir, reader)
     r = run_json(runs_dir, rid)["run"]["research"]
@@ -1149,7 +1152,8 @@ def test_a_403_is_could_not_access_and_the_primary_source_path_goes_on(runs_dir)
     reader = F.FakeResponses([
         F.body([F.call("fetch_url", {"url": blocked, "purpose": "news"}, "c0")]),
         F.body([F.call("fetch_url", {"url": primary, "purpose": "the 8-K EX-99 release"}, "c1")]),
-        F.body([F.call("nothing_material", {"source_id": "src-r2-ptgx", "reason": "nothing material (A-TO-Z-001)"}, "nm"), F.call("finish_draft", {"dispositions": [], "limitations": []}, "c2")])])
+        F.body([F.call("nothing_material", {"source_id": "src-r2-ptgx", "reason": "x"}, "nm")]),     # A-TO-Z-001 (Manus 05:35): conclude before finishing
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c2")])])
     _, rid, tools = start(runs_dir, reader, pages={blocked: (403, "text/html", b""),
                                                    primary: (200, "text/html", PAGE1)})
     out = json.loads(reader.requests[1]["input"][-1]["output"])
@@ -1158,7 +1162,7 @@ def test_a_403_is_could_not_access_and_the_primary_source_path_goes_on(runs_dir)
     run = run_json(runs_dir, rid)
     c = run["run"]["research"]["companies"]["PTGX"]
     assert c["capture_failures"][0]["outcome"] == "could_not_access" and c["capture_failures"][0]["url"] == blocked
-    assert c["status"] == "finished", (c["status_reason"], [s["id"] for s in run["sources"]])
+    assert c["status"] == "finished", c["status_reason"]
     assert run["sources"][0]["url"] == primary and run["sources"][0]["kind"] == "filing"
     assert "never work around a refusal" in rc.CONTROLLER
     # one honest request each, no retry or disguise (plus the SEC submissions list for the document's filing date)
@@ -2064,9 +2068,14 @@ def test_rt_5a48646_a_short_block_notice_with_one_fact_sentence_is_refused(page)
 
 
 def test_rt_5a48646_b_check_back_tomorrow_is_block_wording():
-    page = f"<html><body><p>Please check back tomorrow. {FDA}</p></body></html>".encode()
+    # "check back tomorrow" counts beside a site-state statement (Red Team 5a48646 (b)); on its own in body prose it is
+    # ordinary IR wording (live review 7f0bb08, below). Four facts + two block sentences: a block notice only when
+    # "check back tomorrow" is counted (otherwise five other sentences would make it a document).
+    facts = " ".join(f"Fact {w} about the program was reported." for w in ("one", "two", "three", "four"))
+    page = (f"<html><body><p>Our website is down for scheduled maintenance. Please check back tomorrow. {facts}</p>"
+            "</body></html>").encode()
     reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page))
-    assert reason and "check back tomorrow" in reason
+    assert reason and "with 4 other prose sentences" in reason
 
 
 def test_final_rule_controls_long_release_and_maintenance_dosing_are_captured():
@@ -2097,3 +2106,164 @@ def test_rt_5a48646_pages_through_fetch_url_store_nothing_and_match_no_row(runs_
     assert run["sources"] == [] and not any(r.get("status") == "matched" for r in run["rows"])
     fails = run["run"]["research"]["companies"]["PTGX"]["capture_failures"]
     assert [(f["url"], f["outcome"]) for f in fails] == [(a, "could_not_access"), (b, "could_not_access")]
+
+
+# ---------------------------------------------------------------- Manus 05:35 (A-TO-Z-001 / OUTCOME-001 / CLAIM-001)
+# Reproduced with Manus's offline_probe.py: three invalid completions ended company "finished" and run "done".
+
+
+def _fetch(cid="c0"):
+    return F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, cid)])
+
+
+def _company(runs_dir, rid):
+    run = run_json(runs_dir, rid)
+    return run["run"], run["run"]["research"]["companies"]["PTGX"]
+
+
+def test_prose_after_the_reminder_with_an_unconcluded_source_is_incomplete(runs_dir):
+    reader = F.FakeResponses([_fetch(), F.body([F.message("I am still reading.")]), F.body([F.message("I am done.")])])
+    _, rid, _ = start(runs_dir, reader)
+    meta, c = _company(runs_dir, rid)
+    assert c["status"] == "stopped" and c["limitation"]["kind"] == "incomplete"
+    assert "ended in prose while src-r1-ptgx was captured and not concluded" in c["status_reason"]
+    assert c["finish"]["by"] == "prose" and c["finish"]["unsettled_sources"] == ["src-r1-ptgx"]
+    assert meta["status"] != "done"
+
+
+def test_prose_after_the_reminder_with_nothing_open_still_ends_the_company(runs_dir):
+    """The approved LIMITS-002 rule stays for real prose."""
+    reader = F.FakeResponses([F.body([F.message("Reading the filings.")]), F.body([F.message("Done.")])])
+    _, rid, _ = start(runs_dir, reader)
+    meta, c = _company(runs_dir, rid)
+    assert c["status"] == "finished" and c["finish"] == {**c["finish"], "by": "prose", "text": "Done."}
+
+
+def test_search_only_replies_are_not_prose_and_never_finish(runs_dir):
+    reader = F.FakeResponses([F.body([F.search("PTGX q1", [PR1])]), F.body([F.search("PTGX q2", [PR1])]),
+                              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    _, rid, _ = start(runs_dir, reader)
+    meta, c = _company(runs_dir, rid)
+    assert len(reader.requests) == 3                        # both search-only replies continued the research
+    assert c["finish"]["by"] == "finish_draft" and c["status"] == "finished"
+    assert not any(s.get("kind") == "prose" for s in meta["research"]["steps"])
+
+
+def test_a_second_finish_with_missing_dispositions_is_incomplete(runs_dir):
+    ev = F.event("ICARUS Phase 3 topline", "Protagonist Therapeutics announced today its pipeline update.")
+    reader = F.FakeResponses([_fetch(), F.body([F.call("propose_events", {"events": [ev]}, "p")]),
+                              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f1")]),
+                              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f2")])])
+    _, rid, _ = start(runs_dir, reader)
+    meta, c = _company(runs_dir, rid)
+    assert len(reader.requests) == 4                        # one correction, no new retry
+    assert c["status"] == "stopped" and c["limitation"]["kind"] == "incomplete"
+    assert "Incomplete, not finished: e1 has no disposition." in c["status_reason"]
+    assert c["finish"]["missing_dispositions"] == ["e1"] and meta["status"] != "done"
+
+
+def test_capture_nothing_material_and_a_valid_finish_completes(runs_dir):
+    reader = F.FakeResponses([_fetch(), F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx",
+                                                                            "reason": "Staffing only."}, "nm")]),
+                              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    _, rid, _ = start(runs_dir, reader)
+    meta, c = _company(runs_dir, rid)
+    assert c["status"] == "finished" and c["limitation"] is None and meta["status"] == "done"
+
+
+def test_a_finish_with_a_captured_source_never_concluded_is_incomplete(runs_dir):
+    """A-TO-Z-001: a run cannot end complete with unconcluded units, by finish_draft as by prose."""
+    reader = F.FakeResponses([_fetch(), F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    _, rid, _ = start(runs_dir, reader)
+    meta, c = _company(runs_dir, rid)
+    assert c["status"] == "stopped" and c["limitation"]["kind"] == "incomplete"
+    assert "src-r1-ptgx was captured and not concluded" in c["status_reason"] and meta["status"] != "done"
+
+
+# ---------------------------------------------------------------- DATES-001 (Manus 05:31): a late dateline in the quote
+
+_DL_QUOTE = "SOUTH SAN FRANCISCO, Calif., November 5, 2026 (GLOBE NEWSWIRE) -- Protagonist announced"
+_DL_URL = "https://ir.example.com/fake-dateline"
+
+
+@pytest.mark.parametrize("late,anchored", [(False, False), (True, False), (True, True)])
+def test_a_dateline_in_the_quote_is_never_the_event_date_wherever_it_sits(runs_dir, late, anchored):
+    """proposal -> state -> report/audit: an unanchored dateline (header or past the first DATELINE_WORDS words) is a
+    typed issue; an explicit anchor ("today") keeps the date with no issue."""
+    from checks import event_checks as ec
+    from report.data import build_view
+    from runs.state import current_state
+    quote = _DL_QUOTE + (" today" if anchored else "")
+    nav = " ".join(f"menu{i}" for i in range(ec.DATELINE_WORDS + 20)) + " " if late else ""
+    ev = F.event("Synthetic pipeline update", quote, date_text="November 5, 2026", date="2026-11-05", conditions=[])
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": _DL_URL, "purpose": "x"}, "f")]),
+        F.body([F.call("propose_events", {"events": [ev]}, "p")]),
+        F.body([F.call("finish_draft", {"dispositions": [
+            {"row_id": "e1", "disposition": "proposal", "related_row_id": None, "reason": "x"}],
+            "limitations": []}, "done")])])
+    _, rid, _ = start(runs_dir, reader, pages={_DL_URL: (200, "text/html", F.html(nav + quote + " its update."))})
+    run = run_json(runs_dir, rid)
+    row = next(r for r in run["rows"] if r.get("research"))
+    if late:
+        assert ec.dateline_date([{"text": t} for t in (nav + quote).split()]) is None    # past the header scan
+    target = current_state(run, [])["targets"][row["id"]]
+    calendar = [r["id"] for r in build_view(run, [], generated_at="2026-11-03T13:40:00+00:00")["calendar"]]
+    codes = [i["code"] for i in row["research"]["issues"]]
+    # #178's state reads this typed issue (dateline_as_event_date is one of its research support codes); the audit
+    # carries it too. An unanchored dateline is never placed. The anchored row raises no dateline issue; whether it is
+    # placed belongs to the calendar rule (a Keep on S1 alone, automatic inclusion with #178), so it is not asserted.
+    audit_row = next(r for r in run["run"]["research"]["audit"]["rows"] if r["id"] == row["id"])
+    if anchored:
+        assert "dateline_as_event_date" not in codes
+        assert "dateline_as_event_date" not in audit_row["scope"]["issues"]
+    else:
+        assert codes == ["dateline_as_event_date"] and audit_row["scope"]["issues"] == ["dateline_as_event_date"]
+        assert target["on_calendar"] is False and row["id"] not in calendar
+
+
+# ---------------------------------------------------------------- live review 7f0bb08 (OUTCOME-001 / EVIDENCE-001)
+
+IR_EVENT = (b"<html><head><title>Acme to Present at the Jefferies Healthcare Conference | Acme</title></head><body>"
+            b"<h1>Acme to Present at the Jefferies Healthcare Conference</h1><p>Acme Therapeutics will present at the "
+            b"Jefferies Healthcare Conference on November 18, 2026 at 9:00 a.m. ET. A live webcast will be available "
+            b"on the Investors section of the company website. Please check back later for the archived replay.</p>"
+            b"</body></html>")
+JNJ_PLAIN = (b"<html><head><title>Johnson &amp; Johnson</title></head><body><div>Site Maintenance</div>"
+             b"<p>We're sorry, our site is temporarily unavailable</p></body></html>")
+
+
+def test_live_review_a_an_ir_event_page_saying_check_back_later_is_captured(runs_dir):
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", IR_EVENT)) is None
+    url = "https://ir.example.com/events/jefferies"
+    quote = "Acme Therapeutics will present at the Jefferies Healthcare Conference on November 18, 2026 at 9:00 a.m. ET."
+    ev = F.event("Jefferies presentation", quote, date_text="November 18, 2026 at 9:00 a.m. ET", date="2026-11-18")
+    reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": url, "purpose": "event"}, "c0")]),
+                              F.body([F.call("propose_events", {"events": [ev]}, "c1")]),
+                              F.body([F.call("finish_draft", {"dispositions": [
+                                  {"row_id": "e1", "disposition": "proposal", "related_row_id": None,
+                                   "reason": "x"}], "limitations": []}, "c2")])])
+    _, rid, _ = start(runs_dir, reader, pages={url: (200, "text/html", IR_EVENT)})
+    run = run_json(runs_dir, rid)
+    assert [s["url"] for s in run["sources"]] == [url]
+    row = next(r for r in run["rows"] if r["id"] == "e1")
+    assert row["date"] == "2026-11-18" and {c["name"]: c["result"] for c in row["checks"]}["date_match"] == "pass"
+
+
+def test_live_review_b_an_unpunctuated_maintenance_page_with_a_plain_title_is_refused():
+    reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", JNJ_PLAIN))
+    assert reason and reason.startswith("site served a block/maintenance page")
+
+
+def test_the_jnj_block_page_fixture_is_still_refused():
+    reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", JNJ_BLOCK))
+    assert reason and "title" in reason
+    plain = JNJ_BLOCK.replace(b"<title>Site Maintenance</title>", b"<title>Johnson &amp; Johnson</title>")
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", plain)).startswith("site served a block")
+
+
+def test_check_back_later_counts_in_a_title_or_beside_a_site_statement():
+    titled = b"<html><head><title>Please check back later</title></head><body><p>Thank you.</p></body></html>"
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", titled)).startswith("site served a block")
+    alone = b"<html><body><p>Please check back later for the replay. The call is on May 5, 2027.</p></body></html>"
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", alone)) is None
