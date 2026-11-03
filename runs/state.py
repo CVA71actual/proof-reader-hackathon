@@ -659,6 +659,13 @@ def _current_state(run: dict, decisions: list) -> dict:
             # history stays on the record, shown as history, never as a current issue
             s["review_findings_history"] = [_finding_text({**f, "current": True}) for f in finding_history]
         s.pop("_disagreement_open", None)
+    # DUPLICATE-ROWS-001: a later row that is the same event as an earlier one is not placed automatically.
+    for t, first in _duplicate_of(run, states).items():
+        s = states[t]
+        if s["issues"] is not None and not s.get("accepted") and s.get("review_bucket") != "excluded":
+            fv = states[first]["values"]
+            s["issues"] = list(dict.fromkeys([*s["issues"], f"Same event as {first} ({(fv.get('title') or '').strip()}, "
+                                                            f"{fv.get('date')}) — possible duplicate"]))
     counts["issues"] = sum(1 for s in states.values() if s["kind"] == "row" and s["issues"])
 
     # CALENDAR-RULE-001: the one inclusion predicate (runs.review.review_projection), now that issues are known.
@@ -706,6 +713,53 @@ DISAGREEMENT_ISSUE_FIELDS = ("date", "date_end", "date_text", "program", "indica
                              # (attribution) is a conflict too. Prose fields (type hint, relevance, relation) still
                              # differ by wording alone and are not.
                              "conditions", "subject_company")
+
+
+_MONTHS = ("january|february|march|april|may|june|july|august|september|october|november|december"
+           "|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec")
+_DAY_PHRASE = (r"(?:(?:on|date)\s+)?(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+)?"
+               rf"(?:(?:{_MONTHS})\s+\d{{1,2}}(?:\s+\d{{4}})?|\d{{1,2}}\s+(?:{_MONTHS})(?:\s+\d{{4}})?"
+               r"|\d{4}\s+\d{1,2}\s+\d{1,2})")
+_LEADING_DAY = re.compile(rf"^{_DAY_PHRASE}\s+")
+_TRAILING_DAY = re.compile(rf"\s+{_DAY_PHRASE}$")
+
+
+def _norm_text(text) -> str:
+    """Lower case, punctuation to spaces, whitespace collapsed."""
+    return " ".join(re.sub(r"[^0-9a-z]+", " ", str(text or "").lower()).split())
+
+
+def _norm_title(title) -> str:
+    """DUPLICATE-ROWS-001: the title compared for a duplicate, case/punctuation/whitespace-insensitive, with one
+    leading and one trailing day phrase ('November 12, 2026', 'on Thursday, Nov 12', '2026-11-12') ignored.
+    Strict equality only; no fuzzy similarity."""
+    t = _norm_text(title)
+    t = _TRAILING_DAY.sub("", _LEADING_DAY.sub("", t))
+    return t
+
+
+def _duplicate_of(run: dict, states: dict) -> dict:
+    """DUPLICATE-ROWS-001 (CVA 2026-11-03: "it shouldn't accept something twice"). Rows of the same company on the
+    same exact day (a date and no period end) whose normalized titles are equal are one event. Returns
+    {later row id: first row id}: the first in row order may be placed automatically, each later one is not (it goes
+    to review with a possible-duplicate issue; a person's Keep still wins). Rows a person or a code rule removed do
+    not count as the first. Periods are out of scope. Derived at read time from current values; nothing is stored."""
+    first, out = {}, {}
+    for row in run.get("rows", []):
+        t = row.get("id")
+        s = states.get(t)
+        if not s or s["kind"] != "row" or s.get("review_bucket") == "excluded":
+            continue
+        v = s.get("values") or {}
+        company, title = _norm_text(v.get("company")), _norm_title(v.get("title"))
+        if not v.get("date") or v.get("date_end") or not company or not title:
+            continue
+        key = (company, str(v["date"]), title)
+        if key in first:
+            out[t] = first[key]
+        else:
+            first[key] = t
+    return out
 
 
 def _page_key(row: dict | None):
