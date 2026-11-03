@@ -489,7 +489,7 @@ function closeDialog() {}
 function openDialog() {}
 function seeTheCheck() { return { textContent: '', children: [] }; }
 """
-    script = prelude + "var qnoteDraft = null;\n" + current_run_id_stub + "\n".join(_grab_fn(js, n) for n in names) + f"""
+    script = prelude + "var qnoteDraft = {};\n" + current_run_id_stub + "\n".join(_grab_fn(js, n) for n in names) + f"""
 var detail = {json.dumps(detail)};
 route.rowId = {json.dumps(row_id)};
 function textOf(node, out) {{
@@ -1397,6 +1397,7 @@ def test_research_instructions_both_start_paths_send_the_exact_text():
         "var nodes = {};",
         "var nrResearch = { defaultText: 'Read the 8-K exhibits.', maxLength: 4000, loaded: true };",
         "var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };",
+        "var nrSupportSeq = 0; var nrSupportPending = false;",
         "var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null, usedRun: null };",
         "var nrBusy = false;",
         "var nrChosen = {}; var nrPrepUnticked = {}; var nrCompanies = [];",
@@ -1452,7 +1453,7 @@ def test_dialog_survives_background_polling():
 
     js = (UI / "app.js").read_text()
     names = ("el", "esc", "clear", "btn", "noteField", "openDialog", "closeDialog", "removeDialog",
-             "fixDialog", "keepAnywayDialog", "showDialogError")
+             "fixDialog", "keepAnywayDialog", "showDialogError", "basisDigest", "markDialogStale")
     fns = "\n".join(_grab_fn(js, n) for n in names)
     script = "\n".join([
         "var FIELD_WORDS = { quote: 'Quote', date_text: 'Date as written' };",
@@ -1543,6 +1544,128 @@ def test_dialog_survives_background_polling():
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
     assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_keep_anyway_binds_the_shown_basis_and_renews_on_change():
+    # DIALOGS-001 (Manus 05:31): the Keep-anyway confirmation binds the
+    # proposal/evidence basis the person SAW. A refresh that revises the row
+    # under the open box keeps the draft but discloses the change; the next
+    # press renews the confirmation instead of writing; the write carries
+    # expected_basis for the server to compare (409 on mismatch).
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    names = ("el", "esc", "clear", "btn", "noteField", "openDialog", "closeDialog",
+             "keepAnywayDialog", "markDialogStale", "showDialogError", "basisDigest")
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    script = "\n".join([
+        "var RULE_WORDS = { event_in_past: 'The period ended before this run began.' };",
+        "var posts = [];",
+        "function currentRunId() { return 'run1'; }",
+        "function postDecision(id, body, msg, opts) { posts.push({ id: id, body: body }); }",
+        "function navigate() {}",
+        "function exclusionFor() { return { rule: 'event_in_past', reason: 'The period ended before this run began.' }; }",
+        "function codeExclusionHistory() { return null; }",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, dataset: {}, hidden: false, value: '',",
+        "  checked: false,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  insertBefore: function (n, ref) { var i = this.children.indexOf(ref); if (i < 0) this.children.push(n); else this.children.splice(i, 0, n); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  querySelector: function (sel) { var want = sel.replace(/^\\./, ''); var hit = null;",
+        "    (function walk(n) { (n.children || []).forEach(function (c) {",
+        "      if (!hit && (c.className || '').split(' ').indexOf(want) >= 0) hit = c; walk(c); }); })(this);",
+        "    return hit; },",
+        "  remove: function () {}, focus: function () { this.focused = true; } }; }",
+        "var nodes = {};",
+        "var dialogMount = null;",
+        "var dialogWrap = { hidden: true };",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (id === 'dialog-wrap') return dialogWrap; if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        "var dialogHost = global.document.getElementById('dialog');",
+        fns,
+        "function clear(node) { node.children = []; node.textContent = ''; return node; }",
+        # the run as served: revision 1, basis aaa
+        "var detail = { id: 'run1',",
+        "  run: { rows: [ { id: 'e1', ticker: 'ACME', title: 'ORIGINAL PROPOSAL', checks: [] } ], exclusions: [] },",
+        "  state: { targets: { e1: { review_basis: { version: 1, sha256: 'aaa' } } } } };",
+        "function rowOf(id) { return detail.run.rows.filter(function (r) { return r.id === id; })[0] || null; }",
+        "function findNote(host) { var hit = null;",
+        "  (function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'textarea') hit = hit || c; walk(c); }); })(host);",
+        "  return hit; }",
+        "function findBtns(host) { var b = [];",
+        "  (function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'button') b.push(c); walk(c); }); })(host);",
+        "  return b; }",
+        "function keepBtn() { return findBtns(nodes['dialog']).filter(function (b) { return b.textContent === 'Keep anyway'; })[0]; }",
+        # open on rev1, type a reason
+        "openDialog(rowOf('e1'), 'keepanyway');",
+        "var note = findNote(nodes['dialog']);",
+        "if (!note) { console.error('no note'); process.exit(2); }",
+        "note.value = 'I keep the ORIGINAL PROPOSAL';",
+        # a same-basis poll changes nothing and posts on Keep with the shown basis
+        "openDialog(rowOf('e1'), 'keepanyway');",
+        "if (nodes['dialog'].querySelector('.dlgstale')) { console.error('false stale'); process.exit(3); }",
+        "keepBtn().onclick();",
+        "if (posts.length !== 1 || posts[0].body.expected_basis !== 'aaa' || posts[0].body.note !== 'I keep the ORIGINAL PROPOSAL')",
+        "  { console.error(JSON.stringify(posts)); process.exit(4); }",
+        # the refresh brings revision 2 with a different basis
+        "detail.run.rows[0].title = 'REVISED PROPOSAL';",
+        "detail.state.targets.e1.review_basis = { version: 1, sha256: 'bbb' };",
+        "openDialog(rowOf('e1'), 'keepanyway');",
+        "var sub = nodes['dialog'].querySelector('.sh-s');",
+        "if (!nodes['dialog'].querySelector('.dlgstale') || sub.textContent.indexOf('REVISED') === -1)",
+        "  { console.error('change not disclosed'); process.exit(5); }",
+        "if (findNote(nodes['dialog']) !== note || note.value !== 'I keep the ORIGINAL PROPOSAL') { console.error('draft lost'); process.exit(6); }",
+        # the first press RENEWS: no write, draft survives, box rebinds to rev2
+        "keepBtn().onclick();",
+        "if (posts.length !== 1) { console.error('stale confirmation wrote: ' + JSON.stringify(posts)); process.exit(7); }",
+        "var note2 = findNote(nodes['dialog']);",
+        "if (note2.value !== 'I keep the ORIGINAL PROPOSAL') { console.error('draft lost on renew'); process.exit(8); }",
+        "if (nodes['dialog'].querySelector('.dlgstale')) { console.error('stale notice stuck'); process.exit(9); }",
+        # the confirmed press writes, bound to the basis now shown
+        "keepBtn().onclick();",
+        "if (posts.length !== 2 || posts[1].body.expected_basis !== 'bbb') { console.error(JSON.stringify(posts)); process.exit(10); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_a_late_refresh_of_the_previous_run_never_paints_under_the_new_run():
+    # DIALOGS-002 (Manus 05:31): refresh() GETs run1 and waits; switchRun loads
+    # run2; run1's late answer must be discarded — wrapper and document ids
+    # stay run2, no run1 render lands.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in ("refresh", "switchRun"))
+    script = "\n".join([
+        "var detail = { id: 'run1', run: { run: { id: 'run1' } }, state: {} };",
+        "var renders = [], shells = [];",
+        "function renderShell() { shells.push(detail.id); }",
+        "function render() { renders.push(detail.id + '/' + detail.run.run.id); }",
+        "function navigate() {}",
+        "function toast() {}",
+        "var resolvers = {};",
+        "var loadGen = 0;",
+        "var A = { run: function (id) { return new Promise(function (r) { resolvers[id] = r; }); } };",
+        fns,
+        "refresh();                 // GET run1 pending",
+        "switchRun('run2', false);  // GET run2 pending — the newer load",
+        "resolvers['run2']({ run: { id: 'run2' }, state: {} });",
+        "Promise.resolve().then(function () {",
+        "  if (detail.id !== 'run2' || detail.run.run.id !== 'run2') { console.error('run2 not applied'); process.exit(2); }",
+        "  var n = renders.length;",
+        "  resolvers['run1']({ run: { id: 'run1' }, state: {} });   // the late answer",
+        "  return Promise.resolve().then(function () {",
+        "    if (renders.length !== n) { console.error('late run1 painted: ' + JSON.stringify(renders)); process.exit(3); }",
+        "    if (detail.id !== 'run2' || detail.run.run.id !== 'run2') { console.error('identity mixed'); process.exit(4); }",
+        "    console.log('ok');",
+        "  });",
+        "}).catch(function (e) { console.error(e && e.message); process.exit(99); });",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
 
 def test_newrun_one_start_ruling():
     # NEWRUN-ONE-START-001 + the CVA addendum: ONE start button at the bottom;
@@ -1656,6 +1779,7 @@ def test_pr171_review_tick_state_survives_refusal():
         "var nrChosen = {}; var nrPrepUnticked = {}; var nrCompanies = []; var nrBusy = false;",
         "var nrResearch = { defaultText: null, maxLength: null, loaded: true };",
         "var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };",
+        "var nrSupportSeq = 0; var nrSupportPending = false;",
         "var nrIntake = { id: 'ik1', seq: 1, timer: null, last: null, text: null, usedId: null, usedRun: null };",
         "var DONE = { intake_id: 'ik1', status: 'done', ready_count: 2, failed_count: 0,",
         "  requested: ['PTGX', 'CRNX'], tickers: [",
@@ -1808,7 +1932,7 @@ def test_your_call_note_survives_background_polling():
         "    return hit; },",
         "  remove: function () {}, focus: function () { this.focused = true; },",
         "  setSelectionRange: function (a, b) { this.selectionStart = a; this.selectionEnd = b; } }; }",
-        "var nodes = {}; var sayRec = null; var qnoteDraft = null;",
+        "var nodes = {}; var sayRec = null; var qnoteDraft = {};",
         "var route = { screen: 'judgment', rowId: null, dialog: null }; var judgmentSel = null;",
         "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
         "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; },",
@@ -1848,7 +1972,7 @@ def test_your_call_note_survives_background_polling():
         # pane before the pending pane runs, and the draft must still survive
         "detail.run.rows = [row, row2];",
         "detail.state.targets = { 'e1': t, 'e2': t };",
-        "qnoteDraft = null; route.screen = 'judgment'; route.rowId = 'e1'; judgmentSel = null;",
+        "qnoteDraft = {}; route.screen = 'judgment'; route.rowId = 'e1'; judgmentSel = null;",
         "renderJudgment();",
         "var rj1 = null;",
         "(function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'textarea') rj1 = rj1 || c; walk(c); }); })(nodes['judgment-det']);",
@@ -1883,7 +2007,246 @@ def test_your_call_note_survives_background_polling():
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
     assert got.returncode == 0, got.stdout + got.stderr
 
-def test_newrun_sleeping_start_button_does_not_look_live():
+
+def test_your_call_note_never_crosses_runs_sharing_a_row_id():
+    # DIALOGS-003 (Manus 05:31): the 'Your call' draft is keyed by run AND row.
+    # run2's own e1 (same generated id) starts with an empty box even when a
+    # draft exists from run1; the same-run refresh still preserves it.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket",
+             "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
+             "reviewClass", "fixStillOpen", "needsAttention",
+             "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
+             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds",
+             "restoreFolds", "judgmentDecidedPane",
+             "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck",
+             "listReasonLine",
+             "shownDateText", "shownField", "whySection", "keptCurrent", "codeExclusionHistory", "detailsPane",
+             "supportFindingFor", "supportNoteText",
+             "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "disagreementSection",
+             "checkFnFor", "reportUrl", "reportRefusalReason", "dayInWords", "eventWord",
+             "researchLabelLine", "researchContextSection")
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    script = "\n".join([
+        "var FIELD_WORDS = { date_text: 'Date as written', date: 'Date', event_type: 'Event type' };",
+        "var NO_ERROR = 'x';",
+        "var EVENT_WORDS = { filing: 'Filing' };",
+        "var RULE_WORDS = {};",
+        "var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed', unreadable: 'unreadable', undecided: 'undecided' };",
+        "var CHECK_WORDS = { pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed', unresolved: 'unresolved' };",
+        "var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };",
+        "var RUN_ID = 'run1';",
+        "function currentRunId() { return RUN_ID; }",
+        "function navigate() {}",
+        "function postDecision(id, body) {}",
+        "function exclusionFor() { return null; }",
+        "function codeExclusionHistory() { return null; }",
+        "function closeDialog() {}",
+        "function openDialog() {}",
+        "function seeTheCheck() { return { textContent: '', children: [] }; }",
+        "function toast() {}",
+        "function mistakeTypeWord(t) { return t; }",
+        "var detail = { id: 'run1', run: { rows: [], mistakes: [], sources: [], tables: [], run: { label: 'probe' } },",
+        "  state: { targets: {}, exclusions: [], mistake_list: [] } };",
+        "function nearMissCheck() { return null; }",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, hidden: false, value: '',",
+        "  checked: false, dataset: {}, open: false, scrollTop: 0,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  querySelector: function () { return null; }, remove: function () {}, focus: function () { this.focused = true; },",
+        "  setSelectionRange: function (a, b) { this.selectionStart = a; this.selectionEnd = b; } }; }",
+        "var nodes = {}; var sayRec = null; var qnoteDraft = {};",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; }, activeElement: null };",
+        fns,
+        "function clear(node) { node.children = []; node.textContent = ''; return node; }",
+        "var row = { id: 'e1', title: 'RUN ONE ROW', ticker: 'ACME', proposed_by: 'Muse Spark', checks: [],",
+        "  date_text: 'Q3 2027', date: null, event_type: 'filing', quote: 'q', source_id: 's1', page_number: 1 };",
+        "var t = { group: 'open', status: 'undecided', decided_by_person: false, needs_attention: true,",
+        "  needs_recheck: false, recheck: null, last_action: null, review_label: 'Proposed — needs review',",
+        "  review_bucket: 'proposed', accepted: false, decision_label: null, on_calendar: false, issues: [],",
+        "  values: { date_text: 'Q3 2027' }, fixes: [], reason: null, disagreement: null };",
+        "function qnoteOf(host) { var hit = null;",
+        "  (function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'textarea') hit = hit || c; walk(c); }); })(host);",
+        "  return hit; }",
+        "var host = global.document.getElementById('judgment-det');",
+        "judgmentPendingPane(host, row, t);",
+        "var n1 = qnoteOf(host);",
+        "n1.value = 'RUN ONE REASON';",
+        "if (n1.oninput) n1.oninput();",
+        # same run, same row: a refresh keeps the draft
+        "judgmentPendingPane(host, row, t);",
+        "if (qnoteOf(host).value !== 'RUN ONE REASON') { console.error('same-run draft lost'); process.exit(2); }",
+        # run2's own e1 (same id): its box starts empty
+        "RUN_ID = 'run2';",
+        "judgmentPendingPane(host, row, t);",
+        "if (qnoteOf(host).value !== '') { console.error('draft crossed runs: ' + qnoteOf(host).value); process.exit(3); }",
+        # typing there never overwrites run1's draft, and run1 keeps its own
+        "var n2 = qnoteOf(host); n2.value = 'RUN TWO REASON'; if (n2.oninput) n2.oninput();",
+        "RUN_ID = 'run1';",
+        "judgmentPendingPane(host, row, t);",
+        "if (qnoteOf(host).value !== 'RUN ONE REASON') { console.error('run1 draft lost: ' + qnoteOf(host).value); process.exit(4); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_current_review_issues_reach_the_decision_pane_and_list():
+    # PROJECTION-001 (Manus 05:31): a row whose review projection carries
+    # current issues shows the exact concern where the person is asked to
+    # Keep/Fix/Remove, and in the judgment list's sub-line — never only a
+    # generic 'with findings' label.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket",
+             "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
+             "reviewClass", "fixStillOpen", "needsAttention",
+             "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
+             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds",
+             "restoreFolds", "judgmentDecidedPane",
+             "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck",
+             "listReasonLine",
+             "shownDateText", "shownField", "whySection", "keptCurrent", "codeExclusionHistory", "detailsPane",
+             "supportFindingFor", "supportNoteText",
+             "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "disagreementSection",
+             "checkFnFor", "reportUrl", "reportRefusalReason", "dayInWords", "eventWord",
+             "researchLabelLine", "researchContextSection")
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    script = "\n".join([
+        "var FIELD_WORDS = { date_text: 'Date as written', date: 'Date', event_type: 'Event type' };",
+        "var NO_ERROR = 'x';",
+        "var EVENT_WORDS = { filing: 'Filing' };",
+        "var RULE_WORDS = {};",
+        "var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed', unreadable: 'unreadable', undecided: 'undecided' };",
+        "var CHECK_WORDS = { pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed', unresolved: 'unresolved' };",
+        "var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };",
+        "function currentRunId() { return 'run1'; }",
+        "function navigate() {}",
+        "function postDecision(id, body) {}",
+        "function exclusionFor() { return null; }",
+        "function codeExclusionHistory() { return null; }",
+        "function closeDialog() {}",
+        "function openDialog() {}",
+        "function seeTheCheck() { return { textContent: '', children: [] }; }",
+        "function toast() {}",
+        "function mistakeTypeWord(t) { return t; }",
+        "var detail = { id: 'run1', run: { rows: [], mistakes: [], sources: [], tables: [], run: { label: 'probe' } },",
+        "  state: { targets: {}, exclusions: [], mistake_list: [] } };",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, hidden: false, value: '',",
+        "  checked: false, dataset: {}, open: false, scrollTop: 0,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  querySelector: function () { return null; }, remove: function () {}, focus: function () { this.focused = true; },",
+        "  setSelectionRange: function (a, b) { this.selectionStart = a; this.selectionEnd = b; } }; }",
+        "var nodes = {}; var sayRec = null; var qnoteDraft = {}; var judgmentSel = null;",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; }, activeElement: null };",
+        fns,
+        "function clear(node) { node.children = []; node.textContent = ''; return node; }",
+        "function textOf(node, out) { out = out || []; if (node && node.textContent) out.push(node.textContent);",
+        "  ((node && node.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        # the served projection: a current reviewer finding, issues filled by
+        # the review projection on GET /api/runs/{id}
+        "var row = { id: 'e1', title: 'ICARUS topline', ticker: 'ACME', proposed_by: 'Muse Spark', checks: [],",
+        "  date_text: 'Q3 2027', date: null, event_type: 'filing', quote: 'subject to FDA feedback',",
+        "  source_id: 's1', page_number: 1 };",
+        "var t = { group: 'open', status: 'undecided', decided_by_person: false, needs_attention: true,",
+        "  needs_recheck: false, recheck: null, last_action: null, review_label: 'Proposed — needs review',",
+        "  review_bucket: 'proposed', accepted: false, decision_label: null, on_calendar: false,",
+        "  issues: ['The reviewer found lost condition: dropped'],",
+        "  values: { date_text: 'Q3 2027' }, fixes: [], reason: null, disagreement: null };",
+        "detail.run.rows = [row]; detail.state.targets = { e1: t };",
+        # the decision pane (where Keep/Fix/Remove is asked) names the concern
+        "var host = global.document.getElementById('judgment-det');",
+        "judgmentPendingPane(host, row, t);",
+        "var paneTxt = textOf(host);",
+        "if (paneTxt.indexOf('dropped') === -1) { console.error('pane lacks the issue: ' + paneTxt.slice(0, 200)); process.exit(2); }",
+        # the judgment list's sub-line carries it too
+        "var listTxt = textOf(judgmentRow(row));",
+        "if (listTxt.indexOf('dropped') === -1) { console.error('list sub-line lacks the issue: ' + listTxt); process.exit(3); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_empty_judgment_queue_never_claims_auto_inclusions_were_decided():
+    # PROJECTION-004 (Manus 05:31): with the inclusion projection, an empty
+    # conflict queue says 'Nothing needs review.' — an automatically included
+    # proposal had no person decision, so the legacy 'everything decided'
+    # sentence only stands on older payloads without the projection.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket",
+             "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
+             "reviewClass", "fixStillOpen", "needsAttention",
+             "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
+             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds",
+             "restoreFolds", "judgmentDecidedPane",
+             "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck",
+             "listReasonLine",
+             "shownDateText", "shownField", "whySection", "keptCurrent", "codeExclusionHistory", "detailsPane",
+             "supportFindingFor", "supportNoteText",
+             "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "disagreementSection",
+             "checkFnFor", "reportUrl", "reportRefusalReason", "dayInWords", "eventWord",
+             "researchLabelLine", "researchContextSection", "renderJudgment")
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    script = "\n".join([
+        "var FIELD_WORDS = { date_text: 'Date as written', date: 'Date', event_type: 'Event type' };",
+        "var NO_ERROR = 'x';",
+        "var EVENT_WORDS = { filing: 'Filing' };",
+        "var RULE_WORDS = {};",
+        "var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed', unreadable: 'unreadable', undecided: 'undecided' };",
+        "var CHECK_WORDS = { pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed', unresolved: 'unresolved' };",
+        "var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };",
+        "function currentRunId() { return 'run1'; }",
+        "function navigate() {}",
+        "function postDecision(id, body) {}",
+        "function exclusionFor() { return null; }",
+        "function codeExclusionHistory() { return null; }",
+        "function closeDialog() {}",
+        "function openDialog() {}",
+        "function seeTheCheck() { return { textContent: '', children: [] }; }",
+        "function toast() {}",
+        "function mistakeTypeWord(t) { return t; }",
+        "var detail = { id: 'run1', run: { rows: [], mistakes: [], sources: [], tables: [], run: { label: 'probe' } },",
+        "  state: { targets: {}, exclusions: [], mistake_list: [], unresolved: 0,",
+        "    counts: { inclusion: { review: 0, kept: 0, included: 1 }, review: { proposed: 0 } } } };",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, hidden: false, value: '',",
+        "  checked: false, dataset: {}, open: false, scrollTop: 0,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  querySelector: function () { return null; }, remove: function () {}, focus: function () { this.focused = true; },",
+        "  setSelectionRange: function (a, b) { this.selectionStart = a; this.selectionEnd = b; } }; }",
+        "var nodes = {}; var sayRec = null; var qnoteDraft = {}; var judgmentSel = null;",
+        "var route = { screen: 'judgment', rowId: null, dialog: null };",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; }, activeElement: null };",
+        fns,
+        "function clear(node) { node.children = []; node.textContent = ''; return node; }",
+        "function textOf(node, out) { out = out || []; if (node && node.textContent) out.push(node.textContent);",
+        "  ((node && node.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        "renderJudgment();",
+        "var t1 = textOf(nodes['judgment-rows']);",
+        "if (t1.indexOf('Nothing needs review.') === -1) { console.error('projection wording missing: ' + t1); process.exit(2); }",
+        "if (t1.indexOf('decided') !== -1) { console.error('claims decisions: ' + t1); process.exit(3); }",
+        # an older server without the inclusion projection keeps the legacy line
+        "detail.state.counts = null;",
+        "renderJudgment();",
+        "var t2 = textOf(nodes['judgment-rows']);",
+        "if (t2.indexOf('The queue is empty. Everything proposed has been decided.') === -1)",
+        "  { console.error('legacy fallback lost: ' + t2); process.exit(4); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
     # fix-on-find (Red Team 7588841): .btn.pri has no :disabled rule, so the
     # disabled start kept the live ink fill — order (1) says never an
     # active-looking start that will not start
@@ -2081,7 +2444,10 @@ def test_source_view_check_and_scroll_survive_background_polling():
         "if (fold5.open !== false || det.scrollTop !== 0) { console.error('route-first stale restore'); process.exit(7); }",
         "console.log('ok');",
     ])
+    # DIALOGS-004: the child's exit status is the failing-if-broken signal —
+    # without this assert a JS regression reported on stderr passed silently
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
 
 
     # wiring pins: each surface renders from run.research / row.research
@@ -2369,6 +2735,7 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
         "var NR_PASTE_ONLY = 'This run reads only the pasted tickers. Clear the box to choose from the captured names instead.';",
         "var nrBusy = false;",
         "var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };",
+        "var nrSupportSeq = 0; var nrSupportPending = false;",
         "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',",
         "  'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];",
         "var INTAKE_STATE_WORDS = { resolving: 'Finding the company', capturing: 'Capturing documents',",
@@ -2488,6 +2855,7 @@ def test_new_run_posts_mode_research_and_the_server_accepts_it(tmp_path):
         "var nodes = {};",
         "var nrResearch = { defaultText: null, maxLength: null, loaded: true };",
         "var nrSupport = { loaded: true, available: true, reason: null, choices: ['lettucedetect'], touched: false };",
+        "var nrSupportSeq = 0; var nrSupportPending = false;",
         "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
         "  getElementById: function (id) { if (els[id]) return els[id]; if (!nodes[id]) nodes[id] = make(); return nodes[id]; },",
         "  querySelectorAll: function (sel) {",
@@ -4695,7 +5063,7 @@ def test_cleared_date_text_regression_addendum3():
         "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
         "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
         "  querySelector: function () { return null; } }; }",
-        "var nodes = {}; var sayRec = null; var qnoteDraft = null;",
+        "var nodes = {}; var sayRec = null; var qnoteDraft = {};",
         "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
         "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
         fns,
@@ -5605,7 +5973,7 @@ def test_m1_undo_click_posts_the_undo(tmp_path):
         "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
         "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
         "  querySelector: function () { return null; } }; }",
-        "var nodes = {}; var sayRec = null; var qnoteDraft = null;",
+        "var nodes = {}; var sayRec = null; var qnoteDraft = {};",
         "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
         "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
         fns,
@@ -6091,7 +6459,7 @@ def test_u37_keep_anyway_ui_pins():
     # audit row of a kept-anyway row reads 'code had removed it'; the dialog
     # mounts on the audit route; person trail notes show dates in words
     js = (UI / "app.js").read_text()
-    for word in ("function keepAnywayDialog(row)",
+    for word in ("function keepAnywayDialog(row, keepDraft)",
                  "'Keep anyway'",
                  "dialog: 'keepanyway'",
                  "action: 'keep', note: note.value.trim()",
@@ -6188,17 +6556,23 @@ def _grab_var(js: str, name: str) -> str:
     raise AssertionError(f"{name} does not close")
 
 
-def _render_card_and_summary(meta: dict, accepted: int = 0) -> dict:
+def _render_card_and_summary(meta: dict, accepted: int = 0, research: dict | None = None) -> dict:
     """Job 51e: the run card (updateRunCardJob) and the report Summary (renderExport), rendered by app.js's own
     functions in node under the same mock element harness as the other UI tests; returns each one's text."""
     import json
     import subprocess
 
     js = (UI / "app.js").read_text()
+    if research is not None:
+        meta = {**meta, "research": research}
     consts = "\n".join(_grab_var(js, n) for n in ("GROUP_NAMES", "GROUP_ORDER", "JOB_STATUS_WORDS", "JOB_ACTIVE",
-                                                   "JOB_PAUSABLE", "JOB_LIMIT_STOP"))
+                                                   "JOB_PAUSABLE", "JOB_LIMIT_STOP", "RESEARCH_STATUS_WORDS",
+                                                   "NO_SECOND_READER", "ONE_MODEL_LINE"))
     fns = "\n".join(_grab_fn(js, n) for n in ("money", "cents", "costPerKeptRowWords", "unpricedMark", "jobReason",
-                                               "updateRunCardJob", "oneModelRun", "reviewAxis", "renderExport", "reviewAcceptedCount", "projectionComplete", "partialProjection", "researchCompanyBlock", "runResearch"))
+                                               "updateRunCardJob", "oneModelRun", "reviewAxis", "renderExport",
+                                               "reviewAcceptedCount", "projectionComplete", "partialProjection",
+                                               "researchCompanyBlock", "runResearch", "researchReviewLine",
+                                               "num", "usdCents", "hm"))
     script = f"""
 function make() {{
   return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, hidden: false, value: '',
@@ -6282,6 +6656,27 @@ def test_51e_no_unpriced_call_no_marker():
     got = _render_card_and_summary(meta)
     assert got["stop"][-1] == "Stopped at the spending limit. Raise the limit and press Resume to read more."
     assert got["spend"] == ["$1.04"]
+
+
+def test_run_card_names_the_review_stage_and_never_claims_one_model_for_research():
+    # PROJECTION-002 (Manus 05:31): a research run whose company finished
+    # research but is under review says so, with the recorded reviewer's name;
+    # the page-mode 'One model: Muse Spark only' sentence never appears on a
+    # research run — the independent reviewer is stage S2.
+    meta = {"status": "done", "spend_usd": 0.42, "turn_count": 5, "turn_limit": 40,
+            "choices": {"mode": "research", "models": "one", "spending_limit_usd": 2.0},
+            "label": "PTGX · research"}
+    research = {"companies": {"PTGX": {"status": "finished", "review_status": "reviewing",
+                                        "requests": 4, "searches": 2, "fetches": 6, "spend_usd": 0.42}},
+                "review": {"PTGX": {"status": "incomplete", "reviewer": "Claude Opus 5.5"}}}
+    got = _render_card_and_summary(meta, research=research)
+    card = "\n".join(got["card"])
+    assert "reviewing" in card and "Claude Opus 5.5" in card, card
+    assert "One model" not in card, card
+    # the page-mode one-model run keeps its sentence (unchanged control)
+    page = _render_card_and_summary({"status": "done", "spend_usd": 0.1, "turn_count": 2, "turn_limit": 40,
+                                     "choices": {"mode": "pages", "models": "one"}})
+    assert any("One model: Muse Spark only" in t for t in page["card"]), page["card"]
 
 
 def test_job50b_the_409_clears_key_sealed_and_planted_and_shows_the_plain_reason(tmp_path):
@@ -6370,6 +6765,8 @@ def _new_run_sheet_script(body_lines, extra_fns=()):
         "var nrCompanies = ['IONS', 'PTGX'];",
         "var nrResearch = { defaultText: null, maxLength: null, loaded: true };",
         "var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };",
+        "var nrSupportSeq = 0; var nrSupportPending = false;",
+        "var nrSupportSeq = 0; var nrSupportPending = false;",
         "function toast() {}",
         "function switchRun(id) { switched = id; }",
         "function setInterval() { return 1; }",
@@ -6673,6 +7070,43 @@ def test_lettuce_ui_shell_and_finding_helpers():
     _run_node(script)
 
 
+def test_support_attempt_renders_once_in_the_trail():
+    # PROJECTION-003 (Manus 05:31): one support attempt is one display step.
+    # The run-level research block skips the raw capture.support_signal step;
+    # the row-level supportTrailSteps renders it with attribution and the
+    # served currentness wording.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    consts = "\n".join(_grab_var(js, n) for n in ("RESEARCH_STEP_WORDS",))
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("el", "hm", "researchTrailBlock", "supportTrailSteps", "supportStepText", "timingReason"))
+    script = "\n".join([
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, hidden: false,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; } };",
+        consts,
+        fns,
+        "function textOf(node, out) { out = out || []; if (node && node.textContent) out.push(node.textContent);",
+        "  ((node && node.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        "var steps = [",
+        "  { who: 'capture.support_signal', at: '2026-11-02T00:00:00Z', refs: { row_id: 'e1', result: 'unsupported_spans' }, text: 'x' },",
+        "  { who: 'Muse Spark', at: '2026-11-02T00:00:02Z', kind: 'model_call', step: 'Read', text: 'researched' },",
+        "];",
+        "var block = researchTrailBlock({ label: 'Agent research', steps: steps });",
+        "var blockTxt = textOf(block);",
+        "if (blockTxt.indexOf('Support check') !== -1 || blockTxt.indexOf('unsupported spans') !== -1)",
+        "  { console.error('raw support step duplicated at run level: ' + blockTxt); process.exit(2); }",
+        "if (blockTxt.indexOf('researched') === -1) { console.error('real step lost: ' + blockTxt); process.exit(3); }",
+        # the row-level step carries the attempt, once, attributed
+        "var rowSteps = supportTrailSteps(steps, 'e1', {});",
+        "if (rowSteps.length !== 1 || rowSteps[0].who !== 'LettuceDetect' || rowSteps[0].tag !== 'LettuceDetect')",
+        "  { console.error(JSON.stringify(rowSteps)); process.exit(4); }",
+        "console.log('ok');",
+    ])
+    _run_node(script)
+
+
 def test_lettuce_new_run_checkbox_offered_from_options():
     # available: enabled, unticked (the server's default is off), payload word
     _run_node(_new_run_sheet_script([
@@ -6732,7 +7166,66 @@ def test_lettuce_new_run_checkbox_unavailable_shows_reason_and_never_sends():
     ], extra_fns=('supportFromOptions', 'applySupportOptions', 'nrSupportValue')))
 
 
-def test_history_checks_read_neutral_and_timing_caveat_verbatim():
+def test_lettuce_pending_reopen_sends_off_until_the_fresh_answer():
+    # NR-002 (Manus 05:31): reopening while the options GET is pending must
+    # leave the box disabled AND unticked, and a start reads no stale value —
+    # off/null ships until the fresh answer lands
+    _run_node(_new_run_sheet_script([
+        # a ticked, available box left over from a previous open
+        "els['nr-support'] = { checked: true, disabled: false };",
+        "nrSupport = { loaded: true, available: true, reason: null, choices: ['lettucedetect'], touched: true };",
+        "var deferred = [];",
+        "A.researchOptions = function () { return new Promise(function (r) { deferred.push(r); }); };",
+        "refreshSupportOptions();",
+        "if (els['nr-support'].checked) fail(2, 'pending box stays ticked');",
+        "if (!els['nr-support'].disabled) fail(3, 'pending box enabled');",
+        "startRunNow();",
+        "if (!posts.length || posts[0].support_check !== null) fail(4, JSON.stringify(posts));",
+        "posts.length = 0;",
+        # the fresh available answer re-enables the box; the person's tick ships
+        "deferred[0]({ support_check: { choices: ['lettucedetect'], default: null, available: true,",
+        "                               unavailable_reason: null } });",
+        "Promise.resolve().then(function () {",
+        "  if (els['nr-support'].disabled) fail(5, 'box still disabled after the answer');",
+        "  els['nr-support'].checked = true;",
+        "  return later();",   # the first start's deferred server reply frees nrBusy
+        "}).then(function () {",
+        "  startRunNow();",
+        "  if (!posts.length || posts[0].support_check !== 'lettucedetect') fail(6, JSON.stringify(posts));",
+        "  console.log('ok');",
+        "}).catch(function (e) { fail(99, e && e.message); });",
+    ], extra_fns=('supportFromOptions', 'applySupportOptions', 'nrSupportValue', 'refreshSupportOptions')))
+
+
+def test_lettuce_older_options_answer_never_overrides_the_newer():
+    # NR-003 (Manus 05:31): two opens in flight; the newer request's
+    # unavailable answer owns the state — the older request's late available
+    # answer must not enable the box or restore the availability hint
+    _run_node(_new_run_sheet_script([
+        "els['nr-support'] = { checked: false, disabled: true };",
+        "var deferred = [];",
+        "A.researchOptions = function () { return new Promise(function (r) { deferred.push(r); }); };",
+        "refreshSupportOptions();",   # request 1
+        "refreshSupportOptions();",   # request 2 — the newer one
+        "deferred[1]({ support_check: { choices: ['lettucedetect'], default: null, available: false,",
+        "                               unavailable_reason: 'NEW_UNAVAILABLE' } });",
+        "Promise.resolve().then(function () {",
+        "  if (!els['nr-support'].disabled) fail(2, 'unavailable box enabled');",
+        "  if (nodes['nr-support-hint'].textContent !== 'The wording check is not set up on this computer.')",
+        "    fail(3, nodes['nr-support-hint'].textContent);",
+        # the older request's late available answer: ignored
+        "  deferred[0]({ support_check: { choices: ['lettucedetect'], default: null, available: true,",
+        "                                unavailable_reason: null } });",
+        "  return Promise.resolve().then(function () {",
+        "    if (!els['nr-support'].disabled) fail(4, 'stale answer enabled the box');",
+        "    if (nodes['nr-support-hint'].textContent !== 'The wording check is not set up on this computer.')",
+        "      fail(5, nodes['nr-support-hint'].textContent);",
+        "    if (nrSupportValue() !== null) fail(6, 'stale answer leaked a value');",
+        "    console.log('ok');",
+        "  });",
+        "}).catch(function (e) { fail(99, e && e.message); });",
+    ], extra_fns=('supportFromOptions', 'applySupportOptions', 'nrSupportValue', 'refreshSupportOptions')))
+
     # the Red Team timing ruling: a current date pass's caveat reads the ruling's
     # words verbatim; history (stale) passes wear a neutral dot and 'passed
     # then' — never a green dot, never the current 'Timing matches source'

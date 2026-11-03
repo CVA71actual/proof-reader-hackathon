@@ -195,7 +195,7 @@ def test_ui_run_card_and_counters_do_not_claim_a_second_reader():
     js = (UI / "app.js").read_text()
     assert f"var ONE_MODEL_LINE = '{ONE_MODEL_LINE}';" in js
     assert f"var NO_SECOND_READER = '{NO_SECOND_READER}';" in js
-    assert "if (oneModelRun(meta)) host.append(el('div', 'jb-sub', ONE_MODEL_LINE));" in _grab_fn(js, "updateRunCardJob")
+    assert "if (oneModelRun(meta) && meta.choices.mode !== 'research') {" in _grab_fn(js, "updateRunCardJob")
     audit = _grab_fn(js, "renderAudit")
     assert "if (d[0] === 'MREADER' && oneModelRun(meta)) {" in audit
     assert "countersEl.append(el('span', 'ctchip zero', NO_SECOND_READER));" in audit
