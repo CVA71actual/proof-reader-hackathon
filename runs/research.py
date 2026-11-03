@@ -2485,19 +2485,23 @@ def support_passage(row: dict) -> str:
     return "\n".join(s["quote"] for s in (row.get("research") or {}).get("evidence") or [])
 
 
-def support_binding(run: dict, row: dict, weights_sha256) -> dict:
+def support_binding(run: dict, row: dict, weights_sha256, values: dict | None = None) -> dict:
     """The material identity a support finding is current for (the canonical span identity of runs/review.py
-    research_basis: source id, page, quote, roles, source/original digests and page artifact hashes) plus the claim
-    field and text and the model/weights. Never part of a Keep basis."""
+    research_basis: source id, page, quote, roles, source/original digests and page artifact hashes) plus the
+    EFFECTIVE claim and cited quote and the model/weights. `values`: the state's effective values (the proposal plus a
+    person's current fixes, runs/state.current_state); without them the row as proposed (which is what the check
+    read). IDENTITY-001: a Fix to the title or the quote changes the binding, so the old finding is stale. Never part
+    of a Keep basis."""
     from capture import support_signal as ss
     from runs.review import research_basis
+    effective = {**row, **{k: v for k, v in (values or {}).items() if k in ("title", "quote")}}
     basis = research_basis(run, row)
-    return {"field": "title", "claim": row.get("title"), "revision": basis.get("revision"),
-            "evidence": basis.get("evidence"), "model": ss.MODEL, "model_revision": ss.MODEL_REVISION,
-            "weights_sha256": weights_sha256}
+    return {"field": "title", "claim": effective.get("title"), "quote": effective.get("quote"),
+            "revision": basis.get("revision"), "evidence": basis.get("evidence"), "model": ss.MODEL,
+            "model_revision": ss.MODEL_REVISION, "weights_sha256": weights_sha256}
 
 
-def support_view(run: dict, row: dict) -> dict | None:
+def support_view(run: dict, row: dict, values: dict | None = None) -> dict | None:
     """The finding as it may be shown now (PR159 view_finding's rule over this multi-span binding): the saved record
     only while its binding still equals the current one; otherwise result 'stale' with no spans. None when no check
     ran."""
@@ -2505,14 +2509,15 @@ def support_view(run: dict, row: dict) -> dict | None:
     if not isinstance(saved, dict):
         return None
     try:
-        current = support_binding(run, row, saved.get("weights_sha256"))
+        current = support_binding(run, row, saved.get("weights_sha256"), values)
         same = saved.get("binding") == current
     except Exception:
         same = False
     if same:
         return saved
     return {"engine": saved.get("engine"), "result": "stale", "spans": [], "advisory": True,
-            "reason": "The claim or its cited source changed after this check; the old finding is not shown."}
+            "reason": "The claim, its cited quote or its source changed after this check (a person's fix included); "
+                      "the old finding is not shown."}
 
 
 def _nullish(v):
