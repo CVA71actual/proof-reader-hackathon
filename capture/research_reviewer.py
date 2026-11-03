@@ -618,6 +618,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         return {"status": "recorded", "finding_id": f["finding_id"]}
 
     finished = False
+    undelivered_searches: list[tuple[dict, dict]] = []
     while True:
         if max_turns is not None and state["turns"] >= max_turns:
             return result(INCOMPLETE, f"The turn limit a person set ({max_turns}) was reached before the reviewer "
@@ -628,6 +629,11 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         except GateRefused as e:
             return result(INCOMPLETE, f"The spend gate refused the next reviewer call: {e}")
         reply = _chat(model, messages, tools=REVIEWER_TOOLS)
+        # BRAVE-PRIMARY-001 single delivery: search titles and snippets reach the model in exactly one request; once
+        # that request has been sent they are retired to the query and URLs, on every path.
+        for msg, stub in undelivered_searches:
+            msg["content"] = json.dumps(stub, ensure_ascii=False, default=str)
+        undelivered_searches.clear()
         state["turns"] += 1
         state["model"] = reply.model or state["model"]
         gate.settle(ticket, "model", reply.model, REVIEWER_NAME, reply.prompt_tokens, reply.completion_tokens, 0,
@@ -681,8 +687,13 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                         out = {"status": "error", "message": f"There is no tool named {c['name']!r}."}
                 except GateRefused as e:
                     return result(INCOMPLETE, f"The spend gate refused a reviewer search: {e}")
-            messages.append({"role": "tool", "tool_call_id": c["id"],
-                             "content": json.dumps(out, ensure_ascii=False, default=str)})
+            msg = {"role": "tool", "tool_call_id": c["id"], "content": json.dumps(out, ensure_ascii=False, default=str)}
+            messages.append(msg)
+            if c["name"] == "search" and isinstance(out.get("results"), list):
+                undelivered_searches.append((msg, {
+                    "status": out.get("status"), "query": args.get("query") if isinstance(args, dict) else None,
+                    "urls": [r.get("url") for r in out["results"] if isinstance(r, dict) and r.get("url")],
+                    "note": "Search titles and snippets were delivered once and are not kept; the query and URLs are."}))
         if finished:
             n = len(findings)
             reason = "The reviewer finished: " + (f"{n} finding{'s' if n != 1 else ''}." if n else "no findings.")

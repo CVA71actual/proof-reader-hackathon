@@ -576,8 +576,8 @@ counters `requests`/`searches`/`fetches`/`pages_delivered`/`sources`/`proposals`
 request | search | fetch | proposal | check | coverage | finish | limit | repeat | error | prose, with `refs` such as
 `call_id`, `source_id`, `row_id`, `queries`, `results`); `manifest` (summary of the append-only
 `research/manifest.jsonl` with its checkpoint digests); `refusals`; `coverage` (including searched-not-found records
-with retrieval times); `consolidations`; `repeats`; `kill_conditions`; `reservation_exceeded`; `review`
-(`not_requested_by_mode` in S1); `audit` (the draft audit, `runs/research_audit.py`). Exact requests and responses
+with retrieval times); `consolidations`; `repeats`; `kill_conditions`; `reservation_exceeded`; `review_reserve`
+and `review[ticker]` (the independent review, below); `audit` (the draft audit, `runs/research_audit.py`). Exact requests and responses
 are under `research/turns/`. A person stops a research run with `POST /api/runs/{id}/research-stop`. A research run
 is not resumed in S1.
 
@@ -587,3 +587,31 @@ requests (`runs/prices.py`, run.prices.per_1k_requests_usd) and admitted through
 a 429 is a recorded `search_limitations` entry. Storage policy: Brave titles and snippets reach the model for one turn
 only and are never written to run.json, the Agent trail, research/turns/ or the manifest; only the query and result
 URLs are kept. Without a key the tool is not offered and the company's `search_limitations` says so.
+
+Independent review (RESEARCHER-FULL-001 S2 wiring, `runs/research.py` `review_company`): after each company's
+research ends, for any reason except a person's stop (finished, spend cap, a safety stop, a limit, a technical
+failure), `capture/research_reviewer.review_draft` (Muse Spark Open) attacks that company's draft: the rows with their
+row ids and revisions, and the company's captured sources with their text. Its search is Brave Search (query and URLs
+in the manifest, `stage: independent_review`; the payload is never stored); its fetch is the S1 capture path
+(`register_source`, `retrieval.tool` `review_fetch`, a manifest `source` line), so it can cite only captured text. Every
+reviewer, adjudicator and Brave request is reserved and settled on the run's one gate (strict, exactly once, unknown
+usage unpriced); its counts are `companies[ticker].review_usage`. Findings that contest a row (every kind but
+omission) go to `adjudicate` (Muse Wonder), fail-closed; a verdict is a proposed resolution, never a human acceptance.
+
+Review reserve (`review_reserve`): research is admitted under the cap less `REVIEW_RESERVE_FRACTION` (15%, a code
+default, recorded and on the trail), the review under the whole cap; no reserve is held when the reviewer cannot run.
+
+`review[ticker]`: `status` complete | incomplete | not_run, `reason`, `clean`, `label`, `research_ended`,
+`reviewed_basis` [[row_id, revision]], `disputes`, `review` (the reviewer's whole record: findings, rejected attempts,
+limitations, searches, fetches, usage), `adjudication`, `usage`. Rows get `research.review_findings` (each finding
+bound to that row: `finding_id`, `kind`, `text`, `by`, `row_id`, `revision_id`, `current`, `evidence`
+[{source_id, quote, start, end}], `review_status`, `reviewed_at`, `adjudication` {outcome proposed_resolution |
+unresolved | not_sent, reason, reading, resolution, evidence, model, human_accepted false}) and `research.review`
+{status, reviewed_revision (null unless a complete review covered this revision), at}. Labels (never "verified"):
+"Agent research — independently reviewed (no findings)" only for a complete and clean review; "Agent research —
+independently reviewed with findings" on a row (or company) with findings; otherwise "Agent research — not
+independently reviewed". The run label is the clean one only when every company's is; the findings one only when
+every company's review completed. Steps: kind `review` (start, reserve, adjudication, outcome) and `finding`.
+
+`python -m tools.research_smoke --review RUN_DIR --cap-usd N --i-have-the-operator-go` reviews a COPY of an existing
+run's saved draft without researching (the copy's cap is its spend so far plus N).

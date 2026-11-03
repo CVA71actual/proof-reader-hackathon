@@ -165,7 +165,8 @@ def tools(pages, resolve=("PTGX", "1377121", "Protagonist Therapeutics, Inc.")):
             raise KeyError(t)
         return ident[t]
     return ResearchTools(fetcher=FakeFetcher(pages), render_html=offline_render, resolve=res,
-                         brave=FakeBrave(key=False))
+                         brave=FakeBrave(key=False), reviewer=FakeChat([], key=False, model=REVIEWER_MODEL),
+                         adjudicator=FakeChat([], key=False, model=ADJUDICATOR_MODEL))
 
 
 def event(title, quote, *, source="src-r1-ptgx", page=1, date_text=None, date=None, date_end=None, program=None,
@@ -199,3 +200,39 @@ class FakeBrave:
                                rate_limited=True)
         return BraveResult(query, results=[{"title": f"TITLE-{u}", "url": u, "snippet": f"SNIPPET-{u}"}
                                            for u in self.answers.get(query, [])], http_status=200)
+
+
+REVIEWER_MODEL = "meta-models/muse-spark-open-1026"
+ADJUDICATOR_MODEL = "muse-wonder-1.0"
+
+
+class FakeChat:
+    """A scripted chat model for the S2 reviewer (Muse Spark Open) or adjudicator (Muse Wonder): the interface of
+    capture.research_reviewer.OneShotChat. `script`: ChatReply objects or callables (messages -> ChatReply). key=False:
+    no key, so the stage does not run. Running out of script is a test failure."""
+
+    def __init__(self, script, key=True, model=REVIEWER_MODEL):
+        self.script, self.key, self.model, self.sent = list(script), key, model, []
+
+    def ready(self):
+        return None if self.key else f"No key was found for {self.model}, so this stage did not run."
+
+    def chat(self, messages, tools=None, json_mode=False):
+        self.sent.append(copy.deepcopy(messages))
+        if not self.script:
+            raise AssertionError("The reviewer made more calls than the test scripted.")
+        item = self.script.pop(0)
+        return item(messages) if callable(item) else item
+
+
+def chat_tools(*calls, p=500, c=100, finish="tool_calls", model=REVIEWER_MODEL):
+    from capture.research_reviewer import ChatReply
+    return ChatReply(model, tool_calls=[{"id": f"t{i}-{n}", "name": n, "arguments": json.dumps(a)}
+                                        for i, (n, a) in enumerate(calls)], finish_reason=finish,
+                     prompt_tokens=p, completion_tokens=c)
+
+
+def verdict(obj, p=300, c=80, finish="stop"):
+    from capture.research_reviewer import ChatReply
+    return ChatReply(ADJUDICATOR_MODEL, content=json.dumps(obj), finish_reason=finish, prompt_tokens=p,
+                     completion_tokens=c)

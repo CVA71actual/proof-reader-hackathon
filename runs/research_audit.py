@@ -147,7 +147,7 @@ def draft_audit(run_dir: Path, run: dict, decisions: list) -> dict:
     companies = research.get("companies") or {}
     unfinished = [t for t, c in companies.items() if c.get("status") != "finished"]
     return {
-        "label": LABEL, "as_of": as_of.isoformat(), "window_end": window_end.isoformat(),
+        "label": research.get("label") or LABEL, "as_of": as_of.isoformat(), "window_end": window_end.isoformat(),
         "every_row_sourced": all(r["sourced"] for r in row_out),
         "every_source_captured": all(s["captured"] for s in src_out),
         "rows": row_out, "sources": src_out,
@@ -160,7 +160,7 @@ def draft_audit(run_dir: Path, run: dict, decisions: list) -> dict:
         "unfinished_companies": unfinished,
         "complete": not problems and not unfinished,
         "published": False,
-        "publish_note": ("A draft. Rows are proposals: " + LABEL + "." +
+        "publish_note": ("A draft. Rows are proposals: " + (research.get("label") or LABEL) + "." +
                          (" Partial: research did not finish for " + ", ".join(unfinished) + "." if unfinished else "")),
     }
 

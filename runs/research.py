@@ -59,6 +59,15 @@ from runs.ids import reserve_row_numbers
 from runs.state import run_reference_date
 
 LABEL = rc.LABEL
+# RESEARCHER-FULL-001 S2 wiring: the three labels a research result can carry. Never "verified".
+LABEL_REVIEWED_CLEAN = "Agent research — independently reviewed (no findings)"
+LABEL_REVIEWED_FINDINGS = "Agent research — independently reviewed with findings"
+LABELS = (LABEL, LABEL_REVIEWED_CLEAN, LABEL_REVIEWED_FINDINGS)
+# The review reserve: a code default (not a hidden limit; recorded in run.research.review_reserve and on the Agent
+# trail). Research is admitted only under (1 - fraction) of the run's spending cap, so the independent review always
+# has room to run; the review itself is admitted under the whole cap. No reserve is held when the reviewer cannot run.
+REVIEW_RESERVE_FRACTION = 0.15
+REVIEW_STAGE = "independent_review"
 DEFAULT_SPEND_CAP_USD = 30.0
 DEFAULT_CONCURRENCY = 3
 RESEARCH_TURN_LIMIT = 1_000_000     # a research run is not paused by the page-mode turn budget; turns are counted only
@@ -162,12 +171,16 @@ class ResearchTools:
     """What the loop reaches outside the process with: a fetcher (get(url) -> research_sources.Fetched), the HTML
     renderer and the ticker -> (cik, company) resolver. Tests pass fakes; the defaults are live."""
 
-    def __init__(self, fetcher=None, render_html=None, resolve=None, brave=None):
+    def __init__(self, fetcher=None, render_html=None, resolve=None, brave=None, reviewer=None, adjudicator=None):
+        from capture import research_reviewer as rv
         from capture.brave_search import LiveBrave
         self.fetcher = fetcher or rs.LiveFetcher()
         self.render_html = render_html or rs.chrome_render
         self.resolve = resolve or self._resolve
         self.brave = brave if brave is not None else LiveBrave()      # BRAVE-PRIMARY-001: the primary search
+        # S2: the independent reviewer (Muse Spark Open) and the adjudicator (Muse Wonder); tests pass fakes
+        self.reviewer = reviewer if reviewer is not None else rv.reviewer_model()
+        self.adjudicator = adjudicator if adjudicator is not None else rv.adjudicator_model()
 
     def _resolve(self, ticker: str) -> tuple[str, str]:
         from capture.fetch_filings import resolve_cik
@@ -264,6 +277,10 @@ def _jobs():
     return jobs
 
 
+class ReviewSearchFailed(Exception):
+    """The reviewer's Brave search answered with an error (recorded; the review records it as a limitation)."""
+
+
 class Stop(Exception):
     """A company's loop ends here. `kind`: finished | limit | spend_cap | person | failed | unpriced."""
 
@@ -320,9 +337,9 @@ def make_job_class():
                         "capture_failures": [], "finish": None})
                 for k in ("steps", "refusals", "coverage", "consolidations", "repeats", "kill_conditions"):
                     r.setdefault(k, [])
-                r.setdefault("review", {"stage": "independent_review", "outcome": "not_requested_by_mode",
-                                        "reason": "S1 runs no independent reviewer; results are labelled "
-                                                  "'Agent research — not independently reviewed'."})
+                if not isinstance(r.get("review"), dict) or "stage" in r["review"]:
+                    r["review"] = {}      # per company: run.research.review[ticker] (an S1 placeholder is replaced)
+                r["review_reserve"] = self.review_reserve()
                 r["manifest"] = self.manifest.summary()
                 r.setdefault("audit", None)
                 r["reservation"] = {
@@ -377,7 +394,7 @@ def make_job_class():
                     raise Stop("spend_cap", self.cap_reached)
                 with jobs.RUN_LOCK:
                     self.refresh_spend()
-                    limit = self.choices["spending_limit_usd"]
+                    limit = self.research_limit()
                     if jobs.unknown_unaccepted(self.job):
                         raise Stop("unpriced", "A call could not be priced, so the spending cap cannot be kept; a "
                                                "person must accept the unknown cost. Nothing more was researched.")
@@ -395,9 +412,7 @@ def make_job_class():
                     if token is not None:
                         return token, worst, input_bound
                     if not jobs._RESERVED.get(self.dir.name):
-                        reason = (f"Spending cap reached: budget reached: the next call's bound "
-                                  f"{jobs.money(worst)} would exceed the {jobs.money(limit)} cap "
-                                  f"({jobs.money(self.meta['spend_usd'] or 0)} spent). Raise the cap to research more.")
+                        reason = self.cap_reason("call", worst)
                         self.cap_reached = reason
                         raise Stop("spend_cap", reason)
                 time.sleep(0.05)      # another company's call is in flight: queue behind it
@@ -449,6 +464,476 @@ def make_job_class():
                 self.save(refresh=False)
             return cost if basis != "not_billed" else 0.0
 
+        # ------------------------------------------------------------ the review reserve (S2 wiring)
+
+        def reviewer_problem(self) -> str | None:
+            """Why the independent reviewer cannot run in this process, or None."""
+            reviewer = getattr(self.tools, "reviewer", None)
+            if reviewer is None:
+                return "No independent reviewer is configured."
+            try:
+                return reviewer.ready()
+            except Exception as e:
+                return f"The reviewer could not be prepared ({type(e).__name__})."
+
+        def review_reserve(self) -> dict:
+            """run.research.review_reserve: the share of the cap research leaves for the review (recorded, shown)."""
+            if not hasattr(self, "reserve_held"):
+                self.reserve_held = self.reviewer_problem() is None
+            cap = self.choices.get("spending_limit_usd")
+            if cap is None:
+                return {"held": False, "fraction": None, "usd": None, "cap_usd": None, "research_limit_usd": None,
+                        "reason": "The run has no spending cap, so no review reserve is held."}
+            if not self.reserve_held:
+                return {"held": False, "fraction": 0.0, "usd": 0.0, "cap_usd": cap, "research_limit_usd": cap,
+                        "reason": f"No review reserve is held: the independent reviewer cannot run "
+                                  f"({self.reviewer_problem()}). Research may use the whole cap."}
+            usd = round(cap * REVIEW_RESERVE_FRACTION, prices.ROUND_TO)
+            return {"held": True, "fraction": REVIEW_RESERVE_FRACTION, "usd": usd, "cap_usd": cap,
+                    "research_limit_usd": round(cap - usd, prices.ROUND_TO),
+                    "reason": f"A code default, not a hidden limit: research is admitted only under "
+                              f"{jobs.money(cap - usd)} of the {jobs.money(cap)} cap, so {jobs.money(usd)} "
+                              f"({round(REVIEW_RESERVE_FRACTION * 100)}%) stays for the independent review of every "
+                              f"company. The review is admitted under the whole cap."}
+
+        def research_limit(self):
+            """The cap research calls are admitted under: the run's cap less the review reserve (when held)."""
+            cap = self.choices.get("spending_limit_usd")
+            if cap is None or not getattr(self, "reserve_held", False):
+                return cap
+            return round(cap * (1 - REVIEW_RESERVE_FRACTION), prices.ROUND_TO)
+
+        def cap_reason(self, what: str, worst: float) -> str:
+            limit, spent = self.choices["spending_limit_usd"], self.meta["spend_usd"] or 0
+            if getattr(self, "reserve_held", False) and limit is not None:
+                share = self.research_limit()
+                return (f"Spending cap reached: the research budget is reached: the next {what}'s bound "
+                        f"{jobs.money(worst)} would exceed research's {jobs.money(share)} share of the "
+                        f"{jobs.money(limit)} cap ({jobs.money(spent)} spent); {jobs.money(limit - share)} is held "
+                        f"for the independent review. Raise the cap to research more.")
+            if what == "call":
+                return (f"Spending cap reached: budget reached: the next call's bound {jobs.money(worst)} would exceed "
+                        f"the {jobs.money(limit)} cap ({jobs.money(spent)} spent). Raise the cap to research more.")
+            return (f"Spending cap reached: budget reached: the next request's bound {jobs.money(worst)} would exceed "
+                    f"the {jobs.money(limit)} cap. Raise the cap to research more.")
+
+        # ------------------------------------------------------------ the independent review (S2 wiring)
+
+        def review_admit(self, worst: float):
+            """(token, None) or (None, reason): strict admission of one reviewer or adjudicator request under the
+            WHOLE cap (the research share being used up does not refuse it: that is what the reserve is for)."""
+            while True:
+                if self.stop_requested():
+                    return None, "A person stopped the run."
+                with jobs.RUN_LOCK:
+                    self.refresh_spend()
+                    if jobs.unknown_unaccepted(self.job):
+                        return None, ("A call could not be priced, so the spending cap cannot be kept; a person must "
+                                      "accept the unknown cost.")
+                    limit = self.choices["spending_limit_usd"]
+                    token = jobs.reserve_budget(self.dir.name, self.meta["spend_usd"], limit, worst,
+                                                alone_may_cross=False)
+                    if token is not None:
+                        return token, None
+                    if not jobs._RESERVED.get(self.dir.name):
+                        return None, (f"Spending cap reached: the next request's bound {jobs.money(worst)} would "
+                                      f"exceed the {jobs.money(limit)} cap "
+                                      f"({jobs.money(self.meta['spend_usd'] or 0)} spent).")
+                time.sleep(0.05)      # another call is in flight: queue behind it
+
+        def review_usage(self, ticker: str) -> dict:
+            return self.company(ticker).setdefault("review_usage", {
+                "model_requests": 0, "search_requests": 0, "fetches": 0, "spend_usd": 0.0, "unpriced_calls": 0,
+                "worst_case_charged_usd": 0.0})
+
+        def review_gate(self, ticker: str):
+            """The spend_gate capture/research_reviewer.py takes, on the run's one gate: reserve the request's bounded
+            worst case before it is made; settle exactly once after, at its own usage (unknown usage is unpriced, never
+            zero; a possibly-billed failure is charged its worst case)."""
+            from capture.brave_search import NAME as BRAVE
+
+            def reserve(req: dict):
+                kind = req.get("kind")
+                if kind == "search":
+                    brave = self.tools.brave
+                    problem = "Brave Search is not configured." if brave is None else brave.ready()
+                    if problem:
+                        return {"admitted": False, "reason": f"{problem} The reviewer's independent search (Brave "
+                                                             f"Search) is unavailable."}
+                    name, bound = BRAVE, None
+                    worst = prices.request_cost_usd(BRAVE, req.get("searches") or 1)
+                else:
+                    name = jobs.price_name(str(req.get("model") or ""))
+                    bound = int(req.get("request_bytes") or 0) + REQUEST_OVERHEAD_TOKENS
+                    out = req.get("max_output_tokens")
+                    worst = prices.cost_usd(name, bound, out) if isinstance(out, int) else None
+                if worst is None:
+                    return {"admitted": False, "reason": f"runs/prices.py has no price for {name}, so the spending cap "
+                                                         f"cannot be kept."}
+                token, why = self.review_admit(worst)
+                if token is None:
+                    return {"admitted": False, "reason": why}
+                return {"admitted": True, "token": token, "worst": worst, "name": name, "kind": kind,
+                        "input_bound": bound, "stage": req.get("stage")}
+
+            def settle(req: dict) -> None:
+                t = req.get("ticket") or {}
+                usage = req.get("usage") or {}
+                try:
+                    with jobs.RUN_LOCK:
+                        self.refresh_spend()
+                        err, billed = req.get("error"), req.get("may_have_been_billed")
+                        if err:
+                            cost = t["worst"] if billed else 0.0
+                        elif t.get("kind") == "search":
+                            cost = prices.request_cost_usd(t["name"], usage.get("searches"))
+                        else:
+                            cost = prices.cost_usd(t["name"], usage.get("prompt_tokens"), usage.get("completion_tokens"))
+                        u = self.review_usage(ticker)
+                        u["search_requests" if t.get("kind") == "search" else "model_requests"] += 1
+                        if err and billed:
+                            u["worst_case_charged_usd"] = round(u["worst_case_charged_usd"] + t["worst"],
+                                                                prices.ROUND_TO)
+                            self.job.setdefault("research_worst_case_charged", []).append(
+                                {"at": now_utc(), "ticker": ticker, "usd": t["worst"], "stage": t.get("stage")})
+                        if cost is None:
+                            self.job["unpriced_calls"] = self.job.get("unpriced_calls", 0) + 1
+                            models = self.job.setdefault("unpriced_models", [])
+                            if t.get("name") not in models:
+                                models.append(t.get("name"))
+                            u["unpriced_calls"] += 1
+                        else:
+                            self.meta["spend_usd"] = round((self.meta["spend_usd"] or 0) + cost, prices.ROUND_TO)
+                            u["spend_usd"] = round(u["spend_usd"] + cost, prices.ROUND_TO)
+                        p = usage.get("prompt_tokens")
+                        if (isinstance(p, int) and t.get("input_bound") is not None and p > t["input_bound"]) or \
+                                (cost is not None and cost > t["worst"]):
+                            self.research.setdefault("reservation_exceeded", []).append(
+                                {"at": now_utc(), "ticker": ticker, "stage": t.get("stage"), "input_tokens": p,
+                                 "reserved_input_tokens": t.get("input_bound"), "cost_usd": cost,
+                                 "reserved_usd": t["worst"]})
+                        self.meta["unpriced_calls"] = jobs.unpriced_count(self.job)
+                        self.save(refresh=False)
+                finally:      # exactly once on every path: the reservation is always released
+                    jobs.release_budget(self.dir.name, t.get("token"))
+
+            def gate(req: dict):
+                if req.get("phase") == "reserve":
+                    return reserve(req)
+                if req.get("phase") == "settle":
+                    return settle(req)
+                raise ValueError("Unknown spend gate phase.")
+            return gate
+
+        def review_search(self, ticker: str):
+            """The reviewer's independent search: Brave Search (BRAVE-PRIMARY-001). Leads only; the payload goes to the
+            reviewer for its turn in memory and is never stored (the manifest keeps the query and URLs)."""
+            from capture.brave_search import NAME
+
+            def search(query: str):
+                got = self.tools.brave.search(query, 10)
+                with jobs.RUN_LOCK:
+                    self.manifest.append("leads", ticker=ticker, tool="brave_search", engine=NAME, stage=REVIEW_STAGE,
+                                         query=query, urls=got.urls, error=got.error, http_status=got.http_status)
+                if got.error:
+                    self.step(ticker, "search", "Code", "capture.brave_search",
+                              f"Reviewer search with Brave Search failed for “{query}”: {got.error} Not retried; "
+                              f"recorded as a review limitation.", stage=REVIEW_STAGE, engine=NAME, queries=[query],
+                              results=[])
+                    raise ReviewSearchFailed(got.error)
+                self.step(ticker, "search", "Code", "capture.brave_search",
+                          f"Reviewer searched with Brave Search: {query}. {len(got.urls)} result"
+                          f"{'s' if len(got.urls) != 1 else ''} (leads, not evidence).",
+                          stage=REVIEW_STAGE, engine=NAME, queries=[query], results=got.urls[:20])
+                return {"results": got.results, "searches": 1, "status": "completed"}
+            return search
+
+        def review_fetch(self, ticker: str, fetched: list):
+            """The reviewer's fetch: the S1 capture path (check_url, the fetcher, register_source: pages, hashes and a
+            manifest line), so it can cite only a captured source."""
+            def fetch(url: str) -> dict:
+                st = self.ensure_state(ticker)
+                st["review_fetch_n"] = st.get("review_fetch_n", 0) + 1
+                cid = f"review-{ticker.lower()}-f{st['review_fetch_n']}"
+                try:
+                    rs.check_url(url, getattr(self.tools.fetcher, "resolve", None))
+                    got = self.tools.fetcher.get(url)
+                except rs.FetchRefused as e:
+                    self.step(ticker, "fetch", "Code", "capture.research_sources",
+                              f"Refused to fetch {url} for the reviewer: {e}", call_id=cid, stage=REVIEW_STAGE)
+                    raise
+                except rs.CaptureFailed as e:
+                    self._capture_failed(ticker, cid, url, str(e), "review_fetch")
+                    raise
+                try:
+                    source = self.register_source(ticker, cid, got, "review_fetch")
+                except rs.CaptureFailed as e:
+                    self._capture_failed(ticker, cid, url, str(e), "review_fetch", got)
+                    raise
+                with jobs.RUN_LOCK:
+                    self.review_usage(ticker)["fetches"] += 1
+                    if source["retrieval"].get("call_id") == cid:
+                        source["retrieval"]["stage"] = REVIEW_STAGE
+                    self.save_ledger()
+                view = self.review_source_view(source)
+                fetched.append(view)
+                return view
+            return fetch
+
+        def review_source_view(self, source: dict) -> dict:
+            """A captured source as the reviewer gets it: its identity and its captured text, page by page."""
+            pages = []
+            for p in source["pages"]:
+                words, _ = sources.load_page_evidence(self.dir, p)
+                pages.append(f"[page {p['page_number']}] " + " ".join(w["text"] for w in words.get("words", [])))
+            return {"source_id": source["id"], "url": source["url"], "title": source.get("title"),
+                    "publisher": source.get("publisher"), "kind": source.get("kind"),
+                    "published": source.get("published_date"), "retrieved_at": source.get("captured_at"),
+                    "text": "\n".join(pages)}
+
+        @staticmethod
+        def review_proposal(row: dict) -> dict:
+            """A draft row as the reviewer gets it, bound by row id and revision (no researcher reasoning)."""
+            r = row["research"]
+            return {"row_id": row["id"], "revision_id": r["revision"], "title": row.get("title"),
+                    "program": row.get("program"), "indication": row.get("indication"),
+                    "date_text": row.get("date_text"), "date": row.get("date"), "date_end": row.get("date_end"),
+                    "conditions": row.get("conditions"), "conditions_state": r.get("conditions_state"),
+                    "quote": row.get("quote"), "status": row.get("status"), "action": r.get("action"),
+                    "placement_proposal": r.get("placement_proposal"),
+                    "evidence": [{"source_id": s["source_id"], "page_number": s["page_number"], "quote": s["quote"],
+                                  "roles": s.get("roles")} for s in r.get("evidence") or []],
+                    "code_checks": [{"name": c.get("name"), "result": c.get("result")} for c in row.get("checks") or []],
+                    "issues": [i.get("code") for i in r.get("issues") or []]}
+
+        def ensure_state(self, ticker: str) -> dict:
+            """The company's in-memory state; rebuilt from run.json when research never set it up (the identity could
+            not be resolved) or when an existing run is reviewed without researching."""
+            st = self.state.get(ticker)
+            if st is not None:
+                return st
+            c = self.company(ticker)
+            srcs = {s["id"]: s for s in self.run["sources"] if (s.get("retrieval") or {}).get("ticker") == ticker}
+            st = self.state[ticker] = {
+                "cik": c.get("cik"), "company": c.get("company") or ticker, "sources": srcs, "keys": {}, "calls": {},
+                "actions": {}, "leads": {}, "history_bytes": 0, "finish_attempts": 0, "delivered": {}, "settled": {},
+                "compacted": set(), "turn_starts": [], "brave_calls": {}, "brave_items": [],
+                "fetch_by_url": {(s["url"], s["retrieval"].get("original_sha256")): s for s in srcs.values()}}
+            return st
+
+        @staticmethod
+        def review_disputes(ticker: str, record: dict, rows_by_id: dict) -> list[dict]:
+            """A finding that contests a row's reading (every kind except omission, which names a missing event) is a
+            dispute between the researcher's row and the reviewer's finding: Muse Wonder gets both readings and the
+            captured evidence of both."""
+            from capture import research_reviewer as rv
+            out = []
+            for f in record.get("findings") or []:
+                if f["kind"] == "omission" or not f["row_revision_ids"]:
+                    continue
+                readings, evidence = [], [{"source_id": e["source_id"], "quote": e["quote"]} for e in f["evidence"]]
+                for ref in f["row_revision_ids"]:
+                    row = rows_by_id.get(ref["row_id"])
+                    if row is None:
+                        continue
+                    readings.append(f"{row['id']} revision {ref['revision_id']}: {row.get('title')}; timing "
+                                    f"{row.get('date_text') or 'undated'}; conditions "
+                                    f"{json.dumps(row.get('conditions'))}; quote: {row.get('quote')}")
+                    evidence += [{"source_id": s["source_id"], "quote": s["quote"]}
+                                 for s in row["research"].get("evidence") or []]
+                out.append({"dispute_id": f"{ticker}-{f['finding_id']}", "finding_id": f["finding_id"],
+                            "row_revision_ids": f["row_revision_ids"], "component": f["kind"],
+                            "readings": [{"by": "Muse Spark (the researcher's draft)", "text": " | ".join(readings)},
+                                         {"by": f"{rv.REVIEWER_NAME} (the independent reviewer)", "text": f["text"]}],
+                            "evidence": evidence})
+            return out
+
+        @staticmethod
+        def company_review_label(record: dict) -> str:
+            if record.get("status") == "complete" and record.get("clean") is True:
+                return LABEL_REVIEWED_CLEAN
+            if record.get("findings"):
+                return LABEL_REVIEWED_FINDINGS
+            return LABEL
+
+        def run_review_label(self) -> str:
+            """The run's label: reviewed (no findings) only when every company's review is complete and clean; with
+            findings only when every company's review is complete; otherwise not independently reviewed."""
+            reviews = self.research.get("review") or {}
+            entries = [reviews.get(t) for t in self.research["companies"]]
+            if not entries or any(not isinstance(e, dict) for e in entries):
+                return LABEL
+            if all(e.get("label") == LABEL_REVIEWED_CLEAN for e in entries):
+                return LABEL_REVIEWED_CLEAN
+            if all(e.get("status") == "complete" for e in entries) and \
+                    any(e.get("label") == LABEL_REVIEWED_FINDINGS for e in entries):
+                return LABEL_REVIEWED_FINDINGS
+            return LABEL
+
+        def review_company(self, ticker: str, ended_kind: str, ended_reason: str) -> dict:
+            """After a company's research ends (for any reason but a person's stop), the independent reviewer attacks
+            its draft; disputed findings go to Muse Wonder (fail-closed); the record, the findings on their rows, the
+            labels and the trail are saved. Returns run.research.review[ticker]."""
+            from capture import research_reviewer as rv
+            started = now_utc()
+            ended = {"kind": ended_kind, "reason": ended_reason}
+            rows = [r for r in self.run["rows"] if (r.get("research") or {}).get("ticker") == ticker]
+            rows_by_id = {r["id"]: r for r in rows}
+            if self.stop_requested():
+                record = {"stage": REVIEW_STAGE, "status": "not_run", "clean": False, "findings": [], "rejected": [],
+                          "limitations": [], "reason": "A person stopped the run, so the independent review was not "
+                                                       "run; nothing was reviewed."}
+                adj = {"stage": "adjudication", "status": "not_run", "reason": "The review did not run.",
+                       "outcomes": [], "skipped": [], "usage": None}
+                return self.save_review(ticker, rows, record, adj, ended, started, [])
+            st = self.ensure_state(ticker)
+            given, not_given = [], []
+            for s in st["sources"].values():
+                try:
+                    given.append(self.review_source_view(s))
+                except Exception as e:
+                    not_given.append({"source_id": s["id"], "reason": f"Its captured text could not be loaded "
+                                                                      f"({type(e).__name__}), so it was not given."})
+            as_of = run_reference_date(self.run) or date.today()
+            company = {"ticker": ticker, "name": st["company"], "cik": st["cik"], "as_of": as_of.isoformat(),
+                       "calendar_window": [as_of.isoformat(), jobs.add_months(as_of, 6).isoformat()]}
+            self.step(ticker, "review", "Code", "runs.research",
+                      f"Independent review of {ticker} started after its research ended ({ended_kind}): "
+                      f"{len(rows)} proposal{'s' if len(rows) != 1 else ''} and {len(given)} captured source"
+                      f"{'s' if len(given) != 1 else ''} sent to {rv.REVIEWER_NAME}; its own search is Brave Search.",
+                      stage=REVIEW_STAGE)
+            fetched: list[dict] = []
+            try:
+                record = rv.review_draft(company=company, assignment=self.choices.get("note_for_agent") or "",
+                                         proposals=[self.review_proposal(r) for r in rows], sources=given,
+                                         search=self.review_search(ticker), fetch_capture=self.review_fetch(ticker, fetched),
+                                         spend_gate=self.review_gate(ticker), model=self.tools.reviewer)
+            except Exception as e:      # the type only: nothing that could carry request details
+                record = {"stage": REVIEW_STAGE, "status": "incomplete", "clean": False, "findings": [],
+                          "rejected": [], "limitations": [],
+                          "reason": f"The review stopped on an unexpected error ({type(e).__name__})."}
+            if not_given:
+                record["sources_not_given"] = not_given
+                record["clean"] = False
+            disputes = self.review_disputes(ticker, record, rows_by_id)
+            if disputes:
+                self.step(ticker, "review", "Code", "runs.research",
+                          f"{len(disputes)} finding{'s' if len(disputes) != 1 else ''} dispute{'' if len(disputes) != 1 else 's'} "
+                          f"a row's reading: sent to {rv.ADJUDICATOR_NAME}, one request each, fail-closed.",
+                          stage="adjudication")
+                try:
+                    adj = rv.adjudicate(disputes=disputes, sources=given + fetched, spend_gate=self.review_gate(ticker),
+                                        model=self.tools.adjudicator)
+                except Exception as e:
+                    adj = {"stage": "adjudication", "status": "incomplete",
+                           "reason": f"Adjudication stopped on an unexpected error ({type(e).__name__}); every dispute "
+                                     f"stays unresolved.",
+                           "outcomes": [{"dispute_id": d["dispute_id"], "row_revision_ids": d["row_revision_ids"],
+                                         "component": d["component"], "outcome": rv.UNRESOLVED,
+                                         "reason": "Not adjudicated.", "reading": None, "resolution": None,
+                                         "evidence": [], "model": None, "human_accepted": False} for d in disputes],
+                           "skipped": [], "usage": None}
+            else:
+                adj = {"stage": "adjudication", "status": "not_needed",
+                       "reason": "No finding disputes a row's reading, so nothing was sent to Muse Wonder.",
+                       "outcomes": [], "skipped": [], "usage": None}
+            return self.save_review(ticker, rows, record, adj, ended, started, disputes)
+
+        def save_review(self, ticker, rows, record, adj, ended, started, disputes) -> dict:
+            from capture import research_reviewer as rv
+            at = now_utc()
+            rows_by_id = {r["id"]: r for r in rows}
+            outcomes = {o.get("dispute_id"): o for o in adj.get("outcomes") or []}
+            reviewed = {(str(x["row_id"]), str(x["revision_id"]))
+                        for x in ((record.get("reviewed") or {}).get("rows") or [])}
+            label = self.company_review_label(record)
+            with jobs.RUN_LOCK:
+                for row in rows:
+                    row["research"]["review_findings"] = []
+                for f in record.get("findings") or []:
+                    o = outcomes.get(f"{ticker}-{f['finding_id']}")
+                    if o is not None:
+                        adjudication = {k: o.get(k) for k in ("outcome", "reason", "reading", "resolution", "evidence",
+                                                               "model")}
+                        adjudication["human_accepted"] = False
+                    else:
+                        adjudication = {"outcome": "not_sent", "human_accepted": False,
+                                        "reason": ("An omission names a missing event; it does not dispute a row's "
+                                                   "reading." if f["kind"] == "omission" else "Not sent.")}
+                    for ref in f["row_revision_ids"]:
+                        row = rows_by_id.get(ref["row_id"])
+                        if row is None:
+                            continue
+                        row["research"]["review_findings"].append({
+                            "finding_id": f["finding_id"], "kind": f["kind"], "text": f["text"], "by": f.get("by"),
+                            "row_id": row["id"], "revision_id": ref["revision_id"],
+                            "current": str(ref["revision_id"]) == str(row["research"]["revision"]),
+                            "evidence": f["evidence"], "review_status": record.get("status"),
+                            "reviewed_at": at, "adjudication": adjudication})
+                for row in rows:
+                    rev = row["research"]["revision"]
+                    # reviewed_revision: the revision a COMPLETED review covered; null when the review did not finish
+                    reviewed_this = record.get("status") == "complete" and (row["id"], str(rev)) in reviewed
+                    row["research"]["review"] = {"status": record.get("status"), "reviewed_revision":
+                                                 rev if reviewed_this else None, "at": at}
+                    if row["research"]["review_findings"]:
+                        row["research"]["label"] = LABEL_REVIEWED_FINDINGS
+                    elif label == LABEL_REVIEWED_CLEAN and reviewed_this:
+                        row["research"]["label"] = LABEL_REVIEWED_CLEAN
+                    else:
+                        row["research"]["label"] = LABEL
+                entry = {"stage": REVIEW_STAGE, "ticker": ticker, "status": record.get("status"),
+                         "reason": record.get("reason"), "clean": bool(record.get("clean")), "label": label,
+                         "reviewer": rv.REVIEWER_NAME, "adjudicator": rv.ADJUDICATOR_NAME, "search": "Brave Search",
+                         "research_ended": ended, "started_at": started, "finished_at": at,
+                         "reviewed_basis": sorted([list(k) for k in reviewed]),
+                         "disputes": [{"dispute_id": d["dispute_id"], "finding_id": d["finding_id"],
+                                       "row_revision_ids": d["row_revision_ids"], "component": d["component"]}
+                                      for d in disputes],
+                         "review": record, "adjudication": adj, "usage": dict(self.review_usage(ticker))}
+                self.research.setdefault("review", {})[ticker] = entry
+                self.save_ledger()
+            for f in record.get("findings") or []:
+                o = outcomes.get(f"{ticker}-{f['finding_id']}")
+                rows_txt = ", ".join(f"{x['row_id']} rev {x['revision_id']}" for x in f["row_revision_ids"]) or "no row"
+                self.step(ticker, "finding", "Model", rv.REVIEWER_NAME,
+                          f"Finding {f['finding_id']} ({f['kind'].replace('_', ' ')}) on {rows_txt}: {f['text'][:600]}"
+                          + (f" — {rv.ADJUDICATOR_NAME}: {o['outcome'].replace('_', ' ')}"
+                             + (f" ({o['reason'][:200]})" if o.get("reason") else "") + "; never a human acceptance."
+                             if o else ""),
+                          stage=REVIEW_STAGE, finding_id=f["finding_id"], finding_kind=f["kind"],
+                          rows=[x["row_id"] for x in f["row_revision_ids"]])
+            lims = record.get("limitations") or []
+            self.step(ticker, "review", "Code", "runs.research",
+                      f"Independent review of {ticker}: {record.get('status')}. {record.get('reason')}"
+                      + (f" {len(lims)} review limitation{'s' if len(lims) != 1 else ''} recorded." if lims else "")
+                      + (f" {len(record.get('rejected') or [])} finding attempt(s) rejected by code."
+                         if record.get("rejected") else "")
+                      + f" Label: {label}.", stage=REVIEW_STAGE, status=record.get("status"), label=label)
+            return entry
+
+        def finish_review_labels(self) -> None:
+            with jobs.RUN_LOCK:
+                self.research["label"] = self.run_review_label()
+
+        def review_only(self, tickers: list[str] | None = None, note: str | None = None) -> None:
+            """Review an EXISTING run's saved draft without researching again (tools/research_smoke.py --review)."""
+            self.init_ledger()
+            todo = tickers or list(self.research["companies"])
+            with jobs.RUN_LOCK:
+                self.research["review_only"] = {"at": now_utc(), "companies": todo, "note": note}
+            for t in todo:
+                c = self.company(t)
+                self.review_company(t, "review_only", f"Reviewing the saved draft; research ended earlier: "
+                                                      f"{c.get('status')} — {c.get('status_reason')}")
+            self.finish_review_labels()
+            from runs import research_audit
+            with jobs.RUN_LOCK:
+                self.manifest.checkpoint("review only end")
+                self.research["audit"] = research_audit.draft_audit(self.dir, self.run, [])
+                self.save_ledger()
+
+
         # ------------------------------------------------------------ drive
 
         def drive(self) -> None:
@@ -456,12 +941,15 @@ def make_job_class():
             self.meta["status"], self.meta["status_reason"] = "running", "Researching."
             self.meta["turn_limit"] = RESEARCH_TURN_LIMIT
             self.save_ledger()
+            self.step(None, "review", "Code", "runs.research", "Review reserve: " + self.research["review_reserve"]["reason"],
+                      stage=REVIEW_STAGE, **{k: v for k, v in self.research["review_reserve"].items() if k != "reason"})
             problem = self.reader.ready()
             if problem:
                 return self.stop("needs_input", problem)
             tickers = list(self.choices["companies"])
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.limits["concurrency"]) as pool:
                 list(pool.map(self.run_company, tickers))      # every company is queued; none is dropped
+            self.finish_review_labels()
             with jobs.RUN_LOCK:
                 self.manifest.checkpoint("run end")
             from runs import research_audit
@@ -475,7 +963,8 @@ def make_job_class():
                 self.meta["status"] = "done"
                 self.meta["status_reason"] = (f"Researched {len(companies)} compan{'y' if len(companies) == 1 else 'ies'}: "
                                               f"{rows} proposal{'s' if rows != 1 else ''}, "
-                                              f"{len(self.run['sources'])} sources captured. {LABEL}.")
+                                              f"{len(self.run['sources'])} sources captured. "
+                                              f"{self.research['label']}.")
                 self.save_ledger()
                 return
             parts = [f"{t}: {c['status_reason']}" for t, c in unfinished.items()]
@@ -508,6 +997,12 @@ def make_job_class():
                 self.save_ledger()
             self.step(ticker, "limit" if kind not in ("finished",) else "finish", "Code", "runs.research",
                       f"{ticker}: {reason}")
+            try:      # S2: the independent review runs after research ends, for any reason but a person's stop
+                self.review_company(ticker, kind, reason)
+            except Exception as e:  # the type only
+                self.step(ticker, "review", "Code", "runs.research",
+                          f"The independent review of {ticker} could not be recorded ({type(e).__name__}).",
+                          stage=REVIEW_STAGE)
 
         # ------------------------------------------------------------ one company's loop
 
@@ -821,14 +1316,13 @@ def make_job_class():
                     self.refresh_spend()
                     if jobs.unknown_unaccepted(self.job):
                         raise Stop("unpriced", "A call could not be priced, so the spending cap cannot be kept.")
-                    limit = self.choices["spending_limit_usd"]
+                    limit = self.research_limit()
                     token = jobs.reserve_budget(self.dir.name, self.meta["spend_usd"], limit, worst,
                                                 alone_may_cross=False)
                     if token is not None:
                         return token
                     if not jobs._RESERVED.get(self.dir.name):
-                        reason = (f"Spending cap reached: budget reached: the next request's bound {jobs.money(worst)} "
-                                  f"would exceed the {jobs.money(limit)} cap. Raise the cap to research more.")
+                        reason = self.cap_reason("request", worst)
                         self.cap_reached = reason
                         raise Stop("spend_cap", reason)
                 time.sleep(0.05)
