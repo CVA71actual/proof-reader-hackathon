@@ -92,6 +92,7 @@ MAX_COMPANIES = 10
 
 NUDGE_TOOLS = ("Use the tools: capture sources with the fetch tools, propose events with propose_events, record what "
                "you checked with record_coverage, and call finish_draft when you are done.")
+NUDGE_RUNAWAY = ("Your last reply was cut off at the reply limit; nothing from it ran. Reply with one tool call.")
 NUDGE_EMPTY = ("Your last answer had no tool call and no text. Continue the research with a tool call, or call "
                "finish_draft if you are done.")
 
@@ -540,7 +541,7 @@ def make_job_class():
                      {"role": "user", "content": "Company card:\n" + json.dumps(card)}]
             continuation = self.choices.get("research_continuation") or rr.CONTINUE_REPLAY
             history, pending, prev_id = list(first), list(first), None
-            prose_nudged, empty_streak, timeout_streak = False, 0, 0
+            prose_nudged, empty_streak, timeout_streak = False, 0, 0     # timeout_streak counts runaways too
             brave_problem = self.tools.brave.ready() if self.tools.brave is not None else "Brave Search is not configured."
             st["brave"] = brave_problem is None
             if brave_problem:
@@ -595,18 +596,18 @@ def make_job_class():
                         raise Stop("failed", "Technical failure: the model did not answer twice in a row "
                                              f"(read timeout {rr.RESEARCH_READ_TIMEOUT_S}s each).")
                     continue
-                timeout_streak = 0
                 if reply.error:
+                    timeout_streak = 0
                     self.step(ticker, "error", "Code", "runs.research", f"{reply.error}"
                               + (" It may have been billed; its reserved worst case was charged."
                                  if reply.may_have_been_billed else ""))
                     raise Stop("failed", f"Technical failure: {reply.error} It was not retried.")
                 if reply.status == "incomplete":
-                    # Manus 15:55 and 18:12: a length/incomplete termination is classified FIRST, before the empty
-                    # branch, replay, search recording and tool dispatch. NONE of its tool calls run, no finish_draft
-                    # is accepted, none of its text, reasoning or arguments is replayed; it is kept only in the turn
-                    # log for audit and was settled above. Reasoning-only length cuts land here too, never in the
-                    # empty-answer branch. The company stops incomplete; nothing is retried.
+                    # Manus 15:55/18:12 and LIMITS-005 (CVA): a reply cut off at the reply limit (a runaway) is classified
+                    # FIRST, before the empty branch, replay, search recording and dispatch. It is settled once as priced
+                    # (count above), NONE of its tool calls run, no finish_draft is accepted, nothing of it is replayed;
+                    # it stays in the turn log for audit. Like a timeout, the next turn goes on, with a short note; two
+                    # in a row (runaway or timeout, one counter) stop the company as incomplete.
                     why = reply.incomplete_reason or "no reason given"
                     self.note_attempt(True)
                     held = reply.function_calls()
@@ -615,16 +616,23 @@ def make_job_class():
                             self.research["refusals"].append({
                                 "at": now_utc(), "ticker": ticker, "call_id": call.get("call_id"),
                                 "tool": call.get("name"), "issues": [rc.issue(
-                                    "incomplete_answer", f"{call.get('name')} came in an answer the provider marked "
-                                                         f"incomplete ({why}); not executed.")]})
-                    self.step(ticker, "error", "Model", "Muse Spark",
-                              f"The answer was cut off (status incomplete: {why}); none of its "
-                              f"{len(held)} tool call(s) ran and nothing from it was accepted or replayed. "
-                              f"Kept in the turn log for audit.")
+                                    "incomplete_answer", f"{call.get('name')} came in a reply cut off at the reply "
+                                                         f"limit ({why}); not executed.")]})
+                    timeout_streak += 1
+                    self.step(ticker, "runaway", "Model", "Muse Spark",
+                              f"The reply was cut off (status incomplete: {why}); none of its {len(held)} tool call(s) "
+                              f"ran and nothing from it was accepted or replayed. Kept in the turn log for audit "
+                              f"({timeout_streak} cut off or unanswered in a row).")
                     self.save_ledger()
-                    raise Stop("incomplete", f"Incomplete: the model's answer was cut off (status incomplete: {why}); "
-                                             f"the proposals recorded so far are kept, the company is not finished. "
-                                             f"It was not retried.")
+                    if timeout_streak >= 2:
+                        raise Stop("incomplete", "Incomplete: two replies in a row were cut off at the reply limit "
+                                                 "(or did not answer). The proposals recorded so far are kept; not "
+                                                 "retried.")
+                    note = {"role": "user", "content": NUDGE_RUNAWAY}
+                    history.append(note)
+                    pending = [note]
+                    continue
+                timeout_streak = 0
                 self.note_attempt(reply.empty)
                 for s in reply.web_searches():
                     self.record_search(ticker, s)
@@ -920,7 +928,7 @@ def make_job_class():
             st = self.state[ticker]
             starts = st["turn_starts"]
             if len(starts) <= REPLAY_TURNS:
-                keep_from, dropped = (starts[0] if starts else len(history)), 0
+                keep_from, dropped = (starts[0] if starts else first_n), 0     # before any turn: all after first
             else:
                 keep_from, dropped = starts[-REPLAY_TURNS], len(starts) - REPLAY_TURNS
             last_start = starts[-1] if starts else len(history)
