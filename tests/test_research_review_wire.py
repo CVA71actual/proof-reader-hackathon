@@ -840,3 +840,44 @@ def test_the_declared_fallback_runs_only_when_deepseek_is_unavailable_and_says_s
     for label in (e["label"], row["research"]["label"], run["run"]["research"]["label"]):
         assert label == want and "independently" not in label
     assert any("declared fallback" in s["text"] for s in run["run"]["research"]["steps"] if s["kind"] == "review")
+
+
+# ------------------------------------------------------------------ labels derived on load (e2e #180, CLAIM-001)
+
+def test_labels_are_derived_from_the_recorded_review_on_load_not_read_back_as_stored_text(runs_dir, tmp_path):
+    missing = "https://news.example.net/gone"
+    def lost(draft):
+        return ("report_finding", {"kind": "lost_condition",
+                                   "row_revision_ids": [{"row_id": draft[0]["row_id"], "revision_id": 1}],
+                                   "evidence": [{"source_id": "src-r1-ptgx", "quote": CONDITION}], "text": "dropped"})
+    reviewer = F.FakeChat([F.assess_then(("fetch", {"url": missing}), verdict="finding", before=(lost,)),
+                           _timed_out()])                                   # incomplete, one source not opened
+    wonder = F.FakeChat([F.verdict({"verdict": "unresolved", "reason": "unclear"})], model=F.ADJUDICATOR_MODEL)
+    client, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer, wonder)
+    path = runs_dir / rid / "run.json"
+    doc = json.loads(path.read_text())
+    # simulate a run saved by an older build: stored labels without the limit, no derived fields
+    old = "Agent research — partly reviewed (incomplete), findings so far"
+    doc["run"]["research"]["label"] = old
+    e = doc["run"]["research"]["review"]["PTGX"]
+    e["label"] = old
+    for k in ("label_kind", "limits", "reviewer_ran"):
+        e.pop(k, None)
+    for row in doc["rows"]:
+        if row.get("research"):
+            row["research"]["label"] = old
+    path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n")
+    before = path.read_bytes()
+    want = "1 source could not be opened"
+    api = client.get(f"/api/runs/{rid}").json()
+    labels = [api["run"]["research"]["label"]] + [r["research"]["label"] for r in api["rows"] if r.get("research")]
+    from report.data import load_run_dir
+    run, decisions = load_run_dir(runs_dir / rid)
+    view = build_view(run, decisions, generated_at="2026-11-02T20:00:00+00:00")
+    labels.append(view["research_label"])
+    for label in labels:
+        assert want in label and "partly reviewed by DeepSeek V4 Pro (incomplete)" in label, label
+    from report.build import build as build_report
+    out = build_report(rid, out=tmp_path / "rep", run_dir=runs_dir / rid)
+    assert want in " ".join("".join(p.get_text() for p in pymupdf.open(out["pdf"])).split())
+    assert path.read_bytes() == before                                       # the saved file is not rewritten

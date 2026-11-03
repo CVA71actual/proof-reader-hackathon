@@ -647,6 +647,12 @@ Such a review is never clean; every label that claims a review carries them in p
 with no findings "Agent research — independently reviewed — 1 source could not be opened". Row, company, run, export
 and audit labels all carry it.
 
+Labels are derived, never read back (e2e #180, CLAIM-001 / UNKNOWN-001): `runs/research_labels.py
+derive_review_labels(run)` sets every row, company and run label from the recorded review (its status, the findings
+still current on the rows, the retrieval limits in its limitations, the reviewer that ran). It runs when a review is
+saved and on every load (`runs/check_load.bind_on_load`), so the API, the report view, the PDF and the DOCX always show
+what the record supports; a run saved by an older build gets the honest label without its file being rewritten.
+
 Finding lifetime (Red Team PR177_21e10cd): a finding stays current until a later COMPLETE review addresses its row and
 finds it resolved (no repeat finding of that kind, and the row assessed no_issue on the same revision; then
 `resolved: true`); a repeat in a complete review supersedes it (`superseded: true`); a change of the row's revision or

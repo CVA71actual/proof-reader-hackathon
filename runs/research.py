@@ -59,28 +59,10 @@ from runs.ids import reserve_row_numbers
 from runs.state import run_reference_date
 
 LABEL = rc.LABEL
-# MULTI-FAMILY-001 (register): the producer's provider and model family, recorded beside the reviewer's
-RESEARCHER_PROVIDER = "meta"
-RESEARCHER_FAMILY = "Muse Spark (Meta)"
-# RESEARCHER-FULL-001 S2 wiring: the labels a research result can carry. Each names the reviewer that ran; a reviewer of
-# the researcher's own family (the declared fallback) is never called "independent" and is said to be the same family.
-# Recorded limits are appended after " — ". Never "verified". Kinds: clean, findings, limited (complete, no findings,
-# only recorded retrieval limits), partial (findings from a review that did not complete), none.
-PRIMARY_REVIEWER = {"name": "DeepSeek V4 Pro", "family": "DeepSeek"}
-
-
-def review_label(kind: str, who: dict | None) -> str:
-    if kind == "none" or not who:
-        return LABEL
-    same = who.get("family") == RESEARCHER_FAMILY
-    by = who.get("name") + (" (same model family as the researcher)" if same else "")
-    reviewed = ("reviewed by " if same else "independently reviewed by ") + by
-    return {"clean": f"Agent research — {reviewed} (no findings)",
-            "findings": f"Agent research — {reviewed} with findings",
-            "limited": f"Agent research — {reviewed}",
-            "partial": f"Agent research — partly reviewed by {by} (incomplete), findings so far"}[kind]
-
-
+# The labels (CLAIM-001 / MULTI-FAMILY-001) live in runs/research_labels.py: one derivation from the recorded review,
+# used when a review is saved and on every load (runs/check_load.bind_on_load).
+from runs.research_labels import (PRIMARY_REVIEWER, RESEARCHER_FAMILY, RESEARCHER_PROVIDER,  # noqa: E402
+                                  derive_review_labels, review_label)
 LABEL_REVIEWED_CLEAN = review_label("clean", PRIMARY_REVIEWER)
 LABEL_REVIEWED_FINDINGS = review_label("findings", PRIMARY_REVIEWER)
 LABEL_PARTIAL_FINDINGS = review_label("partial", PRIMARY_REVIEWER)
@@ -777,66 +759,6 @@ def make_job_class():
             return rv.disputes_from_findings(record.get("findings") or [],
                                              [self.review_proposal(r) for r in rows_by_id.values()], ticker)
 
-        @staticmethod
-        def review_limits(record: dict) -> dict:
-            """What the review could not do, counted for the labels (OUTCOME-001 / CLAIM-001): sources it could not
-            open (a failed fetch, a captured source whose text could not be given) and searches that did not complete."""
-            lims = record.get("limitations") or []
-            sources_ = sum(1 for x in lims if x.get("kind") == "fetch") + len(record.get("sources_not_given") or [])
-            return {"sources_not_opened": sources_, "searches_not_completed": sum(1 for x in lims
-                                                                                  if x.get("kind") == "search")}
-
-        @staticmethod
-        def limits_text(limits: dict) -> str:
-            n, m = limits.get("sources_not_opened", 0), limits.get("searches_not_completed", 0)
-            parts = ([f"{n} source{'s' if n != 1 else ''} could not be opened"] if n else []) + \
-                    ([f"{m} search{'es' if m != 1 else ''} did not complete"] if m else [])
-            return (" — " + "; ".join(parts)) if parts else ""
-
-        @staticmethod
-        def base_label(status: str | None, clean: bool, has_findings: bool, only_limits: bool) -> str:
-            """'independently reviewed ...' only for a COMPLETE review; findings from a review that did not finish
-            read 'partly reviewed (incomplete), findings so far'; a complete review whose only gaps are recorded
-            retrieval limits reads 'independently reviewed' plus them (never clean); nothing else claims a review."""
-            if status == "complete":
-                if clean:
-                    return "clean"
-                if has_findings:
-                    return "findings"
-                return "limited" if only_limits else "none"
-            return "partial" if has_findings else "none"
-
-        def with_limits(self, kind: str, limits: dict, who: dict | None) -> str:
-            label = review_label(kind, who)
-            return label if kind in ("none", "clean") else label + self.limits_text(limits)
-
-        def run_review_label(self) -> str:
-            """The run's label: reviewed (no findings) only when every company's review is complete and clean;
-            'independently reviewed ...' only when every company's review is complete; partly reviewed when findings
-            exist but some review did not complete; otherwise not independently reviewed. Retrieval limits of any
-            company are carried in the run label."""
-            reviews = self.research.get("review") or {}
-            entries = [reviews.get(t) for t in self.research["companies"]]
-            done = [e for e in entries if isinstance(e, dict)]
-            limits = {k: sum((e.get("limits") or {}).get(k, 0) for e in done)
-                      for k in ("sources_not_opened", "searches_not_completed")}
-            bases = [e.get("label_kind", "none") for e in done]
-            whos = [e.get("reviewer_ran") for e in done if e.get("reviewer_ran")]
-            names = list(dict.fromkeys(w["name"] for w in whos))
-            who = ({"name": " and ".join(names),
-                    "family": RESEARCHER_FAMILY if any(w.get("family") == RESEARCHER_FAMILY for w in whos)
-                    else whos[0].get("family")} if whos else None)
-            if done and len(done) == len(entries) and all(b == "clean" for b in bases):
-                return self.with_limits("clean", limits, who)
-            if done and len(done) == len(entries) and all(e.get("status") == "complete" for e in done):
-                if any(b == "findings" for b in bases):
-                    return self.with_limits("findings", limits, who)
-                if all(b in ("clean", "limited") for b in bases):
-                    return self.with_limits("limited", limits, who)
-            if any(b in ("findings", "partial") for b in bases):
-                return self.with_limits("partial", limits, who)
-            return LABEL
-
         def review_company(self, ticker: str, ended_kind: str, ended_reason: str) -> dict:
             """After a company's research ends (for any reason but a person's stop), the independent reviewer attacks
             its draft; disputed findings go to Muse Wonder (fail-closed); the record, the findings on their rows, the
@@ -984,11 +906,6 @@ def make_job_class():
                             "basis": self.finding_basis(row),
                             "evidence": f["evidence"], "review_status": status,
                             "reviewed_at": at, "adjudication": adjudication})
-                company_has = False
-                limits = self.review_limits(record)
-                only_limits = (status == "complete" and not record.get("findings") and not record.get("rejected")
-                               and not record.get("cited_pages_unread") and not record.get("rows_not_assessed")
-                               and any(limits.values()))
                 for row in rows:
                     rev = row["research"]["revision"]
                     # reviewed_revision: the revision a COMPLETED review covered; null when the review did not finish
@@ -1001,32 +918,13 @@ def make_job_class():
                         "reviewed_revision": rev if reviewed_this else (
                             prev.get("reviewed_revision") if status != "complete" and
                             prev.get("reviewed_revision") == rev else None)}
-                    current = [f for f in row["research"]["review_findings"] if f.get("current")]
-                    company_has = company_has or bool(current)
-                    # CLAIM-001 (Red Team PR177_8cd269a): "independently reviewed" only when the LATEST attempt is
-                    # complete; findings carried through an attempt that did not complete read "partly reviewed"
-                    if status == "complete" and current:
-                        base = "findings"
-                    elif current:
-                        base = "partial"
-                    elif status == "complete" and record.get("clean") and reviewed_this:
-                        base = "clean"
-                    elif only_limits and reviewed_this:
-                        base = "limited"
-                    else:
-                        base = "none"
-                    row["research"]["label"] = self.with_limits(base, limits, who_ran)
                 omissions = [f for f in record.get("findings") or [] if not f["row_revision_ids"]]
                 carried_omissions = [o for o in (prior or {}).get("unbound_findings") or []]   # never silently dropped
                 unbound = carried_omissions + [{**f, "attempt": attempt, "review_status": status} for f in omissions]
-                label_base = self.base_label(status, bool(record.get("clean")), company_has or bool(unbound),
-                                             only_limits)
-                label = self.with_limits(label_base, limits, who_ran)
                 attempts = (prior.get("attempts") or []) + [{k: prior.get(k) for k in (
                     "attempt", "status", "reason", "label", "started_at", "finished_at")}] if prior else []
                 entry = {"stage": REVIEW_STAGE, "ticker": ticker, "attempt": attempt, "status": status,
-                         "reason": record.get("reason"), "clean": bool(record.get("clean")), "label": label,
-                         "label_kind": label_base, "limits": limits,
+                         "reason": record.get("reason"), "clean": bool(record.get("clean")),
                          "reviewer": (who_ran or {}).get("name"), "reviewer_ran": who_ran, "reviewer_choice": choice,
                          "adjudicator": rv.ADJUDICATOR_NAME, "search": "Brave Search",
                          "families": {
@@ -1048,6 +946,8 @@ def make_job_class():
                          "review": record, "adjudication": adj, "usage": dict(self.review_usage(ticker)),
                          "attempts": attempts}
                 self.research.setdefault("review", {})[ticker] = entry
+                derive_review_labels(self.run)          # every label, from the record (the same function as on load)
+                label = entry["label"]
                 self.save_ledger()
             for f in record.get("findings") or []:
                 o = outcomes.get(f"{ticker}-{f['finding_id']}")
@@ -1074,7 +974,7 @@ def make_job_class():
 
         def finish_review_labels(self) -> None:
             with jobs.RUN_LOCK:
-                self.research["label"] = self.run_review_label()
+                derive_review_labels(self.run)
 
         def review_only(self, tickers: list[str] | None = None, note: str | None = None) -> None:
             """Review an EXISTING run's saved draft without researching again (tools/research_smoke.py --review)."""
