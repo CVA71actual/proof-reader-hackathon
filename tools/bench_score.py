@@ -3,7 +3,7 @@
     python -m tools.bench_score <run_dir> <bench_file> [more bench files] [--json out.json]
 
 Scores one saved run folder (run.json + decisions.jsonl) against a per-ticker benchmark file of expected catalysts
-(tests/fixtures/bench/ptgx.yaml). No model, network or paid call: the run is loaded through the same code the UI
+(tests/fixtures/bench/ptgx.json). No model, network or paid call: the run is loaded through the same code the UI
 and the exports use (runs.check_load -> runs.state.current_state -> runs.calendar.run_interval_partition), so the
 scorer sees exactly the rows, values and placements a person sees. The run folder is only read, never written.
 

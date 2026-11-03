@@ -1,6 +1,6 @@
 """tools/bench_score.py: the offline benchmark scorer (no model, network or paid call).
 
-Fixtures: tests/fixtures/bench/ptgx.yaml (known PTGX catalysts, public facts) and the synthetic run folder
+Fixtures: tests/fixtures/bench/ptgx.json (known PTGX catalysts, public facts) and the synthetic run folder
 tests/fixtures/bench/run-ptgx-synthetic/ (made by make_run_fixture.py; rows e1..e9 cover found, misplaced,
 missed, duplicate and unmatched cases; see its docstring). The run is loaded through the real loaders
 (runs.check_load, runs.state.current_state, runs.calendar.run_interval_partition), so the scorer sees what the
@@ -19,7 +19,7 @@ from tools import bench_score as bs
 
 BENCH_DIR = Path(__file__).parent / "fixtures" / "bench"
 RUN_DIR = BENCH_DIR / "run-ptgx-synthetic"
-PTGX = BENCH_DIR / "ptgx.yaml"
+PTGX = BENCH_DIR / "ptgx.json"
 
 
 @pytest.fixture(scope="module")
