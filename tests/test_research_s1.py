@@ -2061,9 +2061,14 @@ def test_rt_5a48646_a_short_block_notice_with_one_fact_sentence_is_refused(page)
 
 
 def test_rt_5a48646_b_check_back_tomorrow_is_block_wording():
-    page = f"<html><body><p>Please check back tomorrow. {FDA}</p></body></html>".encode()
+    # "check back tomorrow" counts beside a site-state statement (Red Team 5a48646 (b)); on its own in body prose it is
+    # ordinary IR wording (live review 7f0bb08, below). Four facts + two block sentences: a block notice only when
+    # "check back tomorrow" is counted (otherwise five other sentences would make it a document).
+    facts = " ".join(f"Fact {w} about the program was reported." for w in ("one", "two", "three", "four"))
+    page = (f"<html><body><p>Our website is down for scheduled maintenance. Please check back tomorrow. {facts}</p>"
+            "</body></html>").encode()
     reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page))
-    assert reason and "check back tomorrow" in reason
+    assert reason and "with 4 other prose sentences" in reason
 
 
 def test_final_rule_controls_long_release_and_maintenance_dosing_are_captured():
@@ -2206,3 +2211,50 @@ def test_a_dateline_in_the_quote_is_never_the_event_date_wherever_it_sits(runs_d
         assert codes == [] and audit_row["scope"]["issues"] == []
     else:
         assert codes == ["dateline_as_event_date"] and audit_row["scope"]["issues"] == ["dateline_as_event_date"]
+
+
+# ---------------------------------------------------------------- live review 7f0bb08 (OUTCOME-001 / EVIDENCE-001)
+
+IR_EVENT = (b"<html><head><title>Acme to Present at the Jefferies Healthcare Conference | Acme</title></head><body>"
+            b"<h1>Acme to Present at the Jefferies Healthcare Conference</h1><p>Acme Therapeutics will present at the "
+            b"Jefferies Healthcare Conference on November 18, 2026 at 9:00 a.m. ET. A live webcast will be available "
+            b"on the Investors section of the company website. Please check back later for the archived replay.</p>"
+            b"</body></html>")
+JNJ_PLAIN = (b"<html><head><title>Johnson &amp; Johnson</title></head><body><div>Site Maintenance</div>"
+             b"<p>We're sorry, our site is temporarily unavailable</p></body></html>")
+
+
+def test_live_review_a_an_ir_event_page_saying_check_back_later_is_captured(runs_dir):
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", IR_EVENT)) is None
+    url = "https://ir.example.com/events/jefferies"
+    quote = "Acme Therapeutics will present at the Jefferies Healthcare Conference on November 18, 2026 at 9:00 a.m. ET."
+    ev = F.event("Jefferies presentation", quote, date_text="November 18, 2026 at 9:00 a.m. ET", date="2026-11-18")
+    reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": url, "purpose": "event"}, "c0")]),
+                              F.body([F.call("propose_events", {"events": [ev]}, "c1")]),
+                              F.body([F.call("finish_draft", {"dispositions": [
+                                  {"row_id": "e1", "disposition": "proposal", "related_row_id": None,
+                                   "reason": "x"}], "limitations": []}, "c2")])])
+    _, rid, _ = start(runs_dir, reader, pages={url: (200, "text/html", IR_EVENT)})
+    run = run_json(runs_dir, rid)
+    assert [s["url"] for s in run["sources"]] == [url]
+    row = next(r for r in run["rows"] if r["id"] == "e1")
+    assert row["date"] == "2026-11-18" and {c["name"]: c["result"] for c in row["checks"]}["date_match"] == "pass"
+
+
+def test_live_review_b_an_unpunctuated_maintenance_page_with_a_plain_title_is_refused():
+    reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", JNJ_PLAIN))
+    assert reason and reason.startswith("site served a block/maintenance page")
+
+
+def test_the_jnj_block_page_fixture_is_still_refused():
+    reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", JNJ_BLOCK))
+    assert reason and "title" in reason
+    plain = JNJ_BLOCK.replace(b"<title>Site Maintenance</title>", b"<title>Johnson &amp; Johnson</title>")
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", plain)).startswith("site served a block")
+
+
+def test_check_back_later_counts_in_a_title_or_beside_a_site_statement():
+    titled = b"<html><head><title>Please check back later</title></head><body><p>Thank you.</p></body></html>"
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", titled)).startswith("site served a block")
+    alone = b"<html><body><p>Please check back later for the replay. The call is on May 5, 2027.</p></body></html>"
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", alone)) is None
