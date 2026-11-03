@@ -340,6 +340,24 @@
            c.result === 'pass' &&
            (c.label === 'Date period found in quote' || c.label === 'Date wording present in quote');
   }
+  // CHECK-RESULTS-WORDS-001: a passing scoped comparison states one
+  // concise observed outcome — never an amber warning. Other passes keep the
+  // plain 'passed'.
+  function passOutcome(c) {
+    if (!c || c.result !== 'pass') return null;
+    var o = PASS_OUTCOME_WORDS[c.name];
+    if (!o) return null;
+    return typeof o === 'function' ? o(c) : o;
+  }
+  function passOutcomeDate(c) {
+    var wording = c.timing && typeof c.timing.wording === 'string' && c.timing.wording;
+    return 'Timing matches source' + (wording ? ': ' + wording : '');
+  }
+  var PASS_OUTCOME_WORDS = {
+    date_match: passOutcomeDate,
+    quote_match: 'Quote matches source',
+    selector_match: 'Citation located'
+  };
   function checkResultWord(result) { return CHECK_WORDS[result] || result; }
 
   // ---------------------------------------------------------------- theme
@@ -1012,6 +1030,8 @@
     // the selected row, and make sure no stale dialog survives a plain audit view
     if (route.dialog && audit.selected && rowOf(audit.selected)) openDialog(rowOf(audit.selected), route.dialog);
     else closeDialog();
+    restoreFolds(document.getElementById('audit-det'),
+                 currentRunId() + '/audit/' + (audit.selected || ''));
   }
 
   function renderAuditFacets() {
@@ -1681,10 +1701,28 @@
     var evidence = t.page_evidence || {};
     var capture = evidence.capture_completeness || {};
     if (capture.capture_incomplete) {
-      sec.append(el('div', 'hint', 'Capture may be incomplete: ' + (capture.capture_incomplete_reason || 'reason not recorded')));
+      // detected clipping stays an actionable warning, with the original source
+      var warn = el('div', 'capwarn');
+      warn.append('The captured page may be cut off. ');
+      var osrc = row && row.source_id ? sourceOf(row) : null;
+      // fix-on-find (Red Team 7f822fc): the link only when there is an
+      // original to open — never an anchor without an href
+      if (osrc && osrc.url) {
+        var oa = el('a', 'link', 'Open the original to check.');
+        oa.href = osrc.url; oa.target = '_blank'; oa.rel = 'noopener';
+        warn.append(oa);
+      }
+      if (capture.capture_incomplete_reason)
+        warn.append(el('span', 'capwhy', ' ' + capture.capture_incomplete_reason));
+      sec.append(warn);
     } else if (capture.completeness_not_established) {
-      sec.append(el('div', 'hint', 'Capture completeness was not established: ' +
-        (capture.completeness_reason || 'reason not recorded')));
+      // unknown completeness is neutral detail, never a warning on every row
+      var cdet = el('details', 'fold capdet');
+      cdet.dataset.check = 'capture';
+      cdet.append(el('summary', null, 'Capture details'));
+      cdet.append(el('div', null, 'This check cannot rule out every kind of clipping.'));
+      if (capture.completeness_reason) cdet.append(el('div', 'hint', capture.completeness_reason));
+      sec.append(cdet);
     }
     if (evidence.derived_words) {
       sec.append(el('div', 'hint', 'Words came from a model transcription of the captured page image; their geometry is approximate.'));
@@ -1699,12 +1737,15 @@
       checks.forEach(function (c) {
       var line = el('div', 'chk');
       var finding = dateFinding(c);
-      line.append(finding ? el('span', 'dot finding unresolved') : checkDot(c.result));
+      var outcome = passOutcome(c);
+      // a passing scoped comparison reads as its observed outcome (green); a
+      // failure stays red and names its conflict — never amber on a match
+      line.append(outcome ? checkDot('pass')
+        : finding ? el('span', 'dot finding unresolved') : checkDot(c.result));
       var cn = el('span', 'cn');
       cn.append(esc(c.label), el('span', 'wtag', 'Code'));
       line.append(cn);
-      // the label is the finding; no 'passed' beside it
-      var cr = el('span', 'cr', finding ? '' : checkResultWord(c.result));
+      var cr = el('span', 'cr', outcome ? outcome : finding ? '' : checkResultWord(c.result));
       line.append(cr);
       sec.append(line);
       if (c.reason) {
@@ -1742,6 +1783,9 @@
     // opener is the person (or the trail's 'See the check' link) — the code
     // block is never shown uninvited
     var d = el('details', 'fold');
+    // CODEXADV_KIMI_DIALOG_REFRESH: the fold carries its check's name so a
+    // same-target background refresh can re-open the same check
+    if (c.name) d.dataset.check = c.name;
     d.append(el('summary', null, 'See the check'));
     var cmp = c.compared || {};
     var box = el('div', 'cmp');
@@ -1794,6 +1838,9 @@
   }
 
   function renderAuditDet() {
+    // the poll rebuilds this pane: opened folds and its scroll survive a
+    // same-row refresh
+    captureFolds(document.getElementById('audit-det'));
     var host = clear(document.getElementById('audit-det'));
     var row = rowOf(audit.selected);
     if (!row) {
@@ -1804,7 +1851,52 @@
   }
 
   // ---------------------------------------------------------------- source (U1)
+  // CODEXADV_KIMI_DIALOG_REFRESH: across a same-target background refresh,
+  // opened folds and the pane scroll survive in every pane the poll rebuilds;
+  // a changed target (or a deliberate navigation) resets them. A fold's
+  // identity is its position among the pane's folds plus its check name — a
+  // name alone re-opens the wrong fold when a check appears in two sections.
+  function srcViewRouteKey() {
+    return currentRunId() + '/' + route.srcId + '/' + route.page + '/' + (route.valueId || '');
+  }
+  // fix-on-find (Red Team 7f822fc): the keep is keyed by what the pane SHOWED
+  // (hostEl.__foldKey, set at restore), not by the route at capture time —
+  // render() updates the route before the pane is rebuilt, so a route key
+  // there always equals the new key and copied the old folds onto a new row
+  // or value. The keep lives on its own host, so panes never clobber each other.
+  function captureFolds(hostEl) {
+    var opens = [];
+    if (hostEl.querySelectorAll) {
+      var folds = hostEl.querySelectorAll('details.fold[data-check][open]');
+      for (var i = 0; i < folds.length; i++) {
+        // the index among ALL the pane's folds, with the name as a guard
+        var all = hostEl.querySelectorAll('details.fold[data-check]');
+        for (var j = 0; j < all.length; j++) if (all[j] === folds[i]) { opens.push(j + ':' + folds[i].getAttribute('data-check')); break; }
+      }
+    }
+    hostEl.__foldKeep = { key: hostEl.__foldKey, opens: opens, scroll: hostEl.scrollTop };
+  }
+  function restoreFolds(hostEl, key) {
+    var keep = hostEl.__foldKeep;
+    hostEl.__foldKeep = null;
+    hostEl.__foldKey = key;
+    if (!keep || keep.key !== key || !hostEl.querySelectorAll) return;
+    var all = hostEl.querySelectorAll('details.fold[data-check]');
+    keep.opens.forEach(function (k) {
+      var parts = k.split(':');
+      var d = all[parseInt(parts[0], 10)];
+      if (d && d.getAttribute('data-check') === parts.slice(1).join(':')) d.open = true;
+    });
+    hostEl.scrollTop = keep.scroll;
+  }
+  function captureSrcView() {
+    captureFolds(document.getElementById('srcDet'));
+  }
+  function restoreSrcView() {
+    restoreFolds(document.getElementById('srcDet'), srcViewRouteKey());
+  }
   function renderSource() {
+    captureSrcView();
     var host = clear(document.getElementById('srcList'));
     var mid = clear(document.getElementById('srcwrap'));
     var det = clear(document.getElementById('srcDet'));
@@ -1883,6 +1975,7 @@
 
     if (!selected) {
       mid.append(el('div', 'empty', 'Choose a page on the left.'));
+      restoreSrcView();
       return;
     }
 
@@ -1897,7 +1990,7 @@
     if (selBox) revealRow(selBox, { behavior: 'smooth', block: 'center', inline: 'center' });
 
     var v = valuesOnPage(selected).filter(function (x) { return x.id === route.valueId; })[0];
-    if (!v) return;
+    if (!v) { restoreSrcView(); return; }
     // G8-9a: a value is picked — the pane opens
     det.hidden = false;
     var row = rowOf(v.id);
@@ -1918,6 +2011,7 @@
         det.append(checksSection({ checks: cell.checks }, {}));
       }
     }
+    restoreSrcView();
   }
 
   // ---------------------------------------------------------------- accuracy panel (U11)
@@ -2813,6 +2907,20 @@
     var on = host.querySelector('.row.on');
     if (on) revealRow(on);
 
+    // capture before the host clear: the poll rebuilds this pane and opened
+    // folds + scroll survive only a same-row refresh
+    captureFolds(document.getElementById('judgment-det'));
+    // fix-on-find (Red Team / Claude re-review): snapshot the live 'Your call'
+    // note BEFORE the clear — the clear blurs it, and a caret moved without
+    // typing (click, arrows) never fires input
+    var liveNote = document.getElementById('qnote');
+    // only a box with something to keep (text, or the caret in it) records;
+    // an empty unfocused box on another row never wipes this row's draft
+    if (liveNote && liveNote.__row && (liveNote.value || document.activeElement === liveNote)) {
+      qnoteDraft = { rowId: liveNote.__row, value: liveNote.value,
+                     start: liveNote.selectionStart, end: liveNote.selectionEnd,
+                     focused: document.activeElement === liveNote };
+    }
     var mid = clear(document.getElementById('judgment-mid'));
     mid.append(el('div', 'empty', 'Pick a row on the left.'));
     var det = clear(document.getElementById('judgment-det'));
@@ -2837,6 +2945,8 @@
 
     if (route.dialog) openDialog(row, route.dialog);
     else closeDialog();
+    restoreFolds(document.getElementById('judgment-det'),
+                 currentRunId() + '/judgment/' + (route.rowId || judgmentSel || ''));
   }
 
   function judgmentRow(row) {
@@ -3143,7 +3253,13 @@
     return wrap;
   }
 
+  // CODEXADV_KIMI_DIALOG_REFRESH: an in-progress 'Your call' note lives in a
+  // module draft, updated on input — renderJudgment CLEARS the pane before
+  // this function runs, so a host lookup there always finds nothing. The
+  // draft follows only the SAME row, never another target.
+  var qnoteDraft = null;
   function judgmentPendingPane(host, row, t) {
+    var keepNote = qnoteDraft;
     clear(host);
     if (sayBusyWith(row)) cancelSay();
     // a row the person corrected earlier but that still needs a person: show the
@@ -3173,8 +3289,19 @@
     sec.append(el('h4', null, 'Your call'));
     var note = el('textarea', 'note');
     note.id = 'qnote';
+    note.__row = row.id;   // the row this box belongs to
     sec.append(el('div', null, ''), note);
     note.placeholder = 'Why you decided this… (optional for Keep, required for Remove)';
+    // the same row's draft comes back — text, or a focused empty box
+    var restoreNote = !!(keepNote && keepNote.rowId === row.id && (keepNote.value || keepNote.focused));
+    if (restoreNote) note.value = keepNote.value || '';
+    note.addEventListener('input', function () {
+      qnoteDraft = { rowId: row.id, value: note.value,
+                     start: note.selectionStart, end: note.selectionEnd,
+                     focused: document.activeElement === note };
+    });
+    // no focus/blur bookkeeping here: the pane clear itself blurs the box and
+    // would wipe the focus renderJudgment just recorded (fix-on-find)
     // G1-11: the decision buttons stay on one line — Remove… is never orphaned
     var br = el('div', 'btnrow nowrap');
     br.style.marginTop = '10px';
@@ -3233,6 +3360,13 @@
     // U23: the person can say the decision instead of typing it
     sec.append(sayControls(row));
     host.append(sec);
+    // focus and caret only take once the box is in the page
+    if (restoreNote) {
+      if (keepNote.focused && note.focus) note.focus();
+      if (note.setSelectionRange && keepNote.start !== null && keepNote.start !== undefined) {
+        try { note.setSelectionRange(keepNote.start, keepNote.end); } catch (e) { /* detached */ }
+      }
+    }
   }
 
   function judgmentDecidedPane(host, row, t) {
@@ -3338,7 +3472,13 @@
   // ---------------------------------------------------------------- dialogs
   var dialogWrap = document.getElementById('dialog-wrap');
   var dialogHost = document.getElementById('dialog');
+  // CODEXADV_KIMI_DIALOG_REFRESH: the 2500 ms job poll re-renders and re-calls
+  // openDialog for the same run/row/action. The mounted dialog, its draft, the
+  // selected field, focus and caret survive that. A real close (Esc, Cancel,
+  // backdrop), a successful save, or another target/action resets it.
+  var dialogMount = null;
   function closeDialog() {
+    dialogMount = null;
     dialogWrap.hidden = true;
     clear(dialogHost);
   }
@@ -3354,6 +3494,12 @@
   }
 
   function openDialog(row, action) {
+    // background refresh for the dialog already open on this run/row/action:
+    // keep the mounted dialog untouched — recreating it wiped the in-progress
+    // reason, the selected field and the caret mid-typing
+    if (action && dialogMount && dialogMount.key === currentRunId() + '/' + row.id + '/' + action &&
+        !dialogWrap.hidden) return;
+    dialogMount = action ? { key: currentRunId() + '/' + row.id + '/' + action } : null;
     // U38: on a row whose quote check failed with a near match, the Fix
     // dialog opens on the quote field pre-filled with the page's wording —
     // one Save fix click accepts it (the person can still edit)
