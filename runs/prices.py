@@ -20,6 +20,22 @@ PRICES_PER_1M_USD = {
     "Muse Wonder": {"input": 4.00, "output": 20.00, "cached_input": 0.20},   # muse-wonder-1.0 (confirmed)
 }
 
+# The independent reviewer's model (MULTI-FAMILY-001, CVA 2026-11-02): deepseek-ai/DeepSeek-V4-Pro-0813 on Baseten.
+# Kept in its own table (priced exactly like the table above) so saved runs' price snapshots are unchanged; a research
+# run records it in run.prices.reviewer_per_1m_tokens_usd.
+REVIEWER_PRICES_PER_1M_USD = {
+    "DeepSeek V4 Pro": {"input": 1.32, "output": 3.96, "cached_input": 0.132},
+}
+REVIEWER_PRICE_STATUS = {
+    "DeepSeek V4 Pro": ("listed by Baseten's own model list (GET inference.baseten.co/v1/models, pricing per token: "
+                        "prompt 0.00000132, completion 0.00000396), read 2026-11-02; the public baseten.co pricing "
+                        "page could not be read by machine, so it is not yet confirmed against that page"),
+}
+
+
+def _token_price(model: str):
+    return PRICES_PER_1M_USD.get(model) or REVIEWER_PRICES_PER_1M_USD.get(model)
+
 # US dollars per image, for a model that is priced per image: SAM 3.1, $2.50 per 1,000 images (confirmed).
 PRICES_PER_IMAGE_USD = {
     "SAM 3.1": 0.0025,
@@ -83,7 +99,7 @@ MAX_COUNT = 10 ** 15
 def cost_usd(model: str, prompt_tokens: int | None, completion_tokens: int | None) -> float | None:
     """The cost of one call: prompt tokens at the input price plus completion tokens at the output price.
     None when the model is not in the table or a token count was not recorded."""
-    price = PRICES_PER_1M_USD.get(model)
+    price = _token_price(model)
     if price is None or not _count(prompt_tokens) or not _count(completion_tokens):
         return None
     return round((prompt_tokens * price["input"] + completion_tokens * price["output"]) / 1_000_000, ROUND_TO)
@@ -156,7 +172,8 @@ def search_snapshot() -> dict:
 
 def has_price(model: str) -> bool:
     """True when the model is in either table: a call to it can be priced."""
-    return model in PRICES_PER_1M_USD or model in PRICES_PER_IMAGE_USD or model in PRICES_PER_HOUR_USD
+    return (model in PRICES_PER_1M_USD or model in REVIEWER_PRICES_PER_1M_USD or model in PRICES_PER_IMAGE_USD
+            or model in PRICES_PER_HOUR_USD)
 
 
 def model_cost_fields(model: str, prompt_tokens: int | None, completion_tokens: int | None,

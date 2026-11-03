@@ -420,12 +420,9 @@ def test_BRAVE_001_brave_payloads_reach_the_model_once_and_are_never_stored(loop
     assert o["deliveries"] == 1 and o["stored"] is False and o["urls_kept"] is True
 
 
-@pytest.mark.xfail(strict=True, reason="MULTI-FAMILY-001 is NOT met: the reviewer (Muse Spark Open) is the open-weights "
-                                       "member of the researcher's own Muse Spark family; only the provider differs. "
-                                       "Choosing a reviewer of another family is a CVA/design decision, escalated.")
 def test_MULTI_FAMILY_001_the_reviewer_family_differs_from_the_producer(loop, runs_dir):
     fam = loop.multi_family(runs_dir)
     assert fam["researcher"]["provider"] and fam["reviewer"]["provider"]      # both recorded
     assert fam["researcher"]["family"] and fam["reviewer"]["family"]
     assert fam["reviewer"]["provider"] != fam["researcher"]["provider"]
-    assert fam["reviewer"]["family"] != fam["researcher"]["family"]
+    assert fam["reviewer"]["family"] != fam["researcher"]["family"] and fam["same_family"] is False

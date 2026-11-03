@@ -74,6 +74,9 @@ def bind_on_load(run: dict, run_dir: Path, *, refuse_invalid_artifact: bool = Fa
                 cell["checks"] = bind_contract_checks(checked["checks"], context, source,
                                                       consumed_artifact=consumed)
                 cell["status"] = checked["status"]
+    # CLAIM-001 / UNKNOWN-001: research labels are derived from the recorded review on every load
+    from runs.research_labels import derive_review_labels
+    derive_review_labels(run)
     return run
 
 

@@ -231,7 +231,7 @@ def test_complete_with_no_findings_is_clean():
     rec, _, _ = run([tools(finish("Nothing material missing."))])
     assert rec["status"] == "complete" and rec["clean"] is True and rec["findings"] == []
     assert rec["summary"] == "Nothing material missing."
-    assert rec["model"] == "meta-models/muse-spark-open-1026" and rec["provider"] == "baseten"
+    assert rec["model"] == rv.REVIEWER_MODEL_ID and rec["provider"] == "baseten" and rec["family"] == "DeepSeek"
 
 
 @pytest.mark.parametrize("reply,why", [

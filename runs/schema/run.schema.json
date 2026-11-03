@@ -92,6 +92,9 @@
             "per_1m_tokens_usd": {"type": "object", "additionalProperties": {
               "type": "object", "required": ["input", "output"],
               "properties": {"input": {"type": "number"}, "output": {"type": "number"}, "cached_input": {"type": "number"}}}},
+            "reviewer_per_1m_tokens_usd": {"type": "object", "description": "On a research run: the independent reviewer's token prices (runs/prices.py REVIEWER_PRICES_PER_1M_USD).", "additionalProperties": {
+              "type": "object", "required": ["input", "output"],
+              "properties": {"input": {"type": "number"}, "output": {"type": "number"}, "cached_input": {"type": "number"}}}},
             "per_image_usd": {"type": "object", "additionalProperties": {"type": "number"}},
             "per_hour_usd": {"type": "object", "additionalProperties": {"type": "number"}},
             "per_1k_searches_usd": {"type": "object", "additionalProperties": {"type": "number"}, "description": "US dollars per 1,000 built-in web searches (Responses API search grounding)."},
@@ -144,7 +147,7 @@
         "trail": {"type": "array", "items": {"$ref": "#/$defs/trail_step"},
                   "description": "Run-level Person steps, e.g. a raised spending limit. Absent when there are none."},
         "research": {"type": "object", "required": ["label", "companies", "steps", "manifest"],
-                     "properties": {"label": {"type": "string", "pattern": "^Agent research — (not independently reviewed$|independently reviewed \\(no findings\\)$|independently reviewed( with findings)?( — .+)?$|partly reviewed \\(incomplete\\), findings so far( — .+)?$)", "not": {"pattern": "[Vv]erified"}, "description": "Never 'verified'. Reviewed (no findings) only after a complete, clean independent review; any source the review could not open or search that did not complete is named after the dash."},
+                     "properties": {"label": {"type": "string", "pattern": "^Agent research — (not independently reviewed( — .+)?$|(independently )?reviewed by .+|partly reviewed by .+ \\(incomplete\\), findings so far)", "not": {"pattern": "[Vv]erified"}, "description": "Never 'verified'. Names the reviewer that ran; 'independently' only for a reviewer of another model family than the researcher (a same-family fallback is said to be the same family); (no findings) only after a complete, clean review; any source the review could not open or search that did not complete is named after the dash."},
                                     "companies": {"type": "object"}, "steps": {"type": "array", "items": {"type": "object"}},
                                     "manifest": {"type": "object"}, "limits": {"type": "object"},
                                     "refusals": {"type": "array"}, "coverage": {"type": "array"},
@@ -506,7 +509,7 @@
                           "description": "Optional transient load view: checks replaced by a bound re-check remain available as history."},
         "research": {"type": "object", "required": ["label", "revision", "evidence"],
                      "description": "Optional. On a row proposed by the research agent: its label (never 'verified'), proposal revision, every evidence span with its own checks, page capture issues, linked near-duplicates and the revision history.",
-                     "properties": {"label": {"type": "string", "pattern": "^Agent research — (not independently reviewed$|independently reviewed \\(no findings\\)$|independently reviewed( with findings)?( — .+)?$|partly reviewed \\(incomplete\\), findings so far( — .+)?$)", "not": {"pattern": "[Vv]erified"}, "description": "Never 'verified'. Reviewed (no findings) only after a complete, clean independent review; any source the review could not open or search that did not complete is named after the dash."},
+                     "properties": {"label": {"type": "string", "pattern": "^Agent research — (not independently reviewed( — .+)?$|(independently )?reviewed by .+|partly reviewed by .+ \\(incomplete\\), findings so far)", "not": {"pattern": "[Vv]erified"}, "description": "Never 'verified'. Names the reviewer that ran; 'independently' only for a reviewer of another model family than the researcher (a same-family fallback is said to be the same family); (no findings) only after a complete, clean review; any source the review could not open or search that did not complete is named after the dash."},
                                     "revision": {"type": "integer", "minimum": 1},
                                     "ticker": {"type": "string"}, "call_id": {"type": "string"},
                                     "primary_span_index": {"type": "integer", "minimum": 0},

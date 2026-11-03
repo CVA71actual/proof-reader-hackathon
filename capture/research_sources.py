@@ -655,36 +655,73 @@ def capture_document(fetched: Fetched, run_dir: Path, source_id: str, *,
 
 # A site that serves its maintenance page, a bot wall or an access-denied page to our fetcher has given us nothing:
 # such a page is never a captured source (live brief-v2 run: jnj.com served "Site Maintenance" seven times and the
-# model read it as "nothing material"). Detected only on short pages, from the page's own words.
-BLOCK_PHRASES = ("site maintenance", "under maintenance", "access denied", "request blocked", "has been blocked",
-                 "are you a robot", "captcha", "unusual traffic",
-                 "attention required", "just a moment", "checking your browser", "enable javascript and cookies",
-                 "please switch to a different browser", "temporarily unavailable", "403 forbidden",
-                 "you don't have permission to access", "bot detection", "security check")
-BLOCK_MAX_CHARS = 2000
-_HUMAN_CHECK = __import__("re").compile(r"\bver\w{0,3}y (?:that )?you are (?:a )?human\b")
+# model read it as "nothing material").
+#
+# OUTCOME-001, one principle (Operator ruling on Red Team #175 at 3ff7309): block wording is wording whose subject is
+# the site, page, service or system itself ("the site is down", "this page is temporarily unavailable", "site
+# maintenance", "we'll be back soon"), or an access refusal / bot wall. Never the bare word "maintenance": "patients
+# are undergoing maintenance dosing" is a document. The final rule (Operator, Red Team #175 at 5a48646): a page is a
+# block page when that wording is its title or h1, whatever its length; or when any prose sentence carries it and the
+# page has fewer than BLOCK_OTHER_SENTENCES other prose sentences (a block notice plus one fact sentence is still a
+# block notice; a long document mentioning site maintenance in passing is captured).
+# Detection is a heuristic: a refused page is recorded with its reason, and the reviewer remains the backstop.
+_re = __import__("re")
+_SUBJECT = r"(?:web ?site|site|page|portal|server|service|system)s?"
+_SITE_STATE = (rf"\b{_SUBJECT}\s+(?:(?:is|are|has been|have been|was|were|will be|may be|is being)\s+)?"
+               r"(?:(?:currently|temporarily|now|briefly|still|being)\s+)*"
+               r"(?:down|offline|unavailable|under (?:\w+ )?maintenance|undergoing (?:\w+ ){0,2}maintenance|"
+               r"(?:being )?(?:updated|upgraded)|maintenance)\b")
+_BOT_WALL = (r"\bwe(?:'|’)?ll be back\b|\b(?:please )?(?:check|come) back (?:later|tomorrow|soon|shortly)\b|\baccess denied\b|\brequest blocked\b|\b(?:access|request|you|your (?:\w+ )?(?:ip|address|access|request))\s+(?:has|have)\s+been blocked\b|"
+             r"\bare you a robot\b|\bcaptcha\b|\bunusual traffic\b|\battention required\b|\bjust a moment\b|"
+             r"\bchecking your browser\b|\benable javascript and cookies\b|\bplease switch to a different browser\b|"
+             r"\b403 forbidden\b|\byou don(?:'|’)?t have permission to access\b|\bbot detection\b|"
+             r"\bsecurity check\b|\bver\w{0,3}y (?:that )?you are (?:a )?human\b")
+_BLOCK_WORDING = _re.compile(f"{_SITE_STATE}|{_BOT_WALL}")
+BLOCK_OTHER_SENTENCES = 5
+_HEADLINE = _re.compile(r"(?is)<(title|h1)\b[^>]*>(.*?)</\1\s*>")
+_SENTENCE_BREAK = _re.compile(r"(?<=[.!?…])\s+")
+
+
+def _block_hit(text: str) -> str | None:
+    m = _BLOCK_WORDING.search(" ".join(text.lower().split()))
+    return m.group(0) if m else None
+
+
+def _prose_sentences(text: str) -> list[str]:
+    """The page's prose: sentences (ending in . ! ? …) on its readable lines; navigation and link lists, which carry
+    no sentence punctuation, are not prose."""
+    out = []
+    for line in text.splitlines():
+        out += [p for p in _SENTENCE_BREAK.split(line.strip())        # linear: no backtracking on long lines
+                if p.endswith((".", "!", "?", "…")) and len(p.split()) > 1]
+    return out
 
 
 def block_reason(fetched: "Fetched") -> str | None:
-    """'site served a block/maintenance page (...)' when the answer is an interstitial rather than the document."""
+    """'site served a block/maintenance page (...)' when the answer is an interstitial rather than the document: block
+    wording (see above) in the title or h1; or in any prose sentence of a page with fewer than BLOCK_OTHER_SENTENCES
+    other prose sentences."""
     if fetched.status is not None and not 200 <= fetched.status < 300:
         return None        # an error status is reported as itself (403/404/451 could_not_access, others failed)
     if fetched.status is not None and fetched.status not in (200, 203):
         return f"site served a block/maintenance page (unusual status HTTP {fetched.status})"
     if kind_of(fetched.content_type, fetched.body, fetched.final_url) != "html":
         return None
-    text = readable_text(sanitize_html(fetched.body.decode("utf-8", errors="replace"))[0])
-    if len(text) > BLOCK_MAX_CHARS:
-        return None
-    low = " ".join(text.lower().split())
-    hit = next((p for p in BLOCK_PHRASES if p in low), None)
-    if hit is None:      # the bot-wall prompt asking the visitor to confirm they are human
-        m = _HUMAN_CHECK.search(low)
-        hit = m.group(0) if m else None
-    if hit:
-        return f"site served a block/maintenance page (“{hit}”, {len(text)} characters of text)"
-    if not low:
+    import html as _html
+    sanitized = sanitize_html(fetched.body.decode("utf-8", errors="replace"))[0]
+    text = readable_text(sanitized)
+    if not text.strip():
         return "site served a block/maintenance page (no readable text)"
+    for tag, inner in _HEADLINE.findall(sanitized):
+        hit = _block_hit(_html.unescape(_TAG.sub(" ", inner)))
+        if hit:
+            where = "title" if tag.lower() == "title" else "headline"
+            return f"site served a block/maintenance page (“{hit}” in the {where}, {len(text)} characters of text)"
+    prose = _prose_sentences(text)
+    hits = [h for h in map(_block_hit, prose) if h]
+    if hits and len(prose) - len(hits) < BLOCK_OTHER_SENTENCES:
+        return (f"site served a block/maintenance page (“{hits[0]}”, with {len(prose) - len(hits)} other prose "
+                f"sentence{'s' if len(prose) - len(hits) != 1 else ''}, {len(text)} characters of text)")
     return None
 
 

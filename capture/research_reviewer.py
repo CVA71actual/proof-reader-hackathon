@@ -1,5 +1,6 @@
-"""The independent reviewer (RESEARCHER-FULL-001 S2): Muse Spark Open attacks a frozen research draft; Muse Wonder
-adjudicates only disputed components. An isolated module: the research loop (S1) calls it and owns the run record.
+"""The independent reviewer (RESEARCHER-FULL-001 S2): DeepSeek V4 Pro on Baseten (MULTI-FAMILY-001, CVA 2026-11-02;
+Muse Spark Open is the declared same-family fallback, used only when DeepSeek is unavailable) attacks a frozen research
+draft; Muse Wonder adjudicates only disputed components. An isolated module: the research loop (S1) calls it and owns the run record.
 
     review_draft(company=..., assignment=..., proposals=..., sources=..., search=..., fetch_capture=...,
                  spend_gate=...)                      -> ReviewResult.to_record()
@@ -72,13 +73,19 @@ from typing import Any, Callable
 
 from capture import http
 
-REVIEWER_NAME = "Muse Spark Open"
+# MULTI-FAMILY-001 (CVA 2026-11-02): the reviewer is DeepSeek V4 Pro on Baseten, a different model family from the
+# researcher (Muse Spark, Meta). Muse Spark Open stays a DECLARED fallback, used only when DeepSeek is unavailable; it is
+# the open-weights member of the researcher's own family, and the record and labels say so when it ran.
+REVIEWER_NAME = "DeepSeek V4 Pro"
+PROBE_MAX_TOKENS = 1
+REFUSED_STATUSES = (401, 403)
+REVIEWER_MODEL_ID = "deepseek-ai/DeepSeek-V4-Pro-0813"
 REVIEWER_PROVIDER = "baseten"
+REVIEWER_FAMILY = "DeepSeek"
+FALLBACK_REVIEWER_NAME = "Muse Spark Open"
+FALLBACK_REVIEWER_FAMILY = "Muse Spark (Meta)"
 ADJUDICATOR_NAME = "Muse Wonder"
 ADJUDICATOR_PROVIDER = "meta"
-# MULTI-FAMILY-001 (register): the model family is recorded beside the provider. Muse Spark Open is the open-weights
-# member of the same Muse Spark family as the researcher, served by a different provider.
-REVIEWER_FAMILY = "Muse Spark (Meta)"
 ADJUDICATOR_FAMILY = "Muse Wonder (Meta)"
 
 FINDING_KINDS = ("omission", "stale_guidance", "conflicting_guidance", "unsupported_claim", "lost_condition")
@@ -120,8 +127,27 @@ class OneShotChat:
     """One OpenAI-compatible chat request per call: no retry of any kind (the gate admits every physical request).
     Never raises; a malformed success envelope is a possibly-billed error, not an exception."""
 
-    def __init__(self, name: str, base_url: str, model: str, key_env: str):
+    def __init__(self, name: str, base_url: str, model: str, key_env: str, provider: str | None = None,
+                 family: str | None = None):
         self.name, self.base_url, self.model, self.key_env = name, base_url, model, key_env
+        self.provider, self.family, self.price_name = provider, family, name
+
+    def available(self) -> str | None:
+        """None when this model can be used; otherwise why not. A free GET of the provider's model list (no tokens,
+        no charge). If the list itself cannot be read, availability is not established either way and None is
+        returned (the model is tried; its own failure is then recorded)."""
+        problem = self.ready()
+        if problem:
+            return problem
+        import urllib.request
+        try:
+            req = urllib.request.Request(self.base_url.rstrip("/") + "/models",
+                                         headers={"Authorization": "Bearer " + self._key()})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                ids = {m.get("id") for m in json.load(r).get("data") or [] if isinstance(m, dict)}
+        except Exception:
+            return None
+        return None if self.model in ids else f"{self.model} is not in the provider's model list."
 
     def _key(self) -> str:
         from capture import read_table
@@ -131,10 +157,16 @@ class OneShotChat:
     def ready(self) -> str | None:
         return None if self._key() else f"No {self.name} key was found ({self.key_env}), so this stage did not run."
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None, json_mode: bool = False) -> ChatReply:
+    def probe(self) -> ChatReply:
+        """The access check (once per run): one request with a one-token reply. Shows whether the key may use this
+        model (a 401/403 refusal); the model list does not reflect key permissions."""
+        return self.chat([{"role": "user", "content": "Reply with: ok"}], max_tokens=PROBE_MAX_TOKENS)
+
+    def chat(self, messages: list[dict], tools: list[dict] | None = None, json_mode: bool = False,
+             max_tokens: int | None = None) -> ChatReply:
         from capture import read_table
         kwargs: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0,
-                                  "max_tokens": http.MAX_COMPLETION_TOKENS}
+                                  "max_tokens": max_tokens or http.MAX_COMPLETION_TOKENS}
         if tools:
             kwargs["tools"] = tools
         if json_mode:
@@ -246,8 +278,35 @@ VERDICTS = ("no_issue", "finding")
 
 
 def reviewer_model() -> OneShotChat:
+    """DeepSeek V4 Pro on Baseten: Chat Completions with function tools (Baseten lists tools, json_mode and reasoning
+    for it), the same key and base URL as Muse Spark Open."""
     from capture import second_reader
-    return OneShotChat(REVIEWER_NAME, second_reader.BASETEN_BASE_URL, second_reader.BASETEN_MODEL, "BASETEN_API_KEY")
+    return OneShotChat(REVIEWER_NAME, second_reader.BASETEN_BASE_URL, REVIEWER_MODEL_ID, "BASETEN_API_KEY",
+                       REVIEWER_PROVIDER, REVIEWER_FAMILY)
+
+
+def fallback_reviewer_model() -> OneShotChat:
+    from capture import second_reader
+    return OneShotChat(FALLBACK_REVIEWER_NAME, second_reader.BASETEN_BASE_URL, second_reader.BASETEN_MODEL,
+                       "BASETEN_API_KEY", REVIEWER_PROVIDER, FALLBACK_REVIEWER_FAMILY)
+
+
+def identity(model) -> dict:
+    """Who a reviewer model is: name, model id, provider, family (from the model object; defaults: the primary)."""
+    return {"name": getattr(model, "name", None) or REVIEWER_NAME, "model": getattr(model, "model", None),
+            "provider": getattr(model, "provider", None) or REVIEWER_PROVIDER,
+            "family": getattr(model, "family", None) or REVIEWER_FAMILY}
+
+
+def choose_reviewer(primary, fallback) -> tuple[Any, dict]:
+    """The reviewer that runs: the primary unless it is unavailable, then the declared fallback. Returns (model,
+    choice) where choice records who ran, whether the fallback was used and why."""
+    check = getattr(primary, "available", None)
+    why = check() if callable(check) else (primary.ready() if primary is not None else "No reviewer configured.")
+    if why is None or fallback is None:
+        return primary, {**identity(primary), "fallback_used": False, "primary_unavailable": why}
+    return fallback, {**identity(fallback), "fallback_used": True,
+                      "primary": identity(primary)["name"], "primary_unavailable": why}
 
 
 def _adjudicator_model_id() -> str:
@@ -571,7 +630,7 @@ def disputes_from_findings(findings: list[dict], proposals: list[dict], prefix: 
         out.append({"dispute_id": f"{prefix}-{f['finding_id']}", "finding_id": f["finding_id"],
                     "row_revision_ids": f["row_revision_ids"], "component": f["kind"],
                     "readings": [{"by": "Muse Spark (the researcher's draft)", "text": " | ".join(readings)},
-                                 {"by": f"{REVIEWER_NAME} (the independent reviewer)", "text": f["text"]}],
+                                 {"by": f"{f.get('by') or REVIEWER_NAME} (the reviewer)", "text": f["text"]}],
                     "evidence": evidence})
     return out
 
@@ -622,6 +681,9 @@ class ReviewResult:
     limitations: list = field(default_factory=list)
     ignored_finishes: list = field(default_factory=list)
     settings: dict = field(default_factory=dict)
+    family: str | None = None
+    reviewer_name: str | None = None
+    access_refused: dict | None = None
     not_reviewed: list = field(default_factory=list)
     cited_unread: list = field(default_factory=list)
     pages_read: dict = field(default_factory=dict)
@@ -649,7 +711,7 @@ class ReviewResult:
                 "order_refusals": self.order_refusals, "nothing_material": self.nothing_material,
                 "limitations": self.limitations, "ignored_finishes": self.ignored_finishes,
                 "model": self.model, "requested_model": self.requested_model, "provider": self.provider,
-                "family": REVIEWER_FAMILY,
+                "family": self.family, "reviewer": self.reviewer_name, "access_refused": self.access_refused,
                 "turns": self.turns, "searches": self.searches, "fetches": self.fetches, "usage": self.usage,
                 "summary": self.summary, "settings": self.settings}
 
@@ -670,6 +732,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
     source {source_id, text, url, ...} or None / raises when it cannot be captured.
     max_turns / max_searches / max_fetches: optional settings, None (off) by default (LIMITS-001)."""
     model = model or reviewer_model()
+    who = {**identity(model), "price_name": getattr(model, "price_name", None) or identity(model)["name"]}
     gate = _Gate(spend_gate, "independent_review")
     srcs = _Sources(sources)
     rows: dict[tuple[str, str], dict] = {}
@@ -730,7 +793,8 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
             reviewed_sources={"given": list(srcs.given), "fetched": list(srcs.fetched)},
             limitations=list(open_retrieval.values()), ignored_finishes=ignored_finishes,
             reviewed_rows=[{"row_id": r["row_id"], "revision_id": r["revision_id"]} for r in rows.values()],
-            model=state["model"], requested_model=getattr(model, "model", None), provider=REVIEWER_PROVIDER,
+            model=state["model"], requested_model=getattr(model, "model", None), provider=who["provider"],
+            family=who["family"], reviewer_name=who["name"], access_refused=state.get("access_refused"),
             turns=state["turns"], searches=searches, fetches=fetches, usage=gate.usage(),
             summary=state["summary"], settings=settings,
             assessments=list(assessed.values()), order_refusals=order_refusals, nothing_material=nothing_material,
@@ -1026,7 +1090,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                                f"{'this evidence was added to it' if added else 'no new evidence'}; one finding per "
                                f"row and kind, so no new finding was made."}
         f = {"finding_id": f"F{len(findings) + 1}", "kind": kind, "row_revision_ids": bound, "evidence": spans,
-             "text": text.strip(), "by": REVIEWER_NAME}
+             "text": text.strip(), "by": who["name"]}
         findings.append(f)
         if open_source[0] and any(sp["source_id"] == open_source[0] for sp in spans):
             open_source[0] = None
@@ -1040,7 +1104,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                                       f"finished.")
         try:
             messages = request_messages()
-            ticket = gate.reserve("model", model.model, REVIEWER_NAME, _bytes([messages, REVIEWER_TOOLS]),
+            ticket = gate.reserve("model", model.model, who["price_name"], _bytes([messages, REVIEWER_TOOLS]),
                                   http.MAX_COMPLETION_TOKENS, 0, keep_back())
         except GateRefused as e:
             return result(INCOMPLETE, f"The spend gate refused the next reviewer call: {e}")
@@ -1054,9 +1118,11 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         undelivered_searches.clear()
         state["turns"] += 1
         state["model"] = reply.model or state["model"]
-        gate.settle(ticket, "model", reply.model, REVIEWER_NAME, reply.prompt_tokens, reply.completion_tokens, 0,
+        gate.settle(ticket, "model", reply.model, who["price_name"], reply.prompt_tokens, reply.completion_tokens, 0,
                     reply.error, reply.may_have_been_billed if reply.error else None)
         if reply.error:
+            if reply.http_status in REFUSED_STATUSES:
+                state["access_refused"] = {"http_status": reply.http_status, "message": reply.error}
             return result(INCOMPLETE, reply.error)
         if reply.finish_reason == TRUNCATED:
             # Classified before any tool in it runs: a cut-off reply establishes nothing, even a parseable
@@ -1138,6 +1204,11 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                     "pages_total": out.get("pages_total", out.get("pages")),
                     "note": "Page text was delivered once and removed from the conversation; it is still captured. "
                             "Read it again with read_source_pages if you need it."}))
+        if len(ignored_finishes) >= 2 and not finished:
+            # DRYRUN-2 (Operator ruling): a finish beside other calls is sent back once with a reminder; the second
+            # time, the reply's other calls have run, then the review ends incomplete. A stop on a broken protocol, not a spend limit.
+            return result(INCOMPLETE, "Incomplete: finish_review was not sent on its own after a reminder; the other "
+                                      "calls in that reply were processed.")
         if finished:
             n = len(findings)
             reason = "The reviewer finished: " + (f"{n} finding{'s' if n != 1 else ''}." if n else "no findings.")
