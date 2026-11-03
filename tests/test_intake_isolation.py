@@ -430,3 +430,30 @@ def test_rt_the_default_renderer_loads_nothing_named_by_css_strings_or_labelled_
     rec = json.loads((cap / "out.pdf.render.json").read_text())
     assert rec["removed"]["css_dropped_data_uri"] >= 1 and rec["removed"]["css_dropped_url_string"] >= 1
     assert any("not a decodable raster" in l for l in rec["limitations"])
+
+
+# ---------------------------------------------------------------- Red Team PR181 at ae6e9f1: the decode check alone decides
+
+def _spellings(uri: str) -> list[str]:
+    return [f'url("{uri}")', f"url('{uri}')", f"url({uri})", f"url( \"{uri}\" )",
+            f'image-set("{uri}" 1x)', f"-webkit-image-set('{uri}' 1x)", f'image-set(url("{uri}") 1x)',
+            f"image-set(url({uri}) 1x)"]
+
+
+@pytest.mark.parametrize("i", range(8))
+@pytest.mark.parametrize("where", ["attr", "block"])
+def test_rt3_a_real_png_survives_in_every_css_spelling_and_a_labelled_svg_never_does(i, where):
+    real = f"data:image/png;base64,{_b64(png(6, 6, RED))}"
+    fake = f"data:image/png;base64,{_b64(SVG_BYTES)}"
+    for resolver in (None, er.AssetResolver(Path("/nonexistent"), "x.htm", None)):
+        for uri, keep in ((real, True), (fake, False)):
+            css = f"background-image:{_spellings(uri)[i]}"
+            page = (f"<div style='{css}'>x</div>" if "'" not in css else f'<div style="{css.replace(chr(34), "&quot;")}">x</div>') \
+                if where == "attr" else f"<style>p{{{css}}}</style><p>x</p>"
+            snap, counts = rs.sanitize_html(page, image_resolver=resolver)
+            body = snap[len(rs.CSP_META):]
+            if keep:
+                assert uri in body, (page, body, counts)
+                assert not counts.get("css_urls_removed") and not counts.get("css_dropped_data_uri"), counts
+            else:
+                assert _b64(SVG_BYTES) not in body and "data:" not in body, (page, body)

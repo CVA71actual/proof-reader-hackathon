@@ -272,7 +272,9 @@ _DROP_WITH_CONTENT = {"script", "iframe", "frame", "frameset", "object", "embed"
 _DROP_TAG = {"base", "link", "source", "track", "portal"}
 _URL_ATTRS = {"src", "srcset", "data", "poster", "background", "formaction", "action", "lowsrc", "dynsrc",
               "xlink:href", "ping", "manifest", "codebase", "archive", "longdesc", "usemap", "icon"}
-_CSS_URL = __import__("re").compile(r"url\s*\(\s*(['\"]?)(?!data:)[^)]*\1\s*\)", __import__("re").I)
+# url(...) in each spelling: "double", 'single' or bare. A data: inner value is left for the raster decode check in
+# _clean_css (Red Team PR181 ae6e9f1: the old pattern backtracked over the quote and removed a quoted real PNG).
+_CSS_URL = __import__("re").compile(r"""url\s*\(\s*(?:"([^"]*)"|'([^']*)'|([^)'"\s]*))\s*\)""", __import__("re").I)
 _CSS_URL_OPEN = __import__("re").compile(r"url\s*\(", __import__("re").I)
 _CSS_IMPORT = __import__("re").compile(r"@import[^;]*;?", __import__("re").I)
 
@@ -349,13 +351,21 @@ def _clean_css(css: str, counts: dict) -> str:
     if "\\" in css:          # CSS escapes (u\\72l(...)) are dropped, not decoded: the CSP blocks loads anyway
         counts["css_escapes_removed"] = counts.get("css_escapes_removed", 0) + len(_CSS_ESCAPE.findall(css))
         css = _CSS_ESCAPE.sub("", css)
-    n_url = len(_CSS_URL.findall(css))
+
+    def _url(m):
+        inner = next((g for g in m.groups() if g is not None), "")
+        if inner.strip().lower().startswith("data:"):
+            return m.group(0)
+        removed[0] += 1
+        return "none"
+
+    removed = [0]
     n_imp = len(_CSS_IMPORT.findall(css))
-    if n_url:
-        counts["css_urls_removed"] = counts.get("css_urls_removed", 0) + n_url
     if n_imp:
         counts["css_imports_removed"] = counts.get("css_imports_removed", 0) + n_imp
-    css = _CSS_URL.sub("none", _CSS_IMPORT.sub("", css))
+    css = _CSS_URL.sub(_url, _CSS_IMPORT.sub("", css))
+    if removed[0]:
+        counts["css_urls_removed"] = counts.get("css_urls_removed", 0) + removed[0]
     # Red Team b7bbc34: an UNCLOSED url( (url(file:///etc/passwd …) is not matched above. Any url( left that is not an
     # inline data: image drops the whole style text; the code-owned CSP stays as the second barrier.
     for m in _CSS_URL_OPEN.finditer(css):
