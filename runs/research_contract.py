@@ -56,6 +56,8 @@ CONTROLLER = (
     "- conditions: null if not established, [] if the support states none, else the conditions verbatim.\n"
     "- Keep timing as printed (date_text) and give ISO bounds (date, date_end for a period) or null.\n"
     "- Code checks every proposal and may send typed feedback once; revise with id and expected_revision.\n"
+    "- A-TO-Z-001: one source at a time. After you read a captured source, propose_events citing it, or call "
+    "nothing_material with the reason, BEFORE you capture the next source. Searches and listings may be batched.\n"
     "- Record what you searched and did not find with record_coverage. When you are done, call finish_draft with "
     "a disposition for every proposal and your specific limitations.\n"
     "- Prefer primary sources (SEC filings, the company's releases and IR pages, the registry, the regulator). If a "
@@ -141,6 +143,9 @@ ARGUMENTS = {
             "source_ids": {"type": "array", "items": {"type": "string"}},
             "programs": {"type": "array", "items": {"type": "string"}},
             "finding": {"type": "string"}}},
+    "nothing_material": {
+        "type": "object", "additionalProperties": False, "required": ["source_id", "reason"],
+        "properties": {"source_id": {"type": "string"}, "reason": {"type": "string", "minLength": 1}}},
     "finish_draft": {
         "type": "object", "additionalProperties": False, "required": ["dispositions", "limitations"],
         "properties": {
@@ -172,6 +177,8 @@ DESCRIPTIONS = {
                       "with the row id, revision and every check result.",
     "record_coverage": "Record what you checked for a question, including searched-but-not-found, with the tool call "
                        "ids and sources it rests on.",
+    "nothing_material": "Settle a captured source you read that holds nothing material for the calendar, with the "
+                        "reason (A-TO-Z-001).",
     "finish_draft": "Finish this company: a disposition for every proposal and your specific limitations.",
 }
 

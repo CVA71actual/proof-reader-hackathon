@@ -618,8 +618,8 @@ def test_exact_repeat_reuses_the_row_and_near_duplicates_are_linked_not_merged(r
                 date_text="mid-2027", date="2027-05-01", date_end="2027-08-31", program="ICARUS")
     reader = F.FakeResponses([
         F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")]),
-        F.body([F.call("fetch_url", {"url": PR2, "purpose": "x"}, "c1")]),
         F.body([F.call("propose_events", {"events": [a, a]}, "c2")]),
+        F.body([F.call("fetch_url", {"url": PR2, "purpose": "x"}, "c1")]),
         F.body([F.call("propose_events", {"events": [b]}, "c3")]),
         F.body([F.call("fetch_url", {"url": PR1, "purpose": "again"}, "c4")]),
         F.body([F.call("finish_draft", {"dispositions": [
@@ -629,7 +629,7 @@ def test_exact_repeat_reuses_the_row_and_near_duplicates_are_linked_not_merged(r
     ])
     _, rid, _ = start(runs_dir, reader, pages=pages)
     run = run_json(runs_dir, rid)
-    out = _answer(reader, 3)["data"]["events"]
+    out = _answer(reader, 2)["data"]["events"]
     assert out[1]["status"] == "duplicate" and out[1]["id"] == out[0]["id"]
     rows = {r["id"]: r for r in run["rows"] if r.get("research")}
     assert set(rows) == {"e1", "e2"}                      # both kept
@@ -837,17 +837,19 @@ def _kept_research_run(runs_dir):
              {"source_id": "src-r2-ptgx", "page_number": 1, "quote": "ICARUS topline data expected mid-2027.",
               "word_ids": None, "roles": ["context"]}]
     ev = F.event("ICARUS", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30", spans=spans)
+    first = F.event("ICARUS (company)", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30")
     pages = {PR1: (200, "text/html", PAGE1),
              PR2: (200, "text/html", F.html("Partner note: ICARUS topline data expected mid-2027."))}
     reader = F.FakeResponses([
         F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")]),
+        F.body([F.call("propose_events", {"events": [first]}, "c1a")]),      # A-TO-Z-001: settle PR1 first
         F.body([F.call("fetch_url", {"url": PR2, "purpose": "x"}, "c1")]),
         F.body([F.call("propose_events", {"events": [ev]}, "c2")]),
         F.body([F.call("finish_draft", {"dispositions": [
-            {"row_id": "e1", "disposition": "proposal", "related_row_id": None, "reason": "x"}],
+            {"row_id": r, "disposition": "proposal", "related_row_id": None, "reason": "x"} for r in ("e1", "e2")],
             "limitations": []}, "c3")])])
     client, rid, _ = start(runs_dir, reader, pages=pages)
-    assert client.post(f"/api/runs/{rid}/decisions", json={"target": "e1", "action": "keep", "note": None,
+    assert client.post(f"/api/runs/{rid}/decisions", json={"target": "e2", "action": "keep", "note": None,
                                                            "fix": None}).status_code == 200
     return run_json(runs_dir, rid), _decisions(runs_dir, rid)
 
@@ -857,8 +859,8 @@ def _kept_research_run(runs_dir):
 def test_a_keep_expires_when_secondary_evidence_or_the_revision_changes(runs_dir, mutate):
     from runs.state import current_state
     run, decisions = _kept_research_run(runs_dir)
-    assert current_state(run, decisions)["targets"]["e1"]["accepted"] is True
-    row = next(r for r in run["rows"] if r["id"] == "e1")
+    assert current_state(run, decisions)["targets"]["e2"]["accepted"] is True
+    row = next(r for r in run["rows"] if r["id"] == "e2")
     second = next(s for s in run["sources"] if s["id"] == "src-r2-ptgx")
     if mutate == "secondary_words":
         second["pages"][0]["words_sha256"] = "0" * 64
@@ -870,7 +872,7 @@ def test_a_keep_expires_when_secondary_evidence_or_the_revision_changes(runs_dir
         row["research"]["evidence"][1]["roles"] = ["timing"]
     else:
         row["research"]["revision"] = 2
-    st = current_state(run, decisions)["targets"]["e1"]
+    st = current_state(run, decisions)["targets"]["e2"]
     assert st["accepted"] is False and st["review_history"]
 
 
@@ -975,12 +977,15 @@ def _two_source_timing_run(runs_dir, program=None, client_out=None):
                  spans=spans, program=program)
     pages = {TP: (200, "text/html", F.html("Protagonist plans to report topline data from ICARUS.")),
              TP2: (200, "text/html", F.html("These topline results are expected in Q1 2027."))}
+    plan = F.event("ICARUS topline (timing not stated here)", spans[0]["quote"], program=program)
+    plan["evidence"] = [dict(spans[0])]
     reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": TP, "purpose": "x"}, "c0")]),
+                              F.body([F.call("propose_events", {"events": [plan]}, "c0b")]),   # A-TO-Z-001
                               F.body([F.call("fetch_url", {"url": TP2, "purpose": "x"}, "c1")]),
                               F.body([F.call("propose_events", {"events": [ev]}, "c2")]),
                               F.body([F.call("finish_draft", {"dispositions": [
-                                  {"row_id": "e1", "disposition": "proposal", "related_row_id": None,
-                                   "reason": "x"}], "limitations": []}, "c3")])])
+                                  {"row_id": r, "disposition": "proposal", "related_row_id": None,
+                                   "reason": "x"} for r in ("e1", "e2")], "limitations": []}, "c3")])])
     client, rid, _ = start(runs_dir, reader, pages=pages)
     if client_out is not None:
         client_out.update(client=client, rid=rid)
@@ -992,11 +997,11 @@ def _two_source_timing_run(runs_dir, program=None, client_out=None):
 def test_the_date_check_goes_stale_when_the_timing_evidence_changes(runs_dir, mutate):
     from runs.state import current_state
     run = _two_source_timing_run(runs_dir)
-    row = next(r for r in run["rows"] if r["id"] == "e1")
+    row = next(r for r in run["rows"] if r["id"] == "e2")
     date_check = {c["name"]: c for c in row["checks"]}["date_match"]
     assert date_check["result"] == "pass" and row["research"]["timing"]["source_id"] == "src-r2-ptgx"
     assert date_check["assessment"]["inputs"]["timing_span"]["source_id"] == "src-r2-ptgx"
-    assert current_state(run, [])["targets"]["e1"]["checks_stale"] is False
+    assert current_state(run, [])["targets"]["e2"]["checks_stale"] is False
     second = next(s for s in run["sources"] if s["id"] == "src-r2-ptgx")
     if mutate == "timing_words_hash":
         second["pages"][0]["words_sha256"] = "0" * 64
@@ -1006,7 +1011,7 @@ def test_the_date_check_goes_stale_when_the_timing_evidence_changes(runs_dir, mu
         second["published_date"] = "2026-01-01"
     else:
         row["research"]["timing"]["quote"] = "These topline results are expected in Q3 2027."
-    st = current_state(run, [])["targets"]["e1"]
+    st = current_state(run, [])["targets"]["e2"]
     assert st["checks_stale"] is True and st["effective_checks"] == []
 
 
@@ -1014,10 +1019,10 @@ def test_the_date_check_goes_stale_when_the_timing_evidence_changes(runs_dir, mu
 
 
 def _fix(client, rid, field, frm, to):
-    r = client.post(f"/api/runs/{rid}/decisions", json={"target": "e1", "action": "fix", "note": None,
+    r = client.post(f"/api/runs/{rid}/decisions", json={"target": "e2", "action": "fix", "note": None,
                                                         "fix": {"field": field, "from": frm, "to": to}})
     assert r.status_code == 200, r.text
-    return client.get(f"/api/runs/{rid}").json()["state"]["targets"]["e1"]
+    return client.get(f"/api/runs/{rid}").json()["state"]["targets"]["e2"]
 
 
 def test_a_program_fix_on_a_timing_span_row_keeps_the_date_check_on_the_timing_span(runs_dir):
@@ -1183,3 +1188,91 @@ def test_the_reservation_covers_the_live_reply_that_exceeded_it():
     bound, searches = research.input_token_bound(body)
     assert searches == research.ASSUMED_SEARCHES_PER_REQUEST and bound > 88_011
     assert research.SEARCH_CONTEXT_TOKENS == 20000
+
+
+# ---------------------------------------------------------------- A-TO-Z-001: one source at a time, compaction, usage
+
+
+def _big_page(n):
+    words = " ".join(f"filler{n}word{i}" for i in range(1500))
+    return F.html(f"Source {n}: Topline data for program P{n} are expected in Q2 2027.", words)
+
+
+def test_a_to_z_refuses_a_second_capture_until_the_first_source_is_settled(runs_dir):
+    a, b = "https://ir.example.com/a", "https://ir.example.com/b"
+    subs = {"filings": {"recent": {"form": [], "filingDate": [], "accessionNumber": [], "primaryDocument": []}}}
+    ev = F.event("P2 topline", "Source 2: Topline data for program P2 are expected in Q2 2027.",
+                 source="src-r2-ptgx", date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30")
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": a, "purpose": "x"}, "c0")]),
+        F.body([F.call("fetch_url", {"url": b, "purpose": "x"}, "c1")]),           # refused: a is unsettled
+        F.body([F.call("fetch_edgar", {"cik": "1377121", "forms": [], "since": "2026-01-01",
+                                       "until": "2026-11-01", "cursor": None}, "c2")]),   # leads are not limited
+        F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "a staffing note"}, "c3")]),
+        F.body([F.call("fetch_url", {"url": b, "purpose": "x"}, "c4")]),
+        F.body([F.call("propose_events", {"events": [ev]}, "c5")]),
+        F.body([F.call("finish_draft", {"dispositions": [
+            {"row_id": "e1", "disposition": "proposal", "related_row_id": None, "reason": "x"}],
+            "limitations": []}, "c6")])])
+    _, rid, tools = start(runs_dir, reader, pages={
+        a: (200, "text/html", F.html("Source 1 staffing note.")), b: (200, "text/html", _big_page(2)),
+        rs.SUBMISSIONS_URL.format(cik="1377121"): (200, "application/json", json.dumps(subs).encode())})
+    refused = json.loads(reader.requests[2]["input"][-1]["output"])
+    assert refused["issues"][0]["code"] == "settle_first" and refused["data"]["unsettled_sources"] == ["src-r1-ptgx"]
+    assert tools.fetcher.asked.count(b) == 1                     # the refused capture never reached the site
+    assert json.loads(reader.requests[3]["input"][-1]["output"])["status"] == "ok"   # the listing ran
+    run = run_json(runs_dir, rid)
+    cov = run["run"]["research"]["coverage"]
+    assert any(c.get("a_to_z_gap") for c in cov) and any(c.get("nothing_material") for c in cov)
+    c = run["run"]["research"]["companies"]["PTGX"]
+    assert c["status"] == "finished" and c["finish"]["unsettled_sources"] == []
+    assert "A-TO-Z-001" in rc.CONTROLLER and "nothing_material" in rc.ARGUMENTS
+
+
+def _cycle_script(k):
+    script = []
+    for n in range(1, k + 1):
+        url = f"https://ir.example.com/s{n}"
+        quote = f"Source {n}: Topline data for program P{n} are expected in Q2 2027."
+        script.append(F.body([F.call("fetch_url", {"url": url, "purpose": "x"}, f"f{n}")]))
+        script.append(F.body([F.call("propose_events", {"events": [F.event(
+            f"P{n} topline", quote, source=f"src-r{n}-ptgx", date_text="Q2 2027", date="2027-04-01",
+            date_end="2027-06-30", program=f"P{n}")]}, f"p{n}")]))
+    script.append(lambda req: F.body([F.call("finish_draft", {"dispositions": [
+        {"row_id": f"e{n}", "disposition": "proposal", "related_row_id": None, "reason": "x"}
+        for n in range(1, k + 1)], "limitations": []}, "fin")]))
+    pages = {f"https://ir.example.com/s{n}": (200, "text/html", _big_page(n)) for n in range(1, k + 1)}
+    return script, pages
+
+
+def test_compaction_stubs_settled_page_text_and_keeps_every_call_paired(runs_dir):
+    script, pages = _cycle_script(3)
+    reader = F.FakeResponses(script)
+    start(runs_dir, reader, pages=pages)
+    last = reader.requests[-1]["input"]
+    calls = [i["call_id"] for i in last if i.get("type") == "function_call"]
+    outs = [i["call_id"] for i in last if i.get("type") == "function_call_output"]
+    assert calls == outs and len(calls) == 6                      # every call keeps its output, in order
+    for i, item in enumerate(last):
+        if item.get("type") == "function_call_output":
+            assert last[i - 1].get("type") == "function_call" and last[i - 1]["call_id"] == item["call_id"]
+    fetch_outs = [json.loads(i["output"]) for i in last if i.get("type") == "function_call_output"
+                  and i["call_id"].startswith("f")]
+    assert all(o["data"]["compacted"] and o["data"]["pages_read"] == [1] and o["data"]["settled_by"]
+               for o in fetch_outs)
+    assert "filler1word" not in json.dumps(last)                  # the settled page text is gone from the replay
+
+
+def test_bytes_per_turn_stay_bounded_after_compaction(runs_dir):
+    script, pages = _cycle_script(6)
+    reader = F.FakeResponses(script)
+    _, rid, _ = start(runs_dir, reader, pages=pages)
+    sizes = [rr.request_size(r) for r in reader.requests]
+    page_text = len(json.dumps(json.loads(reader.requests[1]["input"][-1]["output"])))
+    # the turn right after each fetch carries one page of text; after compaction later turns grow only by stubs
+    after_fetch = sizes[1::2]
+    assert max(after_fetch) - min(after_fetch) < 6 * 3000 < page_text * 6
+    assert sizes[-1] < sizes[1] + 6 * 3000
+    usage = [s for s in run_json(runs_dir, rid)["run"]["research"]["steps"] if s["kind"] == "usage"]
+    assert len(usage) == len(reader.requests)
+    assert [u["refs"]["input_bytes"] for u in usage] == sizes and usage[0]["refs"]["input_tokens"] == 1000

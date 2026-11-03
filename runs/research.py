@@ -70,6 +70,12 @@ ASSUMED_SEARCHES_PER_REQUEST = 5
 SEARCH_CONTEXT_TOKENS = 20000
 REQUEST_OVERHEAD_TOKENS = 4096
 EDGAR_PAGE = 40
+# A-TO-Z-001 (CVA standing design rule, 2026-11-02): one whole unit before the next. Find, capture, read, propose (or
+# record nothing_material), code-check; then the next source. Lead searches (web_search, an SEC listing, a registry
+# query) may be batched, but captured sources never pile up unprocessed: while a captured source is unsettled (not
+# cited by a proposal and not marked nothing_material), capturing another is refused with a typed issue and recorded
+# as a coverage gap. A design default, not a spend limit.
+UNSETTLED_SOURCES_MAX = 1
 LINE_WORDS_MAX = 40
 STOP_FILE = "STOP_REQUESTED.json"
 TICKER = re.compile(r"^[A-Z0-9.-]{1,10}$")
@@ -499,6 +505,7 @@ def make_job_class():
             st = self.state[ticker] = {"cik": str(int(cik)), "company": company, "sources": {}, "keys": {},
                                        "calls": {}, "actions": {}, "leads": {}, "history_bytes": 0,
                                        "fetch_by_url": {}, "finish_attempts": 0, "as_of": as_of,
+                                       "delivered": {}, "settled": {}, "compacted": set(),
                                        "window_end": window_end, "started": time.monotonic()}
             assignment = self.choices.get("note_for_agent") or ""
             card = {"ticker": ticker, "company": company, "cik": st["cik"], "as_of": as_of.isoformat(),
@@ -532,6 +539,14 @@ def make_job_class():
                     raise
                 cost = self.count(ticker, reply, token, worst, input_bound)
                 self.save_turn(ticker, c["requests"], body, reply, cost)
+                self.step(ticker, "usage", "Code", "runs.research",
+                          f"Turn {c['requests']}: {rr.request_size(body)} bytes sent; input tokens "
+                          f"{reply.input_tokens}, output tokens {reply.output_tokens} (reasoning "
+                          f"{reply.reasoning_tokens}), searches {reply.searches}, cost "
+                          f"{'unknown' if cost is None else jobs.money(cost)}.",
+                          turn=c["requests"], input_bytes=rr.request_size(body), input_tokens=reply.input_tokens,
+                          output_tokens=reply.output_tokens, reasoning_tokens=reply.reasoning_tokens,
+                          searches=reply.searches, cost_usd=cost)
                 if reply.error:
                     self.step(ticker, "error", "Code", "runs.research", f"{reply.error}"
                               + (" It may have been billed; its reserved worst case was charged."
@@ -601,9 +616,15 @@ def make_job_class():
                 for call in calls:
                     result, done = self.dispatch(ticker, call)
                     self.note_repeat(ticker, call, result)
-                    outputs.append({"type": "function_call_output", "call_id": call["call_id"],
-                                    "output": json.dumps(result, ensure_ascii=False)})
+                    item = {"type": "function_call_output", "call_id": call["call_id"],
+                            "output": json.dumps(result, ensure_ascii=False)}
+                    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+                    if data.get("source_id") and data.get("text"):      # page text delivered: compactable later
+                        st["delivered"].setdefault(data["source_id"], []).append(
+                            (item, [t["page_number"] for t in data["text"]]))
+                    outputs.append(item)
                     finished = finished or done
+                self.compact(ticker)
                 history += outputs
                 pending, prev_id = outputs, reply.response_id
                 self.save_ledger()
@@ -704,6 +725,7 @@ def make_job_class():
             handler = {"fetch_url": self.t_fetch_url, "fetch_edgar": self.t_fetch_edgar,
                        "fetch_ctgov": self.t_fetch_ctgov, "read_source_pages": self.t_read_pages,
                        "propose_events": self.t_propose, "record_coverage": self.t_coverage,
+                       "nothing_material": self.t_nothing_material,
                        "finish_draft": self.t_finish}[name]
             return handler(ticker, cid, args)
 
@@ -713,11 +735,66 @@ def make_job_class():
                 return f"Per-company fetch limit reached ({cap}), a setting a person turned on."
             return None
 
+        def unsettled(self, ticker: str) -> list[str]:
+            st = self.state[ticker]
+            return [sid for sid in st["sources"] if sid not in st["settled"]]
+
+        def a_to_z_refusal(self, ticker: str, cid: str, url: str) -> dict | None:
+            """A-TO-Z-001: refuse a new capture while a captured source is unsettled; record the gap."""
+            open_ = self.unsettled(ticker)
+            if len(open_) < UNSETTLED_SOURCES_MAX:
+                return None
+            names = ", ".join(open_)
+            with jobs.RUN_LOCK:
+                self.research["coverage"].append({
+                    "at": now_utc(), "ticker": ticker, "call_id": cid, "category": "other",
+                    "question": f"Capture {url}", "status": "partial", "programs": [], "finding_kind": "code",
+                    "finding": f"A-TO-Z-001: not captured, because {names} was captured and not yet settled "
+                               f"(proposed from, or marked nothing material).", "tool_calls": [],
+                    "sources_opened": [], "unverified_references": [], "a_to_z_gap": True,
+                    "scope_note": "Gathering without proposing is recorded, never a silent loop."})
+            self.step(ticker, "check", "Code", "runs.research",
+                      f"A-TO-Z-001: refused to capture {url} while {names} is unsettled.", call_id=cid)
+            return rc.envelope(cid, "error", {"unsettled_sources": open_}, [rc.issue(
+                "settle_first", f"A-TO-Z-001: first finish {names}: propose_events citing it, or nothing_material "
+                                f"with the reason. Then capture the next source. (Searches and listings are not "
+                                f"limited.)", None, open_)])
+
+        def settle(self, ticker: str, sid: str, by: str) -> None:
+            st = self.state[ticker]
+            st["settled"].setdefault(sid, [])
+            if by not in st["settled"][sid]:
+                st["settled"][sid].append(by)
+
+        def compact(self, ticker: str) -> None:
+            """Replace the delivered page text of every settled source in the replayed history with a short code-
+            written stub (the source, the pages read, what settled it). Each function_call keeps its output item, so
+            the call/output pairing the API requires stays valid; the evidence stays in the captured files and can be
+            read again with read_source_pages. (With previous_response_id the provider keeps its own history.)"""
+            st = self.state[ticker]
+            for sid, items in st["delivered"].items():
+                if sid not in st["settled"]:
+                    continue
+                src = st["sources"][sid]
+                for item, pages in items:
+                    if id(item) in st["compacted"]:
+                        continue
+                    stub = rc.envelope(item["call_id"], "ok", {
+                        "source_id": sid, "title": src["title"], "url": src["url"], "pages_total": len(src["pages"]),
+                        "pages_read": pages, "settled_by": list(st["settled"][sid]), "compacted": True,
+                        "note": "Page text removed from the conversation after this source was settled (A-TO-Z-001). "
+                                "It is still captured; call read_source_pages to read it again."})
+                    item["output"] = json.dumps(stub, ensure_ascii=False)
+                    st["compacted"].add(id(item))
+
         def t_fetch_url(self, ticker, cid, args, tool="fetch_url", title=None):
             limited = self._fetch_allowed(ticker)
             if limited:
                 return rc.envelope(cid, "error", None, [rc.issue("limit", limited)]), False
             url = args["url"]
+            refused = self.a_to_z_refusal(ticker, cid, url)
+            if refused is not None:
+                return refused, False
             try:
                 rs.check_url(url, getattr(self.tools.fetcher, "resolve", None))
                 fetched = self.tools.fetcher.get(url)
@@ -866,7 +943,10 @@ def make_job_class():
             return {"source_id": source["id"], "title": source["title"], "url": source["url"],
                     "published_date": source["published_date"], "kind": source["kind"],
                     "retrieved_at": source["captured_at"], "pages_total": len(source["pages"]),
-                    "pages": inventory, "text": shown}
+                    "pages": inventory, "text": shown,
+                    "next": ("A-TO-Z-001: propose_events citing this source, or nothing_material with the reason, "
+                             "before capturing another source." if source["id"] not in self.state[ticker]["settled"]
+                             else "This source is settled.")}
 
         def t_read_pages(self, ticker, cid, args):
             src = self.state[ticker]["sources"].get(args["source_id"])
@@ -1014,6 +1094,8 @@ def make_job_class():
                 return {"index": n, "status": "duplicate", "id": rid, "issues": []}
             row = self.build_row(ticker, cid, ev, existing, at)
             issues = row["research"]["issues"]
+            for span in ev["evidence"]:
+                self.settle(ticker, span["source_id"], row["id"])
             with jobs.RUN_LOCK:
                 st["keys"][key] = row["id"]
                 self.link_near_duplicates(ticker, row)
@@ -1193,6 +1275,27 @@ def make_job_class():
                       + (f" — {args['finding']}" if args["finding"] else ""), call_id=cid)
             return rc.envelope(cid, "partial" if issues else "ok", {"recorded": True}, issues), False
 
+        def t_nothing_material(self, ticker, cid, args):
+            st = self.state[ticker]
+            src = st["sources"].get(args["source_id"])
+            if src is None:
+                return rc.envelope(cid, "error", None, [rc.issue(
+                    "missing_source", f"Source {args['source_id']} is not captured for {ticker}.")]), False
+            self.settle(ticker, src["id"], "nothing material")
+            with jobs.RUN_LOCK:
+                self.research["coverage"].append({
+                    "at": now_utc(), "ticker": ticker, "call_id": cid, "category": "other",
+                    "question": f"Anything material in {src['title']}?", "status": "checked_none", "programs": [],
+                    "finding": args["reason"], "finding_kind": "agent interpretation", "nothing_material": True,
+                    "tool_calls": [], "sources_opened": [{"source_id": src["id"], "url": src["url"],
+                                                          "retrieved_at": src["captured_at"]}],
+                    "unverified_references": [], "searched_not_found": True,
+                    "retrieval_times": [src["captured_at"]],
+                    "scope_note": "The agent's reading of this captured source only."})
+            self.step(ticker, "coverage", "Model", "Muse Spark",
+                      f"Nothing material in {src['id']}: {args['reason']}", call_id=cid, source_id=src["id"])
+            return rc.envelope(cid, "ok", {"settled": src["id"]}), False
+
         def t_finish(self, ticker, cid, args):
             st = self.state[ticker]
             mine = [r["id"] for r in self.run["rows"] if (r.get("research") or {}).get("ticker") == ticker]
@@ -1216,7 +1319,8 @@ def make_job_class():
                 c = self.company(ticker)
                 c["finish"] = {"by": "finish_draft", "at": now_utc(), "call_id": cid,
                                "dispositions": args["dispositions"], "limitations": args["limitations"],
-                               "missing_dispositions": missing, "issues": issues}
+                               "missing_dispositions": missing, "issues": issues,
+                               "unsettled_sources": self.unsettled(ticker)}
                 c["status_reason"] = (f"The model finished: {len(mine)} proposal{'s' if len(mine) != 1 else ''}, "
                                       f"{len(args['limitations'])} limitation{'s' if len(args['limitations']) != 1 else ''} "
                                       f"recorded." + (f" {len(missing)} without a disposition." if missing else ""))
