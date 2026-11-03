@@ -642,9 +642,15 @@ def current_state(run: dict, decisions: list) -> dict:
     unreadable_pages = _unreadable_pages(run)
     rows_by_id = {row.get("id"): row for row in run.get("rows", [])}
     for t, s in states.items():
+        current_findings, finding_history = _review_findings(rows_by_id.get(t))
         s["issues"] = row_issues(s, page_unreadable=_page_key(rows_by_id.get(t)) in unreadable_pages,
                                  second_reader_mistake=t in second_reader_catches,
-                                 review_findings=_review_findings(rows_by_id.get(t)))
+                                 review_findings=current_findings,
+                                 research_issues=(_research_support_issues(rows_by_id.get(t), s["values"])
+                                                  if s["kind"] == "row" else ()))
+        if s["kind"] == "row":
+            # history stays on the record, shown as history, never as a current issue
+            s["review_findings_history"] = [_finding_text({**f, "current": True}) for f in finding_history]
         s.pop("_disagreement_open", None)
     counts["issues"] = sum(1 for s in states.values() if s["kind"] == "row" and s["issues"])
 
@@ -711,14 +717,33 @@ def _unreadable_pages(run: dict) -> set:
     return out
 
 
-def _review_findings(row: dict | None):
-    """CALENDAR-RULE-001: a research row's research.review_findings (a list, or absent). Anything else present is
-    unreadable and fails closed."""
+def _review_findings(row: dict | None) -> tuple[list, list]:
+    """CALENDAR-RULE-001: a research row's research.review_findings, read with the S2 producer's contract
+    (runs/research.py save_review: kind, text, row_id, revision_id, current, stale). Returns (current, history):
+      - current:false or stale:true is history: kept in the record, never a current issue;
+      - current:true for this row (row_id) and its current revision (research.revision) is a current issue;
+      - anything else (currentness missing, a different row or revision, an unreadable entry, a field that is not a
+        list) cannot be established as history, so it fails closed as a current issue."""
     research = (row or {}).get("research")
     if not isinstance(research, dict) or research.get("review_findings") is None:
-        return []
+        return [], []
     findings = research["review_findings"]
-    return findings if isinstance(findings, list) else [None]
+    if not isinstance(findings, list):
+        return [None], []
+    current, history = [], []
+    for f in findings:
+        if isinstance(f, dict) and (f.get("current") is False or f.get("stale") is True):
+            history.append(f)
+            continue
+        if isinstance(f, dict) and f.get("current") is True:
+            rid, rev = f.get("row_id"), f.get("revision_id")
+            same_row = rid is None or str(rid) == str(row.get("id"))
+            same_rev = rev is None or str(rev) == str(research.get("revision"))
+            if not (same_row and same_rev):
+                f = {**f, "_identity": f"it names row {rid}, revision {rev}; this row is {row.get('id')}, "
+                                       f"revision {research.get('revision')}"}
+        current.append(f)
+    return current, history
 
 
 def _finding_text(finding) -> str:
@@ -726,21 +751,58 @@ def _finding_text(finding) -> str:
         return f"The reviewer found: {finding.strip()}"
     if isinstance(finding, dict):
         kind = _plain_field(finding.get("kind") or "").strip()
-        said = str(finding.get("explanation") or "").strip()
+        # the producer writes `text`; `explanation` is an older alias
+        said = str(finding.get("text") or finding.get("explanation") or "").strip()
         if kind or said:
-            return "The reviewer found " + (f"{kind}: {said}" if kind and said else kind or said)
+            out = "The reviewer found " + (f"{kind}: {said}" if kind and said else kind or said)
+            if finding.get("_identity"):
+                out += f" (not established as current: {finding['_identity']})"
+            elif finding.get("current") is not True:
+                out += " (not established as current)"
+            return out
     return "The reviewer's finding could not be read"
 
 
+# CALENDAR-RULE-001: research.issues codes that are support failures on the cited evidence. capture_incomplete is a
+# disclosed capture limit, not a conflict; row-check mirrors are excluded below (the current row checks decide).
+_RESEARCH_SUPPORT_CODES = ("quote_not_found", "quote_on_hidden_text", "locator_mismatch", "dateline_as_event_date")
+
+
+def _research_support_issues(row: dict | None, values: dict) -> list[str]:
+    """The research intake's recorded support failures on the row's cited spans (runs/research_contract.py
+    research_issues), as plain issue text. An issue that only mirrors a saved row check is left to the current row
+    checks, which supersede it after a re-check; the dateline rule applies only while the date is the one it judged."""
+    research = (row or {}).get("research")
+    if not isinstance(research, dict) or not research.get("issues"):
+        return []
+    from runs.research_contract import CHECK_ISSUE
+    saved = [*(row.get("checks") or []), *(row.get("check_history") or [])]
+    mirrors = {(CHECK_ISSUE.get(c.get("name"), "check_failed"), f"{c.get('label') or c.get('name')} failed: {c.get('reason')}")
+               for c in saved if c.get("result") == "fail"}
+    out = []
+    for i in research["issues"] if isinstance(research["issues"], list) else [None]:
+        if not isinstance(i, dict):
+            out.append("A recorded evidence issue could not be read")
+            continue
+        code, message = i.get("code"), i.get("message")
+        if code not in _RESEARCH_SUPPORT_CODES or (code, message) in mirrors:
+            continue
+        if code == "dateline_as_event_date" and (values.get("date") != row.get("date") or values.get("date_end")):
+            continue
+        out.append(f"Cited evidence: {message or code}")
+    return out
+
+
 def row_issues(s: dict, *, page_unreadable: bool = False, second_reader_mistake: bool = False,
-               review_findings: list | tuple = ()) -> list[str]:
+               review_findings: list | tuple = (), research_issues: list | tuple = ()) -> list[str]:
     """REVIEW-NOT-A-FLAG-001: every proposal needs review by design, so needing review is not an issue. The
     issues are the real problems on a target, in short plain English; empty when there are none:
       - a current effective check failed ("<check name> failed");
       - the readers' disagreement on a factual field is still open, or the second reader caught a mistake on this target;
       - the page could not be read, or the reader's answer could not be read (status unreadable);
       - a previous Keep expired because the proposal or evidence changed;
-      - CALENDAR-RULE-001: the independent reviewer recorded a finding on this research row;
+      - CALENDAR-RULE-001: the independent reviewer recorded a current finding on this research row, or the research
+        intake recorded a support failure on a cited span (research.issues);
       - CALENDAR-RULE-001: the current value has no current checks (saved checks are history, an edit is not
         re-checked yet, or its re-check could not run), or a dated row's date check could not run;
       - CALENDAR-RULE-001: only the code's coverage scan, or only the second reader, found the row.
@@ -798,6 +860,7 @@ def row_issues(s: dict, *, page_unreadable: bool = False, second_reader_mistake:
     if s.get("review_label") == EXPIRED_KEEP_LABEL:
         out.append("Your earlier Keep expired because the evidence changed")
     out.extend(_finding_text(f) for f in review_findings)
+    out.extend(research_issues)
     return list(dict.fromkeys(out))
 
 

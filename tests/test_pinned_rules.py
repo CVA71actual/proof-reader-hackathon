@@ -393,10 +393,10 @@ def test_r75_an_otherwise_empty_calendar_still_renders_the_latest_past_event():
     rows = [{"id": "x1", "ticker": "AAA", "date": "2026-01-01", "date_end": None, "date_text": "January 1, 2026"}]
     out = _calendar(rows, [{"target": "x1", "rule": "event_in_past", "by": "code"}], {})
     assert "Latest past event · AAA" in out["mid"]
-    assert not any(t.startswith("Nothing kept yet") for t in out["mid"])
+    assert not any(t.startswith("Nothing on the calendar yet") for t in out["mid"])
     # and with no past exclusion at all the empty sentence is what shows
     empty = _calendar(rows, [], {})
-    assert any(t.startswith("Nothing kept yet") for t in empty["mid"])
+    assert any(t.startswith("Nothing on the calendar yet") for t in empty["mid"])
 
 
 def test_r95_render_source_groups_pages_by_accession_under_the_first_title():

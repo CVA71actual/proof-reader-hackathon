@@ -101,20 +101,78 @@ def test_row_with_an_issue_goes_to_review_off_the_calendar_with_its_reason():
     assert kept["inclusion"] == "kept" and kept["on_calendar"]
 
 
-def test_reviewer_findings_send_a_research_row_to_review():
+def producer_finding(**over):
+    """A finding in the S2 producer's shape (runs/research.py save_review on claude/research-s2-wire @ 8cd269a)."""
+    f = {"finding_id": "F1", "attempt": 1, "kind": "lost_condition",
+         "text": "The proposed event omits the condition subject to FDA feedback.", "by": "Muse Spark Open",
+         "row_id": "e1", "revision_id": 1, "current": True, "basis": "synthetic-basis", "evidence": [],
+         "review_status": "complete", "reviewed_at": AT,
+         "adjudication": {"outcome": "not_sent", "human_accepted": False, "reason": "Not sent."}}
+    f.update(over)
+    return f
+
+
+def research_run(findings):
     run = clean_run()
-    run["rows"][0]["research"] = {"placement_proposal": "upcoming", "review_findings": [
-        {"finding_id": "f1", "kind": "contradictory_support", "row_ids": ["e1"],
-         "explanation": "The second source gives a different quarter."}]}
+    run["rows"][0]["research"] = {"revision": 1, "placement_proposal": "upcoming", "evidence": [],
+                                  "review_findings": findings}
+    return run
+
+
+def test_current_producer_finding_holds_the_row_and_its_text_reaches_state_pdf_and_docx():
+    reason = "The proposed event omits the condition subject to FDA feedback."
+    run = research_run([producer_finding()])
     t = target(run)
-    assert t["inclusion"] == "review" and not t["on_calendar"]
-    assert t["issues"] == ["The reviewer found contradictory support: The second source gives a different quarter."]
-    run["rows"][0]["research"]["review_findings"] = []
-    assert target(run)["inclusion"] == "included"
+    assert t["inclusion"] == "review" and not t["on_calendar"] and t["needs_attention"]
+    assert t["issues"] == [f"The reviewer found lost condition: {reason}"]
+    v = view(run)
+    assert v["calendar"] == [] and v["open_rows"][0]["issues"] == t["issues"]
+    for text in (pdf_text(v), docx_text(v)):
+        assert reason in " ".join(text.split())
+    # positive control: no findings, and an empty list, leave the clean row included
+    assert target(research_run([]))["inclusion"] == "included"
     del run["rows"][0]["research"]["review_findings"]
     assert target(run)["inclusion"] == "included"
-    run["rows"][0]["research"]["review_findings"] = "not a list"
-    assert target(run)["issues"] == ["The reviewer's finding could not be read"]
+    # a current bound Keep still overrides
+    held = research_run([producer_finding()])
+    assert target(held, [kept_decision(held)])["inclusion"] == "kept"
+
+
+def test_explanation_is_only_an_alias_of_the_producer_text():
+    f = producer_finding()
+    f["explanation"] = f.pop("text")
+    assert target(research_run([f]))["issues"] == [
+        "The reviewer found lost condition: The proposed event omits the condition subject to FDA feedback."]
+
+
+def test_stale_or_noncurrent_findings_are_history_not_issues():
+    old = producer_finding(revision_id=1, current=False, stale=True,
+                           stale_reason="The row's revision or evidence changed after this finding was made.",
+                           text="The earlier proposal omitted a condition.")
+    run = research_run([old])
+    run["rows"][0]["research"]["revision"] = 2
+    t = target(run)
+    assert t["issues"] == [] and t["inclusion"] == "included"
+    assert t["review_findings_history"] == ["The reviewer found lost condition: The earlier proposal omitted a condition."]
+    assert run["rows"][0]["research"]["review_findings"] == [old]          # the record is untouched
+    # negative control: the same row with one current finding beside the stale one is held
+    run["rows"][0]["research"]["review_findings"] = [old, producer_finding(revision_id=2)]
+    assert target(run)["inclusion"] == "review"
+
+
+def test_unknown_currentness_fails_closed_to_review():
+    legacy = producer_finding()
+    del legacy["current"]
+    t = target(research_run([legacy]))
+    assert t["inclusion"] == "review" and "(not established as current)" in t["issues"][0]
+    # current:true but for another revision or another row cannot be taken as current or as history
+    for f in (producer_finding(revision_id=7), producer_finding(row_id="e9")):
+        t = target(research_run([f]))
+        assert t["inclusion"] == "review" and "not established as current: it names row" in t["issues"][0]
+    t = target(research_run("not a list"))
+    assert t["issues"] == ["The reviewer's finding could not be read"]
+    t = target(research_run(["a plain note"]))
+    assert t["inclusion"] == "review"
 
 
 def test_research_context_placement_is_never_on_the_calendar_even_in_the_window():
@@ -245,3 +303,42 @@ def test_placement_reads_the_code_derived_period_bounds_never_the_raw_row_dates(
     assert partition["undated"] == [] and partition["timing_unresolved"] == []
     v = view(run)
     assert [r["id"] for r in v["calendar"]] == ["e1"] and v["undated"] == []
+
+
+def test_failed_secondary_span_support_from_the_real_intake_holds_the_row(tmp_path):
+    """NEXT-CALLER-001: the S1 propose/check tool path records a cited span that is not on the page; the row must
+    not be placed automatically (Manus 19:32 item 1). Positive control: the same intake with valid spans only."""
+    from tests import research_fakes as F
+    from tests.test_research_s1 import QUOTE, _propose_run
+    good = [{"source_id": "src-r1-ptgx", "page_number": 1, "quote": QUOTE, "word_ids": None, "roles": ["action", "timing"]},
+            {"source_id": "src-r1-ptgx", "page_number": 1, "quote": "subject to FDA feedback.", "word_ids": None,
+             "roles": ["condition"]}]
+    bad = [*good, {"source_id": "src-r1-ptgx", "page_number": 1, "quote": "not on the page at all",
+                   "word_ids": ["w99999"], "roles": ["context"]}]
+
+    def placed(spans, name):
+        runs = tmp_path / name
+        runs.mkdir()
+        ev = F.event("ICARUS readout", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30",
+                     spans=spans, conditions=["subject to FDA feedback"])
+        _, _, run = _propose_run(runs, [[ev]])
+        row = next(r for r in run["rows"] if r.get("research"))
+        return run, row, current_state(run, [])["targets"][row["id"]]
+
+    run, row, t = placed(good, "good")
+    assert t["issues"] == [] and t["inclusion"] == "included", t["issues"]
+    run, row, t = placed(bad, "bad")
+    assert {"quote_not_found", "locator_mismatch"} <= {i["code"] for i in row["research"]["issues"]}
+    assert not [c for c in row["checks"] if c["result"] == "fail"]      # the ordinary row checks all pass
+    assert t["inclusion"] == "review" and not t["on_calendar"] and t["needs_attention"]
+    assert any(i.startswith("Cited evidence: The quote of span 2") for i in t["issues"])
+    assert any(i.startswith("Cited evidence: Word ids w99999") for i in t["issues"])
+    v = build_view(run, [], generated_at=AT)
+    assert row["id"] not in [r["id"] for r in v["calendar"]]
+    assert [r["id"] for r in v["open_rows"]] == [row["id"]]
+    for text in (pdf_text(v), docx_text(v)):
+        assert "Issues: Cited evidence: The quote of span 2" in " ".join(text.split())
+    # a current bound Keep still overrides
+    from tests.pivot_assertions import fresh_keep
+    kept = current_state(run, [fresh_keep(run, [], row["id"])])["targets"][row["id"]]
+    assert kept["inclusion"] == "kept" and kept["issues"] == []

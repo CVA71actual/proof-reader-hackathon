@@ -2421,15 +2421,19 @@
     var subrow = el('div', 'cal-subrow');
     // A-F2(b): the count includes the rows with no parsed day
     var total = rows.length + past.length + nodates.length + undated.length + timingUnresolved.length + later.length;
-    subrow.append(el('div', 'sub', 'Kept events, by date · ' + total + ' row' +
-      (total === 1 ? '' : 's') + ' · ' + (w.unresolved ? w.reason : w.anchor + ' – ' + w.end)));
+    // CALENDAR-RULE-001: the calendar holds kept rows and rows placed automatically; the headline names neither
+    // as the other, and splits them from the server's counts.inclusion when it sends them
+    var inc = detail.state && detail.state.counts && detail.state.counts.inclusion;
+    var split = inc ? ' · kept by you ' + inc.kept + ' · included automatically ' + inc.included : '';
+    subrow.append(el('div', 'sub', 'Events on the calendar, by date · ' + total + ' row' +
+      (total === 1 ? '' : 's') + split + ' · ' + (w.unresolved ? w.reason : w.anchor + ' – ' + w.end)));
     head.append(subrow);
     var rl = el('div', 'runlabel' + (meta.sample ? ' sample' : ''), meta.label || '');
     head.append(rl);
     host.append(head);
 
     if (!rows.length && !past.length && !nodates.length && !undated.length && !timingUnresolved.length && !later.length && !lastEvents.length) {
-      host.append(el('div', 'empty', 'Nothing kept yet — the calendar fills as rows are kept or corrected.'));
+      host.append(el('div', 'empty', 'Nothing on the calendar yet. Rows with no issues are placed here automatically, and rows you keep appear here too.'));
       det.append(el('div', 'empty', 'Pick an event to see its details.'));
       return;
     }
@@ -2695,8 +2699,10 @@
     // the answer the server accepts), not the decided one (Undo only)
     // CALENDAR-RULE-001: a row placed automatically has no decision yet — it gets the same Keep / Fix / Remove
     // as a row waiting for review, so Remove (and then Undo) works on every row
-    if (needsAttention(t) || (projected(t) && t.inclusion !== undefined && !t.last_action &&
-        t.review_bucket === 'proposed')) judgmentPendingPane(det, row, t);
+    // (selected by the acceptance/inclusion projection, not by "never decided": a re-checked Fix on a placed row
+    // still leaves Keep / Fix again / Remove, with Undo beside them)
+    if (needsAttention(t) || (projected(t) && !t.accepted && t.review_bucket === 'proposed' &&
+        typeof t.inclusion === 'string')) judgmentPendingPane(det, row, t);
     else judgmentDecidedPane(det, row, t);
 
     if (route.dialog) openDialog(row, route.dialog);
