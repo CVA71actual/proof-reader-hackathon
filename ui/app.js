@@ -481,6 +481,17 @@
     return !!(t && t.needs_attention);
   }
   function rowTarget(row) { return detail.state.targets[row.id] || {}; }
+  // DIALOGS-001: the material identity a decision confirms — the server serves
+  // it per target as review_basis {version, sha256}; null on older payloads
+  function basisOf(rowId) {
+    var st = (typeof detail !== 'undefined' && detail && detail.state) || {};
+    var b = (st.targets || {})[rowId] ? st.targets[rowId].review_basis : null;
+    return b && typeof b === 'object' ? b : null;
+  }
+  function basisDigest(rowId) {
+    var b = basisOf(rowId);
+    return b && typeof b.sha256 === 'string' ? b.sha256 : null;
+  }
   function rowOf(id) {
     return detail.run.rows.filter(function (r) { return r.id === id; })[0] || null;
   }
@@ -564,13 +575,21 @@
     })[0] || null;
   }
 
+  // DIALOGS-002: one generation counter for "which load owns the screen".
+  // refresh and switchRun both capture it when they start and apply their
+  // answer only while still the newest — a late GET of the previous run can
+  // never paint its document under the new run's identity.
+  var loadGen = 0;
   function refresh() {
+    var gen = ++loadGen;
+    var rid = detail.id;
     decisionsCache = { id: null, lines: null };
     changedCache = null;
     changedCountCache = null;
     accuracyCache = { id: null, line: null, tried: false };
-    return A.run(detail.id).then(function (body) {
-      detail = { id: detail.id, run: body, state: body.state };
+    return A.run(rid).then(function (body) {
+      if (gen !== loadGen) return;    // a newer load owns the screen now
+      detail = { id: rid, run: body, state: body.state };
       renderShell();
       render();
     });
@@ -879,7 +898,9 @@
   }
 
   function switchRun(runId, nav) {
+    var gen = ++loadGen;
     A.run(runId).then(function (body) {
+      if (gen !== loadGen) return;    // DIALOGS-002: a newer load owns the screen
       detail = { id: runId, run: body, state: body.state };
       audit = { filter: 'ALL', selected: null, prev: null, cleared: false };
       judgmentSel = null;
@@ -1103,6 +1124,10 @@
     var box = el('div', 'rstrail');
     box.append(el('div', 'rstitle', (rs && rs.label) || 'Agent research — not independently reviewed'));
     ((rs && rs.steps) || []).forEach(function (s2) {
+      // PROJECTION-003: a support attempt is shown once, as the row's
+      // attributed step (supportTrailSteps, with served currentness) — the
+      // raw run-level copy would double it with stale-agnostic wording
+      if (s2.who === 'capture.support_signal') return;
       var line = el('div', 'rsstep');
       // G1-1: a module path (runs.research) never prints — the actor is the
       // step's tag ('Code'); model names pass through unchanged
@@ -1126,6 +1151,12 @@
       var line = el('div', 'rscline');
       line.append(el('b', null, t));
       line.append(el('span', 'rsst', RESEARCH_STATUS_WORDS[c.status] || c.status || ''));
+      // PROJECTION-002: finished research is not finished review — the recorded
+      // review stage (and who ran it) rides the company line until it is done
+      if (c.review_status && c.review_status !== 'done') {
+        var rev = ((runResearch() || {}).review || {})[t] || {};
+        line.append(el('span', 'rsst', 'review: ' + c.review_status + (rev.reviewer ? ' (' + rev.reviewer + ')' : '')));
+      }
       var bits = [];
       if (c.requests !== null && c.requests !== undefined) bits.push(num(c.requests) + ' requests');
       if (c.searches !== null && c.searches !== undefined) bits.push(num(c.searches) + ' searches');
@@ -1139,6 +1170,30 @@
       box.append(line);
     });
     return box;
+  }
+  // PROJECTION-002: the recorded S2 review in one honest line — who reviewed
+  // (the recorded reviewer identity, e.g. Claude Opus 5.5 or the declared
+  // fallback) and the review stage across companies. Nothing is claimed that
+  // the record does not carry.
+  function researchReviewLine() {
+    var rs = runResearch();
+    var review = rs && rs.review;
+    if (!review || typeof review !== 'object') return null;
+    var ticks = Object.keys(review);
+    if (!ticks.length) return null;
+    var stages = {}, names = {};
+    ticks.forEach(function (t) {
+      var e = review[t] || {};
+      if (e.status) stages[e.status] = (stages[e.status] || 0) + 1;
+      if (e.reviewer) names[e.reviewer] = true;
+    });
+    var st = Object.keys(stages), who = Object.keys(names);
+    if (!st.length && !who.length) return null;
+    var bits = [];
+    if (who.length) bits.push('review by ' + who.join(', '));
+    if (st.length === 1) bits.push('review ' + st[0] + (stages[st[0]] > 1 ? ' (' + stages[st[0]] + ' companies)' : ''));
+    else if (st.length) bits.push(st.map(function (s) { return 'review ' + s + ' × ' + stages[s]; }).join(' · '));
+    return bits.join(' · ');
   }
   // 'Searched, not found' notes for the Audit log
   function researchNotFoundBlock(coverage) {
@@ -1596,6 +1651,18 @@
       sn.append(el('div', 'k', 'Potentially unsupported wording'));
       sn.append(el('div', null, supportNoteText(sf, src, row)));
       host.append(sn);
+    }
+
+    // PROJECTION-001: the review projection's current issues are the reason
+    // this row asks for a person — say them where the decision happens, not
+    // only in the research trail
+    if (t.issues && t.issues.length) {
+      var isec = el('div', 'sec');
+      isec.append(el('h4', null, 'Needs review because'));
+      var ibox = el('div', 'ba');
+      t.issues.forEach(function (w) { ibox.append(el('div', null, dayInWords(w))); });
+      isec.append(ibox);
+      host.append(isec);
     }
 
     if (t.group === 'corrected' && !partialProjection(t)) host.append(correctedSection(row, t));
@@ -3005,7 +3072,11 @@
 
     var host = clear(document.getElementById('judgment-rows'));
     if (!unresolved.length && !decided.length) {
-      host.append(el('div', 'empty', 'The queue is empty. Everything proposed has been decided.'));
+      // PROJECTION-004: with the inclusion projection, a clean proposal is
+      // placed automatically — that is not a person decision, so the empty
+      // queue never claims everything was decided
+      host.append(el('div', 'empty', inclusionCounts ? 'Nothing needs review.'
+        : 'The queue is empty. Everything proposed has been decided.'));
     } else {
       if (unresolved.length) {
         host.append(el('div', 'grp', 'Waiting for you · ' + unresolved.length));
@@ -3029,9 +3100,11 @@
     // only a box with something to keep (text, or the caret in it) records;
     // an empty unfocused box on another row never wipes this row's draft
     if (liveNote && liveNote.__row && (liveNote.value || document.activeElement === liveNote)) {
-      qnoteDraft = { rowId: liveNote.__row, value: liveNote.value,
-                     start: liveNote.selectionStart, end: liveNote.selectionEnd,
-                     focused: document.activeElement === liveNote };
+      if (!qnoteDraft) qnoteDraft = {};
+      qnoteDraft[currentRunId() + '/' + liveNote.__row] =
+        { runId: currentRunId(), rowId: liveNote.__row, value: liveNote.value,
+          start: liveNote.selectionStart, end: liveNote.selectionEnd,
+          focused: document.activeElement === liveNote };
     }
     var mid = clear(document.getElementById('judgment-mid'));
     mid.append(el('div', 'empty', 'Pick a row on the left.'));
@@ -3076,7 +3149,7 @@
       l2.append(rowBadge(row, t));
     }
     l2.append(el('span', 'mdl', 'by ' + (row.proposed_by || 'Model')));
-    if (t.reason && (!t.decided_by_person || needsAttention(t))) {
+    if ((t.reason || (t.issues && t.issues.length)) && (!t.decided_by_person || needsAttention(t))) {
       l2.append(el('span', 'fixline', listReasonLine(row, t)));
     }
     b.append(l1, l2);
@@ -3366,12 +3439,13 @@
   }
 
   // CODEXADV_KIMI_DIALOG_REFRESH: an in-progress 'Your call' note lives in a
-  // module draft, updated on input — renderJudgment CLEARS the pane before
-  // this function runs, so a host lookup there always finds nothing. The
-  // draft follows only the SAME row, never another target.
-  var qnoteDraft = null;
+  // per-run+row draft map, updated on input — renderJudgment CLEARS the pane
+  // before this function runs, so a host lookup there always finds nothing.
+  // A draft follows only its OWN run and row, never another target (DIALOGS-003:
+  // two runs can generate the same row id; each keeps its own words).
+  var qnoteDraft = {};
   function judgmentPendingPane(host, row, t) {
-    var keepNote = qnoteDraft;
+    var keepNote = qnoteDraft ? qnoteDraft[currentRunId() + '/' + row.id] : null;
     clear(host);
     if (sayBusyWith(row)) cancelSay();
     // a row the person corrected earlier but that still needs a person: show the
@@ -3404,13 +3478,17 @@
     note.__row = row.id;   // the row this box belongs to
     sec.append(el('div', null, ''), note);
     note.placeholder = 'Why you decided this… (optional for Keep, required for Remove)';
-    // the same row's draft comes back — text, or a focused empty box
-    var restoreNote = !!(keepNote && keepNote.rowId === row.id && (keepNote.value || keepNote.focused));
+    // the same run's same-row draft comes back — text, or a focused empty box;
+    // another run's row with this id starts with its own empty box (DIALOGS-003)
+    var restoreNote = !!(keepNote && keepNote.runId === currentRunId() && keepNote.rowId === row.id &&
+                         (keepNote.value || keepNote.focused));
     if (restoreNote) note.value = keepNote.value || '';
     note.addEventListener('input', function () {
-      qnoteDraft = { rowId: row.id, value: note.value,
-                     start: note.selectionStart, end: note.selectionEnd,
-                     focused: document.activeElement === note };
+      if (!qnoteDraft) qnoteDraft = {};
+      qnoteDraft[currentRunId() + '/' + row.id] =
+        { runId: currentRunId(), rowId: row.id, value: note.value,
+          start: note.selectionStart, end: note.selectionEnd,
+          focused: document.activeElement === note };
     });
     // no focus/blur bookkeeping here: the pane clear itself blurs the box and
     // would wipe the focus renderJudgment just recorded (fix-on-find)
@@ -3568,6 +3646,9 @@
         var msg = (res.body && res.body.detail) || ('HTTP ' + res.status);
         if (route.dialog) showDialogError(msg);
         else toast(msg);
+        // DIALOGS-001: a refused write on changed material (409) refreshes so
+        // the mounted dialog re-binds to the current proposal and asks again
+        if (res.status === 409) refresh();
         return;
       }
       // drop the dialog from the hash BEFORE re-rendering, or it would re-open on the old state
@@ -3610,8 +3691,16 @@
     // keep the mounted dialog untouched — recreating it wiped the in-progress
     // reason, the selected field and the caret mid-typing
     if (action && dialogMount && dialogMount.key === currentRunId() + '/' + row.id + '/' + action &&
-        !dialogWrap.hidden) return;
-    dialogMount = action ? { key: currentRunId() + '/' + row.id + '/' + action } : null;
+        !dialogWrap.hidden) {
+      // DIALOGS-001: a refresh may change the material behind the same id
+      // (a revised proposal). The draft survives, but the confirmation must
+      // not outlive the proposal the person actually saw.
+      if (action === 'keepanyway' && basisDigest(row.id) !== dialogMount.basisKey) markDialogStale(row);
+      return;
+    }
+    dialogMount = action ? { key: currentRunId() + '/' + row.id + '/' + action,
+                             basis: basisOf(row.id), basisKey: basisDigest(row.id),
+                             stale: false } : null;
     // U38: on a row whose quote check failed with a near match, the Fix
     // dialog opens on the quote field pre-filled with the page's wording —
     // one Save fix click accepts it (the person can still edit)
@@ -3619,6 +3708,24 @@
     else if (action === 'remove') removeDialog(row);
     else if (action === 'keepanyway') keepAnywayDialog(row);
     else closeDialog();
+  }
+  // DIALOGS-001: the proposal on screen no longer matches the one the box was
+  // opened on — disclose the current wording and require a fresh confirmation;
+  // the reason draft is untouched
+  function markDialogStale(row) {
+    if (!dialogMount || dialogMount.stale) return;
+    dialogMount.stale = true;
+    var fresh = rowOf(row.id) || row;
+    var sub = dialogHost.querySelector('.sh-s');
+    if (sub) sub.textContent = fresh.ticker + ' · ' + fresh.title;
+    if (!dialogHost.querySelector('.dlgstale')) {
+      var notice = el('div', 'ba dlgstale');
+      notice.textContent = 'The proposal changed while this box was open. The current wording is ' +
+        'shown above — press Keep anyway again to confirm it.';
+      var br0 = dialogHost.querySelector('.btnrow');
+      if (br0) dialogHost.insertBefore(notice, br0);
+      else dialogHost.append(notice);
+    }
   }
 
   // U38 rework (Job 47): one source of truth — the check itself carries
@@ -3637,10 +3744,11 @@
     if (!chk || typeof chk.near_match !== 'string' || !chk.near_match) return null;
     return { field: 'quote', to: chk.near_match };
   }
-  // the sub-line under a judgment-list row: the state's reason, except a
-  // generic "not printed" reason loses to the check's own near-miss sentence
+  // the sub-line under a judgment-list row: the current projected issue says
+  // why review is needed; the state's mechanical reason is the fallback.
+  // A generic "not printed" reason loses to the check's own near-miss sentence
   function listReasonLine(row, t) {
-    var shown = t.reason || '';
+    var shown = (t.issues && t.issues.length ? t.issues[0] : null) || t.reason || '';
     var nm = nearMissCheck(row);
     if (nm && /not printed/i.test(shown)) shown = nm.reason;
     return shown.length > 72 ? shown.slice(0, 72) + '…' : shown;
@@ -3648,8 +3756,12 @@
 
   // U37: keep a code-removed row anyway — the same reason box as Remove (the
   // code's reason is pre-filled, the person can edit it), saving records a
-  // person keep that outranks the code exclusion
-  function keepAnywayDialog(row) {
+  // person keep that outranks the code exclusion.
+  // DIALOGS-001: the decision carries the expected_basis the person SAW (the
+  // server's review-basis digest at mount); a material change under the open
+  // box renews the confirmation instead of writing. `keepDraft` is a draft to
+  // restore across that renew (the person's words survive).
+  function keepAnywayDialog(row, keepDraft) {
     var x = exclusionFor(row.id) || codeExclusionHistory(row.id);
     if (!x) { closeDialog(); return; }
     clear(dialogHost);
@@ -3657,13 +3769,23 @@
     dialogHost.append(el('div', 'sh-s', row.ticker + ' · ' + row.title));
     dialogHost.append(el('h4', null, 'Why you keep it (required — it is the recorded reason)'));
     var note = noteField('dnote', 'e.g. It is an upcoming event the rule misjudged.');
-    note.value = x.reason || RULE_WORDS[x.rule] || '';
+    note.value = keepDraft !== undefined ? keepDraft : (x.reason || RULE_WORDS[x.rule] || '');
     dialogHost.append(note);
     var br = el('div', 'btnrow');
     br.style.marginTop = '14px';
     br.append(btn('btn pri', 'Keep anyway', function () {
       if (!note.value.trim()) { showDialogError('A reason is required — it is the recorded reason.'); return; }
-      postDecision(row.id, { target: row.id, action: 'keep', note: note.value.trim() },
+      // the proposal changed under the open box: no write — put the current
+      // wording on screen, keep the draft, and ask for a fresh confirmation
+      if (dialogMount && dialogMount.stale) {
+        var fresh = rowOf(row.id) || row;
+        dialogMount = { key: currentRunId() + '/' + fresh.id + '/keepanyway',
+                        basis: basisOf(fresh.id), basisKey: basisDigest(fresh.id), stale: false };
+        keepAnywayDialog(fresh, note.value);
+        return;
+      }
+      postDecision(row.id, { target: row.id, action: 'keep', note: note.value.trim(),
+                             expected_basis: dialogMount ? dialogMount.basis : null },
         'Kept by you — code had removed it.', { screen: 'audit' });
     }), btn('btn', 'Cancel', function () {
       navigate({ runId: currentRunId(), screen: 'audit', rowId: row.id });
@@ -3685,7 +3807,8 @@
     br.style.marginTop = '14px';
     br.append(btn('btn danger', 'Remove', function () {
       if (!note.value.trim()) { showDialogError('A reason is required — it is the recorded reason.'); return; }
-      postDecision(row.id, { target: row.id, action: 'remove', note: note.value.trim() },
+      postDecision(row.id, { target: row.id, action: 'remove', note: note.value.trim(),
+                             expected_basis: dialogMount ? dialogMount.basis : null },
         'Removed by you — moved to checked and removed.');
     }), btn('btn', 'Cancel', function () {
       navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id });
@@ -3783,7 +3906,8 @@
       if (problem) { showDialogError(problem); return; }
       var note = (document.getElementById('qnote') || {}).value || null;
       var body = { target: row.id, action: 'fix', note: note || null,
-                   fix: { field: sel.value, from: cur(), to: to.value } };
+                   fix: { field: sel.value, from: cur(), to: to.value },
+                   expected_basis: dialogMount ? dialogMount.basis : null };
       var old = dialogHost.querySelector('.errline');
       if (old) old.remove();
       var pendEl = el('div', 'pendline', 'Re-check pending…');
@@ -3800,6 +3924,9 @@
         pendEl.remove();
         if (!res.ok) {
           showDialogError((res.body && res.body.detail) || ('HTTP ' + res.status));
+          // DIALOGS-001 contract: a refused fix on changed material refreshes
+          // so the dialog re-binds to the current row
+          if (res.status === 409) refresh();
           return;
         }
         var st = res.body.state;
@@ -4726,6 +4853,11 @@
   // availability. Nothing is offered that the server does not list; a person's
   // tick is never reset by a re-open or a delayed options answer.
   var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };
+  // NR-002: while a fresh options request is in flight a start reads no value —
+  // the displayed disabled box is unticked too, so a stale tick never ships.
+  // NR-003: only the newest request may apply (the company-list loader's rule).
+  var nrSupportSeq = 0;
+  var nrSupportPending = false;
   function supportFromOptions(body) {
     var o = body && body.support_check;
     var choices = o && Array.isArray(o.choices) ? o.choices : null;
@@ -4734,6 +4866,7 @@
              reason: o.unavailable_reason || null, choices: choices };
   }
   function applySupportOptions(body) {
+    nrSupportPending = false;    // the accepted answer ends the pending window
     var fresh = supportFromOptions(body);
     fresh.touched = nrSupport.touched;
     nrSupport = fresh;
@@ -4761,12 +4894,28 @@
   }
   document.getElementById('nr-support').addEventListener('change', function () { nrSupport.touched = true; });
   // what a start sends: the server's choice word only when the person ticked
-  // an offered, available box — otherwise absent (the server's own off)
+  // an offered, available box — otherwise absent (the server's own off).
+  // A refresh in flight (reopen) reads nothing until the fresh answer lands.
   function nrSupportValue() {
     var box = document.getElementById('nr-support');
+    if (nrSupportPending) return null;
     if (nrSupport.loaded && nrSupport.available && box.checked &&
         nrSupport.choices.indexOf('lettucedetect') >= 0) return 'lettucedetect';
     return null;
+  }
+  // the sheet's open handler: refresh the wording-check offer every open, the
+  // way the company list does — seq-guarded, and pending (disabled + unticked)
+  // until the fresh answer applies
+  function refreshSupportOptions() {
+    var box = document.getElementById('nr-support');
+    box.disabled = true;
+    box.checked = false;
+    nrSupportPending = true;
+    var seq = ++nrSupportSeq;
+    return A.researchOptions().then(function (o) {
+      if (seq !== nrSupportSeq) return;    // an older answer never overrides
+      applySupportOptions(o);
+    });
   }
   // ---------------- ticker intake (TICKER-INTAKE-001): paste any list; the
   // server resolves each symbol against SEC records and captures its documents.
@@ -5067,9 +5216,8 @@
     if (!nrResearch.loaded) A.settings().then(function (s) { applyResearchSettings(s); });
     else updateNoteHint();
     // the wording-check choice: refresh each open, like the company list —
-    // the box stays disabled until the options answer
-    document.getElementById('nr-support').disabled = true;
-    A.researchOptions().then(function (o) { applySupportOptions(o); });
+    // pending (disabled + unticked) until the fresh options answer
+    refreshSupportOptions();
   });
   document.getElementById('nr-cancel').addEventListener('click', function () { newrunWrap.hidden = true; });
   // G4-6: one wording in both limit boxes, and the red line clears as soon as
@@ -5209,7 +5357,13 @@
       row1.append(el('span', null, JOB_STATUS_WORDS[st] || st));
     }
     host.append(row1);
-    if (oneModelRun(meta)) host.append(el('div', 'jb-sub', ONE_MODEL_LINE));
+    // PROJECTION-002: the one-reader sentence is a page-mode sentence — a
+    // research run's independent reviewer is stage S2, named from the record
+    if (oneModelRun(meta) && meta.choices.mode !== 'research') {
+      host.append(el('div', 'jb-sub', ONE_MODEL_LINE));
+    }
+    var rsReview = researchReviewLine();
+    if (rsReview) host.append(el('div', 'jb-sub', rsReview));
     var bits = [];
     if (meta.turn_count !== null && meta.turn_count !== undefined) {
       bits.push('turn ' + meta.turn_count + ' of ' + (meta.turn_limit || '?'));
