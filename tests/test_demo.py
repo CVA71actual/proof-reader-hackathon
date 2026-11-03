@@ -157,7 +157,7 @@ def test_it_serves_the_app_on_this_machine_only_on_the_documented_port_and_the_a
     assert isinstance(app, FastAPI) and (host, port) == ("127.0.0.1", 8777)
     assert "Serving the app at http://127.0.0.1:8777/  (this machine only; Ctrl-C stops it)" in out
     ids = [r["id"] for r in TestClient(app).get("/api/runs").json()]
-    assert "ptgx-r5" in ids and "sample" in ids
+    assert "sample" in ids and "ptgx-r5" not in ids   # runs/LISTED.json: the list; unlisted runs stay served
     assert TestClient(app).get("/runs/sample/accuracy.json").json()["key"]["sealed"] is False
     legacy = TestClient(app).get("/runs/ptgx-r5/accuracy.json")
     assert legacy.status_code == 409 and "re-score" in legacy.json()["detail"] and "models" not in legacy.text
