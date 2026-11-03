@@ -367,6 +367,9 @@ def _apply(base: dict, stack: list[dict]) -> dict:
         bounds = _period_bounds({**candidate, "checks": s.get("effective_checks") or []})
         if bounds:
             s["values"]["date"], s["values"]["date_end"] = bounds
+    # Whether the readers' disagreement is still open after the fixes replayed above (a Keep or Remove settles it
+    # through acceptance/exclusion, which clears issues on its own).
+    s["_disagreement_open"] = base.get("disagreement") is not None and unsettled
     s["decisions_in_effect"] = len(stack)
     s["decided_by_person"] = bool(stack)
     s["last_action"] = stack[-1]["action"] if stack else None
@@ -630,6 +633,15 @@ def current_state(run: dict, decisions: list) -> dict:
 
     mistake_list = _mistake_list(run, states)
 
+    second_reader_catches = {m["target"] for m in mistake_list if m["caught_by"] == "second_reader"}
+    unreadable_pages = _unreadable_pages(run)
+    rows_by_id = {row.get("id"): row for row in run.get("rows", [])}
+    for t, s in states.items():
+        s["issues"] = row_issues(s, page_unreadable=_page_key(rows_by_id.get(t)) in unreadable_pages,
+                                 second_reader_mistake=t in second_reader_catches)
+        s.pop("_disagreement_open", None)
+    counts["issues"] = sum(1 for s in states.values() if s["kind"] == "row" and s["issues"])
+
     exclusions = _exclusions(run, states)
     excluded = {k: sum(1 for x in exclusions if x["by"] == k) for k in EXCLUDED_BY}
     counts["excluded_by_person"] = excluded["person"]
@@ -642,6 +654,64 @@ def current_state(run: dict, decisions: list) -> dict:
             "counts": counts, "mistakes": mistakes, "mistake_list": mistake_list,
             "excluded": excluded, "exclusions": exclusions, "unresolved": unresolved, "ignored": ignored,
             "kept_rows": kept_rows, "cost_per_kept_row_usd": cost_per_kept_row_usd(spend, kept_rows)}
+
+
+EXPIRED_KEEP_LABEL = "Previous Keep — needs your review"
+# Fields where the two readers' values are facts that can be compared. Free-text fields (type_hint, title,
+# event type wording, context prose) differ by wording alone and are never an issue.
+DISAGREEMENT_ISSUE_FIELDS = ("date", "date_end", "date_text", "program", "indication", "company", "ticker", "quote")
+
+
+def _page_key(row: dict | None):
+    return (row.get("source_id"), row.get("page_number")) if row else None
+
+
+def _unreadable_pages(run: dict) -> set:
+    """(source_id, page_number) of every page the run recorded as unreadable. An outcome with no page number
+    covers every page of its source (one page per source in a run)."""
+    out = set()
+    for item in (run.get("run") or {}).get("page_outcomes") or []:
+        if isinstance(item, dict) and item.get("unreadable") is True:
+            pages = [item.get("page_number")] if item.get("page_number") is not None else [
+                r.get("page_number") for r in run.get("rows", []) if r.get("source_id") == item.get("source_id")]
+            out.update((item.get("source_id"), p) for p in pages)
+    return out
+
+
+def row_issues(s: dict, *, page_unreadable: bool = False, second_reader_mistake: bool = False) -> list[str]:
+    """REVIEW-NOT-A-FLAG-001: every proposal needs review by design, so needing review is not an issue. The
+    issues are the real problems on a target, in short plain English; empty when there are none:
+      - a current effective check failed ("<check name> failed");
+      - the readers' disagreement on a factual field is still open, or the second reader caught a mistake on this target;
+      - the page could not be read, or the reader's answer could not be read (status unreadable);
+      - a previous Keep expired because the proposal or evidence changed.
+    A check that could not run, was not needed or was not checked is not an issue. An accepted or excluded
+    target has no issues. This reads the derived state; it never changes acceptance or grouping."""
+    if s["kind"] == "row":
+        if s.get("accepted") or s.get("review_bucket") == "excluded":
+            return []
+    elif s.get("group") == "removed":
+        return []
+    out = []
+    for c in s.get("effective_checks") or []:
+        if c.get("result") == "fail":
+            out.append(f"{c.get('label') or _plain_field(c.get('name') or 'A check')} failed")
+    dis = s.get("disagreement")
+    if dis and s.get("_disagreement_open", True):
+        # Only a factual field: free text (type hint, title, ...) is each reader's own wording, not a problem.
+        factual = [x.get("field") for x in [dis, *(dis.get("also") or [])]
+                   if x.get("field") in DISAGREEMENT_ISSUE_FIELDS]
+        if factual:
+            out.append(f"The two readers disagree on the {_plain_field(factual[0]).lower()}")
+    if second_reader_mistake:
+        out.append("The second reader caught a mistake on this row")
+    if page_unreadable:
+        out.append("The page could not be read")
+    if s.get("status") == "unreadable":
+        out.append("The reader's answer could not be read")
+    if s.get("review_label") == EXPIRED_KEEP_LABEL:
+        out.append("Your earlier Keep expired because the evidence changed")
+    return list(dict.fromkeys(out))
 
 
 def _target_models(run: dict) -> dict:

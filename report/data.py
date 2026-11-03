@@ -279,6 +279,7 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
             "group": st["group"],
             "group_label": st["review_label"],
             "semantic_status": st["semantic_status"],
+            "issues": list(st["issues"]),
             "review_label": st["review_label"],
             "decision_label": st["decision_label"],
             "person_tag": _person_tag(st),
@@ -421,6 +422,7 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
             "group": st["group"],
             "group_label": st["review_label"],
             "semantic_status": st["semantic_status"],
+            "issues": list(st["issues"]),
             "review_label": st["review_label"],
             "decision_label": st["decision_label"],
             "person_tag": _person_tag(st),
@@ -504,6 +506,8 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         "unresolved": state["unresolved"],
         # ONE-MODEL-RUN-001: a run with no second reader never shows a second-reader count of 0
         "models_line": ONE_MODEL_LINE if run_is_one_model(run) else None,
+        # REVIEW-NOT-A-FLAG-001: rows still under review that carry a real issue (needing review is not one)
+        "issues": state["counts"]["issues"],
         "counters_line": (
             f"Mistakes caught by code {mistakes['code']} · "
             + (NO_SECOND_READER if run_is_one_model(run) else f"by the second reader {mistakes['second_reader']}")
