@@ -4986,15 +4986,15 @@
       if (btn) btn.disabled = !st.ready_count;
       syncPasteMode();
     }
+    // research is the only mode the screen starts: the page reader's choices
+    // (event types, window, reader tools, second-reader models) stay home —
+    // the server rejects them in research mode
     return A.newRun({ intake_id: st.intake_id, companies: ready,
                accept_ready_subset: st.requested.some(function (s) { return ready.indexOf(s) < 0; }),
-               event_types: NEW_RUN_TYPES.map(function (t) { return t[0]; }),
-               time_window_months: null,
+               mode: 'research',
                spending_limit_usd: limit,
                note_for_agent: notePayload(),
-               reader_tools: document.getElementById('nr-tools').checked,
-               support_check: nrSupportValue(),
-               models: nrModels() }).then(function (res) {
+               support_check: nrSupportValue() }).then(function (res) {
       if (!res.ok && res.status === 409 && res.body && typeof res.body.run_id === 'string') {
         // the server already bound a run to this intake: it is used, link to that run
         nrBusy = false;
@@ -5068,7 +5068,6 @@
     var companies = [];
     document.querySelectorAll('.nr-co:checked').forEach(function (c) { companies.push(c.value); });
     if (!companies.length) { nrError('Choose at least one company.'); return; }
-    var types = NEW_RUN_TYPES.map(function (t) { return t[0]; });
     var limitRaw = document.getElementById('nr-limit').value.trim();
     var limit = null;
     if (limitRaw !== '') {
@@ -5082,12 +5081,11 @@
     nrBusy = true;
     syncPasteMode();
     function done() { nrBusy = false; syncPasteMode(); }
-    return A.newRun({ companies: companies, event_types: types,
-               time_window_months: null,
+    // research is the only mode the screen starts; the page reader's choices
+    // (event types, window, reader tools, second-reader models) stay home
+    return A.newRun({ companies: companies, mode: 'research',
                spending_limit_usd: limit, note_for_agent: note,
-               reader_tools: document.getElementById('nr-tools').checked,
-               support_check: nrSupportValue(),
-               models: nrModels() }).then(function (res) {
+               support_check: nrSupportValue() }).then(function (res) {
       done();
       if (!res.ok) { nrError((res.body && res.body.detail) || ('HTTP ' + res.status)); return; }
       newrunWrap.hidden = true;

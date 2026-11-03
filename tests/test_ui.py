@@ -2446,7 +2446,8 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
         "  if (!posted) { console.error('no post'); process.exit(9); }",
         "  if (posted.intake_id !== 'ik1' || posted.companies.join(',') !== 'ACME') { console.error(JSON.stringify(posted)); process.exit(10); }",
         "  if (posted.accept_ready_subset !== true) { console.error('subset flag'); process.exit(11); }",
-        "  if (posted.event_types.length !== 6 || posted.time_window_months !== null) { console.error('options'); process.exit(12); }",
+        "  if (posted.mode !== 'research' || 'event_types' in posted || 'reader_tools' in posted || 'models' in posted"
+        "    || 'time_window_months' in posted) { console.error('options'); process.exit(12); }",
         "  return new Promise(function (r) { setTimeout(r, 0); });",
         "}).then(function () {",
         "  if (switched !== 'run9' || !newrunWrap.hidden) { console.error('switch'); process.exit(13); }",
@@ -2455,6 +2456,85 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
     assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_new_run_posts_mode_research_and_the_server_accepts_it(tmp_path):
+    # MODE-001: 'Run now' starts the research agent, not the old page reader —
+    # the payload the UI builds carries mode 'research' and none of the
+    # page-reader-only choices, and the real POST /api/runs/new envelope
+    # accepts it (fake research reader; no paid call)
+    import json
+    import subprocess
+
+    from fastapi.testclient import TestClient
+
+    from server.app import create_app
+    from tests import research_fakes as F
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("el", "clear", "nrError", "nrModels", "researchReady", "notePayload", "startRunNow",
+                     "syncPasteMode", "applySupportOptions", "nrSupportValue",
+                     "renderChosen", "renderPrevCompanies", "nrPreparedTickers", "tickedReadyCount",
+                     "applyPasteDisable", "syncStartButton", "intakeDoneN", "noteHintText"))
+    script = "\n".join([
+        "var NEW_RUN_TYPES = [['trial_results', 'Trial results']];",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], hidden: false, disabled: false,",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "var els = { 'nr-tickers': { value: '' }, 'nr-limit': { value: '' },",
+        "            'nr-note': { value: 'Focus on catalysts.' }, 'nr-tools': { checked: false },",
+        "            'nr-support': { checked: false } };",
+        "var nodes = {};",
+        "var nrResearch = { defaultText: null, maxLength: null, loaded: true };",
+        "var nrSupport = { loaded: true, available: true, reason: null, choices: ['lettucedetect'], touched: false };",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (els[id]) return els[id]; if (!nodes[id]) nodes[id] = make(); return nodes[id]; },",
+        "  querySelectorAll: function (sel) {",
+        "    if (sel === '.nr-co:checked') return [{ value: 'PTGX', checked: true }];",
+        "    return []; } };",
+        "var newrunWrap = { hidden: false };",
+        "var runs = []; var switched = null; var nrState = 'ready'; var nrLoadError = '';",
+        "var nrCompanies = ['PTGX'];",
+        "var nrBusy = false;",
+        "var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null, usedRun: null };",
+        "var nrChosen = {}; var nrPrepUnticked = {};",
+        "function toast() {}",
+        "function switchRun(id) { switched = id; }",
+        "var posted = [];",
+        "var A = { newRun: function (body) { posted.push(body); return Promise.resolve({ ok: true, status: 202,",
+        "    body: { id: 'run1', number: 1, label: 'PTGX · research' } }); },",
+        "  runs: function () { return Promise.resolve([]); } };",
+        fns,
+        "startRunNow();",
+        "if (!posted.length) { console.error('no post'); process.exit(2); }",
+        "var p = posted[0];",
+        "if (p.mode !== 'research' || p.companies.join(',') !== 'PTGX') { console.error(JSON.stringify(p)); process.exit(3); }",
+        "for (var k in { event_types: 1, time_window_months: 1, reader_tools: 1, models: 1 })",
+        "  if (k in p) { console.error('page-mode key sent: ' + k); process.exit(4); }",
+        "if (p.spending_limit_usd !== null || p.note_for_agent !== 'Focus on catalysts.' || p.support_check !== null)",
+        "  { console.error(JSON.stringify(p)); process.exit(5); }",
+        "console.log(JSON.stringify(p));",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+    body = json.loads(got.stdout.strip().splitlines()[-1])
+
+    # the same payload through the real envelope: accepted, and the saved run
+    # is a research run (Muse Spark only; the reviewer is stage S2)
+    reader = F.PerCompany({"PTGX": [
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "i1")])]})
+    tools = F.tools({})
+    app = create_app(runs_dir=tmp_path / "runs", reader=reader, background=False, second_reader=None,
+                     wonder_reader=None, sam_reader=None, research_tools=tools, research_reader=reader)
+    client = TestClient(app)
+    r = client.post("/api/runs/new", json=body)
+    assert r.status_code == 202, r.text
+    run = json.loads((tmp_path / "runs" / r.json()["id"] / "run.json").read_text())
+    assert run["run"]["choices"]["mode"] == "research"
+    assert run["run"]["choices"]["models"] == "one"
+    assert run["run"]["choices"]["reader_tools"] is False
+    assert run["run"]["label"] == "PTGX · research"
 
 
 def test_ticker_intake_refusal_shows_the_servers_sentence_in_the_red_line():

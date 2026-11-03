@@ -140,15 +140,17 @@
     <div class="sh-grid" id="nr-prev"></div>
     <h4>Spending limit <span class="opt">(USD — leave empty for no limit)</span></h4>
     <input class="fld" id="nr-limit" inputmode="decimal" placeholder="2.00" style="width:130px">
-    <h4>Models</h4>
-    <label><input type="radio" name="nr-models" id="nr-models-one" value="one"> Muse Spark only</label>
-    <label><input type="radio" name="nr-models" id="nr-models-all" value="all" checked> Muse Spark, checked by a second reader</label>
     <h4>Research instructions <span class="opt">(optional)</span></h4>
     <textarea class="fld" id="nr-note" rows="3" placeholder="What the research should focus on"></textarea>
     <div class="hint" id="nr-note-hint">Guides the research; the source checks still run on every row.</div>
-    <h4>Reader tools <span class="opt">(optional)</span></h4>
+    <div hidden>
+    <h4>Models <span class="opt">(page-reading runs only)</span></h4>
+    <label><input type="radio" name="nr-models" id="nr-models-one" value="one"> Muse Spark only</label>
+    <label><input type="radio" name="nr-models" id="nr-models-all" value="all" checked> Muse Spark, checked by a second reader</label>
+    <h4>Reader tools <span class="opt">(page-reading runs only)</span></h4>
     <label><input type="checkbox" id="nr-tools"> Let the first reader call the checks while it reads</label>
     <div class="hint">The reader may ask the checks about its own proposals; the checks still run on every row afterwards.</div>
+    </div>
     <h4>Proposed wording <span class="opt">(optional)</span></h4>
     <label><input type="checkbox" id="nr-support" disabled> Check the proposed wording against the cited source</label>
     <div class="hint" id="nr-support-hint">Advisory only — a flag changes no check, count or decision.</div>
