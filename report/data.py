@@ -17,6 +17,11 @@ from checks import event_checks
 
 TITLE = "Biotech Coverage Catalyst Calendar"
 FOOTER = "Built with Meta Muse models · built by code from the saved results"
+# EXPORT-LAYOUT-001: a research run's footer names the models that run actually used (from its saved record), never
+# the configured ones. Runs without research keep FOOTER.
+BUILT_BY_CODE = "Built by code from the saved results"
+RESEARCHER_NAME = "Muse Spark"
+APPENDIX_HEADING = "Appendix: research log and sources"
 SAMPLE_STAMP = "Sample data — not real events"
 
 # CALENDAR-RULE-001: one summary line per inclusion; automatic inclusion is never worded as a person's Keep.
@@ -33,12 +38,13 @@ INCLUSION_LABELS = (
 CALENDAR_HEADING = "Kept by you, and included automatically (not reviewed by you) — ordered by date. Periods are shown as stated."
 NEEDS_REVIEW_HEADING = "Needs your review"
 # The sections below the calendar, in order, with their headings.
+# EXPORT-LAYOUT-001 (CVA 2026-11-03): after the calendar and "Needs your review": Undated, then Later, then Context.
 PLACEMENT_SECTIONS = (
-    ("past", "Context (past)"),
     ("undated", "Undated: needs timing"),
     ("timing_unresolved", "Undated: needs timing · date wording not resolved"),
     ("contingent", "Undated: needs timing · contingent"),
     ("later", "Later — after the calendar window"),
+    ("past", "Context (past)"),
 )
 
 GROUP_LABEL = {
@@ -259,6 +265,55 @@ def _research_lines(meta: dict, run: dict) -> tuple[str | None, list[str]]:
     for k in research.get("kill_conditions") or []:
         lines.append(f"Kill condition met: {k.get('detail')}")
     return research.get("label"), lines
+
+
+def models_used(run: dict) -> dict | None:
+    """The models a research run actually used, from its saved record: the researcher, the reviewer that RAN (the
+    review entries' reviewer_ran / reviewer, else run.research.reviewer_access.chosen; never the configured chain),
+    and the adjudicator when at least one dispute reached it. None when the run has no research."""
+    research = (run.get("run") or {}).get("research")
+    if not isinstance(research, dict):
+        return None
+    reviews = research.get("review") if isinstance(research.get("review"), dict) else {}
+    entries = [e for e in reviews.values() if isinstance(e, dict) and "stage" in e]
+    researcher = RESEARCHER_NAME
+    for e in entries:
+        family = ((e.get("families") or {}).get("researcher") or {}).get("family")
+        if family:
+            researcher = re.sub(r"\s*\([^)]*\)\s*$", "", family) or researcher
+            break
+    from runs.research_labels import reviewer_of
+    reviewers = []
+    for e in entries:
+        who = reviewer_of(e)
+        if who and who.get("name") and who["name"] not in reviewers:
+            reviewers.append(who["name"])
+    access = research.get("reviewer_access") if isinstance(research.get("reviewer_access"), dict) else {}
+    if not reviewers and access.get("chosen") and any(e.get("status") not in (None, "not_run") for e in entries):
+        reviewers.append(access["chosen"])
+    adjudicators = []
+    for e in entries:
+        adj = e.get("adjudication") or {}
+        ran = adj.get("status") == "complete" or any(o.get("model") for o in adj.get("outcomes") or []) \
+            or bool((adj.get("usage") or {}).get("model_requests"))
+        name = e.get("adjudicator") or ((e.get("families") or {}).get("adjudicator") or {}).get("name")
+        if ran and name and name not in adjudicators:
+            adjudicators.append(name)
+    return {"researcher": researcher, "reviewers": reviewers, "adjudicators": adjudicators}
+
+
+def footer_line(run: dict) -> str:
+    """The footer on every page: for a research run the models it used (e.g. "Research: Muse Spark · Review: DeepSeek
+    V4 Pro · Built by code from the saved results"); the standing wording for every other run."""
+    used = models_used(run)
+    if used is None:
+        return FOOTER
+    parts = [f"Research: {used['researcher']}",
+             "Review: " + (" and ".join(used["reviewers"]) if used["reviewers"] else "none ran")]
+    if used["adjudicators"]:
+        parts.append("Adjudication: " + " and ".join(used["adjudicators"]))
+    parts.append(BUILT_BY_CODE)
+    return " · ".join(parts)
 
 
 def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
@@ -525,10 +580,16 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         "research_label": research_label,
         "research_lines": research_lines,
         "title": TITLE,
-        "footer": FOOTER,
+        "footer": footer_line(run),
+        "models_used": models_used(run),
+        "appendix_heading": APPENDIX_HEADING,
         "run_id": meta["id"],
         "run_number": meta["number"],
         "run_label": meta.get("label") or meta["id"],
+        # EXPORT-LAYOUT-001: the one line under the title on page 1 (run number, companies, run date)
+        "run_line": " · ".join(x for x in (
+            f"Run {meta['number']}", ", ".join(companies),
+            date_in_words(meta.get("finished_at") or meta.get("started_at") or "")) if x),
         "sample": bool(meta.get("sample")),
         "sample_stamp": SAMPLE_STAMP if meta.get("sample") else None,
         "as_of_note": as_of_note(run),
