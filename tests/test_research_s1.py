@@ -2210,14 +2210,16 @@ def test_a_dateline_in_the_quote_is_never_the_event_date_wherever_it_sits(runs_d
     target = current_state(run, [])["targets"][row["id"]]
     calendar = [r["id"] for r in build_view(run, [], generated_at="2026-11-03T13:40:00+00:00")["calendar"]]
     codes = [i["code"] for i in row["research"]["issues"]]
-    # On this branch nothing is placed without a person's Keep; automatic inclusion lives on #178, whose state reads
-    # this typed issue (dateline_as_event_date is one of its research support codes). The audit carries it too.
-    assert target["on_calendar"] is False and row["id"] not in calendar
+    # #178's state reads this typed issue (dateline_as_event_date is one of its research support codes); the audit
+    # carries it too. An unanchored dateline is never placed. The anchored row raises no dateline issue; whether it is
+    # placed belongs to the calendar rule (a Keep on S1 alone, automatic inclusion with #178), so it is not asserted.
     audit_row = next(r for r in run["run"]["research"]["audit"]["rows"] if r["id"] == row["id"])
     if anchored:
-        assert codes == [] and audit_row["scope"]["issues"] == []
+        assert "dateline_as_event_date" not in codes
+        assert "dateline_as_event_date" not in audit_row["scope"]["issues"]
     else:
         assert codes == ["dateline_as_event_date"] and audit_row["scope"]["issues"] == ["dateline_as_event_date"]
+        assert target["on_calendar"] is False and row["id"] not in calendar
 
 
 # ---------------------------------------------------------------- live review 7f0bb08 (OUTCOME-001 / EVIDENCE-001)
