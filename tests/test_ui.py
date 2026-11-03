@@ -178,6 +178,18 @@ def test_u6_calendar_rules_on_screen():
     assert "detail.run.calendar_partition" in js and "Past · " in js
 
 
+def test_calendar_day_column_never_overflows_into_the_ticker():
+    # CVA 17:28 (heading change CANCELLED 17:32 — the page title stays; this
+    # bug fix is kept): a long written date ('June 30, 2027' in the Later
+    # section) rendered as 'June 30, 202SMPL2' — the day cell was fixed at
+    # 86px and nowrap, so the text spilled under the ticker. The cell now
+    # sizes to its content (min-width 86px, never fixed, never shrinking).
+    css = (UI / "styles.css").read_text()
+    assert (".crow .cd{font-family:var(--mono);font-size:11.5px;color:var(--sub);"
+            "min-width:86px;flex:0 0 auto;white-space:nowrap}") in css
+    assert "width:86px;flex:0 0 86px" not in css
+
+
 def test_u5_u6_format_helpers():
     js = (UI / "app.js").read_text()
     # money keeps small costs exact (0.000352 must not round to $0.0004)

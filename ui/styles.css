@@ -309,7 +309,7 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
 .crow{display:flex;gap:12px;width:100%;padding:9px 4px;border-bottom:1px solid var(--line2);align-items:baseline;border-radius:6px}
 .crow:hover{background:var(--line2)}
 .crow.on{background:var(--blue-soft)}
-.crow .cd{font-family:var(--mono);font-size:11.5px;color:var(--sub);width:86px;flex:0 0 86px;white-space:nowrap}
+.crow .cd{font-family:var(--mono);font-size:11.5px;color:var(--sub);min-width:86px;flex:0 0 auto;white-space:nowrap}
 .crow .dt{font-size:11px;color:var(--sub);font-style:italic;white-space:nowrap}
 .crow .ct2{flex:1;min-width:0;font-size:13.5px;display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}
 .crow .ct2 .tk{font-family:var(--mono);font-weight:600;font-size:12px}
