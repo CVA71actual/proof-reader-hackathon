@@ -182,7 +182,10 @@ def test_exact_event_prompt_keeps_compact_schema_and_all_coordinates():
     entry = load_entry(read_events.PIN)
     prompt = read_events.build_prompt(words, entry, note=research_instructions.DEFAULT, as_of="2026-11-02")
     instructions, supplied_words = prompt.split("Words:\n", 1)
-    assert len(instructions) < 2200
+    # CVA 2026-11-03 one box: the default assignment is now the full brief (about 1,800 characters), sent as written.
+    # The bound is on the schema and rules around it, which stay compact.
+    assert research_instructions.DEFAULT in instructions
+    assert len(instructions.replace(research_instructions.DEFAULT, "")) < 2200 - len(research_instructions.LEGACY_DEFAULT)
     assert '"date_end":null' in instructions and "exact dates use" in instructions.lower()
     assert "single spaces, punctuation included" in instructions
     assert '"conditions":[]' in instructions and '"relevance":null' in instructions

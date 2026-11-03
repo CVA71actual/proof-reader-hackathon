@@ -1845,20 +1845,55 @@ def test_a_bot_wall_asking_to_confirm_a_human_is_a_block_page():
 # ---------------------------------------------------------------- brief v2 default, DATE-001 one source of bounds
 
 
-def test_the_default_research_request_carries_brief_v2_and_a_note_comes_first(runs_dir):
+ASSIGNMENT_LABEL = "Research assignment (from the person, exactly as written):\n"     # fixed framing, not the box
+
+
+def test_the_default_research_request_is_exactly_the_one_box(runs_dir):
+    """CVA 2026-11-03: one editable box; what is in the box is exactly what is sent (was: a note plus an appended
+    where-to-look block)."""
     import re as _re
     from capture import research_instructions as ri
     reader = F.FakeResponses([F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
-    start(runs_dir, reader)
+    _, rid, _ = start(runs_dir, reader)
     assignment = reader.requests[0]["input"][0]["content"]
-    assert assignment.endswith(ri.WHERE_TO_LOOK) and ri.DEFAULT in assignment
+    assert ri.DEFAULT == ri.LEGACY_DEFAULT + "\n\n" + ri.WHERE_TO_LOOK and len(ri.DEFAULT) <= ri.MAX_LENGTH
+    assert assignment == ASSIGNMENT_LABEL + ri.DEFAULT and assignment.count(ri.WHERE_TO_LOOK) == 1
+    assert run_json(runs_dir, rid)["run"]["choices"]["note_for_agent"] == ri.DEFAULT
     assert "Regulators beyond the FDA: check the EMA, MHRA, PMDA, NMPA and TGA" in assignment
-    assert ri.research_assignment("Focus on PN-881.") == "Focus on PN-881.\n\n" + ri.WHERE_TO_LOOK
     # verbatim from glass-queue/prompts/BRIEF_V2_2026-11-02.txt; its only banned-pattern hit is the brief's own
     # "approved or filed assets" (regulatory approval), kept in a data file so the product-code rule still holds
     assert [m.group(0) for m in _re.finditer(r"\w*(?:verif|prove|correct)\w*", ri.WHERE_TO_LOOK, _re.I)] == ["approved"]
     assert ri.WHERE_TO_LOOK.startswith("Where to look, beyond the company's own filings and releases:")
     assert ri.WHERE_TO_LOOK.count("\n- ") == 6
+
+
+def test_an_edited_note_is_sent_exactly_as_given(runs_dir):
+    from capture import research_instructions as ri
+    note = "Focus on PN-881 and its partner trials."
+    reader = F.FakeResponses([F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    start(runs_dir, reader, note_for_agent=note)
+    assert reader.requests[0]["input"][0]["content"] == ASSIGNMENT_LABEL + note
+    assert ri.research_assignment(note) == note
+
+
+def test_a_note_with_the_block_deleted_sends_no_block_and_none_is_doubled():
+    from capture import research_instructions as ri
+    without = ri.LEGACY_DEFAULT.replace("Cite the supporting passage. ", "")
+    assert ri.research_assignment(without) == without and ri.WHERE_TO_LOOK not in ri.research_assignment(without)
+    assert ri.research_assignment(ri.DEFAULT).count(ri.WHERE_TO_LOOK) == 1
+    edited = "My own focus.\n\n" + ri.WHERE_TO_LOOK
+    assert ri.research_assignment(edited) == edited and ri.research_assignment(edited).count(ri.WHERE_TO_LOOK) == 1
+    for blank in (None, "", "   "):
+        assert ri.research_assignment(blank) == ri.DEFAULT
+
+
+def test_the_old_short_default_maps_to_the_full_one(runs_dir):
+    from capture import research_instructions as ri
+    assert ri.research_assignment(ri.LEGACY_DEFAULT) == ri.DEFAULT
+    assert ri.is_default(ri.LEGACY_DEFAULT) and ri.is_default(ri.DEFAULT) and not ri.is_default("x")
+    reader = F.FakeResponses([F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    start(runs_dir, reader, note_for_agent=ri.LEGACY_DEFAULT)               # a saved legacy note
+    assert reader.requests[0]["input"][0]["content"] == ASSIGNMENT_LABEL + ri.DEFAULT
 
 
 def test_a_period_row_with_code_derived_bounds_is_placed_not_undated(runs_dir):

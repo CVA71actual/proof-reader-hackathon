@@ -1,6 +1,8 @@
 """The saved, person-editable research assignment used by event readers."""
 
-DEFAULT = (
+# The short assignment the box held before CVA's one-box ruling (2026-11-03). A saved or legacy note equal to it maps to
+# the full DEFAULT below, so those runs read what they always read.
+LEGACY_DEFAULT = (
     "Identify developments relevant to this company's investment catalyst calendar. Read broadly, including clinical, "
     "regulatory, commercial, financing and other meaningful developments. Include announced earnings dates, undated "
     "plans and conditional events. Explain what is expected to happen, why it matters, and what conditions or "
@@ -8,20 +10,29 @@ DEFAULT = (
     "figures alone are not calendar events. Preserve the source's meaning, timing and qualifications. Cite the "
     "supporting passage. Do not invent missing information; leave uncertainty visible for the person reviewing it."
 )
-# BRIEF_V2 (CVA 2026-11-02, glass-queue/prompts/BRIEF_V2_2026-11-02.txt): where a research run looks, verbatim. Added to
-# every research assignment; a person's own note comes first, on top of it. Page-mode readers are unchanged.
-# The block is kept verbatim in a data file next to this module: its wording is CVA's instruction to the model (it
-# names regulators' decisions on marketed or filed assets), not a claim made by this code.
+# BRIEF_V2 (CVA 2026-11-02, glass-queue/prompts/BRIEF_V2_2026-11-02.txt): where a research run looks, verbatim. The
+# block is kept verbatim in a data file next to this module: its wording is CVA's instruction to the model (it names
+# regulators' decisions on marketed or filed assets), not a claim made by this code.
 WHERE_TO_LOOK = (__import__("pathlib").Path(__file__).with_name("brief_v2_where_to_look.txt")
                  .read_text(encoding="utf-8").strip())
-RESEARCH_DEFAULT = DEFAULT + "\n\n" + WHERE_TO_LOOK
+# CVA (2026-11-03): ONE editable box, and what is in the box is exactly what is sent. The default box holds the full
+# brief; nothing is appended behind the person's back.
+DEFAULT = LEGACY_DEFAULT + "\n\n" + WHERE_TO_LOOK
+RESEARCH_DEFAULT = DEFAULT          # compatibility name
 
 
 def research_assignment(note: str | None) -> str:
-    """The research loop's assignment: brief v2 by default; a person's own note first, with the where-to-look block."""
-    if note is None or not note.strip() or note == DEFAULT:
-        return RESEARCH_DEFAULT
-    return note + "\n\n" + WHERE_TO_LOOK
+    """The research loop's assignment: exactly the box. Blank or missing selects DEFAULT; the old short default maps to
+    the full DEFAULT (legacy runs). Nothing is appended, so a block is never sent twice and a deleted block stays
+    deleted."""
+    if note is None or not note.strip() or note == LEGACY_DEFAULT:
+        return DEFAULT
+    return note
+
+
+def is_default(note: str | None) -> bool:
+    """The default box, in its current or legacy short form."""
+    return note in (DEFAULT, LEGACY_DEFAULT)
 
 
 MAX_LENGTH = 4000
