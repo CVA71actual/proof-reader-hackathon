@@ -186,6 +186,8 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-a
 .btn:hover{background:var(--line2)}
 .btn.pri{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .btn.pri:hover{opacity:.92}
+/* fix-on-find (Red Team 7588841): the sleeping start button never looks live */
+#nr-go:disabled,#nr-go:disabled:hover{opacity:.4;cursor:default}
 .btn.danger{color:var(--red);border-color:var(--red)}
 .btnrow{display:flex;gap:7px;flex-wrap:wrap}
 /* G1-11: the decision buttons stay on one line */

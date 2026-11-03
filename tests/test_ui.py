@@ -1651,6 +1651,14 @@ def test_pr171_review_tick_state_survives_refusal():
     assert got.returncode == 0, got.stdout + got.stderr
 
 
+def test_newrun_sleeping_start_button_does_not_look_live():
+    # fix-on-find (Red Team 7588841): .btn.pri has no :disabled rule, so the
+    # disabled start kept the live ink fill — order (1) says never an
+    # active-looking start that will not start
+    css = (UI / "styles.css").read_text()
+    assert "#nr-go:disabled,#nr-go:disabled:hover{opacity:.4;cursor:default}" in css
+
+
 def test_ticker_intake_pins():
     # TICKER-INTAKE-001: the New run sheet intakes pasted tickers through the
     # server — no hard-coded list, plain words, inline errors (the red line)
