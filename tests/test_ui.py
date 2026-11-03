@@ -1459,6 +1459,90 @@ def test_research_s1_ui_surfaces():
         assert word in js, word
 
 
+def test_research_s1_surfaces_read_the_real_get_envelope(tmp_path):
+    # FIX-ON-FIND (Manus 16:52): runResearch() must read detail.run.RUN.research
+    # — the real GET /api/runs/{id} envelope nests the run.json record (with
+    # `research`) under `run`. Builds a genuine research run through the backend
+    # with its fake Responses reader, serves it, GETs the run, and renders every
+    # UI surface in node against that exact response.
+    import importlib.util
+    import json
+    import subprocess
+
+    rig = importlib.util.spec_from_file_location("trs1", Path(__file__).parent / "test_research_s1.py")
+    trs1 = importlib.util.module_from_spec(rig)
+    rig.loader.exec_module(trs1)
+
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    reader = trs1.F.FakeResponses(trs1.happy_script())
+    client, rid, _tools = trs1.start(runs_dir, reader)
+    body = client.get("/api/runs/" + rid).json()          # the real served shape:
+    # {**run.json, state, ...} — the run RECORD (with `research`) sits at body["run"]
+    assert body["run"]["research"]["steps"]                 # the nesting Manus cited
+    assert any(r.get("research") for r in body["rows"])
+
+    js = (UI / "app.js").read_text()
+    script = "\n".join([
+        "const fs = require('fs');",
+        "function make(tag) {",
+        "  return { tag, className: '', textContent: '', children: [], style: {}, hidden: false, value: '', dataset: {},",
+        "    classList: { toggle() {}, add() {}, remove() {}, contains() { return false; } },",
+        "    append(...a) { for (const c of a) this.children.push(typeof c === 'string' ? { textContent: c, children: [] } : c); },",
+        "    appendChild(c) { this.children.push(c); return c; }, addEventListener() {}, removeEventListener() {},",
+        "    setAttribute(k, v) { this[k] = v; }, getAttribute() { return null; },",
+        "    querySelector() { return null; }, querySelectorAll() { return []; }, focus() {}, scrollIntoView() {}, remove() {},",
+        "    getBoundingClientRect() { return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }; },",
+        "    set innerHTML(v) { this.children = []; this._html = v; }, get innerHTML() { return this._html || ''; },",
+        "    firstChild: null };",
+        "}",
+        "const nodes = {};",
+        "global.document = { createElement: make, createTextNode: t => ({ textContent: String(t), children: [] }),",
+        "  getElementById: id => (nodes[id] = nodes[id] || make('div')), querySelector: () => null, querySelectorAll: () => [],",
+        "  addEventListener() {}, body: make('body'), documentElement: make('html'), title: '', activeElement: null };",
+        "global.window = { addEventListener() {}, location: { hash: '' }, matchMedia: () => ({ matches: false, addEventListener() {} }),",
+        "  setTimeout, history: { replaceState() {}, pushState() {} }, getComputedStyle: () => ({}) };",
+        "global.location = window.location; global.history = window.history;",
+        "global.localStorage = { getItem() { return null; }, setItem() {} };",
+        "global.fetch = () => new Promise(() => {});",
+        "global.requestAnimationFrame = () => 0;",
+        "let src = fs.readFileSync(" + json.dumps(str(UI / "app.js")) + ", 'utf8');",
+        "src = src.replace(/route = parseHash\(\);\s*boot\(\);\s*\}\)\(\);\s*$/,",
+        "  'global.__H = { get detail(){return detail;}, set detail(v){detail=v;}, ev: function(s){ return eval(s); } };\\n})();');",
+        "if (!/global\.__H/.test(src)) throw new Error('no boot hook');",
+        "eval(src);",
+        "const H = global.__H;",
+        "function textOf(n, out) { out = out || []; if (!n) return out; if (n.textContent) out.push(n.textContent);",
+        "  (n.children || []).forEach(c => textOf(c, out)); return out; }",
+        "H.detail = " + json.dumps({"id": rid, "run": body, "state": body["state"]}) + ";",
+        "H.ev(\"route = { screen: 'audit', runId: '" + rid + "', rowId: null, dialog: null }\");",
+        # the FIX-ON-FIND assertion: the research ledger comes from the real envelope
+        "const rs = H.ev('runResearch')();",
+        "if (!rs || !rs.steps || !rs.steps.length) { console.error('runResearch null from the real envelope'); process.exit(2); }",
+        "const kinds = {}; rs.steps.forEach(s => kinds[s.kind] = true);",
+        "for (const k of ['request', 'search', 'fetch', 'proposal', 'check', 'coverage', 'finish'])",
+        "  if (!kinds[k]) { console.error('missing step kind ' + k); process.exit(3); }",
+        "const tb = textOf(H.ev('researchTrailBlock')(rs.steps)).join(' ');",
+        "if (tb.indexOf('Agent research — not independently reviewed') === -1 || tb.indexOf('Search') === -1)",
+        "  { console.error(tb.slice(0, 200)); process.exit(4); }",
+        "const cb = textOf(H.ev('researchCompanyBlock')(rs.companies)).join(' ');",
+        "if (cb.indexOf('PTGX') === -1 || cb.indexOf('Finished') === -1) { console.error(cb); process.exit(5); }",
+        "const nf = H.ev('researchNotFoundBlock')(rs.coverage);",
+        "if (!nf) { console.error('no searched-not-found block'); process.exit(6); }",
+        "const nft = textOf(nf).join(' ');",
+        "if (nft.indexOf('Searched, not found') === -1 || nft.indexOf('PDUFA') === -1)",
+        "  { console.error(nft); process.exit(7); }",
+        "const row = H.ev('rowOf')(H.ev('detail').run.rows.filter(r => r.research)[0].id);",
+        "const ll = H.ev('researchLabelLine')(row);",
+        "if (!ll || ll.textContent !== 'Agent research — not independently reviewed') { console.error('label'); process.exit(8); }",
+        "const ctx = H.ev('researchContextSection')(row);",
+        "if (!ctx) { console.error('no Context section'); process.exit(9); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=90)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
 def test_ticker_intake_pins():
     # TICKER-INTAKE-001: the New run sheet intakes pasted tickers through the
     # server — no hard-coded list, plain words, inline errors (the red line)

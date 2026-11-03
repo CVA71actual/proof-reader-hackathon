@@ -1039,8 +1039,11 @@
 
   // ---------------- RESEARCHER-FULL-001 S1: the research projection, rendered
   // as the server sends it — no UI semantic logic (runs/README.md "Research runs")
+  // the GET /api/runs/{id} envelope: the run.json record — with `research`,
+  // `choices` and `status` — is detail.run.RUN (FIX-ON-FIND, Manus 16:52)
   function runResearch() {
-    return (detail && detail.run && detail.run.research) || null;
+    var r = detail && detail.run && detail.run.run;
+    return (r && r.research) || null;
   }
   var RESEARCH_STEP_WORDS = { request: 'Request', search: 'Search', fetch: 'Fetch',
     proposal: 'Proposal', check: 'Check', coverage: 'Coverage', finish: 'Finish',
