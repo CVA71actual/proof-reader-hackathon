@@ -877,20 +877,24 @@ def test_a_keep_expires_when_secondary_evidence_or_the_revision_changes(runs_dir
     assert st["accepted"] is False and st["review_history"]
 
 
+# The reference basis: runs/review.py at main c34801c (git blob 41fbe207), evaluated on the four saved runs and
+# committed as a fixture. CI checkouts have no origin/main, so the comparison is pinned to this file, never to a git
+# ref; a missing fixture is a failure, not a skip.
+REVIEW_BASIS_REFERENCE = REPO / "tests" / "fixtures" / "review_basis_main_c34801c.json"
+
+
 def test_non_research_rows_keep_a_byte_identical_review_basis():
-    import subprocess
-    import types
-    old_src = subprocess.check_output(["git", "-C", str(REPO), "show", "origin/main:runs/review.py"], text=True)
-    old = types.ModuleType("old_review")
-    exec(compile(old_src, "old_review.py", "exec"), old.__dict__)
     from runs import review
     from runs.state import current_state
-    for name in ("sample", "demo", "ptgx-r4a", "ptgx-r5"):
+    expected = json.loads(REVIEW_BASIS_REFERENCE.read_text())
+    assert sorted(expected) == ["demo", "ptgx-r4a", "ptgx-r5", "sample"]
+    for name, want in expected.items():
         run = json.loads((REPO / "runs" / name / "run.json").read_text())
         st = current_state(run, [])
+        assert sorted(r["id"] for r in run["rows"]) == sorted(want)
         for r in run["rows"]:
-            values = st["targets"][r["id"]]["values"]
-            assert review.review_basis(run, r, values) == old.review_basis(run, r, values)
+            got = review.review_basis(run, r, st["targets"][r["id"]]["values"])
+            assert json.loads(json.dumps(got, sort_keys=True, ensure_ascii=False)) == want[r["id"]], (name, r["id"])
 
 
 # ---------------------------------------------------------------- Manus 15:03 timing span, 15:04 strict cap and CSP
