@@ -303,6 +303,14 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     validator = Draft202012Validator(json.loads(DECISION_SCHEMA.read_text()))
     app = FastAPI(title="Proof Reader decisions server", docs_url=None, redoc_url=None, openapi_url=None)
 
+    @app.middleware("http")
+    async def one_checker_digest_per_request(request: Request, call_next):
+        """PERF (Manus 08:09 §5): one request is one stable operation for the checks-code digest
+        (runs/claim_assessment.checker_digest_scope); it is computed fresh in the request and dropped after it."""
+        from runs.claim_assessment import checker_digest_scope
+        with checker_digest_scope():
+            return await call_next(request)
+
     @app.get("/api/settings")
     def get_settings() -> dict:
         """The run the app opens on when the address names none (`python -m runs.demo --run X`); null: the UI's own pick."""

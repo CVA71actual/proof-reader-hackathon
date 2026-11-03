@@ -467,6 +467,13 @@ def _exclusions(run: dict, states: dict) -> list[dict]:
 
 
 def current_state(run: dict, decisions: list) -> dict:
+    """See _current_state. PERF: one checker-content digest for the whole projection (claim_assessment)."""
+    from runs.claim_assessment import checker_digest_scope
+    with checker_digest_scope():
+        return _current_state(run, decisions)
+
+
+def _current_state(run: dict, decisions: list) -> dict:
     """Return {"targets", "counts", "mistakes", "excluded", "exclusions", "unresolved", "ignored",
     "cost_per_kept_row_usd"}.
 
