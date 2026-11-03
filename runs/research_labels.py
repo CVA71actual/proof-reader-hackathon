@@ -132,8 +132,16 @@ def derive_review_labels(run: dict) -> dict:
         kind = label_kind(entry.get("status"), bool(record.get("clean")), has, only_retrieval_limits(record, limits))
         entry["label_kind"], entry["limits"] = kind, limits
         entry["label"] = with_limits(kind, limits, reviewer_of(entry))
-    research["label"] = run_label(research, entries)
+    research["label"] = run_label(research, entries) + cap_note(research)
     return run
+
+
+def cap_note(research: dict) -> str:
+    """CAP-001: a run whose booked spend passed its cap says so, by how much and why."""
+    over = research.get("cap_exceeded")
+    if not isinstance(over, dict) or not isinstance(over.get("by_usd"), (int, float)):
+        return ""
+    return f" — spending cap exceeded by ${over['by_usd']:.2f} ({over.get('reason') or 'reason not recorded'})"
 
 
 def run_label(research: dict, entries: dict) -> str:

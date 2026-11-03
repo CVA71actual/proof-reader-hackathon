@@ -341,3 +341,35 @@ def test_a_credit_balance_refusal_mid_review_keeps_the_findings(runs_dir):
 ])
 def test_only_anthropics_credit_balance_400_is_a_billing_refusal(err, expected):
     assert rc_claude.billing_refusal(err) is expected
+
+
+# ------------------------------------------------------------------ Red Team PR177_164870a: a billed overage is booked
+
+def _double_billed(kw):
+    m = _assess(kw)
+    iters = [{"type": "message", "input_tokens": 100, "output_tokens": 16384},
+             {"type": "message", "input_tokens": 100, "output_tokens": 16384}]
+    m["usage"] = _usage(100, 16384, iterations=iters)
+    return m
+
+
+def test_two_billed_attempts_are_booked_truthfully_and_the_cap_crossing_stops_everything(runs_dir, tmp_path):
+    """The Red Team case: a $0.50 cap, a reviewer reservation of about $0.375, a reply whose usage reports two full
+    attempts settles at $0.656. The charge is booked as reported (never capped), recorded as an overage, the cap
+    crossing refuses every further admission, and the label and audit say by how much and why."""
+    fake, rid, run = _run(runs_dir, [_double_billed], limit=0.5)
+    r = run["run"]["research"]
+    (over,) = r["overages"]
+    assert over["attempts"] == 2 and over["reason"] == "provider billed 2 attempts for one request"
+    assert over["settled_usd"] == pytest.approx(0.656, abs=0.001) and over["reserved_usd"] < 0.5
+    spent = run["run"]["spend_usd"]
+    assert spent > 0.5 and spent == pytest.approx(0.67, abs=0.005)    # the Red Team's total, booked in full
+    cap = r["cap_exceeded"]
+    assert cap["by_usd"] == pytest.approx(spent - 0.5) and "2 attempts" in cap["reason"]
+    e = r["review"]["PTGX"]
+    assert e["status"] == "incomplete" and "Spending cap reached: exceeded by" in e["reason"]
+    assert len(fake.requests) == 1                                   # nothing more was admitted
+    want = f"spending cap exceeded by ${spent - 0.5:.2f} (provider billed 2 attempts for one request)"
+    assert r["label"].endswith(want) and r["audit"]["cap_exceeded"]["by_usd"] == cap["by_usd"]
+    assert "The spending cap was exceeded by" in r["audit"]["publish_note"]
+    RUN_SCHEMA.validate(run)
