@@ -601,6 +601,30 @@ def make_job_class():
                               + (" It may have been billed; its reserved worst case was charged."
                                  if reply.may_have_been_billed else ""))
                     raise Stop("failed", f"Technical failure: {reply.error} It was not retried.")
+                if reply.status == "incomplete":
+                    # Manus 15:55 and 18:12: a length/incomplete termination is classified FIRST, before the empty
+                    # branch, replay, search recording and tool dispatch. NONE of its tool calls run, no finish_draft
+                    # is accepted, none of its text, reasoning or arguments is replayed; it is kept only in the turn
+                    # log for audit and was settled above. Reasoning-only length cuts land here too, never in the
+                    # empty-answer branch. The company stops incomplete; nothing is retried.
+                    why = reply.incomplete_reason or "no reason given"
+                    self.note_attempt(True)
+                    held = reply.function_calls()
+                    with jobs.RUN_LOCK:
+                        for call in held:
+                            self.research["refusals"].append({
+                                "at": now_utc(), "ticker": ticker, "call_id": call.get("call_id"),
+                                "tool": call.get("name"), "issues": [rc.issue(
+                                    "incomplete_answer", f"{call.get('name')} came in an answer the provider marked "
+                                                         f"incomplete ({why}); not executed.")]})
+                    self.step(ticker, "error", "Model", "Muse Spark",
+                              f"The answer was cut off (status incomplete: {why}); none of its "
+                              f"{len(held)} tool call(s) ran and nothing from it was accepted or replayed. "
+                              f"Kept in the turn log for audit.")
+                    self.save_ledger()
+                    raise Stop("incomplete", f"Incomplete: the model's answer was cut off (status incomplete: {why}); "
+                                             f"the proposals recorded so far are kept, the company is not finished. "
+                                             f"It was not retried.")
                 self.note_attempt(reply.empty)
                 for s in reply.web_searches():
                     self.record_search(ticker, s)
@@ -622,28 +646,6 @@ def make_job_class():
                     continue
                 empty_streak = 0
                 calls = reply.function_calls()
-                if reply.status == "incomplete":
-                    # Manus 15:55: an answer the provider marks incomplete never certifies completion. Its usable
-                    # non-terminal work (captures, proposals, coverage) is kept through the same checked tools; a
-                    # finish_draft or a final answer in it is not accepted; the company stops incomplete; no retry.
-                    why = reply.incomplete_reason or "no reason given"
-                    for call in calls:
-                        if call.get("name") == "finish_draft":
-                            with jobs.RUN_LOCK:
-                                self.research["refusals"].append({
-                                    "at": now_utc(), "ticker": ticker, "call_id": call.get("call_id"),
-                                    "tool": "finish_draft", "issues": [rc.issue(
-                                        "incomplete_answer", f"finish_draft came in an answer the provider marked "
-                                                             f"incomplete ({why}); not accepted.")]})
-                            continue
-                        self.dispatch(ticker, call)
-                    self.step(ticker, "error", "Model", "Muse Spark",
-                              f"The answer was marked incomplete by the provider ({why}); its usable work was kept "
-                              f"and no completion was accepted from it.")
-                    self.save_ledger()
-                    raise Stop("incomplete", f"Incomplete: the model's answer was cut off (status incomplete: {why}); "
-                                             f"the proposals recorded so far are kept, the company is not finished. "
-                                             f"It was not retried.")
                 st["turn_starts"].append(len(history))
                 history += list(reply.output)
                 if not calls:
