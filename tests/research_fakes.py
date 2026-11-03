@@ -203,9 +203,10 @@ class FakeBrave:
                                            for u in self.answers.get(query, [])], http_status=200)
 
 
-REVIEWER_MODEL = "deepseek-ai/DeepSeek-V4-Pro-0813"
+REVIEWER_MODEL = "claude-opus-5-5"
 ADJUDICATOR_MODEL = "muse-wonder-1.0"
-FALLBACK = {"model": "meta-models/muse-spark-open-1026", "name": "Muse Spark Open", "family": "Muse Spark (Meta)"}
+FALLBACK = {"model": "meta-models/muse-spark-open-1026", "name": "Muse Spark Open", "family": "Muse Spark (Meta)",
+            "provider": "baseten"}
 
 
 class FakeChat:
@@ -216,12 +217,12 @@ class FakeChat:
     def __init__(self, script, key=True, model=REVIEWER_MODEL, name=None, family=None, provider=None,
                  unavailable=None, refuse=None, probe=False):
         self.script, self.key, self.model, self.sent = list(script), key, model, []
-        # identity like capture.research_reviewer.OneShotChat; defaults: DeepSeek V4 Pro (the reviewer) or Muse Wonder
+        # identity like capture.research_reviewer.OneShotChat; defaults: Claude Opus 5.5 (the reviewer) or Muse Wonder
         wonder = model == ADJUDICATOR_MODEL
-        self.name = name or ("Muse Wonder" if wonder else "DeepSeek V4 Pro")
+        self.name = name or ("Muse Wonder" if wonder else "Claude Opus 5.5")
         self.price_name = self.name
-        self.family = family or ("Muse Wonder (Meta)" if wonder else "DeepSeek")
-        self.provider = provider or ("meta" if wonder else "baseten")
+        self.family = family or ("Muse Wonder (Meta)" if wonder else "Claude")
+        self.provider = provider or ("meta" if wonder else "anthropic")
         self.unavailable = unavailable
         self.refuse, self.probe_on, self.probes = refuse, probe, 0      # refuse: an HTTP 403 message for this key
 

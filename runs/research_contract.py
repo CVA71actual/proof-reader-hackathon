@@ -375,15 +375,19 @@ def research_issues(row: dict, spans: list[dict], words_by_span: list[dict], pri
             out.append(issue("capture_incomplete", f"The page cited by {tag} was captured incomplete (content "
                                                    f"past the page edge); support from it is limited.", rid,
                              [sc["source_id"]]))
-    # the dateline rule: the release dateline is never the event date unless the text anchors to it
+    # the dateline rule: the release dateline is never the event date unless the text anchors to it.
+    # DATES-001 (Manus 05:31): a dateline printed in the selected quote is recognized wherever it sits on the page, not
+    # only in the first DATELINE_WORDS words; the header scan still covers a quote that is the page's own dateline.
+    # This only recognizes a printed dateline; it never supplies a date.
     at = primary if timing is None else timing      # the dateline rule applies where the date was compared
     dl = event_checks.dateline_date(words_by_span[at]["words"]) if words_by_span else None
     quote = row.get("quote") if timing is None else spans[timing]["quote"]
     quote = quote or ""
-    if dl is not None and row.get("date") == dl.isoformat() and not row.get("date_end"):
+    in_quote = {d.isoformat() for d in event_checks._datelines(normalize(quote))}
+    is_dateline = row.get("date") in in_quote or (dl is not None and row.get("date") == dl.isoformat() and in_quote)
+    if row.get("date") and not row.get("date_end") and is_dateline:
         anchored = bool(_ANCHOR.search(quote))      # the span the date came from must anchor itself
-        in_dateline = bool(event_checks._DATELINE.search(quote))
-        if in_dateline and not anchored:
+        if not anchored:
             out.append(issue("dateline_as_event_date",
                              f"The date {row['date']} is the release dateline. A dateline is the publication date, "
                              f"not the event date, unless the text anchors the event to it (\"today\").", rid,

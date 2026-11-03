@@ -210,7 +210,7 @@ class ResearchTools:
     renderer and the ticker -> (cik, company) resolver. Tests pass fakes; the defaults are live."""
 
     def __init__(self, fetcher=None, render_html=None, resolve=None, brave=None, reviewer=None, adjudicator=None,
-                 reviewer_fallback=None, support_detector=None):
+                 reviewer_fallback=None, reviewers=None, support_detector=None):
         from capture import research_reviewer as rv
         from capture.brave_search import LiveBrave
         self.fetcher = fetcher or rs.LiveFetcher()
@@ -218,13 +218,22 @@ class ResearchTools:
         self.resolve = resolve or self._resolve
         self.brave = brave if brave is not None else LiveBrave()      # BRAVE-PRIMARY-001: the primary search
         # S2: the independent reviewer (Muse Spark Open) and the adjudicator (Muse Wonder); tests pass fakes
-        self.reviewer = reviewer if reviewer is not None else rv.reviewer_model()
+        # the reviewer chain, tried in order once per run (CVA 2026-11-03): DeepSeek V4 Pro (Baseten, its own key),
+        # then Claude Opus 5.5; a reviewer passed alone is a chain of one
+        if reviewers is None and reviewer is None:
+            reviewers = [rv.deepseek_reviewer_model(), rv.reviewer_model()]
+        self.reviewers = list(reviewers) if reviewers is not None else None
+        self.reviewer = reviewer if reviewer is not None else (self.reviewers[0] if self.reviewers
+                                                               else rv.reviewer_model())
         self.reviewer_fallback = (reviewer_fallback if reviewer_fallback is not None
                                   else rv.fallback_reviewer_model())       # declared; used only if the reviewer is not
         # LETTUCE-OPTION: the support detector (None: the out-of-process worker, capture/support_process.py, with
         # LETTUCE_PYTHON and LETTUCE_WEIGHTS_PATH; could_not_run without them); tests pass a fake
         self.support_detector = support_detector
         self.adjudicator = adjudicator if adjudicator is not None else rv.adjudicator_model()
+
+    def reviewer_chain(self) -> list:
+        return list(self.reviewers) if self.reviewers else [self.reviewer]
 
     def _resolve(self, ticker: str) -> tuple[str, str]:
         from capture.fetch_filings import resolve_cik
@@ -518,7 +527,7 @@ def make_job_class():
         def reviewer_problem(self) -> str | None:
             """Why the independent reviewer cannot run in this process, or None."""
             problems = []
-            for reviewer in (getattr(self.tools, "reviewer", None), getattr(self.tools, "reviewer_fallback", None)):
+            for reviewer in self.reviewer_chain() + [getattr(self.tools, "reviewer_fallback", None)]:
                 if reviewer is None:
                     continue
                 try:
@@ -657,6 +666,10 @@ def make_job_class():
                             cost = t["worst"] if billed else 0.0
                         elif t.get("kind") == "search":
                             cost = prices.request_cost_usd(t["name"], usage.get("searches"))
+                        elif req.get("attempts"):      # each attempt at its own model's rates
+                            parts = [prices.cost_usd(a.get("price_name"), a.get("prompt_tokens"),
+                                                     a.get("completion_tokens")) for a in req["attempts"]]
+                            cost = None if any(x is None for x in parts) else round(sum(parts), prices.ROUND_TO)
                         else:
                             cost = prices.cost_usd(t["name"], usage.get("prompt_tokens"), usage.get("completion_tokens"))
                         u = self.review_usage(ticker)
@@ -798,32 +811,97 @@ def make_job_class():
             return rv.disputes_from_findings(record.get("findings") or [],
                                              [self.review_proposal(r) for r in rows_by_id.values()], ticker)
 
+        def reviewer_chain(self) -> list:
+            """The reviewers to try, in order (CVA 2026-11-03: DeepSeek V4 Pro, then Claude Opus 5.5); the declared
+            same-family fallback (Muse Spark Open) is separate and runs only when none of them can."""
+            chain = getattr(self.tools, "reviewer_chain", None)
+            return list(chain()) if callable(chain) else [self.tools.reviewer]
+
         def reviewer_for_run(self, ticker: str) -> tuple:
-            """The reviewer for this run, decided ONCE: the primary unless it is not in the provider's model list or
-            the provider refuses the key for it (a 401/403 on a one-token access check); then the declared fallback.
-            The model list does not reflect key permissions, so the access check is a request."""
-            from capture import research_reviewer as rv
+            """The reviewer for this run, decided ONCE: the first in the chain that is available and passes the
+            one-token access check (the model list does not reflect key permissions; a 401/403 or a billing refusal
+            is a refusal). Each one skipped is recorded with its reason in run.research.reviewer_access; when none
+            can run, the declared fallback reviews."""
             with self._access_lock:
-                if self._reviewer_pick is not None:
-                    return self._reviewer_pick
-                primary, fallback = self.tools.reviewer, getattr(self.tools, "reviewer_fallback", None)
-                model, choice = rv.choose_reviewer(primary, fallback)
-                access = {"checked": False, "reason": "No access check was made."}
-                if not choice["fallback_used"] and callable(getattr(primary, "probe", None)):
-                    access = self.probe_reviewer(primary)
-                with jobs.RUN_LOCK:
-                    self.research.setdefault("reviewer_access", {}).update(
-                        {"model": getattr(primary, "model", None), "name": rv.identity(primary)["name"], **access})
-                if access.get("refused") and fallback is not None:
-                    self._reviewer_pick = self.refused_reviewer(ticker, access, locked=True)
-                    return self._reviewer_pick
-                if choice.get("fallback_used"):
-                    self.step(ticker, "review", "Code", "runs.research",
-                              f"{choice['primary']} is unavailable ({choice['primary_unavailable']}); the declared "
-                              f"fallback {choice['name']} reviews instead. It is the researcher's own model family, so "
-                              f"the review is not called independent.", stage=REVIEW_STAGE)
-                self._reviewer_pick = (model, choice)
+                if self._reviewer_pick is None:
+                    self._chain = self.reviewer_chain()
+                    self._skipped: list[dict] = []
+                    self._pick_from(ticker, 0)
                 return self._reviewer_pick
+
+        def _record_access(self, entry: dict, top: bool) -> None:
+            with jobs.RUN_LOCK:
+                acc = self.research.setdefault("reviewer_access", {})
+                acc.setdefault("candidates", []).append(entry)
+                if top:      # the first choice's own result stays at the top level (as before)
+                    acc.update({k: v for k, v in entry.items() if k != "position"})
+
+        def _pick_from(self, ticker: str, start: int) -> tuple:
+            from capture import research_reviewer as rv
+            fallback = getattr(self.tools, "reviewer_fallback", None)
+            for i in range(start, len(self._chain)):
+                cand = self._chain[i]
+                who = rv.identity(cand)
+                check = getattr(cand, "available", None)
+                why = check() if callable(check) else cand.ready()
+                if why:
+                    entry = {"name": who["name"], "model": who["model"], "position": i, "checked": False,
+                             "refused": False, "skipped": True, "reason": why}
+                else:
+                    access = (self.probe_reviewer(cand) if callable(getattr(cand, "probe", None))
+                              else {"checked": False, "reason": "No access check was made."})
+                    entry = {"name": who["name"], "model": who["model"], "position": i, **access,
+                             "skipped": bool(access.get("refused"))}
+                self._record_access(entry, top=(i == 0))
+                if entry["skipped"]:
+                    reason = entry.get("reason") if entry.get("refused") is False or not entry.get("http_status") \
+                        else (entry.get("reason") or f"refused by the provider (HTTP {entry.get('http_status')})")
+                    self._skipped.append({"name": who["name"], "reason": reason, "message": entry.get("message"),
+                                          "http_status": entry.get("http_status"),
+                                          "access_reason": entry.get("reason") if entry.get("refused") else None})
+                    continue
+                self._chain_index = i
+                choice = {**who, "fallback_used": False, "position": i,
+                          "skipped": list(self._skipped), "primary": rv.identity(self._chain[0])["name"]}
+                if self._skipped:
+                    self.step(ticker, "review", "Code", "runs.research",
+                              "Reviewer skipped: " + "; ".join(f"{x['name']} ({x['reason']})" for x in self._skipped)
+                              + f". {who['name']} reviews.", stage=REVIEW_STAGE)
+                with jobs.RUN_LOCK:
+                    self.research["reviewer_access"]["chosen"] = who["name"]
+                self._reviewer_pick = (cand, choice)
+                return self._reviewer_pick
+            if fallback is None:      # nothing else to try: the last candidate runs and its failure is recorded
+                cand = self._chain[-1]
+                self._reviewer_pick = (cand, {**rv.identity(cand), "fallback_used": False,
+                                              "skipped": list(self._skipped)})
+                return self._reviewer_pick
+            first = self._skipped[0] if self._skipped else {}
+            last_refused = next((x for x in reversed(self._skipped) if x.get("http_status") or x.get("message")), {})
+            if len(self._skipped) == 1:
+                x = self._skipped[0]
+                why = f"{x['reason']}: {x.get('message') or 'access refused'}"
+            else:
+                why = "; ".join(f"{x['name']}: {x['reason']}" + (f" ({x['message']})" if x.get("message") else "")
+                                for x in self._skipped) or "unavailable"
+            choice = {**rv.identity(fallback), "fallback_used": True, "primary": rv.identity(self._chain[0])["name"],
+                      "primary_unavailable": why, "skipped": list(self._skipped),
+                      "primary_refused": {"http_status": last_refused.get("http_status"),
+                                          "message": last_refused.get("message"),
+                                          "reason": (first.get("access_reason") if len(self._skipped) == 1
+                                                     else None)}}
+            with jobs.RUN_LOCK:
+                acc = self.research.setdefault("reviewer_access", {})
+                acc.update({"fallback": choice["name"], "chosen": choice["name"]})
+                if any(x.get("http_status") or x.get("message") for x in self._skipped):
+                    acc["refused"] = True
+            self.step(ticker, "review", "Code", "runs.research",
+                      f"No reviewer of another model family could run ({why}). It is not retried; the declared "
+                      f"fallback {choice['name']} reviews instead. It is the researcher's own model family, so the "
+                      f"review is not called independent (MULTI-FAMILY-001 not met for this run).", stage=REVIEW_STAGE)
+            self._chain_index = len(self._chain)
+            self._reviewer_pick = (fallback, choice)
+            return self._reviewer_pick
 
         def probe_reviewer(self, primary) -> dict:
             """One request with a one-token reply, through the run's gate; records whether the key may use the
@@ -833,7 +911,8 @@ def make_job_class():
             ticket = gate({"phase": "reserve", "stage": "reviewer_access", "kind": "model",
                            "model": getattr(primary, "model", None),
                            "price_name": getattr(primary, "price_name", None) or rv.identity(primary)["name"],
-                           "request_bytes": 200, "max_output_tokens": rv.PROBE_MAX_TOKENS, "searches": 0})
+                           "request_bytes": 200, "searches": 0,
+                           "max_output_tokens": getattr(primary, "probe_max_tokens", rv.PROBE_MAX_TOKENS)})
             if not ticket or ticket.get("admitted") is False:
                 return {"checked": False, "reason": f"The access check was not admitted: "
                                                     f"{(ticket or {}).get('reason')}"}
@@ -845,33 +924,44 @@ def make_job_class():
                       "usage": {"prompt_tokens": getattr(reply, "prompt_tokens", None),
                                 "completion_tokens": getattr(reply, "completion_tokens", None), "searches": 0},
                       "error": getattr(reply, "error", None) if reply is not None else "No access check reply.",
-                      "may_have_been_billed": bool(getattr(reply, "may_have_been_billed", False))})
+                      "may_have_been_billed": bool(getattr(reply, "may_have_been_billed", False)),
+                      **({"attempts": reply.attempts} if reply is not None and not reply.error
+                         and getattr(reply, "attempts", None) else {})})
             if reply is None:
                 return {"checked": False, "reason": "The reviewer model has no access check."}
-            refused = reply.http_status in rv.REFUSED_STATUSES
+            reason = getattr(reply, "access_reason", None)
+            refused = reply.http_status in rv.REFUSED_STATUSES or bool(reason)
             return {"checked": True, "at": now_utc(), "refused": refused, "http_status": reply.http_status,
-                    "message": reply.error if reply.error else None}
+                    "message": reply.error if reply.error else None, **({"reason": reason} if reason else {})}
 
         def refused_reviewer(self, ticker: str, refusal: dict, locked: bool = False) -> tuple:
-            """The provider refused the key for the primary reviewer: record it, never retry it, and use the declared
-            fallback for the rest of the run (same family: the label says so; MULTI-FAMILY-001 is not met)."""
+            """The provider refused the key for the reviewer that was running (on a real call): record it, never
+            retry it, and move to the next in the chain (or the declared fallback) for the rest of the run."""
             from capture import research_reviewer as rv
-            primary, fallback = self.tools.reviewer, self.tools.reviewer_fallback
-            why = (f"refused by the provider (HTTP {refusal.get('http_status')}): "
-                   f"{refusal.get('message') or 'access refused'}")
-            choice = {**rv.identity(fallback), "fallback_used": True, "primary": rv.identity(primary)["name"],
-                      "primary_unavailable": why, "primary_refused": {k: refusal.get(k) for k in
-                                                                      ("http_status", "message")}}
-            with jobs.RUN_LOCK:
-                self.research.setdefault("reviewer_access", {}).update(
-                    {"refused": True, "http_status": refusal.get("http_status"), "message": refusal.get("message"),
-                     "fallback": choice["name"]})
-            self.step(ticker, "review", "Code", "runs.research",
-                      f"{choice['primary']} was {why}. It is not retried; the declared fallback {choice['name']} "
-                      f"reviews instead. It is the researcher's own model family, so the review is not called "
-                      f"independent (MULTI-FAMILY-001 not met for this run).", stage=REVIEW_STAGE)
-            self._reviewer_pick = (fallback, choice)
-            return self._reviewer_pick
+            with self._access_lock:
+                if self._reviewer_pick is None:
+                    self._chain, self._skipped = self.reviewer_chain(), []
+                    self._chain_index = 0
+                i = getattr(self, "_chain_index", 0)
+                cand = self._chain[i] if i < len(self._chain) else None
+                if cand is not None:
+                    who = rv.identity(cand)
+                    reason = refusal.get("reason") or f"refused by the provider (HTTP {refusal.get('http_status')})"
+                    self._skipped.append({"name": who["name"], "reason": reason, "message": refusal.get("message"),
+                                          "http_status": refusal.get("http_status"),
+                                          "access_reason": refusal.get("reason")})
+                    self._record_access({"name": who["name"], "model": who["model"], "position": i, "checked": True,
+                                         "refused": True, "skipped": True, "on": "review call",
+                                         "http_status": refusal.get("http_status"), "message": refusal.get("message"),
+                                         **({"reason": refusal["reason"]} if refusal.get("reason") else {})},
+                                        top=(i == 0))
+                    with jobs.RUN_LOCK:
+                        acc = self.research["reviewer_access"]
+                        acc.update({"refused": True, "http_status": refusal.get("http_status"),
+                                    "message": refusal.get("message")})
+                        if refusal.get("reason"):
+                            acc["reason"] = refusal["reason"]
+                return self._pick_from(ticker, i + 1)
 
         def review_company(self, ticker: str, ended_kind: str, ended_reason: str) -> dict:
             """After a company's research ends (for any reason but a person's stop), the independent reviewer attacks
@@ -917,9 +1007,20 @@ def make_job_class():
                                          spend_gate=self.review_gate(ticker), model=reviewer)
                 refused = record.get("access_refused")
                 fallback = getattr(self.tools, "reviewer_fallback", None)
-                if refused and not choice.get("fallback_used") and fallback is not None:
-                    # the provider refused the key for this model on a real call: never retried; the declared fallback
-                    # reviews this company and every later one in the run
+                first_call = (record.get("turns") or 0) <= 1 and not record.get("findings") \
+                    and not record.get("assessments") and not record.get("rejected")
+                if refused and not choice.get("fallback_used") and fallback is not None and not first_call:
+                    # OUTCOME-001 (live review d313da2): refused MID-review. That reviewer's validated work is kept and
+                    # its review ends incomplete with the reason; the fallback reviews only later companies.
+                    record["reason"] = (f"Incomplete: {choice['name']} was refused by the provider mid-review ("
+                                        f"{refused.get('reason') or 'HTTP ' + str(refused.get('http_status'))}) "
+                                        f"after {record.get('turns')} turn(s); its "
+                                        f"{len(record.get('findings') or [])} validated finding(s) are kept. "
+                                        f"{refused.get('message') or ''}").strip()
+                    self.refused_reviewer(ticker, refused)
+                elif refused and not choice.get("fallback_used") and fallback is not None:
+                    # the provider refused the key on the FIRST call (no work done): never retried; the declared
+                    # fallback reviews this company and every later one in the run
                     reviewer, choice = self.refused_reviewer(ticker, refused)
                     record = rv.review_draft(company=company, assignment=self.choices.get("note_for_agent") or "",
                                              proposals=[self.review_proposal(r) for r in rows], sources=given,
@@ -1429,15 +1530,31 @@ def make_job_class():
                 history += list(reply.output)
                 if not calls:
                     text = reply.text()
-                    if text:
-                        self.step(ticker, "prose", "Model", "Muse Spark",
-                                  "Answered in prose without a tool call (kept as uncommitted research): "
-                                  + text[:600], citations=reply.citations()[:20])
+                    if not (text or "").strip():
+                        # A-TO-Z-001 / OUTCOME-001 (Manus 05:35): a reply with only web searches is research activity,
+                        # not prose; it never ends the company. The searches are recorded above; the loop goes on
+                        # under the existing request and time limits.
+                        nudge = {"role": "user", "content": NUDGE_TOOLS}
+                        history.append(nudge)
+                        pending, prev_id = [nudge], reply.response_id
+                        continue
+                    self.step(ticker, "prose", "Model", "Muse Spark",
+                              "Answered in prose without a tool call (kept as uncommitted research): "
+                              + text[:600], citations=reply.citations()[:20])
                     if prose_nudged:
+                        # LIMITS-002 (prose after one reminder = done), with the same completion check as
+                        # finish_draft: a captured source never concluded leaves the company incomplete.
+                        open_ = self.unsettled(ticker)
+                        with jobs.RUN_LOCK:
+                            c["finish"] = {"by": "prose", "at": now_utc(), "text": text[:2000],
+                                           "unsettled_sources": open_}
+                        if open_:
+                            raise Stop("incomplete", f"Incomplete: the model ended in prose while {', '.join(open_)} "
+                                                     f"was captured and not concluded (no proposal citing it and "
+                                                     f"no nothing_material).")
                         with jobs.RUN_LOCK:
                             c["status_reason"] = ("The model ended with a final answer and no finish_draft; its "
                                                   "proposals are recorded, dispositions are missing.")
-                            c["finish"] = {"by": "prose", "at": now_utc(), "text": text[:2000]}
                         return
                     prose_nudged = True
                     nudge = {"role": "user", "content": NUDGE_TOOLS}     # LIMITS-002: prose after this = done
@@ -1476,6 +1593,14 @@ def make_job_class():
                 pending, prev_id = outputs, reply.response_id
                 self.save_ledger()
                 if finished:
+                    # OUTCOME-001 / CLAIM-001 (Manus 05:35): the one finish correction is spent; a finish that still
+                    # has disposition or reference issues, or an unconcluded captured source, is not a success.
+                    fin = c.get("finish") or {}
+                    left = [i["message"] for i in fin.get("issues") or []]
+                    if fin.get("unsettled_sources"):
+                        left.append(f"{', '.join(fin['unsettled_sources'])} was captured and not concluded")
+                    if left:
+                        raise Stop("incomplete", "Incomplete, not finished: " + "; ".join(m.rstrip(".") for m in left) + ".")
                     return
 
         def searches_left(self, ticker: str) -> int:
@@ -2445,11 +2570,6 @@ def make_job_class():
                       + [rc.issue("missing_disposition", f"{r} has no disposition.", r) for r in missing]
                       + [rc.issue("malformed_argument", f"{r} is marked duplicate of a row that is not one of this "
                                                         f"company's proposals.", r) for r in dup_bad])
-            open_ = self.unsettled(ticker)
-            # A-TO-Z-001 (register): a draft cannot end finished with an unconcluded unit
-            issues += [rc.issue("settle_first", f"A-TO-Z-001: {sid} was captured and not settled: propose_events "
-                                                f"citing it, or nothing_material with the reason, before finishing.",
-                                sid) for sid in open_]
             st["finish_attempts"] += 1
             if issues and st["finish_attempts"] == 1:
                 self.step(ticker, "check", "Code", "runs.research_contract",
@@ -2462,18 +2582,10 @@ def make_job_class():
                 c["finish"] = {"by": "finish_draft", "at": now_utc(), "call_id": cid,
                                "dispositions": args["dispositions"], "limitations": args["limitations"],
                                "missing_dispositions": missing, "issues": issues,
-                               "unsettled_sources": open_}
-                if not open_:
-                    c["status_reason"] = (f"The model finished: {len(mine)} proposal{'s' if len(mine) != 1 else ''}, "
-                                          f"{len(args['limitations'])} limitation"
-                                          f"{'s' if len(args['limitations']) != 1 else ''} stated by the model."
-                                          + (f" {len(missing)} without a disposition." if missing else ""))
-            if open_:
-                self.step(ticker, "check", "Code", "runs.research_contract",
-                          f"finish_draft not accepted as finished: {', '.join(open_)} still unsettled (A-TO-Z-001).",
-                          call_id=cid)
-                raise Stop("incomplete", f"Incomplete: the model finished with {', '.join(open_)} captured and not "
-                                         f"settled (A-TO-Z-001), so the draft is not complete.")
+                               "unsettled_sources": self.unsettled(ticker)}
+                c["status_reason"] = (f"The model finished: {len(mine)} proposal{'s' if len(mine) != 1 else ''}, "
+                                      f"{len(args['limitations'])} limitation{'s' if len(args['limitations']) != 1 else ''} "
+                                      f"stated by the model." + (f" {len(missing)} without a disposition." if missing else ""))
             self.step(ticker, "finish", "Model", "Muse Spark", c["status_reason"], call_id=cid)
             return rc.envelope(cid, "ok" if not issues else "partial", {"finished": True}, issues), True
 

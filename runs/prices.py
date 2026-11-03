@@ -25,9 +25,12 @@ PRICES_PER_1M_USD = {
 # run records it in run.prices.reviewer_per_1m_tokens_usd.
 REVIEWER_PRICES_PER_1M_USD = {
     "DeepSeek V4 Pro": {"input": 1.32, "output": 3.96, "cached_input": 0.132},
+    "Claude Opus 5.5": {"input": 4.00, "output": 20.00, "cached_input": 0.20},    # claude-opus-5-5 (CVA 2026-11-03)
 }
 REVIEWER_PRICE_STATUS = {
-    "DeepSeek V4 Pro": ("listed by Baseten's own model list (GET inference.baseten.co/v1/models, pricing per token: "
+    "Claude Opus 5.5": "set by the Operator 2026-11-03 (CVA's reviewer decision): $4.00 input / $20.00 output / $0.20 "
+                       "cache read per 1M tokens, Anthropic's published Opus 5.5 rates",
+    "DeepSeek V4 Pro": ("from Baseten model list, unconfirmed: listed by Baseten's own model list (GET inference.baseten.co/v1/models, pricing per token: "
                         "prompt 0.00000132, completion 0.00000396), read 2026-11-02; the public baseten.co pricing "
                         "page could not be read by machine, so it is not yet confirmed against that page"),
 }
