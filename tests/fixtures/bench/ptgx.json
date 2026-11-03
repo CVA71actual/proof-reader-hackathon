@@ -1,0 +1,277 @@
+{
+ "ticker": "PTGX",
+ "label": "Protagonist Therapeutics — known catalysts",
+ "items": [
+  {
+   "id": "pn881-ph2b-psoriasis",
+   "description": "PN-881 Phase 2b psoriasis program initiation, early Q1 2027",
+   "keywords": [
+    [
+     "PN-881",
+     "PN881"
+    ],
+    [
+     "Phase 2b",
+     "Phase 2",
+     "psoriasis"
+    ]
+   ],
+   "timing": "Q1 2027",
+   "placement": "upcoming"
+  },
+  {
+   "id": "pn8047-ph1",
+   "description": "PN-8047 Phase 1 initiation, Q1 2027",
+   "keywords": [
+    [
+     "PN-8047",
+     "PN8047"
+    ],
+    [
+     "Phase 1",
+     "first-in-human",
+     "initiation"
+    ]
+   ],
+   "timing": "Q1 2027",
+   "placement": "upcoming"
+  },
+  {
+   "id": "pn477o-ph1",
+   "description": "PN-477o Phase 1 initiation, 1H 2027",
+   "keywords": [
+    [
+     "PN-477o",
+     "PN477o",
+     "PN-477"
+    ],
+    [
+     "Phase 1",
+     "first-in-human",
+     "initiation"
+    ]
+   ],
+   "timing": "1H 2027",
+   "placement": "upcoming"
+  },
+  {
+   "id": "takeda-275m-payments",
+   "description": "$275M Takeda payments received, Q4 2026",
+   "keywords": [
+    [
+     "Takeda"
+    ],
+    [
+     275,
+     "$275M",
+     "$275 million",
+     "payment",
+     "payments",
+     "milestone"
+    ]
+   ],
+   "timing": "Q4 2026",
+   "placement": "upcoming"
+  },
+  {
+   "id": "conf-wolfe-2026-11-10",
+   "description": "Wolfe Research healthcare conference, Nov 10 2026",
+   "name": [
+    "Wolfe",
+    "Wolfe Research"
+   ],
+   "keywords": [
+    [
+     "conference",
+     "fireside",
+     "presentation",
+     "present"
+    ]
+   ],
+   "timing": "2026-11-10",
+   "placement": "upcoming"
+  },
+  {
+   "id": "conf-truist-2026-11-12",
+   "description": "Truist Securities conference, Nov 12 2026",
+   "name": [
+    "Truist",
+    "Truist Securities"
+   ],
+   "keywords": [
+    [
+     "conference",
+     "fireside",
+     "presentation",
+     "present"
+    ]
+   ],
+   "timing": "2026-11-12",
+   "placement": "upcoming"
+  },
+  {
+   "id": "conf-ubs-2026-11-16",
+   "description": "UBS healthcare conference, Nov 16 2026",
+   "name": [
+    "UBS"
+   ],
+   "keywords": [
+    [
+     "conference",
+     "fireside",
+     "presentation",
+     "present"
+    ]
+   ],
+   "timing": "2026-11-16",
+   "placement": "upcoming"
+  },
+  {
+   "id": "conf-jefferies-2026-11-17",
+   "description": "Jefferies healthcare conference, Nov 17 2026",
+   "name": [
+    "Jefferies"
+   ],
+   "keywords": [
+    [
+     "conference",
+     "fireside",
+     "presentation",
+     "present"
+    ]
+   ],
+   "timing": "2026-11-17",
+   "placement": "upcoming"
+  },
+  {
+   "id": "iconic-psa2-primary-completion",
+   "description": "ICONIC-PsA 2 primary completion, ~Feb 10 2027",
+   "keywords": [
+    [
+     "ICONIC-PsA 2",
+     "ICONIC-PsA2",
+     "ICONIC PsA 2",
+     "ICONIC-PsA"
+    ],
+    [
+     "primary completion",
+     "completion",
+     "primary endpoint",
+     "topline",
+     "readout"
+    ]
+   ],
+   "timing": "~2027-02-10",
+   "placement": "upcoming"
+  },
+  {
+   "id": "jnj-psa-data-2026",
+   "description": "J&J icotrokinra PsA data \"later this year\" (2026)",
+   "keywords": [
+    [
+     "icotrokinra",
+     "J&J",
+     "Johnson & Johnson",
+     "JNJ"
+    ],
+    [
+     "PsA",
+     "psoriatic arthritis"
+    ],
+    [
+     "data",
+     "results",
+     "readout"
+    ]
+   ],
+   "timing": {
+    "start": "2026-11-03",
+    "end": "2026-12-31",
+    "text": "later this year (2026)"
+   },
+   "placement": "upcoming"
+  },
+  {
+   "id": "jnj-enterprise-business-review",
+   "description": "J&J Enterprise Business Review, Dec 8 2026",
+   "name": [
+    "J&J",
+    "Johnson & Johnson",
+    "JNJ"
+   ],
+   "keywords": [
+    [
+     "Enterprise Business Review",
+     "business review"
+    ]
+   ],
+   "timing": "2026-12-08",
+   "placement": "upcoming"
+  },
+  {
+   "id": "takeda-capital-markets-day",
+   "description": "Takeda Capital Markets Day, Dec 11 2026",
+   "name": [
+    "Takeda"
+   ],
+   "keywords": [
+    [
+     "Capital Markets Day",
+     "capital markets",
+     "investor day"
+    ]
+   ],
+   "timing": "2026-12-11",
+   "placement": "upcoming"
+  },
+  {
+   "id": "icotrokinra-ole-completion",
+   "description": "icotrokinra open-label extension completion, Q1 2027",
+   "keywords": [
+    [
+     "icotrokinra"
+    ],
+    [
+     "open-label extension",
+     "open label extension",
+     "OLE",
+     "extension"
+    ]
+   ],
+   "timing": "Q1 2027",
+   "placement": "upcoming"
+  },
+  {
+   "id": "australia-tga-review",
+   "description": "Australia TGA review (undated)",
+   "keywords": [
+    [
+     "TGA",
+     "Therapeutic Goods Administration",
+     "Australia"
+    ]
+   ],
+   "timing": "undated",
+   "placement": "undated"
+  },
+  {
+   "id": "acr-psa-late-breaking",
+   "description": "ACR PsA late-breaking presentation, Nov 10 2026",
+   "name": [
+    "ACR",
+    "American College of Rheumatology"
+   ],
+   "keywords": [
+    [
+     "late-breaking",
+     "late breaking",
+     "presentation",
+     "PsA",
+     "psoriatic arthritis"
+    ]
+   ],
+   "timing": "2026-11-10",
+   "placement": "upcoming"
+  }
+ ]
+}
