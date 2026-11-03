@@ -144,7 +144,7 @@ def review_existing(src: Path, runs_dir: Path, cap_usd: float, tools=None) -> tu
     finally:
         with jobs.RUN_LOCK:
             jobs.ACTIVE_RUNS.discard(dest.name)
-            jobs._RESERVED.pop(dest.name, None)
+            jobs.release_owned(dest.name, job)
     return dest, json.loads((dest / "run.json").read_text())["run"]["research"]
 
 
