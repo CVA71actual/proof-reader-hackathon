@@ -1009,10 +1009,11 @@ class Job:
     def refresh_spend(self) -> None:
         """The persisted run.json spend is the truth (a voice call may have raised it since this worker last wrote)."""
         with RUN_LOCK:
-            try:      # INTEGRATION-001: the unknown-cost ledger is refreshed with the spend, before every admission
-                self._reconcile_voice_unpriced(json.loads((self.dir / "job.json").read_text()))
-            except (OSError, ValueError):
-                pass
+            if getattr(self, "job", None) is not None:
+                try:  # INTEGRATION-001: the unknown-cost ledger is refreshed with the spend, before every admission
+                    self._reconcile_voice_unpriced(json.loads((self.dir / "job.json").read_text()))
+                except (OSError, ValueError):
+                    pass
             try:
                 disk = json.loads((self.dir / "run.json").read_text())["run"].get("spend_usd")
             except (OSError, ValueError, KeyError):
