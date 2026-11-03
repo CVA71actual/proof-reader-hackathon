@@ -1654,8 +1654,14 @@ def test_an_unclosed_css_url_never_survives_into_the_snapshot(css):
 
 
 def test_a_data_image_url_is_still_kept():
-    snap, _ = rs.sanitize_html('<div style="background:url(data:image/png;base64,AAAA)">x</div>')
-    assert "data:image/png" in snap
+    import base64
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 4, 4), False)
+    real = base64.b64encode(pix.tobytes("png")).decode()
+    snap, _ = rs.sanitize_html(f'<div style="background:url(data:image/png;base64,{real})">x</div>')
+    assert f"data:image/png;base64,{real}" in snap
+    # Red Team PR181: bytes that are not a decodable raster never survive, whatever the label
+    snap, counts = rs.sanitize_html('<div style="background:url(data:image/png;base64,AAAA)">x</div>')
+    assert "data:" not in snap[len(rs.CSP_META):] and counts["css_dropped_data_uri"] == 1
 
 
 @pytest.mark.parametrize("path", ["prose", "empty", "timeout"])
