@@ -243,7 +243,8 @@ def test_blank_research_assignment_selects_default_without_changing_table_extrac
 def test_research_assignment_length_is_bounded_and_settings_publish_contract(runs_dir):
     client, reader = make(runs_dir)
     settings = client.get("/api/settings").json()
-    assert settings["research_instructions_default"] == research_instructions.DEFAULT
+    # CVA 2026-11-03: New Run starts research mode only; its one box shows the full research brief
+    assert settings["research_instructions_default"] == research_instructions.RESEARCH_DEFAULT
     assert settings["research_instructions_max_length"] == 4000
     admitted = jobs.validate_choices({"companies": ["PTGX"], "note_for_agent": "x" * 4000})
     assert admitted["note_for_agent"] == "x" * 4000

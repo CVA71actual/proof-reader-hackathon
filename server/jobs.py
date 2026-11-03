@@ -390,7 +390,7 @@ def validate_research_choices(body: dict) -> dict:
     limit = research.DEFAULT_SPEND_CAP_USD if limit is None else limit
     if not _finite_limit(limit):
         raise ValueError("The spending limit must be a finite number of dollars, zero or more.")
-    note = research_instructions.validate(body.get("note_for_agent"))
+    note = research_instructions.validate(body.get("note_for_agent"), default=research_instructions.RESEARCH_DEFAULT)
     if body.get("reader_tools") not in (None, False):
         raise ValueError("reader_tools is a page-mode choice; a research run always uses its tools.")
     if body.get("models") not in (None, "one"):
@@ -1299,7 +1299,7 @@ class Job:
             who, parse = "capture.read_events", read_events.parse_events
         else:
             note = self.choices["note_for_agent"]
-            prompt = read_table.build_prompt(words_doc, None if note == research_instructions.DEFAULT else note)
+            prompt = read_table.build_prompt(words_doc, None if research_instructions.is_default(note) else note)
             who, parse = "capture.read_table", read_table.parse_table
         page_facts = {"words_sha256": consumed_artifact["sha256"], "words_used": consumed_artifact,
                       "page_sha256": entry["page_sha256"], "pin": entry["id"]}
@@ -1652,7 +1652,7 @@ class Job:
                                                                        as_of=ref_date.isoformat() if ref_date else None), image)]
             parse = read_events.parse_events
         else:
-            table_note = None if note == research_instructions.DEFAULT else note
+            table_note = None if research_instructions.is_default(note) else note
             attempts = [("image", read_table.build_image_prompt(table_note), image),
                         ("image_and_words", read_table.build_prompt(words_doc, table_note), image)]
             parse = read_table.parse_table
