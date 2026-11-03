@@ -213,7 +213,7 @@ def test_date_tool_uses_literal_check_and_retired_type_tool_cannot_accept_meanin
     from runs.calendar import calendar_entries
     state = current_state(doc, [])
     assert all(not state["targets"][r["id"]]["accepted"] for r in doc["rows"])
-    assert calendar_entries(doc, state) == []
+    assert all(e["inclusion"] != "kept" for e in calendar_entries(doc, state))     # CALENDAR-RULE-001
 
 
 def test_the_json_request_path_when_the_tools_parameter_is_rejected(runs_dir):

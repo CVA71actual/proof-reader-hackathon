@@ -22,8 +22,8 @@ def test_plain_proposal_with_all_checks_passed_has_no_issues():
     assert {c["result"] for c in t["effective_checks"]} <= {"pass", "not_needed"}
     assert t["issues"] == []
     assert state["counts"]["issues"] == 0
-    # Needing review is unchanged and is not an issue.
-    assert t["needs_attention"] and t["review_label"] == "Proposed — needs review"
+    # CALENDAR-RULE-001: with no issue it is placed automatically, not a review task, and not kept.
+    assert not t["needs_attention"] and t["review_label"] == "Included — not reviewed by you"
 
 
 def test_could_not_run_alone_is_not_an_issue():
@@ -41,11 +41,14 @@ def test_failed_current_check_is_named_in_plain_words():
     assert all(i.endswith(" failed") for i in t["issues"])
 
 
-def test_stale_saved_failure_is_history_not_an_issue():
+def test_stale_saved_failure_is_history_and_missing_support_is_an_issue():
     _, run = make_run(CASES[1], event_updates={"quote": "Nothing like this is printed on the page at all."})
     run["sources"][0]["pages"][0]["words_sha256"] = "0" * 64  # the bound evidence no longer matches
     t = target(run)
-    assert t["effective_checks"] == [] and t["issues"] == []
+    # The old failure stays history (not named as a current failure); CALENDAR-RULE-001: with no current checks
+    # the row has no current support, which is an issue, so it is never placed automatically.
+    assert t["effective_checks"] == []
+    assert t["issues"] == ["The saved checks no longer match this page; they are history"]
 
 
 def test_open_disagreement_is_an_issue_until_kept():
@@ -109,7 +112,7 @@ def test_accepted_and_excluded_rows_have_no_issues_and_counts():
     kept = current_state(run, [kept_decision(run)])
     assert kept["targets"]["e1"]["accepted"] and kept["targets"]["e1"]["issues"] == []
     assert kept["counts"]["issues"] == 1
-    # The issue field leaves the acceptance projection exactly as it was.
+    # Rows with issues read as review, off the calendar (CALENDAR-RULE-001).
     assert before == {"needs_attention": True, "review_label": "Proposed — needs review",
                       "accepted": False, "on_calendar": False}
 

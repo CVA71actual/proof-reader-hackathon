@@ -23,8 +23,9 @@ def projected(run, decisions):
     assert rows[0]['type_presentation'] == target['type_presentation']
     assert rows[0]['action'] == target['type_presentation']['summary']
     cal = calendar_entries(run, state)
-    if target['accepted']:
+    if target['on_calendar']:      # kept, or (CALENDAR-RULE-001) placed automatically
         assert cal[0]['type_presentation'] == target['type_presentation']
+        assert (cal[0]['inclusion'] == 'kept') == target['accepted']
     else:
         assert not cal
     return target
@@ -88,7 +89,7 @@ def test_api_edits_and_undo_do_not_misattribute_a_persons_type_to_the_reader(tmp
             'field':field,'from':row.get(field),'to':new_value}})
         assert result.status_code==200,result.text
         target=result.json()['state']
-        assert not target['accepted'] and target['needs_attention']
+        assert not target['accepted'] and target['inclusion'] != 'kept'     # CALENDAR-RULE-001
         p=target['type_presentation']
         if field=='event_type':
             assert p['category_origin']=='person' and p['category_label']=='Category edited by you'

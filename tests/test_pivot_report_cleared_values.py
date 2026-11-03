@@ -57,4 +57,7 @@ def test_api_clear_keep_and_undo_preserve_the_same_effective_quote(tmp_path):
         assert build_view(loaded,decisions,generated_at=AT)['open_rows'][0]['quote']==''
         assert client.post(root+'/decisions',json={'target':'e1','action':'undo'}).status_code==200
         loaded,decisions=load_run_dir(directory)
-        assert build_view(loaded,decisions,generated_at=AT)['open_rows'][0]['quote']==original
+        # CALENDAR-RULE-001: back to the untouched proposal, it is wherever the rule places it (review or placed)
+        restored=build_view(loaded,decisions,generated_at=AT)
+        rows=sum((restored[k] for k in ('open_rows','calendar','past','later','contingent','undated','timing_unresolved')),[])
+        assert [r['quote'] for r in rows]==[original]

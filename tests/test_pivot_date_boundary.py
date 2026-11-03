@@ -30,7 +30,9 @@ def test_printed_date_can_match_without_accepting_the_claim(quote, expected):
     else:
         assert 'range' in check['reason']
     target = current_state(run, [])['targets']['e1']
-    assert not target['accepted'] and target['needs_attention']
+    assert not target['accepted'] and target['inclusion'] != 'kept'
+    if expected != 'pass':      # CALENDAR-RULE-001: a date the check cannot support never lands on the calendar
+        assert target['needs_attention'] and not target['on_calendar']
     assert target['values']['quote'] == quote
 
 
@@ -56,7 +58,8 @@ def test_unaccepted_historical_date_is_not_excluded_and_keep_places_it_in_past()
     assert 'relationship needs your review' in row['past_exclusion_proposal']
     assert exclude_again(run, set(), AT) == {'out': []}
     state = current_state(run, [])
-    assert state['targets']['e1']['needs_attention']
-    assert not run_interval_partition(run, state)[0]['past']
+    # CALENDAR-RULE-001: unaccepted and clean, it is Context (past), never on the calendar and never kept
+    assert state['targets']['e1']['inclusion'] == 'context' and not state['targets']['e1']['accepted']
+    assert not run_interval_partition(run, state)[0]['calendar']
     accepted = current_state(run, [kept_decision(run)])
     assert [r['id'] for r in run_interval_partition(run, accepted)[0]['past']] == ['e1']

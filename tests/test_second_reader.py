@@ -323,8 +323,10 @@ def test_a_disagreement_on_the_date_makes_the_row_undecided_and_goes_to_a_person
     assert next(r for r in run["rows"] if r["date_text"] != "Q1 2027")["status"] == "matched", "the other row agrees"
     state = current_state(run, [])
     assert state["targets"][row["id"]]["group"] == "open"
-    assert all(t["needs_attention"] and not t["accepted"] for t in state["targets"].values())
-    assert state["unresolved"] == len(run["rows"])  # agreement is not acceptance
+    # Agreement is not acceptance; CALENDAR-RULE-001: only the disagreeing row is a review task.
+    assert all(not t["accepted"] and t["needs_attention"] == bool(t["issues"]) for t in state["targets"].values())
+    assert state["targets"][row["id"]]["needs_attention"]
+    assert state["unresolved"] == sum(bool(t["issues"]) for t in state["targets"].values())
 
 
 def test_model_type_hints_do_not_change_the_controlled_event_type(runs_dir):
@@ -341,7 +343,9 @@ def test_model_type_hints_do_not_change_the_controlled_event_type(runs_dir):
     assert row["type_hint"] == "milestone"
     assert row["disagreement"] == {"field": "type_hint", "first_reader": "milestone",
                                    "second_reader": "trial_results"}
-    assert current_state(run, [])["targets"][row["id"]]["needs_attention"]
+    # CALENDAR-RULE-001 (with REVIEW-NOT-A-FLAG-001): both hints stay on the row; a type-hint wording difference is
+    # not a conflict, so the row is never accepted but is not a review task either.
+    assert not current_state(run, [])["targets"][row["id"]]["accepted"]
     assert not run["mistakes"]
 
 

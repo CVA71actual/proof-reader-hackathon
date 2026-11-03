@@ -192,8 +192,8 @@ def test_the_run_build_is_current(run, reading, tmp_path):
     assert "Date period found in quote" in row["reason"]
     assert "not a day" in row["reason"] and "Q1 2027" in row["reason"]
     target = current_state(fresh, [])["targets"][row["id"]]
-    assert "The event remains a proposal; a person must decide whether to keep it." in target["reason"]
-    assert not target["accepted"] and target["needs_attention"]
+    assert "No issues were found, so it was placed automatically; it was not reviewed by you." in target["reason"]
+    assert not target["accepted"] and target["inclusion"] != "kept"
 
 
 def test_the_pn8047_row(run):
@@ -209,7 +209,7 @@ def test_the_pn8047_row(run):
         assert {c["name"]: c["result"] for c in row["checks"]} == {"quote_match": "pass", "selector_match": "pass", "date_match": "pass", "source_rule": "pass", "type_match": "not_needed"}
         # The saved summary remains history; the effective view uses current checks.
         target = current_state(run, [])["targets"][row["id"]]
-        assert target["needs_attention"] and not target["accepted"]
+        assert not target["accepted"] and target["inclusion"] != "kept"
         assert "event meaning needs your review" in target["reason"]
 
 
@@ -390,6 +390,8 @@ def test_state_rule_without_decisions_preserves_mechanics_but_requires_review(ru
         target = st["targets"][row["id"]]
         assert target["group"] == row["group"]
         # GROUP-AXIS-001: a mechanical group never accepts a model proposal.
-        assert not target["accepted"] and not target["on_calendar"]
+        assert not target["accepted"]
         if row["group"] != "removed":
-            assert target["needs_attention"]
+            # CALENDAR-RULE-001: review only for a row with issues; a clean one is placed automatically
+            assert target["needs_attention"] == bool(target["issues"])
+            assert target["on_calendar"] == (not target["issues"])

@@ -141,7 +141,8 @@ def test_runner_requests_only_target_patch_and_records_one_attempt(tmp_path, inc
     assert len(run['mistakes']) == (0 if incomplete else 1)
     assert 'type_hint' not in row['escalation_proposal']['proposal']
     assert row['conditions'] is None  # legacy reader, never invented by the patch
-    assert current_state(run, [])['targets'][row['id']]['needs_attention']
+    escalated = current_state(run, [])['targets'][row['id']]
+    assert not escalated['accepted'] and escalated['inclusion'] != 'kept'   # CALENDAR-RULE-001
     assert job_of(directory, rid)['escalated_rows'][row['id']] == ('kept' if incomplete else 'replaced')
     # Attempt terminality is persisted and the runner does not retry an incomplete answer.
     assert run['run']['status'] == 'done'

@@ -80,9 +80,12 @@
     if (!t || typeof t.review_bucket !== 'string') return t ? t.group : undefined;
     if (t.review_bucket === 'accepted') return 'kept';
     if (t.review_bucket === 'excluded') return 'removed';
+    // CALENDAR-RULE-001: a clean proposal the server placed by itself (inclusion other than review) is listed
+    // apart from the rows that need review, never under a review or kept heading
+    if (typeof t.inclusion === 'string' && t.inclusion !== 'review' && t.inclusion !== 'kept') return 'auto';
     return t.group === 'kept' || t.group === 'removed' ? 'proposed' : t.group;
   }
-  var REVIEW_GROUP_ORDER = ['kept', 'proposed', 'corrected', 'removed', 'unverified', 'open'];
+  var REVIEW_GROUP_ORDER = ['kept', 'auto', 'proposed', 'corrected', 'removed', 'unverified', 'open'];
   // the review axis turns on when the projection is present at all — the
   // server's counts.review, or any row carrying a pivot-only field (a partial
   // row is uncounted even when the run ships no counts.review)
@@ -98,6 +101,7 @@
     return reviewAxis() ? REVIEW_GROUP_ORDER : GROUP_ORDER;
   }
   function groupName(g) {
+    if (g === 'auto') return 'Placed automatically — not reviewed by you';
     return g === 'proposed' ? 'Proposed — needs review' : GROUP_NAMES[g];
   }
   // one count per listed group: with the projection, the rows behind the
@@ -2652,8 +2656,12 @@
     // GROUP-AXIS-001: the review projection's count is the authority when the
     // server sends it; the client-side list is the fallback on older servers
     var reviewCounts = detail.state.counts && detail.state.counts.review;
+    // CALENDAR-RULE-001: the server's queue is the rows with issues (state.unresolved, counts.inclusion.review);
+    // a clean proposal placed automatically is not waiting for a decision
+    var inclusionCounts = detail.state.counts && detail.state.counts.inclusion;
     document.getElementById('judgment-sub').textContent =
-      'Waiting for your decision · ' + (reviewCounts ? reviewCounts.proposed : unresolved.length);
+      'Waiting for your decision · ' + (inclusionCounts ? inclusionCounts.review
+        : reviewCounts ? reviewCounts.proposed : unresolved.length);
 
     var host = clear(document.getElementById('judgment-rows'));
     if (!unresolved.length && !decided.length) {
@@ -2685,7 +2693,10 @@
     var t = rowTarget(row);
     // a corrected row that still needs a person gets the pending pane (Keep is
     // the answer the server accepts), not the decided one (Undo only)
-    if (needsAttention(t)) judgmentPendingPane(det, row, t);
+    // CALENDAR-RULE-001: a row placed automatically has no decision yet — it gets the same Keep / Fix / Remove
+    // as a row waiting for review, so Remove (and then Undo) works on every row
+    if (needsAttention(t) || (projected(t) && t.inclusion !== undefined && !t.last_action &&
+        t.review_bucket === 'proposed')) judgmentPendingPane(det, row, t);
     else judgmentDecidedPane(det, row, t);
 
     if (route.dialog) openDialog(row, route.dialog);
