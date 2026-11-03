@@ -47,8 +47,9 @@ INCLUDE = ["web_search_call.results", "reasoning.encrypted_content"]
 # https://dev.meta.ai/docs/models (context window 1,048,576 tokens, no output maximum stated),
 # https://dev.meta.ai/docs/api-reference/responses/create-response and https://dev.meta.ai/docs/pricing-rate-limits
 # (rate limits only) on 2026-11-02. So 32,768, as CVA directed when none is documented. The strict reservation scales
-# with it; the run's spending cap still governs.
-MAX_OUTPUT_TOKENS = 32768
+# with it; the run's spending cap still governs. LIMITS-005 (CVA, later on 2026-11-02): lowered to 16,384; a reply that
+# hits it is a runaway, handled like a timeout (runs/research.py).
+MAX_OUTPUT_TOKENS = 16384
 REASONING = {"effort": "medium"}
 
 # LIMITS-003 (CVA 2026-11-02): a research call waits up to 10 minutes for its reply (live run 4 lost a turn to the

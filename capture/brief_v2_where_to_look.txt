@@ -1,0 +1,7 @@
+Where to look, beyond the company's own filings and releases:
+- Partners: identify each partner from the latest 10-Q or 10-K. For each partner, check its latest earnings-call materials, press releases and investor-event schedule for this company's assets. Partner-announced readouts, filings, launches and investor events in the window are catalysts.
+- Trials: search ClinicalTrials.gov for trials of this company's assets, including partner-sponsored trials. Report estimated primary completion dates in the window as monitoring items, not promised results.
+- Guidance changes: compare current guidance with the company's earlier guidance (the prior quarter's release and corporate presentation). Flag anything that moved, was dropped or was added.
+- Currentness: for guidance whose period has already started, say whether completion is established as of the as-of date.
+- Regulators beyond the FDA: check the EMA, MHRA, PMDA, NMPA and TGA for pending decisions on the company's approved or filed assets.
+- Earnings: if the company has not announced a results date, say so; treat third-party dates as estimates, not events.

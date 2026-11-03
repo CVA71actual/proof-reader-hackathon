@@ -272,6 +272,7 @@ _DROP_TAG = {"base", "link", "source", "track", "portal"}
 _URL_ATTRS = {"src", "srcset", "data", "poster", "background", "formaction", "action", "lowsrc", "dynsrc",
               "xlink:href", "ping", "manifest", "codebase", "archive", "longdesc", "usemap", "icon"}
 _CSS_URL = __import__("re").compile(r"url\s*\(\s*(['\"]?)(?!data:)[^)]*\1\s*\)", __import__("re").I)
+_CSS_URL_OPEN = __import__("re").compile(r"url\s*\(", __import__("re").I)
 _CSS_IMPORT = __import__("re").compile(r"@import[^;]*;?", __import__("re").I)
 
 
@@ -289,7 +290,14 @@ def _clean_css(css: str, counts: dict) -> str:
         counts["css_urls_removed"] = counts.get("css_urls_removed", 0) + n_url
     if n_imp:
         counts["css_imports_removed"] = counts.get("css_imports_removed", 0) + n_imp
-    return _CSS_URL.sub("none", _CSS_IMPORT.sub("", css))
+    css = _CSS_URL.sub("none", _CSS_IMPORT.sub("", css))
+    # Red Team b7bbc34: an UNCLOSED url( (url(file:///etc/passwd …) is not matched above. Any url( left that is not an
+    # inline data: image drops the whole style text; the code-owned CSP stays as the second barrier.
+    for m in _CSS_URL_OPEN.finditer(css):
+        if not css[m.end():].lstrip(" \t\n'\"").lower().startswith("data:"):
+            counts["css_dropped_unclosed_url"] = counts.get("css_dropped_unclosed_url", 0) + 1
+            return ""
+    return css
 
 
 def sanitize_html(html_text: str) -> tuple[str, dict]:
@@ -641,6 +649,43 @@ def capture_document(fetched: Fetched, run_dir: Path, source_id: str, *,
     return {"original_file": str(original.relative_to(run_dir)), "original_sha256": sha, "original_bytes": len(body),
             "kind": kind, "rendered": rendered, "pages": pages, "html_sha256": sha if kind == "html" else None,
             "completeness": [completeness_fields(w) for _, w in pages]}
+
+
+# ---------------------------------------------------------------- block and interstitial pages (OUTCOME-001)
+
+# A site that serves its maintenance page, a bot wall or an access-denied page to our fetcher has given us nothing:
+# such a page is never a captured source (live brief-v2 run: jnj.com served "Site Maintenance" seven times and the
+# model read it as "nothing material"). Detected only on short pages, from the page's own words.
+BLOCK_PHRASES = ("site maintenance", "under maintenance", "access denied", "request blocked", "has been blocked",
+                 "are you a robot", "captcha", "unusual traffic",
+                 "attention required", "just a moment", "checking your browser", "enable javascript and cookies",
+                 "please switch to a different browser", "temporarily unavailable", "403 forbidden",
+                 "you don't have permission to access", "bot detection", "security check")
+BLOCK_MAX_CHARS = 2000
+_HUMAN_CHECK = __import__("re").compile(r"\bver\w{0,3}y (?:that )?you are (?:a )?human\b")
+
+
+def block_reason(fetched: "Fetched") -> str | None:
+    """'site served a block/maintenance page (...)' when the answer is an interstitial rather than the document."""
+    if fetched.status is not None and not 200 <= fetched.status < 300:
+        return None        # an error status is reported as itself (403/404/451 could_not_access, others failed)
+    if fetched.status is not None and fetched.status not in (200, 203):
+        return f"site served a block/maintenance page (unusual status HTTP {fetched.status})"
+    if kind_of(fetched.content_type, fetched.body, fetched.final_url) != "html":
+        return None
+    text = readable_text(sanitize_html(fetched.body.decode("utf-8", errors="replace"))[0])
+    if len(text) > BLOCK_MAX_CHARS:
+        return None
+    low = " ".join(text.lower().split())
+    hit = next((p for p in BLOCK_PHRASES if p in low), None)
+    if hit is None:      # the bot-wall prompt asking the visitor to confirm they are human
+        m = _HUMAN_CHECK.search(low)
+        hit = m.group(0) if m else None
+    if hit:
+        return f"site served a block/maintenance page (“{hit}”, {len(text)} characters of text)"
+    if not low:
+        return "site served a block/maintenance page (no readable text)"
+    return None
 
 
 # ---------------------------------------------------------------- SEC listing (leads) and ClinicalTrials.gov
