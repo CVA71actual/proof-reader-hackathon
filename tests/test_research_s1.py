@@ -690,7 +690,7 @@ def test_kill_condition_unpriced_model_is_refused_before_any_call(runs_dir):
 
 
 def test_kill_condition_empty_answer_rate_is_recorded_and_surfaced(runs_dir):
-    empty = F.body([F.reasoning()], status="incomplete", incomplete="max_output_tokens")
+    empty = F.body([F.reasoning()])         # a finished answer with no tool call and no text
     script = [empty, F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")]), empty,
               F.body([F.call("read_source_pages", {"source_id": "src-r1-ptgx", "pages": [1], "purpose": "x"}, "c2")]),
               F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")])]
@@ -700,13 +700,13 @@ def test_kill_condition_empty_answer_rate_is_recorded_and_surfaced(runs_dir):
     assert r["kill_conditions"][0]["code"] == "empty_answer_rate"
     assert r["companies"]["PTGX"]["status"] == "finished"           # recorded, not a stop (setting off)
     assert r["companies"]["PTGX"]["empty_answers"] == 2
-    assert any("output budget" in s["text"] for s in r["steps"] if s["kind"] == "error")
+    assert any("no tool call and no text" in s["text"] for s in r["steps"] if s["kind"] == "error")
     # the nudge after an empty answer replays the output then asks for a tool call
     assert reader.requests[1]["input"][-1]["content"] == research.NUDGE_EMPTY
 
 
 def test_kill_condition_empty_rate_stops_when_a_person_turned_it_on(runs_dir):
-    empty = F.body([], status="incomplete", incomplete="max_output_tokens")
+    empty = F.body([])
     fetch = F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")])
     read = F.body([F.call("read_source_pages", {"source_id": "src-r1-ptgx", "pages": [1], "purpose": "x"}, "c2")])
     reader = F.FakeResponses([empty, fetch, empty, read, read])
@@ -716,7 +716,7 @@ def test_kill_condition_empty_rate_stops_when_a_person_turned_it_on(runs_dir):
 
 
 def test_two_empty_answers_in_a_row_are_a_technical_failure(runs_dir):
-    empty = F.body([], status="incomplete", incomplete="max_output_tokens")
+    empty = F.body([])
     reader = F.FakeResponses([empty, empty])
     _, rid, _ = start(runs_dir, reader)
     c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
@@ -1173,9 +1173,9 @@ def test_an_incomplete_answer_with_finish_draft_never_finalizes_the_company(runs
     c = run["run"]["research"]["companies"]["PTGX"]
     assert c["status"] == "stopped" and c["limitation"]["kind"] == "incomplete"
     assert "max_output_tokens" in c["limitation"]["reason"] and c["finish"] is None
-    assert [r["id"] for r in run["rows"] if r.get("research")] == ["e1"]       # the usable proposal is kept
-    assert any(x["tool"] == "finish_draft" and x["issues"][0]["code"] == "incomplete_answer"
-               for x in run["run"]["research"]["refusals"])
+    assert [r["id"] for r in run["rows"] if r.get("research")] == []          # Manus 18:12: nothing from it runs
+    refused = {x["tool"] for x in run["run"]["research"]["refusals"] if x["issues"][0]["code"] == "incomplete_answer"}
+    assert refused == {"propose_events", "finish_draft"}
     assert len(reader.requests) == 2 and run["run"]["status"] == "needs_input"
 
 
@@ -1661,7 +1661,7 @@ def test_a_data_image_url_is_still_kept():
 def test_brave_payloads_are_delivered_exactly_once_on_every_path(runs_dir, path):
     brave = F.FakeBrave({"q": [PR1]})
     second = {"prose": F.body([F.message("Thinking about it.")]),
-              "empty": F.body([], status="incomplete", incomplete="max_output_tokens"),
+              "empty": F.body([]),
               "timeout": _timeout_reply()}[path]
     script = [F.body([F.call("brave_search", {"query": "q", "count": 3}, "b1")]), second,
               F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])]
@@ -1669,3 +1669,24 @@ def test_brave_payloads_are_delivered_exactly_once_on_every_path(runs_dir, path)
     assert "SNIPPET-" in json.dumps(reader.requests[1]["input"])           # the one delivery
     assert "SNIPPET-" not in json.dumps(reader.requests[2]["input"])       # never sent again
     assert "TITLE-" not in json.dumps(reader.requests[2]["input"]) and PR1 in json.dumps(reader.requests[2]["input"])
+
+
+
+# ---------------------------------------------------------------- Manus 18:12: length cuts are classified first
+
+
+@pytest.mark.parametrize("kind", ["reasoning_only", "prose_with_valid_call"])
+def test_a_length_cut_answer_dispatches_nothing_and_replays_nothing(runs_dir, kind):
+    call = F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")
+    output = [F.reasoning(), call] if kind == "reasoning_only" else [F.message("Partial thoughts"), call]
+    reader = F.FakeResponses([F.body(output, status="incomplete", incomplete="max_output_tokens")])
+    _, rid, tools = start(runs_dir, reader)
+    assert tools.fetcher.asked == [] and len(reader.requests) == 1             # nothing dispatched, no replay
+    run = run_json(runs_dir, rid)
+    c = run["run"]["research"]["companies"]["PTGX"]
+    assert c["limitation"]["kind"] == "incomplete" and c["empty_answers"] == 0 and run["sources"] == []
+    assert any(x["tool"] == "fetch_url" and x["issues"][0]["code"] == "incomplete_answer"
+               for x in run["run"]["research"]["refusals"])
+    turn = json.loads((runs_dir / rid / "research" / "turns" / "PTGX-001.json").read_text())
+    assert turn["response"]["status"] == "incomplete"                         # kept for audit
+    assert run["run"]["spend_usd"] > 0                                        # and settled
