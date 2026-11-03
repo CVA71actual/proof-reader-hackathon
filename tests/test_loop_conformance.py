@@ -176,7 +176,8 @@ class ResearchLoop:
         return {"requests_made": len(reader.requests),
                 "reason": meta["research"]["companies"]["PTGX"]["limitation"]["reason"],
                 "default_limits_off": all(v is None for k, v in lim.items()
-                                          if k not in ("concurrency", "stop_on_empty_rate"))
+                                          if k not in ("concurrency", "stop_on_empty_rate",
+                                                       *research.STOP_RULE_DEFAULTS))
                 and lim["stop_on_empty_rate"] is False}
 
     def evidence(self, runs_dir):

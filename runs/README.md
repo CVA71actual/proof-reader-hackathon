@@ -584,7 +584,12 @@ request | search | fetch | proposal | check | coverage | finish | limit | repeat
 `research/manifest.jsonl` with its checkpoint digests); `refusals`; `coverage` (including searched-not-found records
 with retrieval times); `consolidations`; `repeats`; `kill_conditions`; `reservation_exceeded`; `review_reserve`
 and `review[ticker]` (the independent review, below); `audit` (the draft audit, `runs/research_audit.py`). Exact requests and responses
-are under `research/turns/`. A person stops a research run with `POST /api/runs/{id}/research-stop`. A research run
+are under `research/turns/`. A person stops a research run with `POST /api/runs/{id}/research-stop` (discard: nothing reviewed or published), or
+ends its research with `POST /api/runs/{id}/research-finish` (Finish now: review, checks, then publish). STOP-RULE-001:
+a company's research also ends as finished after `stall_turns_per_company` (40) model turns with no new proposal,
+`turn_ceiling_per_company` (250) turns or `minutes_ceiling_per_company` (45) minutes (research_limits; 0 = off);
+each is a `kill_conditions` entry (`code` stall | turn_ceiling | minutes_ceiling | finish_now, `outcome` finished)
+and the company's `ended_by`. A research run
 is not resumed in S1.
 
 Search (BRAVE-PRIMARY-001, CVA 2026-11-02): `brave_search` (Brave Search, `capture/brave_search.py`, key from

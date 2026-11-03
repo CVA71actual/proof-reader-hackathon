@@ -104,7 +104,7 @@ def test_fake_run_from_captured_web_source_to_proposal_checks_state_and_export(r
     assert meta["choices"]["mode"] == "research" and meta["choices"]["spending_limit_usd"] == 30.0
     assert meta["prices"]["per_1k_searches_usd"] == {"Muse Spark": 2.50}
     assert all(v is None for k, v in meta["choices"]["research_limits"].items()
-               if k not in ("concurrency", "stop_on_empty_rate"))
+               if k not in ("concurrency", "stop_on_empty_rate", *research.STOP_RULE_DEFAULTS))
     RUN_SCHEMA.validate(run)
     # the captured source: bytes, hash, retrieval time, pages and words, capture checks on every page
     src = run["sources"][0]
@@ -744,7 +744,8 @@ def test_kill_condition_spend_cap_hit_stops_with_a_recorded_limitation_and_never
 
 def test_optional_limits_are_off_by_default_and_work_when_turned_on(runs_dir):
     assert research.validate_limits(None) == {**{k: None for k in research.LIMIT_KEYS},
-                                              "concurrency": 3, "stop_on_empty_rate": False}
+                                              "concurrency": 3, "stop_on_empty_rate": False,
+                                              **research.STOP_RULE_DEFAULTS}
     with pytest.raises(ValueError):
         research.validate_limits({"max_pages_per_company": -1})
     with pytest.raises(ValueError):

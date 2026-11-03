@@ -483,6 +483,22 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         from runs import research
         return research.request_stop(store.runs_dir, run_id)
 
+    @app.post("/api/runs/{run_id}/research-finish", status_code=202)
+    def research_finish(run_id: str, body: dict | None = Body(None)) -> dict:
+        """STOP-RULE-001, a person's Finish now (keeps the work): every company ends its research before its next
+        model call, as finished; the independent review, adjudication and support check then run on what was found
+        (under the spending cap) and the run publishes like a normal finish. research-stop (discard) is unchanged."""
+        run = json.loads((store.run_dir(run_id) / "run.json").read_text())
+        if run["run"].get("choices", {}).get("mode") != "research":
+            raise HTTPException(409, "This is not a research run.")
+        if run["run"].get("status") not in ("queued", "running"):
+            raise HTTPException(409, "This research run is not going.")
+        note = (body or {}).get("note")
+        if note is not None and not isinstance(note, str):
+            raise HTTPException(422, "note must be text.")
+        from runs import research
+        return research.request_finish(store.runs_dir, run_id, note)
+
     @app.post("/api/runs/{run_id}/operator-stop")
     def operator_stop(run_id: str) -> dict:
         """Job 51f: a run left "running" by a worker stopped from outside, put right from runs/<id>/OPERATOR_STOP.json
