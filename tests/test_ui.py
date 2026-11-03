@@ -1647,7 +1647,119 @@ def test_keep_anyway_binds_the_shown_basis_and_renews_on_change():
         assert _grab_fn(js, fn).count("expected_basis: dialogMount ? dialogMount.basis : null") == 1, fn
 
 
+def test_fix_dialog_adopts_the_basis_its_own_save_returned():
+    # UI-BASIS-OWN-SAVE (Manus 08:15): a fix dialog mounted on basis B1 makes
+    # an accepted save — the save itself changes the proposal, so the mounted
+    # basis is stale. The next edit must send the basis the SERVER returned
+    # (B2), not B1, or every further save 409s forever. A 409 from an
+    # UNRELATED change discloses, refreshes, adopts the current basis (B3) —
+    # the person's next click is judged against what is on screen, never an
+    # auto-submit.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    names = ("el", "esc", "clear", "btn", "noteField", "openDialog", "closeDialog", "fixDialog",
+             "showDialogError", "basisOf", "basisDigest", "markDialogStale")
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    script = "\n".join([
+        "var FIELD_WORDS = { quote: 'Quote', date_text: 'Date as written' };",
+        "var FIX_FIELDS = ['quote', 'date_text'];",
+        "var RULE_WORDS = {};",
+        "var NO_ERROR = 'x';",
+        "var posts = [];",
+        "var answers = [];",
+        "function currentRunId() { return 'run1'; }",
+        "function postDecision() {}",
+        "function navigate() {}",
+        "function exclusionFor() { return null; }",
+        "function codeExclusionHistory() { return null; }",
+        "function nearMissPrefill() { return null; }",
+        "function checkResultWord(r) { return r; }",
+        "function toast() {}",
+        "var pending = false;",
+        "function refresh() { return Promise.resolve(); }",
+        "function rowTarget() { return { values: { quote: 'old wording' }, fixes: [], group: 'open' }; }",
+        "var A = { decide: function (id, body) { posts.push(body); var a = answers.shift();",
+        "    return Promise.resolve(a || { ok: true, status: 202, body: {} }); } };",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, dataset: {}, hidden: false, value: '',",
+        "  checked: false,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  insertBefore: function (n, ref) { var i = this.children.indexOf(ref); if (i < 0) this.children.push(n); else this.children.splice(i, 0, n); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  querySelector: function (sel) { var want = sel.replace(/^\\./, ''); var hit = null;",
+        "    (function walk(n) { (n.children || []).forEach(function (c) {",
+        "      if (!hit && !c.removed && (c.className || '').split(' ').indexOf(want) >= 0) hit = c; walk(c); }); })(this);",
+        "    return hit; },",
+        "  remove: function () { this.removed = true; }, focus: function () { this.focused = true; } }; }",
+        "var nodes = {};",
+        "var dialogMount = null;",
+        "var dialogWrap = { hidden: true };",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (id === 'dialog-wrap') return dialogWrap; if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        "var dialogHost = global.document.getElementById('dialog');",
+        fns,
+        "function clear(node) { node.children = []; node.textContent = ''; return node; }",
+        "var B1 = { version: 1, sha256: 'b1' }, B2 = { version: 1, sha256: 'b2' }, B3 = { version: 1, sha256: 'b3' };",
+        "var detail = { id: 'run1',",
+        "  run: { rows: [ { id: 'e1', ticker: 'ACME', title: 'Row one', checks: [] } ], exclusions: [] },",
+        "  state: { targets: { e1: { review_basis: B1 } } } };",
+        "function rowOf(id) { return detail.run.rows.filter(function (r) { return r.id === id; })[0] || null; }",
+        "function findBtn(host, label) { var b = null;",
+        "  (function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'button' && c.textContent === label) b = b || c; walk(c); }); })(host);",
+        "  return b; }",
+        "function findInput(host) { var v = [];",
+        "  (function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'input') v.push(c); walk(c); }); })(host);",
+        "  return v; }",
+        "function okAnswer(basis) { return { ok: true, status: 200, body: { state: { review_basis: basis,",
+        "  fixes: [ { field: 'quote', from: 'old wording', to: 'new wording', settles: false } ],",
+        "  recheck: { result: 'could_not_run', reason: 'no words file' }, group: 'open' }, written: [] } }; }",
+        # open the fix dialog on B1, save once (200, server now at B2)
+        "openDialog(rowOf('e1'), 'fix');",
+        "if (JSON.stringify(dialogMount.basis) !== JSON.stringify(B1)) { console.error('mount basis wrong'); process.exit(2); }",
+        "var inputs = findInput(nodes['dialog']);",
+        "inputs[1].value = 'new wording';",
+        "answers.push(okAnswer(B2));",
+        "findBtn(nodes['dialog'], 'Save fix').onclick();",
+        "Promise.resolve().then(function () {",
+        "  if (posts.length !== 1 || JSON.stringify(posts[0].expected_basis) !== JSON.stringify(B1))",
+        "    { console.error('first save basis: ' + JSON.stringify(posts)); process.exit(3); }",
+        # edit again and save: must carry B2 (adopted from the own save), 200 again
+        "  inputs[1].value = 'another wording';",
+        "  answers.push(okAnswer(B2));",
+        "  findBtn(nodes['dialog'], 'Save fix').onclick();",
+        "  return Promise.resolve().then(function () {",
+        "    if (posts.length !== 2 || JSON.stringify(posts[1].expected_basis) !== JSON.stringify(B2))",
+        "      { console.error('own-save basis not adopted: ' + JSON.stringify(posts)); process.exit(4); }",
+        # an UNRELATED change refuses with 409: red line, refresh adopts B3,
+        # no auto-submit — and the person's next click sends B3, not B1/B2
+        "    answers.push({ ok: false, status: 409, body: { detail: 'This row changed since you opened it.' } });",
+        "    findBtn(nodes['dialog'], 'Save fix').onclick();",
+        "    return Promise.resolve().then(function () {",
+        "      detail.state.targets.e1.review_basis = B3;",
+        "      return Promise.resolve().then(function () {",
+        "        if (posts.length !== 3) { console.error('409 wrote something'); process.exit(5); }",
+        "        if (JSON.stringify(dialogMount.basis) !== JSON.stringify(B3))",
+        "          { console.error('409 basis not adopted: ' + JSON.stringify(dialogMount.basis)); process.exit(6); }",
+        "        var err = nodes['dialog'].querySelector('.errline');",
+        "        if (!err || err.textContent !== 'This row changed since you opened it.') { console.error('no red line'); process.exit(7); }",
+        "        answers.push(okAnswer(B3));",
+        "        findBtn(nodes['dialog'], 'Save fix').onclick();",
+        "        return Promise.resolve().then(function () {",
+        "          if (posts.length !== 4 || JSON.stringify(posts[3].expected_basis) !== JSON.stringify(B3))",
+        "            { console.error('post-409 save basis: ' + JSON.stringify(posts)); process.exit(8); }",
+        "          console.log('ok');",
+        "        });",
+        "      });",
+        "    });",
+        "  });",
+        "}).catch(function (e) { console.error(e && e.message); process.exit(99); });",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
 def test_a_late_refresh_of_the_previous_run_never_paints_under_the_new_run():
+
+
     # DIALOGS-002 (Manus 05:31): refresh() GETs run1 and waits; switchRun loads
     # run2; run1's late answer must be discarded — wrapper and document ids
     # stay run2, no run1 render lands.
@@ -2025,7 +2137,68 @@ def test_your_call_note_survives_background_polling():
     assert got.returncode == 0, got.stdout + got.stderr
 
 
+def test_boot_resolves_an_explicit_route_even_with_an_empty_run_list():
+    # Manus 08:24 / PR #187: with /api/runs empty, boot used to show 'No runs
+    # found' and never load an explicit #/<id> route (allowlist regression).
+    # The explicit route resolves first; the empty message shows only with no
+    # requested route; a non-empty list without a route keeps its own pick.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join((_grab_fn(js, "boot"),))
+    script = "\n".join([
+        "var elCalls = 0;",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], hidden: false,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "function el(tag, cls, text) { var n = make(); n.tag = tag; if (cls) n.className = cls; if (text) n.textContent = text; return n; }",
+        "function applyResearchSettings() {}",
+        "var nodes = {};",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        "var renders = [];",
+        "function renderShell() {}",
+        "function render() { renders.push(detail.id); }",
+        "var scenario = 0;",
+        "var A = {",
+        "  runs: function () { return Promise.resolve(scenario === 2 ? [{ id: 'sample', sample: true }] : []); },",
+        "  settings: function () { return Promise.resolve({}); },",
+        "  run: function (id) { return Promise.resolve({ run: { id: id }, state: {} }); } };",
+        fns,
+        "function runBoot(route, label) {",
+        "  var ar = global.document.getElementById('audit-rows');",
+        "  ar.children = []; ar.textContent = ''; renders = []; detail = null;",
+        "  global.route = route;",
+        "  boot();",
+        "  return new Promise(function (r) { setTimeout(r, 10); }).then(function () { return label; });",
+        "}",
+        # 1. empty list + explicit route: the route's run loads, no empty message
+        "scenario = 1;",
+        "runBoot({ runId: 'sample', screen: 'audit' }, 'explicit').then(function () {",
+        "  if (!detail || detail.id !== 'sample') { console.error('explicit route not loaded'); process.exit(2); }",
+        "  var emptyMsg = nodes['audit-rows'].children.some(function (c) { return /No runs found/.test(c.textContent); });",
+        "  if (emptyMsg) { console.error('empty message shown with a route'); process.exit(3); }",
+        # 2. empty list + NO route: the empty message is the word
+        "  return runBoot(null, 'empty');",
+        "}).then(function () {",
+        "  if (detail) { console.error('loaded a run with an empty list and no route'); process.exit(4); }",
+        "  var emptyMsg = nodes['audit-rows'].children.some(function (c) { return /No runs found under runs\\//.test(c.textContent); });",
+        "  if (!emptyMsg) { console.error('empty message missing with no route'); process.exit(5); }",
+        # 3. non-empty list, no route: the list's own pick loads (contrast)
+        "  scenario = 2;",
+        "  return runBoot(null, 'list');",
+        "}).then(function () {",
+        "  if (!detail || detail.id !== 'sample') { console.error('list pick broken: ' + (detail && detail.id)); process.exit(6); }",
+        "  var emptyMsg = nodes['audit-rows'].children.some(function (c) { return /No runs found/.test(c.textContent); });",
+        "  if (emptyMsg) { console.error('empty message on a non-empty list'); process.exit(7); }",
+        "  console.log('ok');",
+        "}).catch(function (e) { console.error(e && e.message); process.exit(99); });",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
 def test_your_call_note_never_crosses_runs_sharing_a_row_id():
+
+
     # DIALOGS-003 (Manus 05:31): the 'Your call' draft is keyed by run AND row.
     # run2's own e1 (same generated id) starts with an empty box even when a
     # draft exists from run1; the same-run refresh still preserves it.
