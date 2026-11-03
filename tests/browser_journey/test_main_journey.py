@@ -7,13 +7,18 @@ offline renderer) and the offline SEC intake preparer of tests/test_ticker_intak
 call is made anywhere.
 
 The journey (CVA, 2026-11-03), in order; a step the product blocks is marked xfail(strict=True) with the reason:
-  1. New Run: enter PTGX, prepare it, start a research run through the real Run button.
-  2. Watch the run card until done, including the review stage.
+  1. New Run: enter PTGX, prepare it, start a research run through the real Run button (NR-001: the screen sends
+     mode "research"; the request is read off the browser, never intercepted or rewritten).
+  2. Watch the run card until done, including the review stage (2b, xfail: no stage label for the review).
   3. Open a calendar row: the quote, the check reasons and the review label are visible.
   4. One clean automatic placement ("Included — not reviewed by you") and one row in review with its reason.
   5. Remove then Undo on the included row; Fix (Keep anyway on the undemonstrated re-check) then Keep on the review row.
   6. Reload: the decisions persist.
-  7. Download the PDF and Word exports: their counts and labels match the screen.
+  7. Download the PDF and Word exports: the summary counts match the screen, and every event row of each export
+     (the PDF's table parsed by column, the Word table by cell) carries exactly the current title, the effective
+     timing, the inclusion label and the person's decision label, never "Kept by you" on an automatic row. Two
+     mutation negatives (7a, 7b) feed the real renderers a wrong view and show the per-row check fails on it.
+     7c (xfail): the calendar screen's row still shows the pre-Fix title.
 Honesty rules are asserted on every screen text captured and on both exports: never "Kept by you" for automatic
 inclusion, never "verified", and an incomplete review is never shown as "independently reviewed".
 
@@ -141,11 +146,15 @@ class Journey:
         self.page.on("console", lambda m: self.console.append(f"{m.type}: {m.text}"))
         self.page.on("pageerror", lambda e: self.console.append(f"pageerror: {e}"))
         self.ui_body = None        # the POST /api/runs/new body the real Run button sent
+        self.ui_status = None      # the server's status for it
+        self.ui_answer = None      # the server's JSON answer to it
         self.ui_run_id = None      # the run it created, when the server accepted it as a research run
         self.run_id = None
         self.rows = {}             # 'clean' / 'flagged' -> row id
         self.clean_label = None
         self.screens = []          # (name, text) of every screen text captured, for the honesty rules
+        self.report_view = None    # the view report.build rendered the exports from (step 7)
+        self.export_files = None   # the PDF and Word bytes the Export screen served (step 7)
 
     # ---- helpers
     def api(self, path: str) -> dict:
@@ -234,7 +243,8 @@ def assert_honest(text: str, *, where: str, kept_allowed: bool = False, review_c
 # ================================================================== 1. New Run through the real UI
 
 def ui_research_body(j: Journey) -> dict:
-    """The body the New Run screen's real Run button sent, captured by intercepting POST /api/runs/new."""
+    """Click the New Run screen's real Run button and record, passively, the POST /api/runs/new it sent and the
+    server's answer. Nothing is intercepted, rewritten or refused: the body is read off the request Chromium made."""
     page = j.page
     page.goto(f"{j.base}/", wait_until="load")
     page.click("#newrun")
@@ -243,60 +253,42 @@ def ui_research_body(j: Journey) -> dict:
     page.click("#nr-intake-go")
     # the intake finishes inside the request (background=False); the button wakes as 'Continue with 1 ready'
     j.wait_text("#nr-go", "Continue with 1 ready")
-    page.check("#nr-models-one")        # a research run is Muse Spark only (server/jobs.py validate_research_choices)
-    sent = {}
-
-    def intercept(route, request):
-        body = json.loads(request.post_data or "{}")
-        sent["body"] = body
-        if body.get("mode") == "research":
-            route.continue_()
-        else:
-            # never start a page-mode job on the fake researcher: refuse here, as the server would refuse a
-            # research body without mode, and let the test record what the screen sent
-            route.fulfill(status=422, content_type="application/json", body=json.dumps(
-                {"detail": "browser journey: the New Run screen sent no mode: research (recorded as a finding)."}))
-    page.route("**/api/runs/new", intercept)
-    page.click("#nr-go")
-    deadline = time.monotonic() + 15
-    while "body" not in sent and time.monotonic() < deadline:
-        page.wait_for_timeout(100)
-    page.unroute("**/api/runs/new")
-    assert "body" in sent, "The Run button sent no POST /api/runs/new."
-    j.ui_body = sent["body"]
-    if sent["body"].get("mode") == "research":
-        page.wait_for_selector("#newrun-wrap[hidden]")
-        j.ui_run_id = page.evaluate("location.hash").split("/")[1] if "/" in page.evaluate("location.hash") else None
+    # NR-001: a research run is Muse Spark only; the page-mode model choice is hidden on the New Run screen
+    assert not page.is_visible("#nr-models-one"), "the page-mode model choice is shown on a research New Run"
+    with page.expect_response("**/api/runs/new", timeout=15_000) as info:
+        page.click("#nr-go")
+    response = info.value
+    j.ui_body = json.loads(response.request.post_data or "{}")
+    j.ui_status = response.status
+    j.ui_answer = response.json()
+    if response.status == 202:
+        page.wait_for_selector("#newrun-wrap", state="hidden")
+        j.ui_run_id = j.ui_answer["id"]
     else:
         page.click("#nr-cancel")
-    return sent["body"]
+    return j.ui_body
 
 
-@pytest.mark.xfail(strict=True, reason="Known defect being fixed: the New Run screen never sends mode: \"research\" "
-                                       "(ui/app.js startRunNow / startRunFromIntake), so the real Run button cannot "
-                                       "start a research run. The rest of the journey drives a research run created "
-                                       "through the same POST /api/runs/new body plus mode: \"research\".")
 def test_1_new_run_starts_a_research_run_through_the_real_run_button(j):
     body = ui_research_body(j)
     assert body.get("companies") == ["PTGX"], body
     assert body.get("mode") == "research", f"The New Run screen sent no mode: research. It sent: {body}"
+    assert j.ui_status == 202, f"POST /api/runs/new {body} -> {j.ui_status} {j.ui_answer}"
+    assert j.ui_run_id, j.ui_answer
+    run = j.api(f"/api/runs/{j.ui_run_id}")["run"]
+    assert run["choices"]["mode"] == "research" and run["choices"]["companies"] == ["PTGX"], run["choices"]
+    # the screen moved to the run it started
+    assert j.page.evaluate("location.hash").startswith(f"#/{j.ui_run_id}"), j.page.evaluate("location.hash")
 
 
 # ================================================================== 2. the run card until done, with the review
 
-def test_2_the_research_run_starts_from_the_body_the_ui_should_send(j):
+def test_2_the_journey_follows_the_run_the_real_button_started(j):
     if j.ui_body is None:
         ui_research_body(j)
-    if j.ui_run_id:
-        j.run_id = j.ui_run_id          # the real button started it: nothing to add
-    else:
-        # the New Run screen's own body, plus the one field it should send. The intake binding is left out (a
-        # research run reads the web, not the intake's captured pages); as_of pins the calendar window.
-        body = {k: v for k, v in j.ui_body.items() if k not in ("intake_id", "accept_ready_subset")}
-        body.update({"mode": "research", "models": "one", "reader_tools": False, "as_of": AS_OF})
-        r = j.http.post("/api/runs/new", json=body)
-        assert r.status_code == 202, f"POST /api/runs/new {body} -> {r.status_code} {r.text}"
-        j.run_id = r.json()["id"]
+    assert j.ui_run_id, (f"The real Run button started no research run (POST /api/runs/new -> {j.ui_status} "
+                         f"{j.ui_answer}); the journey has nothing to follow.")
+    j.run_id = j.ui_run_id
     run = j.run()["run"]
     assert run["choices"]["mode"] == "research" and run["choices"]["companies"] == ["PTGX"]
     assert run["status"] in ("queued", "running"), run
@@ -311,10 +303,38 @@ def test_2a_the_run_card_shows_the_company_researching(j):
     assert_honest(text, where="run card while researching")
 
 
+REVIEW_IN_PROGRESS = re.compile(r"^(reviewing|review in progress|under review|independent review running|"
+                                r"independent review in progress)$", re.IGNORECASE)
+
+
+def review_in_progress_label(stage: str) -> bool:
+    """True only for a current-stage label that says the independent review is running now. The whole label is
+    matched: 'Not independently reviewed' (a row's research label) and 'Review completed' are not in progress."""
+    return bool(REVIEW_IN_PROGRESS.match(" ".join(stage.split())))
+
+
+def test_2b_contrast_the_stage_predicate_rejects_finished_and_unreviewed_wordings():
+    assert review_in_progress_label("Reviewing") and review_in_progress_label("REVIEWING")
+    for control in ("not independently reviewed", "Not independently reviewed", "review completed",
+                    "Review completed", "Agent research — not independently reviewed", "reviewed", "Researching"):
+        assert not review_in_progress_label(control), control
+
+
+def ptgx_stage_label(j: Journey) -> str:
+    """The current-stage label of PTGX's own line on the run card (ui/app.js researchCompanyBlock: one .rscline per
+    company, the ticker in <b>, the stage word in .rsst)."""
+    line = j.page.locator("#runcard .rscline", has=j.page.locator("b", has_text=re.compile(r"^PTGX$"))).first
+    assert line.count() == 1, f"no run-card line for PTGX:\n{j.text('#runcard')}"
+    return line.locator(".rsst").first.inner_text()
+
+
 @pytest.mark.xfail(strict=True, reason="The run card never shows the review stage: ui/app.js researchCompanyBlock "
-                                       "renders companies[ticker].status (Queued/Researching/Finished) but not "
-                                       "review_status ('reviewing' / 'done'), so a person cannot see the "
-                                       "independent review running on the card.")
+                                       "renders companies[ticker].status through RESEARCH_STATUS_WORDS (Queued / "
+                                       "Researching / Finished / Stopped / Failed) and never review_status "
+                                       "('reviewing' / 'done'). Observed: while the API says review_status: "
+                                       "reviewing, the PTGX line's stage label reads 'Finished' (its research "
+                                       "stage) and the card's run line reads 'Researching.'; nothing on the card "
+                                       "says the independent review is running.")
 def test_2b_the_run_card_shows_the_review_stage(j):
     j.gates["research"].set()
     j.wait_api(lambda b: (b["run"].get("research") or {}).get("companies", {}).get("PTGX", {})
@@ -323,7 +343,11 @@ def test_2b_the_run_card_shows_the_review_stage(j):
     j.page.wait_for_timeout(3000)
     text = j.capture("run card · reviewing", "#runcard")
     assert_honest(text, where="run card while reviewing")
-    assert re.search(r"review", text, re.IGNORECASE), f"The run card says nothing about the review stage:\n{text}"
+    company = j.run()["run"]["research"]["companies"]["PTGX"]
+    assert company["review_status"] == "reviewing", company
+    stage = ptgx_stage_label(j)
+    assert review_in_progress_label(stage), \
+        f"API review_status is 'reviewing' but the PTGX line's stage label reads {stage!r}:\n{text}"
 
 
 def test_2c_the_run_card_reaches_done_after_the_review(j):
@@ -516,9 +540,45 @@ def test_6_the_decisions_persist_after_a_reload(j):
 
 # ================================================================== 7. the exports
 
+CALENDAR_COLUMNS = ["Date / period", "Ticker", "Program", "Event", "Source", "Status"]
+
+
 def pdf_text(data: bytes) -> str:
     from pypdf import PdfReader
     return "\n".join((p.extract_text() or "") for p in PdfReader(io.BytesIO(data)).pages)
+
+
+def pdf_calendar_rows(data: bytes, tickers: set[str]) -> list[dict]:
+    """The calendar table of the PDF, one dict per event row (column name -> cell text). pypdf's layout mode keeps
+    the table's grid: the header line gives each column's character offset, every row is one block of lines
+    between blank lines, a cell is its column's slice of the block's lines joined. The table ends at the first
+    block whose Ticker cell is not one of the run's tickers (the evidence lines that follow it)."""
+    from pypdf import PdfReader
+    pages = [p.extract_text(extraction_mode="layout") or "" for p in PdfReader(io.BytesIO(data)).pages]
+    lines = "\n".join(pages).splitlines()
+    header = next((i for i, l in enumerate(lines)
+                   if all(c in l for c in CALENDAR_COLUMNS) and l.find("Date / period") < l.find("Status")), None)
+    assert header is not None, "no calendar table header in the PDF"
+    starts = [lines[header].index(c) for c in CALENDAR_COLUMNS]
+    spans = list(zip(starts, starts[1:] + [10_000]))
+    rows, block = [], []
+
+    def cells(block: list[str]) -> dict:
+        return {name: " ".join(" ".join(l[a:b].split()) for l in block).strip()
+                for name, (a, b) in zip(CALENDAR_COLUMNS, spans)}
+
+    for line in lines[header + 1:] + [""]:
+        if line.strip():
+            block.append(line)
+            continue
+        if block:
+            row = cells(block)
+            if row["Ticker"] not in tickers:
+                break
+            rows.append(row)
+            block = []
+    assert rows, f"no event rows parsed from the PDF calendar table after:\n{lines[header]}"
+    return rows
 
 
 def docx_text(data: bytes) -> str:
@@ -533,11 +593,66 @@ def docx_text(data: bytes) -> str:
     return "\n".join(parts)
 
 
+def docx_calendar_rows(data: bytes) -> list[dict]:
+    """The calendar table of the Word file, one dict per event row (column name -> cell text)."""
+    from docx import Document
+    doc = Document(io.BytesIO(data))
+    table = next((t for t in doc.tables if [c.text for c in t.rows[0].cells] == CALENDAR_COLUMNS), None)
+    assert table is not None, f"no calendar table in the Word file: {[[c.text for c in t.rows[0].cells] for t in doc.tables]}"
+    return [dict(zip(CALENDAR_COLUMNS, [c.text for c in r.cells])) for r in table.rows[1:]]
+
+
+def expected_calendar_rows(j: Journey) -> dict[str, dict]:
+    """What each event row must read on the exports, from the API's current state (never from the report's own
+    view): the current title (a person's fix applied), the effective timing, the row's inclusion label and the
+    person's decision label when there is one."""
+    body = j.run()
+    rows = {r["id"]: r for r in body["rows"]}
+    out = {}
+    for key in ("clean", "flagged"):
+        rid = j.rows[key]
+        st, row = body["state"]["targets"][rid], rows[rid]
+        title = st["values"].get("title") or row["title"]
+        status = st["review_label"]
+        if st.get("contingent"):
+            status += " · Contingent"
+        if st.get("decision_label"):
+            status += f" · {st['decision_label']}"
+        out[title] = {"Date / period": st["date_display"], "Ticker": row["ticker"], "Program": row["program"],
+                      "Event": title, "Status": status, "inclusion": st["inclusion"],
+                      "automatic": st["inclusion"] == "included"}
+    return out
+
+
+def assert_export_rows(rows: list[dict], expected: dict[str, dict], *, where: str) -> None:
+    """Every expected event is one row of the export, with exactly its current title, its effective timing and its
+    exact status (inclusion label · person's decision label); no other rows; and never 'Kept by you' on a row
+    the rule placed automatically."""
+    by_event = {r["Event"]: r for r in rows}
+    assert len(by_event) == len(rows), f"{where}: duplicate event titles in the table: {[r['Event'] for r in rows]}"
+    assert set(by_event) == set(expected), \
+        f"{where}: the table's events {sorted(by_event)} are not the run's current titles {sorted(expected)}"
+    for title, want in expected.items():
+        got = by_event[title]
+        for col in ("Date / period", "Ticker", "Program", "Status"):
+            assert got[col] == want[col], f"{where}: row {title!r} {col}: {got[col]!r} != {want[col]!r}"
+        if want["automatic"]:
+            assert not has(got["Status"], KEPT), f"{where}: automatic row {title!r} wears {KEPT!r}: {got['Status']!r}"
+            assert has(got["Status"], INCLUDED), f"{where}: automatic row {title!r} lost its inclusion label: {got['Status']!r}"
+        else:
+            assert has(got["Status"], KEPT), f"{where}: the kept row {title!r} has no {KEPT!r}: {got['Status']!r}"
+
+
+def export_rows(kind: str, data: bytes, tickers: set[str]) -> list[dict]:
+    return pdf_calendar_rows(data, tickers) if kind == "pdf" else docx_calendar_rows(data)
+
+
 def test_7_the_pdf_and_word_exports_match_the_screen(j):
     # The server serves a saved report only; nothing on the screens builds one (report/README.md: the build is the
     # command `python -m report.build <run>`). The journey runs that same builder, after the decisions.
     from report.build import build as build_report
     out = build_report(j.run_id, run_dir=j.runs_dir / j.run_id)
+    j.report_view = out["view"]
     j.goto("export")
     # each file row answers its own HEAD request: wait until neither still says 'checking…'
     j.wait_text("#exp-mid", "Open")
@@ -555,40 +670,109 @@ def test_7_the_pdf_and_word_exports_match_the_screen(j):
     for href in hrefs:
         r = j.http.get(href)
         assert r.status_code == 200, (href, r.status_code, r.text[:200])
-        files[href[-4:]] = r.content
-    assert files[".pdf"][:4] == b"%PDF" and files["docx"][:2] == b"PK"
-    got = {"pdf": pdf_text(files[".pdf"]), "docx": docx_text(files["docx"])}
+        files["pdf" if href.endswith(".pdf") else "docx"] = r.content
+    assert files["pdf"][:4] == b"%PDF" and files["docx"][:2] == b"PK"
+    j.export_files = files
+    got = {"pdf": pdf_text(files["pdf"]), "docx": docx_text(files["docx"])}
     counts = j.run()["state"]["counts"]["inclusion"]
     assert counts["kept"] == 1 and counts["included"] == 1 and counts["review"] == 0, counts
+    expected = expected_calendar_rows(j)
+    fixed_title = "EXPAND Phase 3 topline data (subject to FDA feedback)"
+    assert fixed_title in expected and expected[fixed_title]["Status"] == f"Accepted by you · Contingent · {KEPT}", expected
+    assert expected["ICARUS Phase 3 topline data"]["Status"] == INCLUDED, expected
+    assert expected[fixed_title]["Date / period"] == "December 2026", expected
+    assert expected["ICARUS Phase 3 topline data"]["Date / period"] == "Q2 2027", expected
+    # the calendar screen shows the same timings and labels (the current title: test_7c)
     j.goto("calendar")
     head = j.wait_text("#cal-mid", "2 rows")
     assert "kept by you 1" in head and "included automatically 1" in head
+    for title, want in expected.items():
+        row = j.page.locator("#cal-mid .crow", has_text=want["Program"]).first.inner_text()
+        assert has(row, want["Date / period"]), (title, row)
+        assert has(row, KEPT) == (not want["automatic"]), (title, row)
+    # the summary counts, on both exports
     for kind, body in got.items():
         flat = " ".join(body.split())
         assert f"Kept by you: {counts['kept']}" in flat, (kind, flat[:1500])
         assert f"Included automatically — not reviewed by you: {counts['included']}" in flat, (kind, flat[:1500])
         assert f"Needs your review: {counts['review']}" in flat, (kind, flat[:1500])
-        assert "EXPAND" in flat and "ICARUS" in flat, (kind, flat[:1500])
         assert "Unresolved (needs attention): 0" in flat, kind
         plain = flat.replace("unverified", "").replace("Unverified", "")
         assert not re.search(r"\bverified\b", plain, re.IGNORECASE), kind
-    # the row labels: the kept row reads Kept by you, the automatic row reads the inclusion label, never Kept by you
-    view = out["view"]
-    by_event = {row["event"]: row for row in view["calendar"]}
-    icarus = next(v for k, v in by_event.items() if "ICARUS" in k)
-    expand = next(v for k, v in by_event.items() if "EXPAND" in k)
-    assert icarus["review_label"] == INCLUDED and not icarus["person_tag"] and icarus["decision_label"] is None
-    assert expand["decision_label"] == KEPT and expand["person_tag"] == KEPT
-    for kind, body in got.items():
-        flat = " ".join(body.split())
-        assert INCLUDED in flat and KEPT in flat, kind
         # the research label on the exports is the run's recorded label (reviewed, with findings), never 'verified'
-        assert view["research_label"] in flat or view["research_label"].split(" (")[0] in flat, (kind, flat[:1200])
-    assert "with findings" in view["research_label"]
+        label = j.run()["run"]["research"]["label"]
+        assert "with findings" in label and (label in flat or label.split(" (")[0] in flat), (kind, label, flat[:1200])
+    # every event row of each export: the current title, the effective timing, the exact status and attribution
+    for kind, data in files.items():
+        rows = export_rows(kind, data, {"PTGX"})
+        assert len(rows) == 2, (kind, rows)
+        assert_export_rows(rows, expected, where=f"{kind} calendar table")
     # the screen's own numbers agree with the exports
     assert re.search(r"needs attention\s*\n0\b", summary, re.IGNORECASE), summary
     assert re.search(r"placed automatically — not reviewed by you\s*\n1\b", summary, re.IGNORECASE), summary
     assert re.search(r"checked and kept\s*\n1\b", summary, re.IGNORECASE), summary
+
+
+@pytest.mark.xfail(strict=True, reason="The calendar screen's row shows the row's original title, not the "
+                                       "person's fix: ui/app.js calRow renders row.title, never "
+                                       "state.targets[row].values.title, so after the Fix the EXPAND row still "
+                                       "reads 'EXPAND topline data' while the exports (report/data.py _event_label) "
+                                       "read 'EXPAND Phase 3 topline data (subject to FDA feedback)'.")
+def test_7c_the_calendar_screen_row_shows_the_current_title(j):
+    expected = expected_calendar_rows(j)
+    fixed_title = "EXPAND Phase 3 topline data (subject to FDA feedback)"
+    assert fixed_title in expected, expected
+    j.goto("calendar")
+    j.wait_text("#cal-mid", "2 rows")
+    row = j.page.locator("#cal-mid .crow", has_text="EXPAND").first.inner_text()
+    assert fixed_title in row, f"The calendar row does not show the current title {fixed_title!r}:\n{row}"
+
+
+def rendered_rows(view: dict, kind: str) -> list[dict]:
+    """The real report renderers (report/pdf_report.py, report/docx_report.py) on a view, parsed per event row."""
+    from report.docx_report import build_docx
+    from report.pdf_report import build_pdf
+    data = build_pdf(view) if kind == "pdf" else build_docx(view)
+    return export_rows(kind, data, {"PTGX"})
+
+
+def mutated_view(j: Journey, mutate) -> dict:
+    import copy
+    view = copy.deepcopy(j.report_view)
+    mutate(view)
+    return view
+
+
+@pytest.mark.parametrize("kind", ["pdf", "docx"])
+def test_7a_mutation_the_exports_check_fails_on_kept_by_you_on_the_automatic_row(j, kind):
+    """Negative control: the real renderers fed a view whose automatically included row says 'Kept by you' must
+    fail the per-row check, on each export. The unmutated view passes the same check first."""
+    expected = expected_calendar_rows(j)
+    assert_export_rows(rendered_rows(j.report_view, kind), expected, where=f"{kind} unmutated")
+
+    def kept_on_automatic(view):
+        row = next(r for r in view["calendar"] if "ICARUS" in r["event"])
+        assert row["review_label"] == INCLUDED and not row["person_tag"], row
+        row["person_tag"] = KEPT
+    rows = rendered_rows(mutated_view(j, kept_on_automatic), kind)
+    with pytest.raises(AssertionError, match="ICARUS"):
+        assert_export_rows(rows, expected, where=f"{kind} mutated")
+
+
+@pytest.mark.parametrize("kind", ["pdf", "docx"])
+def test_7b_mutation_the_exports_check_fails_on_the_stale_pre_fix_title(j, kind):
+    """Negative control: the real renderers fed a view that still carries the EXPAND row's pre-Fix title must fail
+    the per-row check, on each export."""
+    expected = expected_calendar_rows(j)
+
+    def stale_title(view):
+        row = next(r for r in view["calendar"] if "EXPAND" in r["event"])
+        assert row["event"] == "EXPAND Phase 3 topline data (subject to FDA feedback)", row
+        row["event"] = "EXPAND topline data"
+    rows = rendered_rows(mutated_view(j, stale_title), kind)
+    assert any(r["Event"] == "EXPAND topline data" for r in rows), rows
+    with pytest.raises(AssertionError, match="current titles"):
+        assert_export_rows(rows, expected, where=f"{kind} mutated")
 
 
 # ================================================================== honesty: an incomplete review
@@ -599,8 +783,10 @@ def test_8_an_incomplete_review_is_never_shown_as_independently_reviewed(j):
     gate.set()
     j.reader.script.extend(research_script(gate, [events_two()[0]]))
     j.tools.reviewer.script.extend(truncated_review_script())
+    # the body the real Run button sent in step 1, without its intake binding (one run per intake), as_of pinned
     body = {k: v for k, v in j.ui_body.items() if k not in ("intake_id", "accept_ready_subset")}
-    body.update({"mode": "research", "models": "one", "reader_tools": False, "as_of": AS_OF})
+    body["as_of"] = AS_OF
+    assert body.get("mode") == "research", body
     r = j.http.post("/api/runs/new", json=body)
     assert r.status_code == 202, r.text
     second = r.json()["id"]
