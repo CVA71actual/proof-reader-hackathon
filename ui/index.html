@@ -151,9 +151,13 @@
     <label><input type="checkbox" id="nr-tools"> Let the first reader call the checks while it reads</label>
     <div class="hint">The reader may ask the checks about its own proposals; the checks still run on every row afterwards.</div>
     </div>
-    <h4>Proposed wording <span class="opt">(optional)</span></h4>
-    <label><input type="checkbox" id="nr-support" disabled> Check the proposed wording against the cited source</label>
-    <div class="hint" id="nr-support-hint">Advisory only — a flag changes no check, count or decision.</div>
+    <h4>Checks on every run</h4>
+    <div class="hint">&#10003; Quote is printed on the cited page (code)</div>
+    <div class="hint">&#10003; Citation is where it says (code)</div>
+    <div class="hint">&#10003; Dates match the quote (code)</div>
+    <div class="hint">&#10003; Independent review by a second model &mdash; the run records which one ran and whether it is a different family</div>
+    <label><input type="checkbox" id="nr-support" disabled> Wording check by a hallucination model (advisory; on by default)</label>
+    <div class="hint" id="nr-support-hint">Flags proposed wording the cited source may not support. A flag changes no check, count or decision.</div>
     <div class="errline" id="nr-error" hidden></div>
     <div class="btnrow" style="margin-top:16px">
       <button class="btn pri" id="nr-go">Run now</button>

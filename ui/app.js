@@ -4849,9 +4849,9 @@
   }
   document.getElementById('nr-note').addEventListener('input', function () { nrError(''); updateNoteHint(); });
   // ---------------- LETTUCE-OPTION: the proposed-wording check, offered from
-  // GET /api/research/options — the server's choices, default (off) and its
-  // availability. Nothing is offered that the server does not list; a person's
-  // tick is never reset by a re-open or a delayed options answer.
+  // GET /api/research/options — the server's choices and its availability.
+  // Nothing is offered that the server does not list; a person's untick is
+  // never reset by a re-open or a delayed options answer.
   var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };
   // NR-002: while a fresh options request is in flight a start reads no value —
   // the displayed disabled box is unticked too, so a stale tick never ships.
@@ -4879,8 +4879,9 @@
     // an unavailable (or not-yet-loaded) check never shows a tick the run
     // would not read
     if (!nrSupport.available) box.checked = false;
-    if (!nrSupport.touched && nrSupport.available && body.support_check.default &&
-        nrSupport.choices.indexOf(body.support_check.default) >= 0) box.checked = true;
+    // CVA ruling: the wording check is ON by default whenever it is offered —
+    // a person who unticked keeps it off across reopens and delayed answers
+    if (!nrSupport.touched && nrSupport.available) box.checked = true;
     if (!nrSupport.loaded) hint.textContent = 'This choice could not be loaded. Close and open New run to try again.';
     else if (!nrSupport.available) {
       // plain words only, no product name — the name lives in the trail; the
