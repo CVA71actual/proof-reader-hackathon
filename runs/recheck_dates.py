@@ -126,7 +126,7 @@ def recheck_dates(run: dict, run_dir: Path, decided: set[str], at: str) -> dict:
         got = event_checks.date_match(
             row.get("date_text"), row.get("date"), row.get("quote"), row.get("date_end"),
             event_type=row.get("event_type"), title=row.get("title"), program=row.get("program"), filed=filed,
-            today=(event_checks.release_day(words, filed) or (None,))[0])
+            today=(event_checks.release_day(words, filed, anchor=row.get("quote")) or (None,))[0])
         out["rows"] += 1
         old = row["checks"][idx]
         bound = bind_checks([got], row, source, consumed_artifact=consumed)

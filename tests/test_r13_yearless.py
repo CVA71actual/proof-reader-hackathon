@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from capture import read_events
-from checks.event_checks import clean_date_text, date_match, parse_day_range, yearless_day
+from checks.event_checks import clean_date_text, date_match, is_yearless_day, parse_date_phrase, parse_day_range
 from runs import build_entry
 from server.app import create_app
 from tests.conftest import FIXTURES
@@ -25,13 +25,18 @@ READING = {"prompt_text": "p", "usage": {}, "fake": False}
 CALL = "The company will host a conference call on Friday, Sept. 4 at 10:00 a.m. ET."
 
 
-def test_a_day_with_no_year_is_the_first_such_day_on_or_after_the_filing_date():
-    assert yearless_day("Friday, Sept. 4 at 10:00 a.m. ET", "2026-08-05") == date(2026, 9, 4)
-    assert yearless_day("December 12", "2026-12-20") == date(2027, 12, 12)
-    assert yearless_day("December 12", "2026-12-12") == date(2026, 12, 12)
-    assert yearless_day("February 29", "2026-03-01") == date(2028, 2, 29)
-    assert yearless_day("Sept. 4", None) is None
-    assert yearless_day("September 4, 2026", "2026-08-05") is None and yearless_day("Q3 2027", "2026-08-05") is None
+# Codex 5b / DATE-001 (2026-11-02) replaces Job 13's rule. Job 13 counted a year-less day from the filing date (the
+# first such day on or after it), so "December 12" filed 2026-12-20 rolled to 2027-12-12 and "March 18" under a
+# November 2026 filing became 2027-03-18: a year the source never printed. The adopted rule: a day with no printed year
+# is never dated by code; its timing stays unresolved (no ISO bounds) and that is not a failed claim. The old
+# expectations below were changed on purpose, not to make the suite pass.
+def test_a_day_with_no_year_is_never_given_one():
+    for text in ("Friday, Sept. 4 at 10:00 a.m. ET", "December 12", "February 29", "March 18", "Sept. 4"):
+        assert is_yearless_day(text), text
+        assert parse_date_phrase(text, "2026-11-02") == ("day", None, None), text
+        assert parse_date_phrase(text) == ("day", None, None), text
+    assert not is_yearless_day("September 4, 2026") and not is_yearless_day("Q3 2027")
+    assert not is_yearless_day("February 30") and not is_yearless_day("Smarch 4")
 
 
 def test_what_is_around_a_date_is_not_part_of_it():
@@ -46,13 +51,21 @@ def test_a_day_range_is_two_days_of_one_month():
     assert parse_day_range("November 17 - 14, 2026") is None and parse_day_range("November 14, 2026") is None
 
 
-def test_date_match_compares_the_full_date_with_the_year_from_the_filing_date():
-    ok = date_match("Friday, Sept. 4 at 10:00 a.m. ET", "2026-09-04", CALL, filed="2026-08-05")
-    assert ok.result == "pass" and "filing date" in ok.reason
-    assert date_match("Friday, Sept. 4 at 10:00 a.m. ET", "2027-09-04", CALL, filed="2026-08-05").result == "fail"
+def test_date_match_keeps_a_year_less_day_unresolved_and_does_not_fail_it():
+    # Codex 5b / DATE-001: formerly 2026-09-04 passed "with the year counted from the filing date" and 2027-09-04
+    # failed. Neither year is printed, so neither can be established: the row's day cannot be compared.
+    for given in ("2026-09-04", "2027-09-04"):
+        res = date_match("Friday, Sept. 4 at 10:00 a.m. ET", given, CALL, filed="2026-08-05")
+        assert res.result == "could_not_run" and "prints no year" in res.reason
+        assert res.compared["timing"] == {"wording": "Friday, Sept. 4 at 10:00 a.m. ET", "start": None, "end": None,
+                                          "precision": "unresolved"}
+    none = date_match("Friday, Sept. 4 at 10:00 a.m. ET", None, CALL, filed="2026-08-05")
+    assert none.result == "not_needed" and none.compared["timing"]["start"] is None
+    assert date_match("March 18", None, "Data are expected on March 18.", filed="2026-11-02").result == "not_needed"
+    # still literal: one day is not a period, and the words must be printed
     assert date_match("Friday, Sept. 4 at 10:00 a.m. ET", "2026-09-04", CALL, "2026-09-05",
                       filed="2026-08-05").result == "fail"
-    assert date_match("Friday, Sept. 4 at 10:00 a.m. ET", "2026-09-04", CALL).result == "fail", "no filing date"
+    assert date_match("March 18", None, "Data are expected in spring.", filed="2026-11-02").result == "fail"
 
 
 def test_date_match_reads_a_range_a_weekday_and_a_footnote():
@@ -64,12 +77,18 @@ def test_date_match_reads_a_range_a_weekday_and_a_footnote():
 
 
 def test_a_row_with_a_year_less_day_says_so_on_its_trail_and_its_reason():
+    # Codex 5b / DATE-001: formerly the trail said "Year inferred from the filing date" and the row was dated
+    # 2026-09-04. The reader's proposed day is a guess at the year: the row keeps the printed words and no date.
     words_doc = json.loads((FIXTURES / f"{PIN}.words.json").read_text())
     ev = {**json.loads(FakeReader.default("Protagonist"))["events"][0], "date_text": "Sept. 4", "date": "2026-09-04",
           "date_end": None}
     row = build_entry.build_row(1, ev, READING, SOURCE, words_doc, "2026-10-29T00:00:00+00:00")
-    step = next(t for t in row["trail"] if t["step"] == "Year inferred from the filing date")
-    assert step["tag"] == "Code" and "2026-09-04" in step["text"] and "2026-08-05" in step["text"]
+    assert not any(t["step"] == "Year inferred from the filing date" for t in row["trail"])
+    step = next(t for t in row["trail"] if t["step"] == "Year not printed")
+    assert step["tag"] == "Code" and "2026-09-04" in step["text"] and "not kept" in step["text"]
+    assert row["date_text"] == "Sept. 4" and row["date"] is None and row["date_end"] is None
+    from runs.calendar import timing_state
+    assert timing_state(row) == "timing_unresolved"
 
 
 RECORDED = Path(os.environ.get("TWELVE2_DIR", Path.home() / "proof-reader-docs" / "runs" / "twelve-2"))
@@ -92,7 +111,9 @@ def test_twelve_2_rows_that_failed_for_a_missing_year_are_checked_now():
     # Job 21: date_match takes a person's chosen date and clause continuation, so 13 rows go from could not run to pass
     # DATE-LITERAL-001 retires semantic clause inference (old snapshot: 37/8/15).
     # These are literal-date outcomes only, not accepted event counts.
-    assert after.count("pass") == 44 and after.count("fail") == 7 and after.count("could_not_run") == 9
+    # Codex 5b / DATE-001 (2026-11-02): e4 and e8 ("Friday, Sept. 4 at 10:00 a.m. ET", dated 2026-09-04) passed only
+    # because the year was counted from the filing date; no year is printed, so they go from pass to could not run.
+    assert after.count("pass") == 42 and after.count("fail") == 7 and after.count("could_not_run") == 11
     assert saved.read_bytes() == before
     from runs.state import current_state
     assert current_state(run, [])["counts"]["review"]["accepted"] == 0

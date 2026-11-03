@@ -117,7 +117,8 @@ def row_checks(row: dict, source: dict, words_doc: dict | None, chosen: bool = F
                                 date_end=as_iso(row.get("date_end")), chosen=chosen, event_type=row.get("event_type"),
                                 title=row.get("title"), program=row.get("program"),
                                 filed=source.get("published_date"),
-                                today=(event_checks.release_day(words, source.get("published_date")) or (None,))[0]),
+                                today=(event_checks.release_day(words, source.get("published_date"),
+                                                                   anchor=row.get("quote")) or (None,))[0]),
         event_checks.source_rule(source["kind"], []),
         event_checks.type_match(row.get("event_type"), row.get("quote")),
     ]
