@@ -1288,6 +1288,8 @@
     if (row.program) l1.append(el('span', 'pg2', row.program));
     l1.append(el('span', 'tt', row.title || '(no title)'));
     l1.append(el('span', 'dt', shownDateText(t, row)));
+    var wf = supportTag(row.id);   // CVA: visible without opening the row
+    if (wf) l1.append(wf);
     var l2 = el('div', 'l2');
     var x = t.decided_by_person ? null : exclusionFor(row.id);
     if (projected(t)) {
@@ -1517,6 +1519,16 @@
     var f = (findings || {})[rowId];
     if (f && f.result === 'unsupported_spans' && f.spans && f.spans.length) return f;
     return null;
+  }
+  // CVA: a current hallucination finding is visible WITHOUT opening the row —
+  // a small neutral tag in the row lists and on the calendar row. Never a
+  // status, never in a count, never moves the row; stale, no-finding and
+  // could-not-run rows show no tag. The pane note stays as it is.
+  function supportTag(rowId) {
+    if (!supportFindingFor((detail.run || {}).support_findings, rowId)) return null;
+    var tag = el('span', 'wflag', 'Wording flag (advisory)');
+    tag.title = 'The hallucination check thinks some wording may not be supported by the cited page. Open the row to see it.';
+    return tag;
   }
   function supportNoteText(f, src, row) {
     var words = f.spans.map(function (s) { return '“' + s.text + '”'; });
@@ -3075,6 +3087,8 @@
     c2.append(el('span', 'tk', row.ticker || '—'));
     if (row.program) c2.append(el('span', 'pg2', row.program));
     c2.append(el('span', 'tt', row.title || '(no title)'));
+    var wf = supportTag(row.id);   // CVA: visible without opening the row
+    if (wf) c2.append(wf);
     if (t.contingent) c2.append(el('span', 'keepwarn', 'Contingent · explicit dependency'));
     // A-F7: a row a person kept while a check failed or the readers disagree
     // is not settled — a small warm marker says so next to the title
@@ -3211,6 +3225,8 @@
     if (row.program) l1.append(el('span', 'pg2', row.program));
     l1.append(el('span', 'tt', row.title || ''));
     l1.append(el('span', 'dt', shownDateText(t, row)));
+    var wf = supportTag(row.id);   // CVA: visible without opening the row
+    if (wf) l1.append(wf);
     var l2 = el('div', 'l2');
     if (fixStillOpen(t)) {
       l2.append(el('span', 'st st-corrected open', decidedWord(t, 'Fixed by you') + ' · still open'));

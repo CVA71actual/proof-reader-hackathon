@@ -456,7 +456,7 @@ def _judgment_screen(row_id):
     js = (UI / "app.js").read_text()
     names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket", "rowBadge", "checkDot", "checkResultWord",
              "projected", "reviewClass", "fixStillOpen", "needsAttention", "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
-             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds", "restoreFolds",
+             "supportFindingFor", "supportTag", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds", "restoreFolds",
              "judgmentDecidedPane", "renderJudgment", "fixedNotKept", "sayControls", "cancelSay", "sayBusyWith", "captureFolds", "restoreFolds",
              "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText", "shownField", "projectionComplete", "partialProjection")
     current_run_id_stub = 'function currentRunId() { return "run"; }\n'
@@ -2020,7 +2020,7 @@ def test_your_call_note_survives_background_polling():
              "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
              "reviewClass", "fixStillOpen", "needsAttention",
              "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
-             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds", "restoreFolds", "judgmentDecidedPane",
+             "supportFindingFor", "supportTag", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds", "restoreFolds", "judgmentDecidedPane",
              "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck", "listReasonLine",
              "shownDateText", "shownField", "whySection", "keptCurrent", "codeExclusionHistory", "detailsPane",
              "supportFindingFor", "supportNoteText",
@@ -2210,7 +2210,7 @@ def test_your_call_note_never_crosses_runs_sharing_a_row_id():
              "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
              "reviewClass", "fixStillOpen", "needsAttention",
              "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
-             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds",
+             "supportFindingFor", "supportTag", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds",
              "restoreFolds", "judgmentDecidedPane",
              "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck",
              "listReasonLine",
@@ -2297,7 +2297,7 @@ def test_current_review_issues_reach_the_decision_pane_and_list():
              "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
              "reviewClass", "fixStillOpen", "needsAttention",
              "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
-             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds",
+             "supportFindingFor", "supportTag", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds",
              "restoreFolds", "judgmentDecidedPane",
              "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck",
              "listReasonLine",
@@ -2377,7 +2377,7 @@ def test_empty_judgment_queue_never_claims_auto_inclusions_were_decided():
              "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
              "reviewClass", "fixStillOpen", "needsAttention",
              "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
-             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds",
+             "supportFindingFor", "supportTag", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds",
              "restoreFolds", "judgmentDecidedPane",
              "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck",
              "listReasonLine",
@@ -3879,7 +3879,7 @@ def test_u28_corrected_rows_say_who_caught_it():
     fns = "\n".join(_grab_fn(js, n) for n in
                     ("el", "esc", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket", "dayInWords",
                      "projected", "reviewClass", "decidedMark", "shownDateText", "shownField", "exclusionFor", "mistakeFor", "auditRow",
-                     "projectionComplete", "partialProjection"))
+                     "projectionComplete", "partialProjection", "supportFindingFor", "supportTag"))
     script = f"""
 var FIELD_WORDS = {{ date_text: 'Date as written', date: 'Date', event_type: 'Event type' }};
 var STATUS_WORDS = {{ matched: 'matched', proposed: 'proposed' }};
@@ -5233,7 +5233,7 @@ def test_cleared_date_text_regression_addendum3():
     names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket",
              "rowBadge", "checkDot", "checkResultWord", "projected", "reviewClass", "fixStillOpen",
              "needsAttention", "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows",
-             "mistakeFor", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds", "restoreFolds",
+             "mistakeFor", "supportFindingFor", "supportTag", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds", "restoreFolds",
              "judgmentDecidedPane", "renderJudgment", "fixedNotKept", "sayControls", "cancelSay", "sayBusyWith", "captureFolds", "restoreFolds",
              "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText", "shownField",
              "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane",
@@ -6143,7 +6143,7 @@ def test_m1_undo_click_posts_the_undo(tmp_path):
     names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket",
              "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
              "reviewClass", "fixStillOpen", "needsAttention", "effectiveChecks", "rowTarget", "rowOf",
-             "unresolvedRows", "decidedRows", "mistakeFor", "judgmentRow", "correctedSection", "checksSection",
+             "unresolvedRows", "decidedRows", "mistakeFor", "supportFindingFor", "supportTag", "judgmentRow", "correctedSection", "checksSection",
              "judgmentPendingPane", "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay",
              "sayBusyWith", "captureFolds", "restoreFolds", "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText",
              "shownField", "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane",
@@ -7374,7 +7374,7 @@ def test_fixed_not_kept_gets_its_own_group_and_the_mid_column_shows_the_row():
              "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
              "reviewClass", "fixStillOpen", "needsAttention",
              "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
-             "fixedNotKept", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
+             "fixedNotKept", "supportFindingFor", "supportTag", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
              "captureFolds", "restoreFolds", "judgmentDecidedPane",
              "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck",
              "listReasonLine",
@@ -7500,7 +7500,7 @@ def test_pane_drops_internal_wording():
              "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
              "reviewClass", "fixStillOpen", "needsAttention",
              "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
-             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds",
+             "supportFindingFor", "supportTag", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds",
              "restoreFolds", "judgmentDecidedPane",
              "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck",
              "listReasonLine",
@@ -7908,3 +7908,55 @@ def test_lettuce_real_envelope_pane_and_trail(tmp_path):
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=90)
     assert got.returncode == 0, got.stdout + got.stderr
+
+
+# ---- CVA item 5: a current support finding is visible without opening the row
+
+def _support_tag_script(checks):
+    js = (UI / "app.js").read_text()
+    return "\n".join([
+        "function el(tag, cls, text) { return { tag: tag, className: cls, textContent: text || '', title: '',",
+        "  children: [], append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "var detail = { run: { support_findings: {",
+        "  e1: { result: 'unsupported_spans', spans: [{ start: 0, end: 5, text: 'Phase' }] },",
+        "  e2: { result: 'no_finding', spans: [] },",
+        "  e3: { result: 'could_not_run', spans: [], reason: 'weights missing' },",
+        "  e4: { result: 'stale', spans: [{ start: 0, end: 5, text: 'Phase' }] },",
+        "  e5: { result: 'unsupported_spans', spans: [] } } } };",
+        _grab_fn(js, "supportFindingFor"),
+        _grab_fn(js, "supportTag"),
+    ] + checks)
+
+
+def test_support_tag_shown_on_a_flagged_row():
+    # a current unsupported_spans finding puts the neutral tag on the row, with
+    # the explanatory hover; the tag is wired into the audit row, the judgment
+    # row and the calendar row
+    js = (UI / "app.js").read_text()
+    assert js.count("var wf = supportTag(row.id);") == 3      # auditRow, judgmentRow, calRow
+    assert js.count("if (wf) l1.append(wf);") == 2            # the two lists
+    assert js.count("if (wf) c2.append(wf);") == 1            # the calendar row
+    css = (UI / "styles.css").read_text()
+    wflag = css.split(".wflag{")[1].split("}")[0]
+    assert "var(--sub)" in wflag and "var(--line)" in wflag   # neutral grey, no warning colour
+    assert "keepwarn" not in wflag and "accent" not in wflag
+    _run_node(_support_tag_script([
+        "var t1 = supportTag('e1');",
+        "if (!t1 || t1.textContent !== 'Wording flag (advisory)') fail(2, 'flagged row shows no tag');",
+        "if (t1.className !== 'wflag') fail(3, t1.className);",
+        "if (t1.title !== 'The hallucination check thinks some wording may not be supported by the cited page. Open the row to see it.')",
+        "  fail(4, t1.title);",
+        "console.log('ok');",
+    ]))
+
+
+def test_support_tag_absent_on_no_finding_stale_and_unrun_rows():
+    # no-finding, could-not-run, stale and empty-span records show no tag —
+    # and a run with no support_findings at all shows none either
+    _run_node(_support_tag_script([
+        "['e2', 'e3', 'e4', 'e5', 'e9'].forEach(function (k) {",
+        "  if (supportTag(k)) fail(2, k + ' shows a tag'); });",
+        "detail.run.support_findings = null;",
+        "if (supportTag('e1')) fail(3, 'tag with no findings record');",
+        "console.log('ok');",
+    ]))
