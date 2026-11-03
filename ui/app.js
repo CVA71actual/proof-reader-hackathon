@@ -253,6 +253,12 @@
     return e;
   }
   function esc(s) { return s === null || s === undefined ? '' : String(s); }
+  // Manus INTAKE-02: captured bytes (an omitted image's reference) may hold control characters; show them visibly
+  function visibleText(s) {
+    return esc(s).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, function (c) {
+      return '\\x' + ('0' + c.charCodeAt(0).toString(16)).slice(-2);
+    });
+  }
   function clear(node) { node.textContent = ''; return node; }
   // G1-R3: a row landing scrolls the list column only. .main is overflow:hidden
   // but scrollIntoView still moves its scrollTop, so it is forced back to 0 —
@@ -1330,6 +1336,21 @@
     host.append(go);
   }
 
+  // Codex 5a (06:06): what an isolated render is known to be missing. The plain sentence (rendered_from.summary) is
+  // shown first; the file names, reasons and the renderer's own sentences sit behind "Capture details".
+  function captureNote(rf, tag) {
+    var out = [];
+    if (rf.summary) out.push(el(tag, tag === 'span' ? 'rend' : 'rendnote', esc(rf.summary)));
+    var lims = rf.limitations || [];
+    if (lims.length) {
+      var d = el('details', 'rendnote');
+      d.append(el('summary', null, 'Capture details'));
+      lims.forEach(function (lim) { d.append(el('div', null, visibleText(lim))); });
+      out.push(d);
+    }
+    return out;
+  }
+
   function srcmetaBar(source) {
     var meta = el('div', 'srcmeta');
     function kv(k, v, cls) {
@@ -1345,6 +1366,8 @@
       s.append(el('b', null, 'Page rendered by code from the filed HTML '),
         '· SHA-256 ' + source.rendered_from.sha256.slice(0, 16) + '…');
       meta.append(s);
+      // Codex 5a: one plain sentence first; the detail behind "Capture details"
+      meta.append.apply(meta, captureNote(source.rendered_from, 'span'));
     }
     // RESEARCHER-FULL-001 S1: a source fetched by the agent's tools — where it
     // came from, when, and the hash of the exact bytes received
@@ -1550,6 +1573,7 @@
         sec2.append(el('div', 'rendnote',
           'Page rendered by code from the filed HTML · SHA-256 ' +
           String(src.rendered_from.sha256 || '').slice(0, 16) + '…'));
+        sec2.append.apply(sec2, captureNote(src.rendered_from, 'div'));
       }
     }
     host.append(sec2);

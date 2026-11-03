@@ -457,3 +457,176 @@ def test_rt3_a_real_png_survives_in_every_css_spelling_and_a_labelled_svg_never_
                 assert not counts.get("css_urls_removed") and not counts.get("css_dropped_data_uri"), counts
             else:
                 assert _b64(SVG_BYTES) not in body and "data:" not in body, (page, body)
+
+
+# ---------------------------------------------------------------- Manus 05:27: the render record reaches the run source
+
+def _intake_run(tmp_path, monkeypatch, tamper=None, extra_img="uncaptured.png"):
+    """Producer (real capture_exhibit + the Preparer's default renderer, Chrome intercepted) -> intake index -> a run
+    started from it through the API (fake reader) -> run.json sources. `tamper(cap)` runs between intake and run."""
+    from fastapi.testclient import TestClient
+    from server.app import create_app
+    from tests.test_run_controls import PTGX_ONLY, FakeReader
+
+    fake_chrome = tmp_path / "chrome"
+    fake_chrome.write_text("")
+    monkeypatch.setenv("CHROME_BIN", str(fake_chrome))
+    monkeypatch.setattr(ff, "renderer_label", lambda chrome: "Fake Chrome headless print-to-pdf")
+    real_print = rs.isolated_print
+
+    def intercept(cmd, **kw):          # never executes a browser
+        out = next(c for c in cmd if c.startswith("--print-to-pdf=")).split("=", 1)[1]
+        Path(out).write_bytes(rs.render_text_pdf("Crinetics announces a Phase 3 readout in 2027.", "T"))
+    monkeypatch.setattr(rs, "isolated_print", lambda *a, **kw: real_print(*a, **{**kw, "run": intercept}))
+
+    slide = png(300, 200, RED)
+    samples = sec_samples()
+    cbase = _archive(CRNX_CIK, ACC)
+    samples[cbase + "index.json"] = json.dumps({"directory": {"item": [{"name": HTML_NAME}, {"name": SLIDE}]}}).encode()
+    samples[cbase + HTML_NAME] = (f'<html><body><p>Crinetics announces a Phase 3 readout in 2027.</p>'
+                                  f'<img src="{SLIDE}"><img src="{extra_img}"></body></html>').encode()
+    samples[cbase + SLIDE] = slide
+    cache = tmp_path / "company_tickers.json"
+    cache.write_text("{}")
+    prep = intake.Preparer(fetcher=FakeFetcher(samples), filings_root=tmp_path / "intake-docs", today=lambda: TODAY,
+                           tickers_cache=cache, background=False)
+    assert prep.render is er.render_captured_exhibit
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    client = TestClient(create_app(runs_dir=runs_dir, ui_dir=runs_dir / "no-ui", reader=FakeReader(),
+                                   background=False, intake_preparer=prep))
+    r = client.post("/api/intake", json={"tickers": "CRNX"})
+    assert r.status_code == 202, r.text
+    iid = r.json()["intake_id"]
+    cap = next((tmp_path / "intake-docs").rglob(ACC))
+    if tamper:
+        tamper(cap)
+    r = client.post("/api/runs/new", json={**PTGX_ONLY, "companies": ["CRNX"], "intake_id": iid})
+    assert r.status_code == 202, r.text
+    run = json.loads((runs_dir / r.json()["id"] / "run.json").read_text())
+    srcs = [s for s in run["sources"] if s.get("rendered_from")]
+    assert srcs, run["sources"]
+    return run, srcs, slide
+
+
+def _report_texts(run):
+    import io
+    from docx import Document
+    from pypdf import PdfReader
+    from report.data import build_view
+    from report.docx_report import build_docx
+    from report.pdf_report import build_pdf
+    view = build_view(run, [], generated_at="2026-11-03T12:00:00+00:00")
+    pdf = "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(build_pdf(view))).pages)
+    docx = "\n".join(p.text for p in Document(io.BytesIO(build_docx(view))).paragraphs)
+    return view, " ".join(pdf.split()), docx
+
+
+def _schema_ok(run):
+    from jsonschema import Draft202012Validator
+    schema = json.loads((Path(__file__).resolve().parents[1] / "runs" / "schema" / "run.schema.json").read_text())
+    errors = sorted(Draft202012Validator(schema).iter_errors(run), key=str)
+    assert not errors, [e.message for e in errors[:3]]
+
+
+def test_an_uncaptured_image_omission_reaches_the_run_source_and_the_report(tmp_path, monkeypatch):
+    run, srcs, slide = _intake_run(tmp_path, monkeypatch)
+    _schema_ok(run)
+    for src in srcs:
+        rf = src["rendered_from"]
+        rec = rf["render_record"]
+        assert rec["status"] == "verified" and rec["file"] == "crnx_ex99-1.pdf.render.json" and len(rec["sha256"]) == 64
+        assert rec["assets_consumed"] == [{"name": SLIDE, "sha256": hashlib.sha256(slide).hexdigest(),
+                                           "bytes": len(slide), "media_type": "image/png"}]
+        assert rec["assets_omitted"] == [{"ref": "uncaptured.png", "reason": "not a captured asset of this exhibit"}]
+        assert "1 image(s) not captured (the rendered page shows a placeholder)" in rf["limitations"]
+        assert ("Image not shown on the rendered page: uncaptured.png (not a captured asset of this exhibit)."
+                in rf["limitations"])
+        assert rf["summary"] == "1 image was unavailable in this capture."
+    view, pdf, docx = _report_texts(run)
+    # the primary message is one plain sentence; the sanitizer's prose and file names stay out of the report
+    assert "1 image was unavailable in this capture." in docx and "1 image was unavailable in this capture." in pdf
+    for detail in ("Sanitized rendering", "uncaptured.png", "image(s) not captured"):
+        assert detail not in docx and detail not in pdf
+    assert [r["render_summary"] for r in view["sources"] if r["render_summary"]]
+    js = (Path(__file__).resolve().parents[1] / "ui" / "app.js").read_text()
+    assert js.count("captureNote(source.rendered_from") == 1
+    assert js.count("captureNote(src.rendered_from") == 1 and "'Capture details'" in js
+    assert "rf.summary" in js and "visibleText(lim)" in js
+
+
+def test_a_changed_render_record_becomes_an_explicit_limitation_never_silent(tmp_path, monkeypatch):
+    def tamper(cap):
+        p = cap / "crnx_ex99-1.pdf.render.json"
+        doc = json.loads(p.read_text())
+        doc["assets_omitted"] = []                     # someone hides the omission after capture
+        doc["limitations"] = []
+        p.write_text(json.dumps(doc))
+    run, srcs, _ = _intake_run(tmp_path, monkeypatch, tamper=tamper)
+    _schema_ok(run)
+    for src in srcs:
+        rf = src["rendered_from"]
+        assert rf["render_record"]["status"] == "changed"
+        assert rf["render_record"]["file"] == "crnx_ex99-1.pdf.render.json" and len(rf["render_record"]["sha256"]) == 64
+        assert rf["render_record"]["assets_omitted"] == [] and rf["render_record"]["assets_consumed"] == []
+        assert len(rf["limitations"]) == 1 and rf["limitations"][0].startswith("Render record changed since capture")
+        assert "not known" in rf["limitations"][0]
+        assert rf["summary"] == "Capture information unavailable: whether any images are missing from this capture could not be checked."
+    _, pdf, docx = _report_texts(run)
+    assert "Capture information unavailable: whether any images are missing from this capture could not be checked." in docx
+    assert "Capture information unavailable: whether any images are missing from this capture could not be checked." in pdf
+
+
+def test_a_missing_render_record_becomes_an_explicit_limitation(tmp_path, monkeypatch):
+    run, srcs, _ = _intake_run(tmp_path, monkeypatch,
+                               tamper=lambda cap: (cap / "crnx_ex99-1.pdf.render.json").unlink())
+    _schema_ok(run)
+    for src in srcs:
+        assert src["rendered_from"]["render_record"]["status"] == "unavailable"
+        assert src["rendered_from"]["limitations"][0].startswith("Render record unavailable")
+        assert src["rendered_from"]["summary"].startswith("Capture information unavailable")
+        rec = src["rendered_from"]["render_record"]
+        assert rec["file"] == "crnx_ex99-1.pdf.render.json" and len(rec["sha256"]) == 64     # expected identity kept
+        assert rec["assets_consumed"] == [] and rec["assets_omitted"] == []
+
+
+def test_a_control_byte_in_an_omitted_reference_is_shown_visibly_and_keeps_its_bytes(tmp_path, monkeypatch):
+    """Manus INTAKE-02: an omitted reference holding \\x01 reached the run source and made the Word export raise.
+    It is now written visibly at export time; the run source keeps the original character and the hashed record."""
+    run, srcs, _ = _intake_run(tmp_path, monkeypatch, extra_img="bad\x01name.png")
+    _schema_ok(run)
+    for src in srcs:
+        rec = src["rendered_from"]["render_record"]
+        assert rec["status"] == "verified"
+        assert rec["assets_omitted"][0]["ref"] == "bad\x01name.png"          # the original character, unchanged
+        assert src["rendered_from"]["summary"] == "1 image was unavailable in this capture."
+        assert any("bad\x01name.png" in l for l in src["rendered_from"]["limitations"])   # detail keeps it too
+    view, pdf, docx = _report_texts(run)                                     # the Word export does not raise
+    assert "1 image was unavailable in this capture." in docx and "\x01" not in docx
+    js = (Path(__file__).resolve().parents[1] / "ui" / "app.js").read_text()
+    assert "visibleText(lim)" in js                                         # the detail is shown visibly escaped
+
+
+def test_the_word_and_pdf_writers_escape_control_characters_visibly(tmp_path, monkeypatch):
+    """The sink guard itself: a captured string with control characters anywhere in the view is written visibly."""
+    import io
+    from docx import Document
+    from pypdf import PdfReader
+    from report.data import build_view
+    from report.docx_report import build_docx
+    from report.pdf_report import build_pdf
+    run, _, _ = _intake_run(tmp_path, monkeypatch)
+    for src in run["sources"]:
+        src["publisher"] = "Crinetics\x01\x0b (filed with the SEC)"
+        src["rendered_from"]["summary"] = "1 image\x02 was unavailable in this capture."
+    view = build_view(run, [], generated_at="2026-11-03T12:00:00+00:00")
+    docx = "\n".join(p.text for p in Document(io.BytesIO(build_docx(view))).paragraphs)
+    pdf = " ".join("\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(build_pdf(view))).pages).split())
+    for text in (docx, pdf):
+        assert "Crinetics\\x01\\x0b" in text and "1 image\\x02 was" in text and "\x01" not in text
+
+
+def test_visible_text_escapes_every_character_xml_cannot_hold():
+    from report.data import visible_text
+    assert visible_text("a\x00b\x01c\x1f\x7f\ud800\uffff\tok\n") == "a\\x00b\\x01c\\x1f\\x7f\\ud800\\uffff\tok\n"
+    assert visible_text(None) == "" and visible_text("plain é") == "plain é"

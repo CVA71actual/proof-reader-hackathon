@@ -9,6 +9,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Pt
 
+from report.data import visible_text
+
 
 def _set_run_font(run, *, size=9, bold=False, italic=False, name="Helvetica"):
     run.font.size = Pt(size)
@@ -27,13 +29,13 @@ def _add_footer(section, text: str) -> None:
     footer.is_linked_to_previous = False
     p = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
     p.text = ""
-    run = p.add_run(text)
+    run = p.add_run(visible_text(text))
     _set_run_font(run, size=7)
 
 
 def _heading(doc: Document, text: str) -> None:
     p = doc.add_paragraph()
-    run = p.add_run(text)
+    run = p.add_run(visible_text(text))
     _set_run_font(run, size=13, bold=True)
     p.paragraph_format.space_before = Pt(12)
     p.paragraph_format.space_after = Pt(4)
@@ -41,7 +43,7 @@ def _heading(doc: Document, text: str) -> None:
 
 def _line(doc: Document, text: str, *, size=9, bold=False, italic=False) -> None:
     p = doc.add_paragraph()
-    run = p.add_run(text)
+    run = p.add_run(visible_text(text))
     _set_run_font(run, size=size, bold=bold, italic=italic)
     p.paragraph_format.space_after = Pt(2)
 
@@ -97,7 +99,7 @@ def build_docx(view: dict) -> bytes:
     # Cover
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    run = p.add_run(view["title"])
+    run = p.add_run(visible_text(view["title"]))
     _set_run_font(run, size=18, bold=True)
 
     _line(doc, f"Run {view['run_number']}: {view['run_label']}")
@@ -142,7 +144,7 @@ def build_docx(view: dict) -> bytes:
         table = doc.add_table(rows=1, cols=6)
         hdr = table.rows[0].cells
         for i, name in enumerate(["Date / period", "Ticker", "Program", "Event", "Source", "Status"]):
-            hdr[i].text = name
+            hdr[i].text = visible_text(name)
             for p in hdr[i].paragraphs:
                 for r in p.runs:
                     _set_run_font(r, size=8, bold=True)
@@ -158,7 +160,7 @@ def build_docx(view: dict) -> bytes:
                 row["event"], row["source"], status,
             ]
             for i, v in enumerate(vals):
-                cells[i].text = v
+                cells[i].text = visible_text(v)
                 for p in cells[i].paragraphs:
                     for r in p.runs:
                         _set_run_font(r, size=8)
@@ -245,6 +247,8 @@ def build_docx(view: dict) -> bytes:
                 f"renderer: {s['renderer']}",
                 size=8,
             )
+        if s.get("render_summary"):
+            _line(doc, s["render_summary"], size=8)
 
     buf = BytesIO()
     doc.save(buf)
