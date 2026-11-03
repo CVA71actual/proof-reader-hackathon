@@ -122,3 +122,33 @@ def test_calendar_headline_never_calls_automatic_inclusion_kept(tmp_path):
                                                   "note": "Not ours."}).status_code == 200
     text = " ".join(_render(tmp_path, _detail(client, root), "calendar")["text"])
     assert "Nothing on the calendar yet. Rows with no issues are placed here automatically" in text
+
+
+def test_calendar_headline_parts_count_exactly_the_rows_shown(tmp_path):
+    """Kimi 813ce87: "5 rows · kept by you 0 · included automatically 2" counted Context/Later/Undated rows in N.
+    N is now the calendar window alone and equals kept + included automatically; each other section is named."""
+    import shutil as _sh
+    from tests.test_runs import RUNS
+    _sh.copytree(RUNS / "sample", tmp_path / "sample")
+    client = TestClient(create_app(runs_dir=tmp_path))
+    body = client.get("/api/runs/sample").json()
+    part, targets = body["calendar_partition"], body["state"]["targets"]
+    detail = {"id": "sample", "run": body, "state": body["state"]}
+    text = " ".join(_render(tmp_path, detail, "calendar")["text"])
+    head = next(t for t in _render(tmp_path, detail, "calendar")["text"] if t.startswith("Events on the calendar"))
+    cal = part["calendar"]
+    kept = sum(targets[e["id"]]["inclusion"] == "kept" for e in cal)
+    auto = sum(targets[e["id"]]["inclusion"] == "included" for e in cal)
+    assert kept + auto == len(cal)
+    expected = [f"{len(cal)} row{'s' if len(cal) != 1 else ''}", f"kept by you {kept}", f"included automatically {auto}"]
+    if part["past"]:
+        expected.append(f"context (past) {len(part['past'])}")
+    if part["later"]:
+        expected.append(f"later {len(part['later'])}")
+    undated = len(part["contingent"]) + len(part["undated"]) + len(part["timing_unresolved"])
+    if undated:
+        expected.append(f"undated {undated}")
+    assert head.startswith("Events on the calendar, by date · " + " · ".join(expected) + " · "), head
+    # the sample has rows outside the window, so the old single total would have overstated N
+    assert part["later"] or part["past"] or undated
+    assert "Kept events" not in text

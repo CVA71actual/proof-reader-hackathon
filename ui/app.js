@@ -2425,9 +2425,23 @@
     // as the other, and splits them from the server's counts.inclusion when it sends them
     var inc = detail.state && detail.state.counts && detail.state.counts.inclusion;
     // (a server without counts.inclusion keeps the old kept-only calendar and its old words)
-    var split = inc ? ' · kept by you ' + inc.kept + ' · included automatically ' + inc.included : '';
-    subrow.append(el('div', 'sub', (inc ? 'Events on the calendar, by date · ' : 'Kept events, by date · ') + total + ' row' +
-      (total === 1 ? '' : 's') + split + ' · ' + (w.unresolved ? w.reason : w.anchor + ' – ' + w.end)));
+    if (inc) {
+      // every part of the headline counts the rows actually shown in that part: N is the calendar itself (the
+      // window), split into kept by you + included automatically; the sections below it are named on their own
+      var keptN = rows.filter(function (r) { return r.t.inclusion === 'kept'; }).length;
+      var autoN = rows.filter(function (r) { return r.t.inclusion === 'included'; }).length;
+      var parts = [rows.length + ' row' + (rows.length === 1 ? '' : 's'), 'kept by you ' + keptN,
+                   'included automatically ' + autoN];
+      if (past.length) parts.push('context (past) ' + past.length);
+      if (later.length) parts.push('later ' + later.length);
+      var undatedN = nodates.length + undated.length + timingUnresolved.length;
+      if (undatedN) parts.push('undated ' + undatedN);
+      subrow.append(el('div', 'sub', 'Events on the calendar, by date · ' + parts.join(' · ') + ' · ' +
+        (w.unresolved ? w.reason : w.anchor + ' – ' + w.end)));
+    } else {
+      subrow.append(el('div', 'sub', 'Kept events, by date · ' + total + ' row' +
+        (total === 1 ? '' : 's') + ' · ' + (w.unresolved ? w.reason : w.anchor + ' – ' + w.end)));
+    }
     head.append(subrow);
     var rl = el('div', 'runlabel' + (meta.sample ? ' sample' : ''), meta.label || '');
     head.append(rl);
