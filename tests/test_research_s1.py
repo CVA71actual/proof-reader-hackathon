@@ -1886,14 +1886,14 @@ LONG_RELEASE = (f"<html><head><title>Acme reports Phase 3 maintenance data</titl
 
 
 def test_a_long_site_maintenance_page_is_a_block_page():
-    assert len(rs.readable_text(rs.sanitize_html(LONG_MAINTENANCE.decode())[0])) > rs.BLOCK_MAX_CHARS
+    assert len(rs.readable_text(rs.sanitize_html(LONG_MAINTENANCE.decode())[0])) > 2000   # Red Team: 2,652
     reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", LONG_MAINTENANCE))
     assert reason and reason.startswith("site served a block/maintenance page") and "title" in reason
 
 
 def test_a_short_down_for_scheduled_maintenance_page_is_a_block_page():
     reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", SHORT_DOWN))
-    assert reason and "down for scheduled maintenance" in reason
+    assert reason and "site is down" in reason
 
 
 def test_block_wording_dominating_a_long_page_without_a_headline_is_a_block_page():
@@ -1966,3 +1966,66 @@ def test_a_clean_company_counts_its_stated_limitation_only(runs_dir):
     assert c["status"] == "finished" and "1 limitation stated by the model." in c["status_reason"]
     assert c["status_reason"].endswith("Limitations in all: 2 (1 stated by the model; recorded by code: 1 search "
                                        "failure).")
+
+
+
+# ---------------------------------------------------------------- OUTCOME-001 Red Team #175 at 3ff7309: one principle
+# Block wording counts only when its subject is the site, page, service or system (or it is an access refusal / bot
+# wall); a page is a block page when that wording is its title or h1, or most of its prose sentences, whatever else it
+# holds. Detection is heuristic: a refused page is recorded with its reason and the reviewer remains the backstop.
+
+
+def test_rt_a_a_dateline_line_does_not_exempt_a_site_maintenance_page():
+    page = LONG_MAINTENANCE.replace(b"<h1>", b"<p>BOSTON, March 18, 2026</p><h1>")
+    reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page))
+    assert reason and reason.startswith("site served a block/maintenance page") and "title" in reason
+
+
+def test_rt_b_a_short_site_unavailable_for_maintenance_page_is_refused():
+    page = b"<html><body><p>We are sorry: the site is unavailable due to scheduled maintenance.</p></body></html>"
+    reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page))
+    assert reason and "site is unavailable" in reason
+
+
+def test_rt_c_maintenance_dosing_is_a_document_not_a_block_page():
+    page = b"<html><body><p>In the extension study, patients are undergoing maintenance dosing.</p></body></html>"
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page)) is None
+
+
+def test_a_release_mentioning_site_maintenance_in_passing_is_captured():
+    passing = ("<p>The company completed scheduled site maintenance at its Boston manufacturing facility in the "
+               "quarter.</p>")
+    short = ("<html><head><title>Acme second quarter results</title></head><body><h1>Acme Reports Second Quarter "
+             "Results</h1><p>Acme Therapeutics reported revenue growth and reaffirmed its 2026 guidance.</p>"
+             f"{passing}<p>Enrollment in the ACME-3 trial is complete.</p></body></html>").encode()
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", short)) is None
+    long_release = LONG_RELEASE.replace(b"</h1>", b"</h1>" + passing.encode())
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", long_release)) is None
+
+
+def test_rt_cases_through_fetch_url(runs_dir):
+    a, b, c = "https://example.com/a", "https://example.com/b", "https://example.com/c"
+    dated = LONG_MAINTENANCE.replace(b"<h1>", b"<p>BOSTON, March 18, 2026</p><h1>")
+    down = b"<html><body><p>We are sorry: the site is unavailable due to scheduled maintenance.</p></body></html>"
+    dosing = b"<html><body><p>In the extension study, patients are undergoing maintenance dosing.</p></body></html>"
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": a, "purpose": "release"}, "c0")]),
+        F.body([F.call("fetch_url", {"url": b, "purpose": "release"}, "c1")]),
+        F.body([F.call("fetch_url", {"url": c, "purpose": "release"}, "c2")]),
+        F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "x"}, "c3")]),
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    _, rid, _ = start(runs_dir, reader, pages={a: (200, "text/html", dated), b: (200, "text/html", down),
+                                               c: (200, "text/html", dosing)})
+    run = run_json(runs_dir, rid)
+    assert [s["url"] for s in run["sources"]] == [c]                    # only the dosing page is a source
+    fails = run["run"]["research"]["companies"]["PTGX"]["capture_failures"]
+    assert [(f["url"], f["outcome"]) for f in fails] == [(a, "could_not_access"), (b, "could_not_access")]
+    assert all(f["reason"].startswith("site served a block/maintenance page") for f in fails)
+
+
+def test_block_detection_stays_linear_on_a_long_unpunctuated_page():
+    import time
+    page = ("<html><body><p>" + "word " * 50000 + "</p></body></html>").encode()
+    t = time.monotonic()
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page)) is None
+    assert time.monotonic() - t < 2.0
