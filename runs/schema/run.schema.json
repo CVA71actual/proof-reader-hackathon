@@ -175,6 +175,7 @@
             "format": {"const": "html"},
             "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256 of the filed HTML, as fetched from url."},
             "renderer": {"type": "string", "minLength": 1},
+            "summary": {"type": ["string", "null"], "description": "Optional. One plain sentence the reader and the report show first, e.g. \"1 image was unavailable in this capture.\"; null when nothing is known to be missing."},
             "limitations": {"type": "array", "items": {"type": "string"}, "description": "Optional. What the isolated renderer (capture/exhibit_render.py) did not show or apply, from the verified render record, or why that record could not be used. Shown with the source in the reader and the report."},
             "render_record": {
               "type": "object", "additionalProperties": false,

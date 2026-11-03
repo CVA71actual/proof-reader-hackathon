@@ -21,6 +21,8 @@ from reportlab.platypus import (
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
 
+from report.data import visible_text
+
 # Byte-stable PDFs when content matches (cover timestamp is the only intended diff).
 # Uncompressed page streams keep the cover timestamp as plain bytes so tests can mask it.
 reportlab.rl_config.invariant = 1
@@ -105,7 +107,7 @@ def _context(row: dict) -> str:
 
 def _p(text: str, style) -> Paragraph:
     safe = (
-        (text or "")
+        visible_text(text or "")
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
@@ -313,8 +315,8 @@ def build_pdf(view: dict) -> bytes:
                 f"renderer: {s['renderer']}",
                 styles["small"],
             ))
-        for lim in s.get("render_limitations") or []:
-            block.append(_p(f"Render limitation: {lim}", styles["small"]))
+        if s.get("render_summary"):
+            block.append(_p(s["render_summary"], styles["small"]))
         story.append(KeepTogether(block))
 
     doc.build(story)

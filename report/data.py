@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import json
 from datetime import date, datetime
 from pathlib import Path
@@ -187,6 +189,21 @@ def date_in_words(iso: str) -> str:
     except ValueError:
         return iso or ""
     return f"{d.day} {d:%B %Y}"
+
+
+# Manus INTAKE-02: report text can carry bytes from captured documents (an omitted image's reference, a title). XML
+# 1.0, which Word files are made of, cannot hold control characters, lone surrogates or U+FFFE/U+FFFF, and the Word
+# writer refuses such a string. At display and export time each such character is shown visibly as \\xNN / \\uNNNN;
+# the run's saved data, its bytes and its hashes are never changed.
+_NOT_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff\ufffe\uffff]")
+
+
+def visible_text(text) -> str:
+    """text with every character XML 1.0 cannot hold (and DEL) written visibly as \\xNN or \\uNNNN."""
+    if text is None:
+        return ""
+    return _NOT_XML.sub(lambda m: f"\\x{ord(m.group(0)):02x}" if ord(m.group(0)) < 0x100
+                        else f"\\u{ord(m.group(0)):04x}", str(text))
 
 
 def _research_lines(meta: dict, run: dict) -> tuple[str | None, list[str]]:
@@ -468,8 +485,9 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
                 "page rendered by code from the filed HTML"
                 if rf else None
             ),
-            # Codex 5a: what the isolated renderer did not show, from the verified render record (runs/sources.py)
-            "render_limitations": list((rf or {}).get("limitations") or []),
+            # Codex 5a: one plain sentence on what the capture is missing (runs/sources.py); the detail (names,
+            # reasons, hashes, sanitizer sentences) stays on the run source and in the reader's capture details
+            "render_summary": (rf or {}).get("summary"),
             "retrieved_at": (src.get("retrieval") or {}).get("retrieved_at"),
             "original_sha256": (src.get("retrieval") or {}).get("original_sha256"),
         })

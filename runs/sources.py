@@ -259,8 +259,19 @@ MAX_OMISSIONS_LISTED = 20
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
+# The one plain sentence the reader and the report show first (Codex 06:06); the file names, reasons, hashes and the
+# sanitizer's own sentences stay in rendered_from.limitations / render_record, behind the reader's "Capture details".
+UNCHECKED_SUMMARY = "Capture information unavailable: whether any images are missing from this capture could not be checked."
+
+
+def omission_summary(n: int) -> str | None:
+    if n <= 0:
+        return None
+    return "1 image was unavailable in this capture." if n == 1 else f"{n} images were unavailable in this capture."
+
+
 def render_record_metadata(record: dict) -> dict | None:
-    """{render_record: {file, sha256, status, assets_consumed, assets_omitted}, limitations: [...]} for a page whose
+    """{render_record: {file, sha256, status, assets_consumed, assets_omitted}, summary, limitations: [...]} for a page whose
     exhibit was rendered in isolation, or None when the page names no render record and was not rendered that way."""
     if not record.get("render_record") and ISOLATED_RENDERER_MARK not in str(record.get("renderer") or ""):
         return None
@@ -271,6 +282,7 @@ def render_record_metadata(record: dict) -> dict | None:
     def unavailable(status: str, why: str) -> dict:
         return {"render_record": {"file": name, "sha256": want if isinstance(want, str) else None, "status": status,
                                   "assets_consumed": [], "assets_omitted": []},
+                "summary": UNCHECKED_SUMMARY,
                 "limitations": [why + " " + known[0].upper() + known[1:]]}
 
     path = record.get("render_record_path")
@@ -308,6 +320,7 @@ def render_record_metadata(record: dict) -> dict | None:
                            f"record.")
     return {"render_record": {"file": name, "sha256": want, "status": "verified", "assets_consumed": consumed,
                               "assets_omitted": omitted},
+            "summary": omission_summary(len(omitted)),
             "limitations": limitations}
 
 
