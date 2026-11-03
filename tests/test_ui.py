@@ -1381,7 +1381,7 @@ def test_research_instructions_both_start_paths_send_the_exact_text():
                     ("el", "clear", "nrError", "nrModels", "researchReady", "notePayload", "startRunFromIntake", "syncPasteMode",
                      "renderIntakeStatus", "intakeScopeLine", "dayMonth", "intakeDoneN", "syncStartButton",
                      "renderChosen", "renderPrevCompanies", "nrPreparedTickers", "tickedReadyCount",
-                     "applyPasteDisable"))
+                     "applyPasteDisable", "nrSupportValue"))
     script = "\n".join([
         "var NEW_RUN_TYPES = [['trial_results', 'Trial results']];",
         "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',",
@@ -1396,6 +1396,7 @@ def test_research_instructions_both_start_paths_send_the_exact_text():
         "var INTAKE_FINISHED = ('ready unresolved no_documents unsupported failed').split(' ');",
         "var nodes = {};",
         "var nrResearch = { defaultText: 'Read the 8-K exhibits.', maxLength: 4000, loaded: true };",
+        "var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };",
         "var nrIntake = { id: null, seq: 0, timer: null, last: null, text: null, usedId: null, usedRun: null };",
         "var nrBusy = false;",
         "var nrChosen = {}; var nrPrepUnticked = {}; var nrCompanies = [];",
@@ -2346,10 +2347,12 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
                     ("el", "clear", "nrError", "dayMonth", "intakeScopeLine", "renderIntakeStatus",
                      "syncPasteMode", "stopIntakePoll", "pollIntake", "startIntake", "startRunFromIntake",
                      "nrModels", "notePayload", "researchReady", "intakeDoneN", "syncStartButton", "nrStartClick",
-                     "renderChosen", "nrPreparedTickers", "tickedReadyCount", "applyPasteDisable"))
+                     "renderChosen", "nrPreparedTickers", "tickedReadyCount",
+                     "applyPasteDisable", "nrSupportValue"))
     script = "\n".join([
         "var NR_PASTE_ONLY = 'This run reads only the pasted tickers. Clear the box to choose from the captured names instead.';",
         "var nrBusy = false;",
+        "var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };",
         "var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul',",
         "  'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];",
         "var INTAKE_STATE_WORDS = { resolving: 'Finding the company', capturing: 'Capturing documents',",
@@ -4562,8 +4565,9 @@ def test_cleared_date_text_regression_addendum3():
              "mistakeFor", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds", "restoreFolds",
              "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith", "captureFolds", "restoreFolds",
              "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText", "shownField",
-             "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane", "researchLabelLine", "researchContextSection",
-             "disagreementSection", "whySection", "checksSection", "keptCurrent", "codeExclusionHistory", "projectionComplete", "partialProjection", "projectionComplete", "partialProjection", "researchLabelLine", "researchContextSection")
+             "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane",
+             "supportFindingFor", "supportNoteText", "researchLabelLine", "researchContextSection",
+             "disagreementSection", "whySection", "checksSection", "keptCurrent", "codeExclusionHistory", "projectionComplete", "partialProjection", "projectionComplete", "partialProjection")
     fns = "\n".join(_grab_fn(js, n) for n in names)
     script = "\n".join([
         "var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed', unreadable: 'unreadable', undecided: 'undecided' };",
@@ -5471,7 +5475,8 @@ def test_m1_undo_click_posts_the_undo(tmp_path):
              "unresolvedRows", "decidedRows", "mistakeFor", "judgmentRow", "correctedSection", "checksSection",
              "judgmentPendingPane", "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay",
              "sayBusyWith", "captureFolds", "restoreFolds", "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText",
-             "shownField", "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane", "researchLabelLine", "researchContextSection",
+             "shownField", "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane",
+             "supportFindingFor", "supportNoteText", "researchLabelLine", "researchContextSection",
              "disagreementSection", "whySection", "keptCurrent", "codeExclusionHistory", "projectionComplete", "partialProjection", "projectionComplete", "partialProjection")
     fns = "\n".join(_grab_fn(js, n) for n in names)
     harness = "\n".join([
@@ -6223,7 +6228,7 @@ def _new_run_sheet_script(body_lines, extra_fns=()):
              "startRunNow", "nrModels", "notePayload", "researchReady",
              "intakeDoneN", "syncStartButton", "nrStartClick",
              "renderChosen", "renderPrevCompanies", "nrPreparedTickers", "tickedReadyCount",
-             "applyPasteDisable") + tuple(extra_fns)
+             "applyPasteDisable", "nrSupportValue") + tuple(extra_fns)
     fns = "\n".join(_grab_fn(js, n) for n in names)
     consts = "\n".join(re.search(r"var %s = '[^']*';" % n, js).group(0)
                        for n in ("NR_PASTE_ONLY", "NR_PREPARE_FIRST", "NR_EMPTY"))
@@ -6261,6 +6266,7 @@ def _new_run_sheet_script(body_lines, extra_fns=()):
         "var runs = []; var switched = null; var nrState = 'ready'; var nrLoadError = '';",
         "var nrCompanies = ['IONS', 'PTGX'];",
         "var nrResearch = { defaultText: null, maxLength: null, loaded: true };",
+        "var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };",
         "function toast() {}",
         "function switchRun(id) { switched = id; }",
         "function setInterval() { return 1; }",
@@ -6486,3 +6492,113 @@ def test_pr162_server_409_used_marks_the_intake_used_with_a_link_to_that_run():
         "  console.log('ok');",
         "}).catch(function (err) { fail(99, err && err.stack); });",
     ]))
+
+
+# ---- LETTUCE-OPTION (quiet advisory, Codex's contract): the claim/evidence
+# pane note shows ONLY a current unsupported_spans finding, understated, with
+# the exact suspect text and source; 'LettuceDetect' attribution and run status
+# live in the trail only; the New run checkbox is offered from
+# GET /api/research/options (server default; unavailable shows its reason).
+
+def test_lettuce_ui_shell_and_finding_helpers():
+    js = (UI / "app.js").read_text()
+    html = (UI / "index.html").read_text()
+    css = (UI / "styles.css").read_text()
+    # the New run checkbox + hint, and the understated pane note style (no badge)
+    assert 'id="nr-support"' in html and 'id="nr-support-hint"' in html
+    assert '.supportnote' in css and 'badge' not in css.split('.supportnote')[1][:80]
+    assert "getJSON('/api/research/options')" in js
+    # helpers exist and are wired into the pane and the trail (definition + call)
+    for name in ('supportFindingFor', 'supportTrailSteps'):
+        assert js.count(name + '(') >= 2, name
+    assert 'support_check: nrSupportValue()' in js
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ('supportFindingFor', 'supportNoteText', 'supportStepText', 'supportTrailSteps'))
+    script = "\n".join([
+        fns,
+        "var findings = {",
+        "  e1: { result: 'unsupported_spans', spans: [{ start: 0, end: 5, text: 'Phase' }] },",
+        "  e2: { result: 'no_finding', spans: [] },",
+        "  e3: { result: 'could_not_run', spans: [], reason: 'the pinned weights are not installed' },",
+        "  e4: { result: 'stale', spans: [] },",
+        "};",
+        # only a current finding passes; no finding / not run / stale stay out
+        "if (!supportFindingFor(findings, 'e1')) fail(2, 'finding hidden');",
+        "['e2', 'e3', 'e4', 'e9'].forEach(function (k) { if (supportFindingFor(findings, k)) fail(3, k); });",
+        # understated note: exact suspect text + source + advisory, never 'verified'
+        "var note = supportNoteText(findings.e1, { publisher: 'Protagonist Therapeutics' }, { page_number: 3 });",
+        "if (note.indexOf('“Phase”') === -1) fail(4, note);",
+        "if (note.indexOf('Protagonist Therapeutics') === -1 || note.indexOf('page 3') === -1) fail(5, note);",
+        "if (note.indexOf('Advisory only') === -1) fail(6, note);",
+        "if (/verif/i.test(note)) fail(7, note);",
+        # trail wording: not run carries the reason; no finding is not 'verified'
+        "var t1 = supportStepText({ refs: { result: 'could_not_run', row_id: 'e1' },",
+        "  text: 'Support check (LettuceDetect, advisory) e1: could not run (the pinned weights are not installed (LETTUCE_WEIGHTS_PATH is not a directory)).' });",
+        "if (t1.indexOf('Not run:') !== 0 || t1.indexOf('the pinned weights are not installed') === -1) fail(8, t1);",
+        # the served finding's reason wins over the step prose (one source of truth)
+        "var t1b = supportStepText({ refs: { result: 'could_not_run', row_id: 'e1' }, text: 'old prose' },",
+        "  { result: 'could_not_run', reason: 'the served reason' });",
+        "if (t1b !== 'Not run: the served reason.') fail(13, t1b);",
+        "var t2 = supportStepText({ refs: { result: 'no_finding', row_id: 'e2' },",
+        "  text: 'Support check (LettuceDetect, advisory) e2: no finding.' });",
+        "if (t2.indexOf('No finding') !== 0 || /verif/i.test(t2)) fail(9, t2);",
+        "var t3 = supportStepText({ refs: { result: 'unsupported_spans', row_id: 'e1' },",
+        "  text: 'Support check (LettuceDetect, advisory) e1: unsupported spans.' });",
+        "if (t3.indexOf('Potentially unsupported wording') !== 0) fail(10, t3);",
+        # the trail steps: this row only, attribution 'LettuceDetect'
+        "var steps = [",
+        "  { who: 'capture.support_signal', at: '2026-11-02T00:00:00Z', refs: { row_id: 'e1', result: 'unsupported_spans' }, text: 'x' },",
+        "  { who: 'capture.support_signal', at: '2026-11-02T00:00:01Z', refs: { row_id: 'e2', result: 'no_finding' }, text: 'y' },",
+        "  { who: 'runs.research', at: 't', refs: { row_id: 'e1' }, text: 'z' },",
+        "];",
+        "var out = supportTrailSteps(steps, 'e1');",
+        "if (out.length !== 1 || out[0].tag !== 'LettuceDetect' || out[0].step !== 'Support check') fail(11, JSON.stringify(out));",
+        "if (supportTrailSteps(steps, 'e2').length !== 1 || supportTrailSteps(steps, 'e3').length !== 0) fail(12);",
+        "console.log('ok');",
+    ])
+    _run_node(script)
+
+
+def test_lettuce_new_run_checkbox_offered_from_options():
+    # available: enabled, unticked (the server's default is off), payload word
+    _run_node(_new_run_sheet_script([
+        "els['nr-support'] = { checked: false, disabled: true };",
+        "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: null, available: true,",
+        "                                        unavailable_reason: null } });",
+        "if (els['nr-support'].disabled) fail(2, 'available box disabled');",
+        "if (els['nr-support'].checked) fail(3, 'default should be off');",
+        "if (nrSupportValue() !== null) fail(4, 'unticked should send off');",
+        "els['nr-support'].checked = true;",
+        "if (nrSupportValue() !== 'lettucedetect') fail(5, 'ticked should send the choice');",
+        "startRunNow();",
+        "if (!posts.length || posts[0].support_check !== 'lettucedetect') fail(6, JSON.stringify(posts));",
+        # the server's default ticks it once; a person's later choice is kept
+        "els['nr-support'].checked = false;",
+        "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: 'lettucedetect', available: true } });",
+        "if (!els['nr-support'].checked) fail(7, 'server default not applied');",
+        "nrSupport.touched = true;",
+        "els['nr-support'].checked = false;",
+        "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: 'lettucedetect', available: true } });",
+        "if (els['nr-support'].checked) fail(8, 'person choice reset by a re-open');",
+        "console.log('ok');",
+    ], extra_fns=('supportFromOptions', 'applySupportOptions', 'nrSupportValue')))
+
+
+def test_lettuce_new_run_checkbox_unavailable_shows_reason_and_never_sends():
+    _run_node(_new_run_sheet_script([
+        "els['nr-support'] = { checked: true, disabled: false };",
+        "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: null, available: false,",
+        "                                        unavailable_reason: 'the pinned weights are not installed' } });",
+        "if (!els['nr-support'].disabled) fail(2, 'unavailable box enabled');",
+        "if (nodes['nr-support-hint'].textContent !== 'the pinned weights are not installed')",
+        "  fail(3, nodes['nr-support-hint'].textContent);",
+        "if (nrSupportValue() !== null) fail(4, 'unavailable must send off');",
+        "startRunNow();",
+        "if (!posts.length || posts[0].support_check !== null) fail(5, JSON.stringify(posts));",
+        # a failed options read: disabled with the retry line, still off
+        "applySupportOptions(null);",
+        "if (!els['nr-support'].disabled) fail(6, 'not-loaded box enabled');",
+        "if (nodes['nr-support-hint'].textContent.indexOf('could not be loaded') === -1) fail(7);",
+        "if (nrSupportValue() !== null) fail(8, 'not-loaded must send off');",
+        "console.log('ok');",
+    ], extra_fns=('supportFromOptions', 'applySupportOptions', 'nrSupportValue')))

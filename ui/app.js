@@ -394,6 +394,8 @@
         });
       },
       settings: function () { return getJSON('/api/settings').then(function (b) { return b || {}; }, function () { return null; }); },
+      // LETTUCE-OPTION: the New run wording-check choice, its default and its availability
+      researchOptions: function () { return getJSON('/api/research/options').then(function (b) { return b || {}; }, function () { return null; }); },
       intake: function (text) {
         // TICKER-INTAKE-001: pasted tickers the server resolves and captures; no model call
         return fetch('/api/intake', {
@@ -1402,6 +1404,48 @@
     return out;
   }
 
+  // ---------------- LETTUCE-OPTION (quiet advisory) ----------------
+  // A finding is optional evidence. The claim/evidence pane adds understated
+  // 'Potentially unsupported wording' with the exact suspect text ONLY while
+  // the served support_findings record is a current unsupported_spans result;
+  // stale, no_finding and could_not_run add nothing there (never a pass).
+  function supportFindingFor(findings, rowId) {
+    var f = (findings || {})[rowId];
+    if (f && f.result === 'unsupported_spans' && f.spans && f.spans.length) return f;
+    return null;
+  }
+  function supportNoteText(f, src, row) {
+    var words = f.spans.map(function (s) { return '“' + s.text + '”'; });
+    return words.join(' · ') + ' — flagged as not supported by the cited source' +
+      (src ? ' (' + src.publisher + ' · page ' + row.page_number + ')' : '') +
+      '. Advisory only; it changes no check, count or decision.';
+  }
+  // Trail attribution: the run-level research steps of the check become one
+  // display step each — 'LettuceDetect' and the run status live ONLY here,
+  // never as a badge, banner or score. The served finding's own reason is the
+  // source of truth for a not-run step; the step prose is the fallback.
+  function supportTrailSteps(steps, rowId, findings) {
+    return (steps || []).filter(function (s) {
+      return s && s.who === 'capture.support_signal' && s.refs && s.refs.row_id === rowId;
+    }).map(function (s) {
+      return { step: 'Support check', tag: 'LettuceDetect', who: 'LettuceDetect',
+               at: s.at, text: supportStepText(s, (findings || {})[rowId]) };
+    });
+  }
+  function supportStepText(s, finding) {
+    var result = s.refs && s.refs.result;
+    if (result === 'could_not_run') {
+      var why = finding && finding.result === 'could_not_run' && finding.reason ? finding.reason : '';
+      if (!why) {
+        var m = /could not run \((.*)\)\.?$/.exec(s.text || '');
+        why = m ? m[1] : '';
+      }
+      return 'Not run' + (why ? ': ' + why : '') + '.';
+    }
+    if (result === 'no_finding') return 'No finding — no wording was flagged. This is not a statement that the claim is supported.';
+    return 'Potentially unsupported wording in the proposed title.';
+  }
+
   // details pane (shared by audit + judgment)
   function detailsPane(host, row, opts) {
     opts = opts || {};
@@ -1495,6 +1539,16 @@
       qb.append('“' + t.values.quote + '”');
       sq.append(qb);
       host.append(sq);
+    }
+
+    // LETTUCE-OPTION: understated advisory note beside the claim/evidence —
+    // a current finding only; stale, no finding and not-run stay out of the pane
+    var sf = supportFindingFor(((detail.run || {})).support_findings, row.id);
+    if (sf) {
+      var sn = el('div', 'supportnote');
+      sn.append(el('div', 'k', 'Potentially unsupported wording'));
+      sn.append(el('div', null, supportNoteText(sf, src, row)));
+      host.append(sn);
     }
 
     if (t.group === 'corrected' && !partialProjection(t)) host.append(correctedSection(row, t));
@@ -2316,12 +2370,17 @@
     wrap.append(head);
 
     var steps = (row.trail || []).slice();
+    // LETTUCE-OPTION: the wording-check steps of this row ride after the run's
+    // own steps — attribution and run status stay in the trail only
+    var supportSteps = supportTrailSteps((((detail.run.run || {}).research || {}).steps), row.id,
+                                         ((detail.run || {})).support_findings);
     var t = rowTarget(row);
     // G2-1: Person steps come only from decisions.jsonl lines — one step per
     // line, in order, with the person's own note; a matched or undecided row
     // nobody decided ends at the last code step
     var personLines = personStepsFor(row.id);
-    var lines = steps.concat(personLines.map(function (l) { return { __decision: true, line: l, target: t }; }));
+    var lines = steps.concat(supportSteps)
+                     .concat(personLines.map(function (l) { return { __decision: true, line: l, target: t }; }));
     lines.forEach(function (s, i) {
       wrap.append(trailStep(row, s, i < lines.length - 1));
     });
@@ -4609,6 +4668,40 @@
       noteHintText(document.getElementById('nr-note').value, nrResearch);
   }
   document.getElementById('nr-note').addEventListener('input', function () { nrError(''); updateNoteHint(); });
+  // ---------------- LETTUCE-OPTION: the proposed-wording check, offered from
+  // GET /api/research/options — the server's choices, default (off) and its
+  // availability. Nothing is offered that the server does not list; a person's
+  // tick is never reset by a re-open or a delayed options answer.
+  var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };
+  function supportFromOptions(body) {
+    var o = body && body.support_check;
+    var choices = o && Array.isArray(o.choices) ? o.choices : null;
+    if (!choices || !choices.length) return { loaded: false, available: false, reason: null, choices: [] };
+    return { loaded: true, available: o.available === true,
+             reason: o.unavailable_reason || null, choices: choices };
+  }
+  function applySupportOptions(body) {
+    var fresh = supportFromOptions(body);
+    fresh.touched = nrSupport.touched;
+    nrSupport = fresh;
+    var box = document.getElementById('nr-support');
+    var hint = document.getElementById('nr-support-hint');
+    box.disabled = !nrSupport.available;
+    if (!nrSupport.touched && nrSupport.available && body.support_check.default &&
+        nrSupport.choices.indexOf(body.support_check.default) >= 0) box.checked = true;
+    if (!nrSupport.loaded) hint.textContent = 'This choice could not be loaded. Close and open New run to try again.';
+    else if (!nrSupport.available) hint.textContent = nrSupport.reason || 'The wording check is not available on this machine.';
+    else hint.textContent = 'Advisory only — a flag changes no check, count or decision.';
+  }
+  document.getElementById('nr-support').addEventListener('change', function () { nrSupport.touched = true; });
+  // what a start sends: the server's choice word only when the person ticked
+  // an offered, available box — otherwise absent (the server's own off)
+  function nrSupportValue() {
+    var box = document.getElementById('nr-support');
+    if (nrSupport.loaded && nrSupport.available && box.checked &&
+        nrSupport.choices.indexOf('lettucedetect') >= 0) return 'lettucedetect';
+    return null;
+  }
   // ---------------- ticker intake (TICKER-INTAKE-001): paste any list; the
   // server resolves each symbol against SEC records and captures its documents.
   // The run starts from the intake with the ready names only — the failures
@@ -4858,6 +4951,7 @@
                spending_limit_usd: limit,
                note_for_agent: notePayload(),
                reader_tools: document.getElementById('nr-tools').checked,
+               support_check: nrSupportValue(),
                models: nrModels() }).then(function (res) {
       if (!res.ok && res.status === 409 && res.body && typeof res.body.run_id === 'string') {
         // the server already bound a run to this intake: it is used, link to that run
@@ -4906,6 +5000,8 @@
     // the hint promises; a loaded default is never overwritten
     if (!nrResearch.loaded) A.settings().then(function (s) { applyResearchSettings(s); });
     else updateNoteHint();
+    // the wording-check choice: refresh each open, like the company list
+    A.researchOptions().then(function (o) { applySupportOptions(o); });
   });
   document.getElementById('nr-cancel').addEventListener('click', function () { newrunWrap.hidden = true; });
   // G4-6: one wording in both limit boxes, and the red line clears as soon as
@@ -4946,6 +5042,7 @@
                time_window_months: null,
                spending_limit_usd: limit, note_for_agent: note,
                reader_tools: document.getElementById('nr-tools').checked,
+               support_check: nrSupportValue(),
                models: nrModels() }).then(function (res) {
       done();
       if (!res.ok) { nrError((res.body && res.body.detail) || ('HTTP ' + res.status)); return; }
