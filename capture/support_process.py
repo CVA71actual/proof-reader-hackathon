@@ -47,28 +47,75 @@ def run_batch(items: list[dict], *, python: str | None = None, weights: str | No
     began = time.monotonic()
     try:
         proc = subprocess.Popen([python, "-I", str(worker)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, text=True,
+                                stderr=subprocess.PIPE,
                                 env={**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"})
     except OSError as e:
         return _fail(items, f"the worker could not start ({type(e).__name__})")
+    # LETTUCE-001 (Manus 05:31): one communication operation. The request is written, and stdout and stderr are drained,
+    # by their own threads at the same time, so a large answer can never fill a pipe and a slow write can never pass
+    # the deadline or a person's Stop; the main loop only watches the deadline and Stop, and kills on either.
+    import threading
+    out_chunks, err_chunks = [], []
+
+    def _write():
+        try:
+            proc.stdin.write(request.encode("utf-8"))
+        except (OSError, ValueError):
+            pass
+        finally:
+            try:
+                proc.stdin.close()
+            except (OSError, ValueError):
+                pass
+
+    def _drain(stream, sink):
+        try:
+            for chunk in iter(lambda: stream.read(65536), b""):
+                sink.append(chunk)
+        except (OSError, ValueError):
+            pass
+
+    threads = [threading.Thread(target=_write, daemon=True),
+               threading.Thread(target=_drain, args=(proc.stdout, out_chunks), daemon=True),
+               threading.Thread(target=_drain, args=(proc.stderr, err_chunks), daemon=True)]
+    for t in threads:
+        t.start()
+
+    def _finish(kill: bool) -> None:
+        if kill:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+        for t in threads:
+            t.join(timeout=5)
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            try:
+                stream.close()
+            except (OSError, ValueError):
+                pass
+
     try:
-        proc.stdin.write(request)
-        proc.stdin.close()
-    except OSError:
-        pass
-    while proc.poll() is None:
-        elapsed = time.monotonic() - began
-        if should_stop is not None and should_stop():
-            proc.kill()
-            proc.wait()
-            return _fail(items, "stopped by a person", seconds=round(elapsed, 3))
-        if elapsed > timeout_s:
-            proc.kill()
-            proc.wait()
-            return _fail(items, f"timeout: the worker did not finish within {timeout_s:g}s", seconds=round(elapsed, 3))
-        time.sleep(POLL_S)
+        while proc.poll() is None or any(t.is_alive() for t in threads[1:]):
+            elapsed = time.monotonic() - began
+            if should_stop is not None and should_stop():
+                _finish(kill=True)
+                return _fail(items, "stopped by a person", seconds=round(elapsed, 3))
+            if elapsed > timeout_s:
+                _finish(kill=True)
+                return _fail(items, f"timeout: the worker did not finish within {timeout_s:g}s",
+                             seconds=round(elapsed, 3))
+            time.sleep(POLL_S)
+    except BaseException:
+        _finish(kill=True)
+        raise
+    _finish(kill=False)
     seconds = round(time.monotonic() - began, 3)
-    stdout = proc.stdout.read()
+    stdout = b"".join(out_chunks).decode("utf-8", errors="replace")
     if proc.returncode != 0:
         return _fail(items, f"the worker exited with code {proc.returncode}", seconds=seconds)
     try:
