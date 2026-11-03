@@ -54,8 +54,9 @@ def test_f1_one_sided_disagreement_with_passing_checks_still_needs_acceptance(tm
     run = check37_evidence_baseline.r34(tmp_path / "f1", _run(row), text)
     t = current_state(run, [])["targets"]["r1"]
     assert (t["status"], t["group"]) == ("matched", "kept")
-    # GROUP-AXIS-001: the mechanical result grants no semantic acceptance.
-    assert t["needs_attention"] and not t["accepted"] and not t["on_calendar"]
+    # GROUP-AXIS-001: the mechanical result grants no semantic acceptance. CALENDAR-RULE-001: a one-sided
+    # disagreement is not a conflict, so it is placed automatically, never kept.
+    assert not t["accepted"] and t["inclusion"] != "kept" and not t["needs_attention"] and t["on_calendar"]
     from runs.claim_assessment import visible_passage_assessment
     assert visible_passage_assessment(run, run["rows"][0])["result"] == "not_checked"
 
@@ -70,7 +71,7 @@ def test_f2a_period_found_by_the_date_check_is_written_to_the_values(tmp_path, c
     state = current_state(run, [])
     v = state["targets"]["r1"]["values"]
     assert (v["date"], v["date_end"]) == ("2027-01-01", "2027-01-31")
-    assert not calendar_entries(run, state)
+    assert [e["inclusion"] for e in calendar_entries(run, state)] == ["included"]     # CALENDAR-RULE-001
     state = current_state(run, [fresh_keep(run, [], "r1")])
     entry = calendar_entries(run, state)[0]
     assert (entry["date"], entry["date_end"]) == ("2027-01-01", "2027-01-31")

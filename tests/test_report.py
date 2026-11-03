@@ -88,13 +88,14 @@ def test_sample_summary_matches_review_state_not_mechanical_groups(sample_out):
     state = current_state(run, decisions)
     result = build("sample", out=sample_out, generated_at=FIXED_TIME)
     text = _pdf_text(result["pdf"]) + "\n" + _docx_text(result["docx"])
-    for group, label in (
-        ("accepted", "Accepted by you"),
-        ("proposed", "Proposed — needs review"),
-        ("excluded", "Excluded"),
-    ):
-        n = state["counts"]["review"][group]
-        assert f"{label}: {n}" in text
+    # CALENDAR-RULE-001: one summary line per inclusion; kept by you and included automatically apart
+    from report.data import INCLUSION_LABELS
+    flat = re.sub(r"\s+", " ", text)
+    for group, label in INCLUSION_LABELS:
+        if group == "unplaced" and not state["counts"]["inclusion"][group]:
+            continue
+        n = state["counts"]["inclusion"][group]
+        assert f"{label}: {n}" in flat, label
     m = state["mistakes"]
     excluded = state["excluded"]["code"] + state["excluded"]["person"]
     assert (
@@ -352,7 +353,7 @@ def test_view_uses_same_state_counts():
     state = current_state(run, decisions)
     view = build_view(run, decisions, generated_at=FIXED_TIME)
     # GROUP-AXIS-001: summaries report acceptance; mechanical counts remain diagnostic.
-    assert view["counts"] == state["counts"]["review"]
+    assert {k: view["counts"][k] for k in ('accepted', 'proposed', 'excluded')} == state["counts"]["review"]
     assert view["mechanical_counts"] == state["counts"]["rows"]
     assert view["unresolved"] == state["unresolved"]
     assert view["state"] == state
@@ -397,12 +398,15 @@ def test_saved_reports_match_the_current_window_and_contingent_sections():
             reports = made["pdf"], made["docx"]
             text = _pdf_text(reports[0]) + "\n" + _docx_text(reports[1])
         assert f"Window: {view['calendar_window']}" in text, rid
+        flat = re.sub(r"\s+", " ", text)
         if view["later"]:
-            assert f"Later · {len(view['later'])}" in text, rid
+            assert f"Later — after the calendar window · {len(view['later'])}" in flat, rid
         if view["contingent"]:
-            assert f"Contingent · {len(view['contingent'])}" in text, rid
+            assert f"Undated: needs timing · contingent · {len(view['contingent'])}" in flat, rid
         if view["undated"]:
-            assert f"Undated · no timing stated · {len(view['undated'])}" in text, rid
+            assert f"Undated: needs timing · {len(view['undated'])}" in flat, rid
+        if view["past"]:
+            assert f"Context (past) · {len(view['past'])}" in flat, rid
 
 
 def _rendered_texts(view):
@@ -445,11 +449,14 @@ def test_renderer_prints_projected_review_labels_and_context():
     # (literal wording pinned in tests/test_pivot_review_projection.py); the renderer prints them verbatim.
     targets = {name: current_state(run, log)["targets"]["e1"] for name, (run, log) in logs.items()}
     assert len({t["review_label"] for t in targets.values()}) == 4
+    # CALENDAR-RULE-001: the untouched clean proposal is included automatically, never kept
+    assert targets["proposed"]["review_label"] == "Included — not reviewed by you"
+    assert targets["proposed"]["decision_label"] is None
     assert targets["fix_only"]["decision_label"] == "Fixed by you — not yet accepted"
     assert targets["accepted"]["review_label"] == "Accepted by you"
     assert targets["accepted"]["decision_label"] == "Kept by you"
     expected_open = {}
-    for name in ("proposed", "fix_only", "expired"):
+    for name in ("fix_only", "expired"):
         view, target = views[name], targets[name]
         assert view["calendar"] == [] and len(view["open_rows"]) == 1, name
         row = view["open_rows"][0]
@@ -463,18 +470,25 @@ def test_renderer_prints_projected_review_labels_and_context():
             where = f"{name}/{fmt}"
             assert f"{prefix} · CEDR · Cedar Bio" in text, where
             assert context in text, where
-            assert "No rows accepted by you." in text, where
             # never shown as current acceptance
-            assert "Kept by you" not in text, where
+            assert "Kept by you ·" not in text and "· Kept by you" not in text, where
+            assert "Kept by you: 0" in text, where       # the summary count says none
             assert "Accepted by you ·" not in text, where
             assert "Accepted by you · Fixed by you" not in text, where
             assert "Kept and corrected" not in text and "kept or corrected" not in text, where
+    included = views["proposed"]
+    assert included["open_rows"] == [] and len(included["calendar"]) == 1
+    for fmt, text in _rendered_texts(included).items():
+        assert "Included — not reviewed by you · Contingent" in text, fmt
+        assert "Included automatically — not reviewed by you: 1" in text and "Kept by you: 0" in text, fmt
+        assert "Kept by you ·" not in text and "· Kept by you" not in text, fmt
+        assert f"conditions: if validation succeeds · {context}" in text, fmt
     accepted = views["accepted"]
     assert accepted["open_rows"] == [] and len(accepted["calendar"]) == 1
     assert accepted["no_accepted_rows_text"] is None
     for fmt, text in _rendered_texts(accepted).items():
         assert "Accepted by you · Contingent · Kept by you" in text, fmt
-        assert "Accepted by you — ordered by date." in text, fmt
+        assert "Kept by you, and included automatically (not reviewed by you) — ordered by date." in text, fmt
         assert "No rows accepted by you." not in text, fmt
         assert f"conditions: if validation succeeds · {context}" in text, fmt
     for name in ("proposed", "fix_only"):
@@ -483,7 +497,7 @@ def test_renderer_prints_projected_review_labels_and_context():
     for fmt, text in _rendered_texts(views["expired"]).items():
         assert f"conditions: none stated · {context}" in text, fmt
     # the empty-calendar sentence is data.py's, not the renderer's
-    sentinel = dict(views["proposed"], no_accepted_rows_text="SENTINEL empty sentence")
+    sentinel = dict(views["fix_only"], no_accepted_rows_text="SENTINEL empty sentence")
     for fmt, text in _rendered_texts(sentinel).items():
         assert "SENTINEL empty sentence" in text and "No rows accepted by you." not in text, fmt
 
@@ -498,7 +512,8 @@ def test_renderer_separates_unknown_from_empty_conditions(conditions, shown, abs
     _, run = make_run(CASES[1])
     run["rows"][0]["conditions"] = conditions
     view = build_view(run, [], generated_at=AT)
-    assert [r["conditions"] for r in view["open_rows"]] == [conditions]
+    rows = sum((view[k] for k in ("open_rows", "calendar", "past", "later", "contingent", "undated", "timing_unresolved")), [])
+    assert [r["conditions"] for r in rows] == [conditions]
     for fmt, text in _rendered_texts(view).items():
         assert shown in text, fmt
         assert absent not in text, fmt
@@ -521,7 +536,7 @@ def test_renderer_prints_passing_date_check_as_neutral_finding():
             assert "Date period found in quote: pass" not in text, where
             assert "Quote found on page: pass" in text, where  # other checks keep their result word
     failed = copy.deepcopy(views["proposed"])
-    for c in failed["open_rows"][0]["check_limitations"]:
+    for c in failed["calendar"][0]["check_limitations"]:     # CALENDAR-RULE-001: clean, it is included
         if c.get("check_name") == "date_match":
             c["result"] = "fail"
     for fmt, text in _rendered_texts(failed).items():

@@ -413,12 +413,14 @@ def test_fix_settles_the_readers_disagreement(client, runs_dir):
     assert st["recheck"]["result"] == "pass"
     assert st["recheck"]["reason"].startswith("Settles the readers' disagreement by the person's fix. ")
     assert st["recheck"]["before"]["result"] == "pass" and st["recheck"]["after"]["result"] == "pass"
-    assert st["reason"] == st["recheck"]["reason"] + " The value already passed its checks before the edit. The event remains a proposal; a person must decide whether to keep it."
-    assert st["needs_attention"] and not st["accepted"]
+    assert st["reason"] == st["recheck"]["reason"] + " The value already passed its checks before the edit. No issues were found, so it was placed automatically; it was not reviewed by you."
+    # CALENDAR-RULE-001: settled and clean, it is placed automatically, not accepted
+    assert not st["needs_attention"] and not st["accepted"] and st["inclusion"] != "kept"
     assert r.json()["mistakes"]["person"] == s0["mistakes"]["person"]
     assert r.json()["counts"]["edits_without_error"] == s0["counts"]["edits_without_error"] + 1
-    # The edited row's saved checks no longer bind to its changed claim; the stale result remains unresolved.
-    assert r.json()["unresolved"] == s0["unresolved"]
+    # CALENDAR-RULE-001: e8 left the review queue (its issue was settled by the re-checked fix); nothing else moved.
+    assert s0["targets"]["e8"]["issues"]
+    assert r.json()["unresolved"] == s0["unresolved"] - 1
     assert st["fixes"][-1]["settles"] is True
 
 
@@ -550,8 +552,9 @@ def test_codex1_title_only_fix_on_e8_leaves_the_disagreement_open(client):
     assert r2["state"]["status"] == "matched" and r2["state"]["recheck"]["reason"].startswith(SETTLES)
     assert r2["mistakes"]["person"] == s0["mistakes"]["person"]         # settled, but no old error shown
     assert r2["counts"]["edits_without_error"] == s0["counts"]["edits_without_error"] + 1
-    assert r2["unresolved"] == s0["unresolved"] + 1  # Fix still requires a new Keep
-    assert r2["state"]["needs_attention"] and not r2["state"]["accepted"]
+    # A fix still needs a new Keep to be kept; CALENDAR-RULE-001: settled and clean, it is not a review task.
+    assert r2["unresolved"] == s0["unresolved"]
+    assert not r2["state"]["needs_attention"] and not r2["state"]["accepted"] and r2["state"]["inclusion"] != "kept"
 
 
 def test_codex1_checked_field_fix_on_e8_does_not_settle_the_disagreement(client):
@@ -566,7 +569,10 @@ def test_codex1_checked_field_fix_on_e8_does_not_settle_the_disagreement(client)
     assert st["recheck"]["result"] == "pass"
     assert (st["group"], st["status"]) == ("corrected", "undecided")
     assert st["recheck"]["reason"] == "The checks were run again on the fixed value and passed."
-    assert good["unresolved"] == s0["unresolved"] + 1
+    # The event-type wording difference stays on the row; CALENDAR-RULE-001 (with REVIEW-NOT-A-FLAG-001): it is
+    # not a conflict, so the re-checked row is placed automatically, never kept.
+    assert good["unresolved"] == s0["unresolved"]
+    assert not st["accepted"] and st["inclusion"] != "kept"
 
 
 def test_codex1_harmless_title_fix_on_matched_e1_is_not_a_mistake(client):

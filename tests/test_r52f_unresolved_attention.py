@@ -47,9 +47,11 @@ def test_a_passing_bound_recheck_is_current_but_does_not_accept_meaning():
     target = st["targets"]["e1"]
     assert target["recheck"]["result"] == "pass"
     assert st["counts"]["fixes_pending"] == 0
-    # GROUP-AXIS-001: the recheck finished; human review remains open.
-    assert st["unresolved"] == 1
-    assert target["needs_attention"] and not target["accepted"] and not target["on_calendar"]
+    # GROUP-AXIS-001: the recheck finished; no acceptance. CALENDAR-RULE-001: with no issue left it is placed
+    # automatically (not a review task) and its edit stays named.
+    assert st["unresolved"] == 0
+    assert not target["needs_attention"] and not target["accepted"] and target["on_calendar"]
+    assert target["decision_label"] == "Fixed by you — not yet accepted"
 
 
 def test_report_text_says_unresolved():

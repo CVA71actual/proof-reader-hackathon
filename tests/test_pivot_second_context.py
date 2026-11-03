@@ -43,9 +43,15 @@ def test_context_difference_survives_save_reload_keep_undo(tmp_path, change):
     validator = Draft202012Validator({'$ref': '#/$defs/row', '$defs': schema['$defs']})
     assert not list(validator.iter_errors(row))
     state = current_state(run, [])
-    assert state['targets']['e1']['needs_attention']
     assert state['targets']['e1']['disagreement']['field'] in change
-    assert not calendar_entries(run, state)
+    # CALENDAR-RULE-001: a disagreement on conditions or the subject company is a conflict (review, off the
+    # calendar); a prose difference (type hint, relevance, relation) is kept on the row but is not one.
+    if set(change) & {'conditions', 'subject_company'}:
+        assert state['targets']['e1']['needs_attention'] and not calendar_entries(run, state)
+    else:
+        assert not state['targets']['e1']['needs_attention']
+        assert [e['inclusion'] for e in calendar_entries(run, state)] == ['included']
+    assert not state['targets']['e1']['accepted']
     assert not any(state['mistakes'].values())
     keep = kept_decision(run)
     kept = current_state(run, [keep])
@@ -53,8 +59,8 @@ def test_context_difference_survives_save_reload_keep_undo(tmp_path, change):
     assert kept['targets']['e1']['status'] != 'matched'
     assert calendar_entries(run, kept)
     undone = current_state(run, [keep, decision('undo')])
-    assert undone['targets']['e1']['needs_attention']
-    assert not calendar_entries(run, undone)
+    assert undone['targets']['e1']['needs_attention'] == state['targets']['e1']['needs_attention']
+    assert calendar_entries(run, undone) == calendar_entries(run, state)
     # Raw alternative must not alias the caller's later mutation.
     answer['conditions'] = ['changed after comparison']
     assert json.dumps(run) == raw

@@ -238,8 +238,12 @@ def test_the_recorded_runs_numbers_are_the_ones_written_in_the_record():
     # Saved outcomes stay unchanged; the current literal checker is a separate view.
     assert sum(r["group"] in ("kept", "corrected") for r in recorded["rows"]) == 33
     assert state["counts"]["rows"] == {"kept": 21, "corrected": 2, "removed": 31, "unverified": 14, "open": 27}
-    assert (state["unresolved"], state["mistakes"], state["excluded"]) == (
-        64, {"code": 3, "second_reader": 0, "person": 0}, {"code": 35, "person": 0})
+    # CALENDAR-RULE-001: needs attention = the 64 unaccepted proposals that carry issues; the rest are placed
+    assert state["unresolved"] == state["counts"]["inclusion"]["review"]
+    assert state["counts"]["inclusion"]["review"] + sum(state["counts"]["inclusion"][k] for k in (
+        "included", "context", "later", "undated", "unplaced")) == 64
+    assert (state["mistakes"], state["excluded"]) == (
+        {"code": 3, "second_reader": 0, "person": 0}, {"code": 35, "person": 0})
     assert state["counts"]["review"] == {"accepted": 0, "proposed": 64, "excluded": 31}
     assert state["cost_per_kept_row_usd"] is None  # no current human acceptance
     assert saved.read_bytes() == before
@@ -277,7 +281,8 @@ def test_the_decisions_server_serves_the_recorded_run_with_every_page_hash_holdi
     assert body.json()["state"]["counts"] == state["counts"]
     cal = c.get("/api/runs/twelve-1/calendar").json()["entries"]
     assert [e["id"] for e in cal] == [e["id"] for e in calendar_entries(run, state)]
-    assert all(e["group"] in ("kept", "corrected") for e in cal)
+    assert all(e["group"] in ("kept", "corrected") for e in cal if e["inclusion"] == "kept")
+    assert all(not state["targets"][e["id"]]["issues"] for e in cal if e["inclusion"] != "kept")
     # GROUP-AXIS-001: preserve the recorded mechanical-group calculation,
     # but do not present it as the current cost per human-accepted result.
     recorded = json.loads((RECORDED / "run.json").read_text())

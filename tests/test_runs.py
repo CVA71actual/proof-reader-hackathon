@@ -425,13 +425,17 @@ def dec(target, action, note=None, fix=None, at="2026-10-27T16:00:00+00:00"):
 
 
 def assert_review_rows(st, excluded):
-    """GROUP-AXIS-001: verify each sample proposal, not just a replacement total."""
+    """GROUP-AXIS-001: verify each sample proposal, not just a replacement total. CALENDAR-RULE-001: the rows that
+    need attention are exactly the undecided ones with issues; the clean ones are placed automatically; none is
+    accepted."""
     expected = {"e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9", "e10", "e11"} - set(excluded)
-    assert {key for key, target in st["targets"].items()
-            if target["kind"] == "row" and target["needs_attention"]} == expected
-    assert st["unresolved"] == len(expected)
-    assert all(not target["accepted"] and not target["on_calendar"]
-               for target in st["targets"].values() if target["kind"] == "row")
+    rows = {key: target for key, target in st["targets"].items() if target["kind"] == "row"}
+    with_issues = {key for key in expected if rows[key]["issues"]}
+    assert {key for key, target in rows.items() if target["needs_attention"]} == with_issues
+    assert st["unresolved"] == len(with_issues)
+    for key in expected:
+        assert not rows[key]["accepted"]
+        assert rows[key]["on_calendar"] == (not rows[key]["issues"])
 
 
 def test_no_decisions_preserves_mechanics_but_requires_review_for_each_proposal(sample):
@@ -449,12 +453,14 @@ def test_no_decisions_preserves_mechanics_but_requires_review_for_each_proposal(
     # every nonexcluded proposal now needs semantic review, even if checks pass.
     recorded = json.loads((RUNS / "sample" / "run.json").read_text())
     assert sum(r["group"] in {"open", "unverified"} for r in recorded["rows"]) == 4
-    expected_attention = {"e1": True, "e2": True, "e3": True, "e4": True, "e5": True,
-                          "e6": False, "e7": True, "e8": True, "e9": True, "e10": True, "e11": True}
+    # CALENDAR-RULE-001: only the rows with issues need attention; the clean ones are placed automatically.
+    expected_attention = {"e1": False, "e2": False, "e3": False, "e4": True, "e5": False,
+                          "e6": False, "e7": True, "e8": False, "e9": True, "e10": False, "e11": False}
     for rid, attention in expected_attention.items():
         target = st["targets"][rid]
-        assert target["needs_attention"] == attention
-        assert not target["accepted"] and not target["on_calendar"]
+        assert target["needs_attention"] == attention, (rid, target["issues"])
+        assert not target["accepted"]
+        assert target["on_calendar"] == (rid != "e6" and not attention)
     assert st["unresolved"] == sum(expected_attention.values())
     assert all(t["decided_by_person"] is False for t in st["targets"].values())
     assert st["ignored"] == []
@@ -716,8 +722,8 @@ def test_undo_twice_goes_back_to_the_run(sample):
     assert st["targets"]["e8"]["group"] == "open"
     assert st["targets"]["e8"]["reason"] == (
         "The two readers named different event types. Waiting for you. "
-        "The event remains a proposal; a person must decide whether to keep it.")
-    assert st["targets"]["e8"]["needs_attention"] and not st["targets"]["e8"]["accepted"]
+        "No issues were found, so it was placed automatically; it was not reviewed by you.")
+    assert not st["targets"]["e8"]["accepted"] and st["targets"]["e8"]["inclusion"] != "kept"
     assert st["ignored"] == []
 
 
@@ -984,8 +990,10 @@ def test_before_could_not_run_and_after_pass_is_not_counted_and_flagged(sample):
     assert f["mistake"] is False and f["before_undemonstrated"] is True
     assert f["not_counted_reason"] == "The old value could not be assessed; no mistake was demonstrated."
     assert st["targets"]["e7"]["reason"].endswith(
-        f["not_counted_reason"] + " The event remains a proposal; a person must decide whether to keep it.")
-    assert st["targets"]["e7"]["needs_attention"] and not st["targets"]["e7"]["accepted"]
+        f["not_counted_reason"] + " No issues were found, so it was placed automatically; it was not reviewed by you.")
+    # CALENDAR-RULE-001: a fix whose re-check passed leaves no issue; it is placed automatically, never accepted.
+    assert not st["targets"]["e7"]["needs_attention"] and not st["targets"]["e7"]["accepted"]
+    assert st["targets"]["e7"]["decision_label"] == "Fixed by you — not yet accepted"
     assert f["recheck"]["before"]["result"] == "could_not_run"
     assert f["recheck"]["after"]["result"] == "pass"
     assert st["counts"]["edits_without_error"] == 0
@@ -1043,9 +1051,8 @@ def _period(text, bounds, quote, with_bounds, **kw):
     _, run = make_run(("adversarial-date", quote, "proposed study timing", text, start, []),
                       event_updates={"date_end": end})
     state = current_state(run, [])
-    target = state["targets"]["e1"]
-    assert target["needs_attention"] and not target["accepted"]
-    assert calendar_entries(run, state) == []
+    from tests.pivot_assertions import assert_never_accepted
+    target = assert_never_accepted(run, state)
     assert target["values"]["quote"] == quote
     assert next(c for c in run["rows"][0]["checks"] if c["name"] == "date_match")["result"] == result.result
     return result

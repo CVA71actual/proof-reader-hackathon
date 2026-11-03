@@ -84,28 +84,71 @@ def matches_review_basis(stored, current: dict) -> bool:
             and stored == current)
 
 
+# CALENDAR-RULE-001 (CVA 2026-11-02): conflicts go to review; a clean proposal is placed by the calendar rule and
+# is never presented as a person's Keep.
+INCLUDED_LABEL = 'Included — not reviewed by you'
+CONTEXT_LABEL = 'Context (past)'
+UNDATED_LABEL = 'Undated: needs timing'
+LATER_LABEL = 'Later — after the calendar window'
+UNPLACED_LABEL = 'Not placed — the run has no reference date'
+INCLUSIONS = ('kept', 'included', 'review', 'context', 'later', 'undated', 'unplaced', 'excluded')
+# runs.calendar.interval_bucket placement -> the inclusion of a clean, undecided proposal
+_CLEAN_INCLUSION = {'calendar': 'included', 'past': 'context', 'later': 'later', 'contingent': 'undated',
+                    'undated': 'undated', 'timing_unresolved': 'undated'}
+_CLEAN_LABEL = {'included': INCLUDED_LABEL, 'context': CONTEXT_LABEL, 'later': LATER_LABEL,
+                'undated': UNDATED_LABEL, 'unplaced': UNPLACED_LABEL}
+
+
 def review_projection(state: dict) -> dict:
-    """One derived acceptance view; mechanical/edit groups are not clearance.
+    """One derived acceptance and calendar view; mechanical/edit groups are not clearance.
 
     This returns presentation/eligibility fields, never a persisted decision.
     Historical Keeps remain available separately and cannot override this view.
+
+    CALENDAR-RULE-001, the one inclusion predicate. A row is, in this order:
+      kept      a current, bound human Keep ('Kept by you'), wherever its dates fall;
+      excluded  removed by the person or by a code rule;
+      review    it carries issues (state['issues']: failed checks, open factual disagreement, unreadable page or
+                answer, an expired Keep, reviewer findings). Not on the calendar until a person keeps it. Issues not
+                yet derived (state['issues'] is None) also mean review: fail closed;
+      otherwise a clean, undecided proposal placed by its interval (state['placement'], from
+                runs.calendar.interval_bucket, tested on the period end against the run-anchored window, and
+                honouring a research row's own past/undated placement): in the window -> included
+                ('Included — not reviewed by you'); past -> context; after the window -> later; no date -> undated;
+                no run reference date -> unplaced.
+    on_calendar keeps its API meaning, eligibility for the interval partition: true for kept and every clean row,
+    so the partition (and only the partition) decides Calendar / Past / Later / Undated. needs_attention is true
+    only for review. accepted still means a current human Keep and nothing else.
     """
     semantic = state['semantic_status']
     accepted = semantic == 'human_accepted'
     excluded = not accepted and (semantic == 'human_removed' or state['group'] == 'removed')
-    needs_review = not accepted and not excluded
     action = state.get('last_action')
+    issues = state.get('issues')
+    if accepted:
+        inclusion = 'kept'
+    elif excluded:
+        inclusion = 'excluded'
+    elif issues is None or issues:
+        inclusion = 'review'
+    else:
+        inclusion = _CLEAN_INCLUSION.get(state.get('placement'), 'unplaced')
     if accepted:
         label, decision = 'Accepted by you', 'Kept by you'
     elif excluded:
         label = 'Removed by you' if semantic == 'human_removed' else 'Excluded'
         decision = label if semantic == 'human_removed' else None
+    elif inclusion != 'review':
+        # Clean: the calendar rule placed it; no person's acceptance is claimed. A person's field edit stays named.
+        label = _CLEAN_LABEL[inclusion]
+        decision = 'Fixed by you — not yet accepted' if action == 'fix' else None
     elif action == 'keep':
         label, decision = 'Previous Keep — needs your review', 'Previous Keep — needs your review'
     elif state['group'] == 'corrected' or action == 'fix':
         label, decision = 'Corrected, awaiting your review', ('Fixed by you — not yet accepted' if action == 'fix' else None)
     else:
         label, decision = 'Proposed — needs review', None
-    return {'accepted': accepted, 'needs_attention': needs_review,
-            'on_calendar': accepted, 'review_label': label, 'decision_label': decision,
+    return {'accepted': accepted, 'needs_attention': inclusion == 'review',
+            'on_calendar': inclusion not in ('review', 'excluded'), 'inclusion': inclusion,
+            'review_label': label, 'decision_label': decision,
             'review_bucket': 'accepted' if accepted else 'excluded' if excluded else 'proposed'}

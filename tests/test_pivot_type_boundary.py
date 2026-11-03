@@ -31,7 +31,7 @@ def test_reader_hint_survives_without_keyword_self_certification(hint, quote, ca
     assert check['result'] == 'not_needed'
     assert 'review' in check['reason'].lower()
     state = current_state(run, [])['targets']['e1']
-    assert not state['accepted'] and state['needs_attention']
+    assert not state['accepted'] and state['inclusion'] != 'kept'     # CALENDAR-RULE-001
     assert current_state(run, [kept_decision(run)])['targets']['e1']['accepted']
     assert not current_state(run, [kept_decision(run), decision('undo')])['targets']['e1']['accepted']
     missing_page = _uncheckable_row(1, proposal, None, {'prompt_text': 'Synthetic'}, (None, None, 1), AT)

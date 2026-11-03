@@ -271,11 +271,12 @@ def test_a_row_the_readers_disagree_on_is_not_sent_to_wonder(runs_dir, words_doc
     row = next(r for r in run["rows"] if r.get("disagreement"))
     assert (row["status"], row["group"]) == ("undecided", "open")
     assert not wonder.prompts and "Muse Wonder" not in json.dumps(row["trail"])
-    # GROUP-AXIS-001: every unaccepted proposal needs review, not just the disagreement.
+    # CALENDAR-RULE-001: no proposal is accepted; the ones with issues (the disagreement) need review.
     state = current_state(run, [])
     assert run["mistakes"] == []
-    assert all(t["needs_attention"] and not t["accepted"] for t in state["targets"].values())
-    assert state["unresolved"] == len(state["targets"])
+    assert all(not t["accepted"] and t["needs_attention"] == bool(t["issues"]) for t in state["targets"].values())
+    assert state["targets"][row["id"]]["needs_attention"]
+    assert state["unresolved"] == sum(bool(t["issues"]) for t in state["targets"].values())
 
 
 def test_only_a_mechanical_date_failure_is_sent(runs_dir):

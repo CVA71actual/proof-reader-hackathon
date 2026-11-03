@@ -103,8 +103,9 @@ def test_the_demo_lists_ptgx_record_but_keeps_unbound_historical_decisions_out_o
     assert "ptgx-r5 · PTGX · two readers: saved" in rest and "pages read: 1" in rest
     # PIVOT: the saved model results remain recorded; unbound historical Keeps are not current acceptance.
     assert [r["group"] for r in run_json("ptgx-r5")["rows"]] == ["kept", "kept"]
-    assert "rows: Accepted by you 0, Proposed — needs review 2, Excluded 0" in rest
-    assert "needs attention: 2" in rest and "calendar: 0 accepted rows" in rest
+    # CALENDAR-RULE-001: kept by you and included automatically are counted apart; nothing is kept here
+    assert re.search(r"rows: Kept by you 0, Included automatically \(not reviewed by you\) \d+, Needs your review \d+", rest)
+    assert re.search(r"calendar: 0 kept by you, \d+ included automatically", rest)
     spend = run_json("ptgx-r5")["run"]["spend_usd"]
     assert f"cost: ${spend:.4f}; accepted rows: 0; cost per accepted row: not computed" in rest
     # Job 50b: ptgx-r5's committed accuracy.json predates input binding: no counts, a plain re-score reason

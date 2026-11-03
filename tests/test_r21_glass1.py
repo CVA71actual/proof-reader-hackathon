@@ -124,14 +124,16 @@ def on_calendar(client):
 
 def test_a_corrected_row_requires_keep_after_its_recheck_passes(client):
     # FIX-THEN-KEEP-001: pass/fix is not publication; explicit Keep is.
-    assert "e1" not in on_calendar(client)
+    # CALENDAR-RULE-001: clean, e1 is listed as placed automatically, never as kept
+    assert all(e["inclusion"] != "kept" for e in client.get("/api/runs/sample/calendar").json()["entries"])
     out = decide(client, "e1", "fix", {"field": "date", "from": "2027-03-12", "to": "March 12, 2027"})
     assert out["written"][1]["recheck"]["result"] == "pass"
     assert out["state"]["group"] == "corrected"
-    assert out["state"]["needs_attention"] and not out["state"]["accepted"]
-    assert "e1" not in on_calendar(client)
+    assert not out["state"]["accepted"] and out["state"]["inclusion"] != "kept"
+    assert out["state"]["decision_label"] == "Fixed by you — not yet accepted"
     decide(client, "e1", "keep")
-    assert "e1" in on_calendar(client)
+    entries = client.get("/api/runs/sample/calendar").json()["entries"]
+    assert [e["inclusion"] for e in entries if e["id"] == "e1"] == ["kept"]
 
 
 def test_a_fixed_but_still_open_row_is_not_on_the_calendar(client):
@@ -163,9 +165,10 @@ def test_a_row_corrected_by_code_stays_off_calendar_until_human_acceptance():
     target = state["targets"][row["id"]]
     assert target["group"] == "corrected" and target["status"] == "matched"
     # GROUP-AXIS-001: even a demonstrated code correction is not acceptance.
-    assert not target["decided_by_person"] and not state_on_calendar(target)
-    assert target["needs_attention"] and not target["accepted"]
-    assert row["id"] not in [entry["id"] for entry in calendar_entries(run, state)]
+    # CALENDAR-RULE-001: clean, it is placed automatically — listed as such, never as kept
+    assert not target["decided_by_person"] and target["inclusion"] != "kept"
+    assert not target["needs_attention"] and not target["accepted"]
+    assert [e["inclusion"] for e in calendar_entries(run, state) if e["id"] == row["id"]] == [target["inclusion"]]
 
     pending = current_state(run, [{"by": "person", "target": row["id"], "action": "fix",
                                    "fix": {"field": "title", "from": row["title"], "to": row["title"] + " revised"},

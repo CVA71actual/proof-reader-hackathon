@@ -17,6 +17,28 @@ TITLE = "Biotech Coverage Catalyst Calendar"
 FOOTER = "Built with Meta Muse models · built by code from the saved results"
 SAMPLE_STAMP = "Sample data — not real events"
 
+# CALENDAR-RULE-001: one summary line per inclusion; automatic inclusion is never worded as a person's Keep.
+INCLUSION_LABELS = (
+    ("kept", "Kept by you"),
+    ("included", "Included automatically — not reviewed by you"),
+    ("review", "Needs your review"),
+    ("context", "Context (past)"),
+    ("later", "Later — after the calendar window"),
+    ("undated", "Undated: needs timing"),
+    ("unplaced", "Not placed — the run has no reference date"),
+    ("excluded", "Excluded"),
+)
+CALENDAR_HEADING = "Kept by you, and included automatically (not reviewed by you) — ordered by date. Periods are shown as stated."
+NEEDS_REVIEW_HEADING = "Needs your review"
+# The sections below the calendar, in order, with their headings.
+PLACEMENT_SECTIONS = (
+    ("past", "Context (past)"),
+    ("undated", "Undated: needs timing"),
+    ("timing_unresolved", "Undated: needs timing · date wording not resolved"),
+    ("contingent", "Undated: needs timing · contingent"),
+    ("later", "Later — after the calendar window"),
+)
+
 GROUP_LABEL = {
     "kept": "Checked and kept",
     "corrected": "Corrected",
@@ -279,6 +301,8 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
             "group": st["group"],
             "group_label": st["review_label"],
             "semantic_status": st["semantic_status"],
+            "issues": list(st["issues"]),
+            "inclusion": st["inclusion"],
             "review_label": st["review_label"],
             "decision_label": st["decision_label"],
             "person_tag": _person_tag(st),
@@ -421,6 +445,8 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
             "group": st["group"],
             "group_label": st["review_label"],
             "semantic_status": st["semantic_status"],
+            "issues": list(st["issues"]),
+            "inclusion": st["inclusion"],
             "review_label": st["review_label"],
             "decision_label": st["decision_label"],
             "person_tag": _person_tag(st),
@@ -496,20 +522,28 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         "page_outcomes_by_company": per_company_outcomes,
         "companies": companies,
         "generated_at": built_on_words(generated_at),
-        "counts": dict(state["counts"]["review"]),
-        "group_labels": {"accepted": "Accepted by you", "proposed": "Proposed — needs review", "excluded": "Excluded"},
+        # CALENDAR-RULE-001: the summary counts keep "kept by you" and "included automatically" apart; the old
+        # review-axis keys (accepted/proposed/excluded) stay in counts for callers that read them.
+        "counts": {**state["counts"]["review"], **state["counts"]["inclusion"]},
+        "group_labels": {key: label for key, label in INCLUSION_LABELS
+                         if key != "unplaced" or state["counts"]["inclusion"]["unplaced"]},
         "mechanical_counts": {g: counts[g] for g in GROUP_LABEL},
         "mistakes": mistakes,
         "excluded_total": excluded_n,
         "unresolved": state["unresolved"],
         # ONE-MODEL-RUN-001: a run with no second reader never shows a second-reader count of 0
         "models_line": ONE_MODEL_LINE if run_is_one_model(run) else None,
+        # REVIEW-NOT-A-FLAG-001: rows still under review that carry a real issue (needing review is not one)
+        "issues": state["counts"]["issues"],
         "counters_line": (
             f"Mistakes caught by code {mistakes['code']} · "
             + (NO_SECOND_READER if run_is_one_model(run) else f"by the second reader {mistakes['second_reader']}")
             + f" · by a person {mistakes['person']} · Excluded {excluded_n}"
         ),
         "no_accepted_rows_text": "No rows accepted by you." if state["counts"]["review"]["accepted"] == 0 else None,
+        "calendar_heading": CALENDAR_HEADING,
+        "needs_review_heading": NEEDS_REVIEW_HEADING,
+        "placement_sections": list(PLACEMENT_SECTIONS),
         "calendar": calendar,
         "calendar_window": window_text if window_start is None else f"{window_anchor} – {window_end.isoformat()}",
         "past": past,

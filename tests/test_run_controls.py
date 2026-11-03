@@ -478,6 +478,19 @@ def calendar(client, run_id):
     return r.json()["entries"]
 
 
+def kept_calendar(client, run_id):
+    """CALENDAR-RULE-001: the calendar entries a person kept. Every other entry is a clean proposal placed
+    automatically, which must say so and never read as kept."""
+    entries = calendar(client, run_id)
+    state = client.get(f"/api/runs/{run_id}").json()["state"]["targets"]
+    for e in entries:
+        t = state[e["id"]]
+        assert (e["inclusion"] == "kept") == t["accepted"]
+        if not t["accepted"]:
+            assert e["decision_label"] != "Kept by you" and not t["issues"] and not t["needs_attention"]
+    return [e for e in entries if e["inclusion"] == "kept"]
+
+
 def keep_proposal(client, target, run_id="sample"):
     """Record a real server-bound Keep in the test's disposable run, never restamp history."""
     response = client.post(f"/api/runs/{run_id}/decisions", json={"target": target, "action": "keep"})
@@ -488,12 +501,12 @@ def keep_proposal(client, target, run_id="sample"):
 def test_the_calendar_holds_only_current_human_acceptances(runs_dir):
     client, _ = make(runs_dir)
     # GROUP-AXIS-001: historical unbound Keeps are history, not current acceptance.
-    assert calendar(client, "sample") == []
+    assert kept_calendar(client, "sample") == []
     expected = {"e1", "e2", "e3", "e4", "e5", "e7", "e8", "e11"}
     before = client.get("/api/runs/sample").json()["state"]["targets"]
     for target in expected:
         keep_proposal(client, target)
-    entries = calendar(client, "sample")
+    entries = kept_calendar(client, "sample")
     state = client.get("/api/runs/sample").json()["state"]["targets"]
     assert {e["id"] for e in entries} == expected
     assert all(state[i]["accepted"] for i in expected)
@@ -509,7 +522,7 @@ def test_the_calendar_follows_the_decisions(runs_dir):
     client, _ = make(runs_dir)
 
     def ids():
-        return {e["id"] for e in calendar(client, "sample")}
+        return {e["id"] for e in kept_calendar(client, "sample")}
 
     def decide(target, action):
         r = client.post("/api/runs/sample/decisions", json={"target": target, "action": action, "note": None,
@@ -526,7 +539,7 @@ def test_the_calendar_follows_the_decisions(runs_dir):
     decide("e1", "undo")
     assert "e1" in ids()
     decide("e9", "keep")                      # a person's keep puts an unverified row on the calendar
-    entry = next(e for e in calendar(client, "sample") if e["id"] == "e9")
+    entry = next(e for e in kept_calendar(client, "sample") if e["id"] == "e9")
     assert (entry["group"], entry["decided_by_person"], entry["status"]) == ("kept", True, "unreadable")
     decide("e9", "undo")
     assert "e9" not in ids()
@@ -537,10 +550,10 @@ def test_the_calendar_follows_the_decisions(runs_dir):
 
 def test_the_calendar_values_are_the_current_ones_and_dated_rows_come_first(runs_dir):
     client, _ = make(runs_dir)
-    assert calendar(client, "sample") == []
+    assert kept_calendar(client, "sample") == []
     for target in ("e1", "e2", "e3", "e4", "e5", "e7", "e8", "e11"):
         keep_proposal(client, target)
-    entries = calendar(client, "sample")
+    entries = kept_calendar(client, "sample")
     dates = [e["date"] for e in entries]
     assert dates == sorted(dates, key=lambda d: (d is None, d or ""))
     e3 = next(e for e in entries if e["id"] == "e3")
@@ -561,7 +574,7 @@ def test_a_new_runs_calendar_holds_every_proposal_until_explicit_acceptance(runs
         assert not state[row["id"]]["accepted"]
     expected = {r["id"] for r in run["rows"] if state[r["id"]]["accepted"]}
     assert expected == set()
-    assert {e["id"] for e in calendar(client, meta["id"])} == expected
+    assert {e["id"] for e in kept_calendar(client, meta["id"])} == expected
     # a row that failed a check starts open and stays off the calendar until a person acts
     off = {r["id"] for r in run["rows"] if r["group"] in ("open", "unverified")}
     assert not off & expected
@@ -669,9 +682,9 @@ def test_future_events_survive_legacy_window_choices(runs_dir, monkeypatch):
     late, early = by_date["2027-07-01"], by_date["2027-01-01"]
     assert late["group"] != "removed" and early["group"] != "removed"
     assert run["exclusions"] == []
-    assert calendar(client, meta["id"]) == []
+    assert kept_calendar(client, meta["id"]) == []
     keep_proposal(client, late["id"], meta["id"])
-    assert late["id"] in {e["id"] for e in calendar(client, meta["id"])}
+    assert late["id"] in {e["id"] for e in kept_calendar(client, meta["id"])}
 
 
 def test_a_printed_past_period_needs_acceptance_before_past_placement(runs_dir, monkeypatch):
@@ -683,11 +696,11 @@ def test_a_printed_past_period_needs_acceptance_before_past_placement(runs_dir, 
     row = by_date["2027-01-01"]
     # DATE-LITERAL-001: code cannot decide this past date belongs to the event.
     assert row["group"] != "removed" and run["exclusions"] == []
-    assert calendar(client, run_id) == []
+    assert kept_calendar(client, run_id) == []
     keep_proposal(client, row["id"], run_id)
     data = client.get(f"/api/runs/{run_id}").json()
-    assert [r["id"] for r in data["calendar_partition"]["past"]] == [row["id"]]
-    assert data["calendar_partition"]["calendar"] == []
+    assert [r["id"] for r in data["calendar_partition"]["past"] if r["inclusion"] == "kept"] == [row["id"]]
+    assert all(r["inclusion"] != "kept" for r in data["calendar_partition"]["calendar"])
 
 
 def test_fixed_window_keeps_undated_rows_and_excludes_only_past_periods(runs_dir, monkeypatch):
