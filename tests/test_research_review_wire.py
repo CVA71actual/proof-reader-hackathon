@@ -989,3 +989,18 @@ def test_a_passing_access_check_keeps_deepseek_and_records_it(runs_dir):
     assert primary.probes == 1 and r["reviewer_access"]["checked"] is True and r["reviewer_access"]["refused"] is False
     assert all(r["review"][t]["reviewer"] == "DeepSeek V4 Pro" and r["review"][t]["multi_family"]["met"]
                for t in ("PTGX", "ROIV"))
+
+
+def test_the_smoke_tool_names_the_reviewer_that_ran_not_the_configured_one(runs_dir):
+    from tools import research_smoke
+    primary = F.FakeChat([], refuse=REFUSED)
+    fallback = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
+                           F.chat_tools(("finish_review", {"summary": "empty"}))], **F.FALLBACK)
+    r = _two_company_run(runs_dir, primary, fallback)["run"]["research"]
+    assert research_smoke.reviewer_line(r) == "Reviewer: Muse Spark Open (fallback: DeepSeek V4 Pro refused 403)"
+    ok = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
+                     F.chat_tools(("finish_review", {"summary": "empty"}))], probe=True)
+    d = runs_dir / "ok"
+    d.mkdir()
+    r2 = _two_company_run(d, ok, F.FakeChat([], **F.FALLBACK))["run"]["research"]
+    assert research_smoke.reviewer_line(r2) == "Reviewer: DeepSeek V4 Pro"
