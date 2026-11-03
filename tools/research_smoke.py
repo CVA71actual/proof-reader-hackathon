@@ -9,9 +9,10 @@ REVIEW ONLY (RESEARCHER-FULL-001 S2): review an EXISTING run's saved draft, with
     python -m tools.research_smoke --review RUN_DIR --cap-usd 1 --i-have-the-operator-go [--runs-dir DIR]
 
 RUN_DIR is never modified: it is copied to --runs-dir first (default: a new folder under /tmp) and the copy is reviewed.
---cap-usd is the review's budget on top of what the run already spent (the copy's cap becomes spent + cap). Muse
-Spark Open (BASETEN_API_KEY) reviews each company's draft with Brave Search (BRAVE_API_KEY) as its own search; disputed
-findings go to Muse Wonder (MODEL_API_KEY). Keys are never printed.
+--cap-usd is the review's budget on top of what the run already spent (the copy's cap becomes spent + cap). DeepSeek
+V4 Pro on Baseten (BASETEN_API_KEY; the declared fallback Muse Spark Open runs only if DeepSeek is not in Baseten's
+model list) reviews each company's draft with Brave Search (BRAVE_API_KEY) as its own search; disputed findings go to
+Muse Wonder (MODEL_API_KEY). Keys are never printed.
 
 It creates one research run (mode "research", the default research assignment, the given spending cap; every other
 limit off) in --runs-dir (default: a new folder under /tmp, never the served glass runs), drives it to its end in
@@ -142,13 +143,17 @@ def review_existing(src: Path, runs_dir: Path, cap_usd: float, tools=None) -> tu
 
 def review_main(args) -> int:
     from runs import research
+    from capture import research_reviewer as rv
     tools = research.ResearchTools()
-    for what, problem in (("reviewer", tools.reviewer.ready()), ("Brave Search", tools.brave.ready()),
-                          ("adjudicator", tools.adjudicator.ready())):
+    model, choice = rv.choose_reviewer(tools.reviewer, tools.reviewer_fallback)      # a free model-list check only
+    if model.ready():
+        print(f"reviewer: {model.ready()}")
+        return 2
+    print(f"Reviewer: {choice['name']} ({choice['provider']}, family {choice['family']})"
+          + (f" — FALLBACK, because {choice['primary_unavailable']}" if choice["fallback_used"] else ""))
+    for what, problem in (("Brave Search", tools.brave.ready()), ("adjudicator", tools.adjudicator.ready())):
         if problem:
             print(f"{what}: {problem}")
-            if what == "reviewer":
-                return 2
     runs_dir = args.runs_dir or Path(tempfile.mkdtemp(prefix="proof-reader-review-smoke-"))
     if "proof-reader-glass" in str(Path(runs_dir).resolve()):
         print("Refused: the smoke run never writes into the served glass checkout.")

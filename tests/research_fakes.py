@@ -166,7 +166,8 @@ def tools(pages, resolve=("PTGX", "1377121", "Protagonist Therapeutics, Inc.")):
         return ident[t]
     return ResearchTools(fetcher=FakeFetcher(pages), render_html=offline_render, resolve=res,
                          brave=FakeBrave(key=False), reviewer=FakeChat([], key=False, model=REVIEWER_MODEL),
-                         adjudicator=FakeChat([], key=False, model=ADJUDICATOR_MODEL))
+                         adjudicator=FakeChat([], key=False, model=ADJUDICATOR_MODEL),
+                         reviewer_fallback=FakeChat([], key=False, **FALLBACK))
 
 
 def event(title, quote, *, source="src-r1-ptgx", page=1, date_text=None, date=None, date_end=None, program=None,
@@ -202,8 +203,9 @@ class FakeBrave:
                                            for u in self.answers.get(query, [])], http_status=200)
 
 
-REVIEWER_MODEL = "meta-models/muse-spark-open-1026"
+REVIEWER_MODEL = "deepseek-ai/DeepSeek-V4-Pro-0813"
 ADJUDICATOR_MODEL = "muse-wonder-1.0"
+FALLBACK = {"model": "meta-models/muse-spark-open-1026", "name": "Muse Spark Open", "family": "Muse Spark (Meta)"}
 
 
 class FakeChat:
@@ -211,11 +213,22 @@ class FakeChat:
     capture.research_reviewer.OneShotChat. `script`: ChatReply objects or callables (messages -> ChatReply). key=False:
     no key, so the stage does not run. Running out of script is a test failure."""
 
-    def __init__(self, script, key=True, model=REVIEWER_MODEL):
+    def __init__(self, script, key=True, model=REVIEWER_MODEL, name=None, family=None, provider=None,
+                 unavailable=None):
         self.script, self.key, self.model, self.sent = list(script), key, model, []
+        # identity like capture.research_reviewer.OneShotChat; defaults: DeepSeek V4 Pro (the reviewer) or Muse Wonder
+        wonder = model == ADJUDICATOR_MODEL
+        self.name = name or ("Muse Wonder" if wonder else "DeepSeek V4 Pro")
+        self.price_name = self.name
+        self.family = family or ("Muse Wonder (Meta)" if wonder else "DeepSeek")
+        self.provider = provider or ("meta" if wonder else "baseten")
+        self.unavailable = unavailable
 
     def ready(self):
         return None if self.key else f"No key was found for {self.model}, so this stage did not run."
+
+    def available(self):
+        return self.ready() or self.unavailable
 
     def chat(self, messages, tools=None, json_mode=False):
         self.sent.append(copy.deepcopy(messages))

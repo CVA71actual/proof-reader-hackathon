@@ -590,7 +590,12 @@ URLs are kept. Without a key the tool is not offered and the company's `search_l
 
 Independent review (RESEARCHER-FULL-001 S2 wiring, `runs/research.py` `review_company`): after each company's
 research ends, for any reason except a person's stop (finished, spend cap, a safety stop, a limit, a technical
-failure), `capture/research_reviewer.review_draft` (Muse Spark Open) attacks that company's draft. Its first message
+failure), `capture/research_reviewer.review_draft` attacks that company's draft. The reviewer is DeepSeek V4 Pro
+(`deepseek-ai/DeepSeek-V4-Pro-0813`, Baseten, family DeepSeek; MULTI-FAMILY-001, CVA 2026-11-02); Muse Spark Open is a
+declared fallback used only when DeepSeek is not in Baseten's model list (a free check), and then the record
+(`review[t].reviewer_choice`, `families.same_family: true`) and every label say it is the researcher's own family
+("reviewed by Muse Spark Open (same model family as the researcher)", never "independently"). Labels name the reviewer
+that ran, e.g. "Agent research — independently reviewed by DeepSeek V4 Pro (no findings)". Its first message
 is the rows with their row ids and revisions, the LIST of the company's captured sources (id, title, publisher, kind,
 URL, dates, page count, no text) and only the text of the pages the rows cite; it reads any other page with
 `read_source_pages` (at most `PAGES_PER_READ` = 5 per call, a recorded request-size default). Requests replay the last

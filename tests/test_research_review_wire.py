@@ -114,7 +114,7 @@ def test_clean_review_after_research_labels_the_row_run_and_export(runs_dir, tmp
     leads = [json.loads(l) for l in manifest.splitlines() if '"stage": "independent_review"' in l]
     assert leads and leads[0]["urls"] == [PR2] and "SNIPPET" not in manifest and "TITLE-" not in manifest
     usage = r["companies"]["PTGX"]["review_usage"]
-    expected = 2 * prices.cost_usd("Muse Spark Open", 500, 100) + prices.request_cost_usd("Brave Search", 1)
+    expected = 2 * prices.cost_usd("DeepSeek V4 Pro", 500, 100) + prices.request_cost_usd("Brave Search", 1)
     assert usage["model_requests"] == 2 and usage["search_requests"] == 1
     assert usage["spend_usd"] == pytest.approx(expected)
     assert meta["spend_usd"] >= usage["spend_usd"]
@@ -793,3 +793,50 @@ def test_a_finished_company_is_recorded_as_finished_not_researching(runs_dir):
     finish = [s for s in r["steps"] if s["kind"] == "finish"]
     assert finish and all("Researching" not in s["text"] for s in finish)
     assert finish[0]["text"].startswith("The model finished: 1 proposal")
+
+
+
+# ------------------------------------------------------------------ MULTI-FAMILY-001 (CVA): DeepSeek V4 Pro reviews
+
+def test_deepseek_reviews_and_its_provider_and_family_are_recorded(runs_dir):
+    reviewer = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"}))])
+    _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer)
+    run = run_json(runs_dir, rid)
+    e = run["run"]["research"]["review"]["PTGX"]
+    assert e["reviewer_choice"]["fallback_used"] is False and e["reviewer"] == "DeepSeek V4 Pro"
+    fam = e["families"]
+    assert fam["reviewer"] == {"name": "DeepSeek V4 Pro", "model": F.REVIEWER_MODEL, "provider": "baseten",
+                               "family": "DeepSeek"}
+    assert fam["researcher"]["family"] == "Muse Spark (Meta)" and fam["same_family"] is False
+    assert e["label"] == "Agent research — independently reviewed by DeepSeek V4 Pro (no findings)"
+    assert run["run"]["research"]["companies"]["PTGX"]["review_usage"]["spend_usd"] == pytest.approx(
+        2 * prices.cost_usd("DeepSeek V4 Pro", 500, 100))
+    assert prices.REVIEWER_PRICES_PER_1M_USD["DeepSeek V4 Pro"] == {"input": 1.32, "output": 3.96,
+                                                                    "cached_input": 0.132}
+    assert "not yet confirmed" in prices.REVIEWER_PRICE_STATUS["DeepSeek V4 Pro"]
+    assert run["run"]["prices"]["reviewer_per_1m_tokens_usd"]["DeepSeek V4 Pro"]["output"] == 3.96
+
+
+def test_the_declared_fallback_runs_only_when_deepseek_is_unavailable_and_says_same_family(runs_dir):
+    primary = F.FakeChat([], unavailable="deepseek-ai/DeepSeek-V4-Pro-0813 is not in the provider's model list.")
+    fallback = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"}))], **F.FALLBACK)
+    tools = F.tools({PR1: (200, "text/html; charset=utf-8", PAGE1)})
+    tools.reviewer, tools.reviewer_fallback, tools.brave = primary, fallback, F.FakeBrave()
+    tools.adjudicator = F.FakeChat([], model=F.ADJUDICATOR_MODEL)
+    reader = F.FakeResponses(happy_script())
+    app = create_app(runs_dir=runs_dir, reader=reader, background=False, second_reader=None, wonder_reader=None,
+                     sam_reader=None, research_tools=tools, research_reader=reader)
+    rid = TestClient(app).post("/api/runs/new", json={"mode": "research", "companies": ["PTGX"],
+                                                      "as_of": "2026-11-02"}).json()["id"]
+    run = run_json(runs_dir, rid)
+    RUN_SCHEMA.validate(run)
+    e = run["run"]["research"]["review"]["PTGX"]
+    assert primary.sent == [] and len(fallback.sent) == 2
+    assert e["reviewer_choice"]["fallback_used"] is True and "not in the provider's model list" in \
+        e["reviewer_choice"]["primary_unavailable"]
+    assert e["families"]["same_family"] is True and e["families"]["reviewer"]["family"] == "Muse Spark (Meta)"
+    want = "Agent research — reviewed by Muse Spark Open (same model family as the researcher) (no findings)"
+    row = research_rows(run)[0]
+    for label in (e["label"], row["research"]["label"], run["run"]["research"]["label"]):
+        assert label == want and "independently" not in label
+    assert any("declared fallback" in s["text"] for s in run["run"]["research"]["steps"] if s["kind"] == "review")

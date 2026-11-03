@@ -537,12 +537,13 @@ def test_a_failed_check_goes_back_once_as_typed_feedback_and_one_revision_is_acc
     second = _answer(reader, 3)["data"]["events"][0]
     assert second["status"] == "checked" and second["revision"] == 2 and not second["issues"]
     third = _answer(reader, 4)["data"]["events"][0]
-    assert third["status"] == "refused" and third["issues"][0]["code"] == "repair_not_offered"
+    # 5c (Codex finish decisions): an identical replay of the current revision is a no-op, not another revision
+    assert third["status"] == "unchanged" and third["revision"] == 2
     row = next(r for r in run["rows"] if r["id"] == "e1")
     assert row["research"]["revision"] == 2 and row["research"]["revisions"][0]["revision"] == 1
     assert row["research"]["revisions"][0]["issues"][0]["code"] == "quote_not_found"
     assert any(s["step"] == "Revised" for s in row["trail"])
-    assert run["run"]["research"]["refusals"]          # the refused third attempt is recorded, not dropped
+    assert len(row["research"]["revisions"]) == 1       # the replay made no third revision
 
 
 def test_an_unrepaired_failure_stays_a_proposal_for_a_person(runs_dir):
