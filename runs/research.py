@@ -660,15 +660,31 @@ def make_job_class():
                 history += list(reply.output)
                 if not calls:
                     text = reply.text()
-                    if text:
-                        self.step(ticker, "prose", "Model", "Muse Spark",
-                                  "Answered in prose without a tool call (kept as uncommitted research): "
-                                  + text[:600], citations=reply.citations()[:20])
+                    if not (text or "").strip():
+                        # A-TO-Z-001 / OUTCOME-001 (Manus 05:35): a reply with only web searches is research activity,
+                        # not prose; it never ends the company. The searches are recorded above; the loop goes on
+                        # under the existing request and time limits.
+                        nudge = {"role": "user", "content": NUDGE_TOOLS}
+                        history.append(nudge)
+                        pending, prev_id = [nudge], reply.response_id
+                        continue
+                    self.step(ticker, "prose", "Model", "Muse Spark",
+                              "Answered in prose without a tool call (kept as uncommitted research): "
+                              + text[:600], citations=reply.citations()[:20])
                     if prose_nudged:
+                        # LIMITS-002 (prose after one reminder = done), with the same completion check as
+                        # finish_draft: a captured source never concluded leaves the company incomplete.
+                        open_ = self.unsettled(ticker)
+                        with jobs.RUN_LOCK:
+                            c["finish"] = {"by": "prose", "at": now_utc(), "text": text[:2000],
+                                           "unsettled_sources": open_}
+                        if open_:
+                            raise Stop("incomplete", f"Incomplete: the model ended in prose while {', '.join(open_)} "
+                                                     f"was captured and not concluded (no proposal citing it and "
+                                                     f"no nothing_material).")
                         with jobs.RUN_LOCK:
                             c["status_reason"] = ("The model ended with a final answer and no finish_draft; its "
                                                   "proposals are recorded, dispositions are missing.")
-                            c["finish"] = {"by": "prose", "at": now_utc(), "text": text[:2000]}
                         return
                     prose_nudged = True
                     nudge = {"role": "user", "content": NUDGE_TOOLS}     # LIMITS-002: prose after this = done
@@ -707,6 +723,14 @@ def make_job_class():
                 pending, prev_id = outputs, reply.response_id
                 self.save_ledger()
                 if finished:
+                    # OUTCOME-001 / CLAIM-001 (Manus 05:35): the one finish correction is spent; a finish that still
+                    # has disposition or reference issues, or an unconcluded captured source, is not a success.
+                    fin = c.get("finish") or {}
+                    left = [i["message"] for i in fin.get("issues") or []]
+                    if fin.get("unsettled_sources"):
+                        left.append(f"{', '.join(fin['unsettled_sources'])} was captured and not concluded")
+                    if left:
+                        raise Stop("incomplete", "Incomplete, not finished: " + "; ".join(m.rstrip(".") for m in left) + ".")
                     return
 
         def searches_left(self, ticker: str) -> int:

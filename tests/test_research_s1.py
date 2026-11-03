@@ -658,6 +658,7 @@ def test_repeated_identical_action_is_recorded_and_the_loop_goes_on(runs_dir):
         F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")]),
         F.body([F.call("read_source_pages", read, "c1")]),
         F.body([F.call("read_source_pages", read, "c2")]),
+        F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "x"}, "nm")]),     # A-TO-Z-001 (Manus 05:35): conclude before finishing
         F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")]),
     ])
     _, rid, _ = start(runs_dir, reader)
@@ -693,6 +694,8 @@ def test_kill_condition_empty_answer_rate_is_recorded_and_surfaced(runs_dir):
     empty = F.body([F.reasoning()])         # a finished answer with no tool call and no text
     script = [empty, F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")]), empty,
               F.body([F.call("read_source_pages", {"source_id": "src-r1-ptgx", "pages": [1], "purpose": "x"}, "c2")]),
+              # A-TO-Z-001 (Manus 05:35): a finish with the captured source unconcluded is incomplete, so conclude it
+              F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "x"}, "nm")]),
               F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")])]
     reader = F.FakeResponses(script)
     _, rid, _ = start(runs_dir, reader)
@@ -1148,6 +1151,7 @@ def test_a_403_is_could_not_access_and_the_primary_source_path_goes_on(runs_dir)
     reader = F.FakeResponses([
         F.body([F.call("fetch_url", {"url": blocked, "purpose": "news"}, "c0")]),
         F.body([F.call("fetch_url", {"url": primary, "purpose": "the 8-K EX-99 release"}, "c1")]),
+        F.body([F.call("nothing_material", {"source_id": "src-r2-ptgx", "reason": "x"}, "nm")]),     # A-TO-Z-001 (Manus 05:35): conclude before finishing
         F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c2")])])
     _, rid, tools = start(runs_dir, reader, pages={blocked: (403, "text/html", b""),
                                                    primary: (200, "text/html", PAGE1)})
@@ -1157,7 +1161,8 @@ def test_a_403_is_could_not_access_and_the_primary_source_path_goes_on(runs_dir)
     run = run_json(runs_dir, rid)
     c = run["run"]["research"]["companies"]["PTGX"]
     assert c["capture_failures"][0]["outcome"] == "could_not_access" and c["capture_failures"][0]["url"] == blocked
-    assert c["status"] == "finished" and run["sources"][0]["url"] == primary and run["sources"][0]["kind"] == "filing"
+    assert c["status"] == "finished", c["status_reason"]
+    assert run["sources"][0]["url"] == primary and run["sources"][0]["kind"] == "filing"
     assert "never work around a refusal" in rc.CONTROLLER
     # one honest request each, no retry or disguise (plus the SEC submissions list for the document's filing date)
     assert tools.fetcher.asked == [blocked, primary, rs.SUBMISSIONS_URL.format(cik="1377121")]
@@ -2089,3 +2094,75 @@ def test_rt_5a48646_pages_through_fetch_url_store_nothing_and_match_no_row(runs_
     assert run["sources"] == [] and not any(r.get("status") == "matched" for r in run["rows"])
     fails = run["run"]["research"]["companies"]["PTGX"]["capture_failures"]
     assert [(f["url"], f["outcome"]) for f in fails] == [(a, "could_not_access"), (b, "could_not_access")]
+
+
+# ---------------------------------------------------------------- Manus 05:35 (A-TO-Z-001 / OUTCOME-001 / CLAIM-001)
+# Reproduced with Manus's offline_probe.py: three invalid completions ended company "finished" and run "done".
+
+
+def _fetch(cid="c0"):
+    return F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, cid)])
+
+
+def _company(runs_dir, rid):
+    run = run_json(runs_dir, rid)
+    return run["run"], run["run"]["research"]["companies"]["PTGX"]
+
+
+def test_prose_after_the_reminder_with_an_unconcluded_source_is_incomplete(runs_dir):
+    reader = F.FakeResponses([_fetch(), F.body([F.message("I am still reading.")]), F.body([F.message("I am done.")])])
+    _, rid, _ = start(runs_dir, reader)
+    meta, c = _company(runs_dir, rid)
+    assert c["status"] == "stopped" and c["limitation"]["kind"] == "incomplete"
+    assert "ended in prose while src-r1-ptgx was captured and not concluded" in c["status_reason"]
+    assert c["finish"]["by"] == "prose" and c["finish"]["unsettled_sources"] == ["src-r1-ptgx"]
+    assert meta["status"] != "done"
+
+
+def test_prose_after_the_reminder_with_nothing_open_still_ends_the_company(runs_dir):
+    """The approved LIMITS-002 rule stays for real prose."""
+    reader = F.FakeResponses([F.body([F.message("Reading the filings.")]), F.body([F.message("Done.")])])
+    _, rid, _ = start(runs_dir, reader)
+    meta, c = _company(runs_dir, rid)
+    assert c["status"] == "finished" and c["finish"] == {**c["finish"], "by": "prose", "text": "Done."}
+
+
+def test_search_only_replies_are_not_prose_and_never_finish(runs_dir):
+    reader = F.FakeResponses([F.body([F.search("PTGX q1", [PR1])]), F.body([F.search("PTGX q2", [PR1])]),
+                              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    _, rid, _ = start(runs_dir, reader)
+    meta, c = _company(runs_dir, rid)
+    assert len(reader.requests) == 3                        # both search-only replies continued the research
+    assert c["finish"]["by"] == "finish_draft" and c["status"] == "finished"
+    assert not any(s.get("kind") == "prose" for s in meta["research"]["steps"])
+
+
+def test_a_second_finish_with_missing_dispositions_is_incomplete(runs_dir):
+    ev = F.event("ICARUS Phase 3 topline", "Protagonist Therapeutics announced today its pipeline update.")
+    reader = F.FakeResponses([_fetch(), F.body([F.call("propose_events", {"events": [ev]}, "p")]),
+                              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f1")]),
+                              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f2")])])
+    _, rid, _ = start(runs_dir, reader)
+    meta, c = _company(runs_dir, rid)
+    assert len(reader.requests) == 4                        # one correction, no new retry
+    assert c["status"] == "stopped" and c["limitation"]["kind"] == "incomplete"
+    assert "Incomplete, not finished: e1 has no disposition." in c["status_reason"]
+    assert c["finish"]["missing_dispositions"] == ["e1"] and meta["status"] != "done"
+
+
+def test_capture_nothing_material_and_a_valid_finish_completes(runs_dir):
+    reader = F.FakeResponses([_fetch(), F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx",
+                                                                            "reason": "Staffing only."}, "nm")]),
+                              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    _, rid, _ = start(runs_dir, reader)
+    meta, c = _company(runs_dir, rid)
+    assert c["status"] == "finished" and c["limitation"] is None and meta["status"] == "done"
+
+
+def test_a_finish_with_a_captured_source_never_concluded_is_incomplete(runs_dir):
+    """A-TO-Z-001: a run cannot end complete with unconcluded units, by finish_draft as by prose."""
+    reader = F.FakeResponses([_fetch(), F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    _, rid, _ = start(runs_dir, reader)
+    meta, c = _company(runs_dir, rid)
+    assert c["status"] == "stopped" and c["limitation"]["kind"] == "incomplete"
+    assert "src-r1-ptgx was captured and not concluded" in c["status_reason"] and meta["status"] != "done"
