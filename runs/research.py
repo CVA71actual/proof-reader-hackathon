@@ -1803,7 +1803,7 @@ def make_job_class():
 
         def sec_filing_lead(self, ticker: str, cid: str, url: str) -> dict | None:
             """An SEC archive document captured by its URL (an exhibit, say) takes its filing date from the filer's
-            submissions list, matched by accession: without it 'by year-end' or a yearless day has no year to count
+            submissions list, matched by accession: without it 'by year-end' has no year to count
             from (live run 3). One SEC metadata request per filer, cached; recorded in the manifest."""
             m = re.search(r"/Archives/edgar/data/(\d+)/(\d{18})/", url or "")
             if not m:
@@ -2129,7 +2129,7 @@ def make_job_class():
             from runs.claim_assessment import timing_snapshot
             tpage = next(p for p in tsrc["pages"] if p["page_number"] == span["page_number"])
             _, t_consumed = sources.load_page_evidence(self.dir, tpage)
-            today = event_checks.release_day(words, tsrc.get("published_date"))
+            today = event_checks.release_day(words, tsrc.get("published_date"), anchor=span["quote"])
             row["research"] = {"timing": timing_snapshot(tsrc, tpage, span["quote"], t_consumed),
                                "timing_release_day": today[0].isoformat() if today else None}
             results = recheck.row_checks(row, one_page, words_by_span[k], consumed_artifact=consumed)
