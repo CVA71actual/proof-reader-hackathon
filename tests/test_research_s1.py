@@ -1168,16 +1168,17 @@ def test_an_incomplete_answer_with_finish_draft_never_finalizes_the_company(runs
                 F.call("finish_draft", {"dispositions": [{"row_id": "e1", "disposition": "proposal",
                                                           "related_row_id": None, "reason": "x"}],
                                         "limitations": []}, "c2")],
-               status="incomplete", incomplete="max_output_tokens")])
+               status="incomplete", incomplete="max_output_tokens"),
+        F.body([F.reasoning()], status="incomplete", incomplete="max_output_tokens")])     # LIMITS-005: 2 in a row
     _, rid, _ = start(runs_dir, reader)
     run = run_json(runs_dir, rid)
     c = run["run"]["research"]["companies"]["PTGX"]
     assert c["status"] == "stopped" and c["limitation"]["kind"] == "incomplete"
-    assert "max_output_tokens" in c["limitation"]["reason"] and c["finish"] is None
+    assert "two replies in a row were cut off at the reply limit" in c["limitation"]["reason"] and c["finish"] is None
     assert [r["id"] for r in run["rows"] if r.get("research")] == []          # Manus 18:12: nothing from it runs
     refused = {x["tool"] for x in run["run"]["research"]["refusals"] if x["issues"][0]["code"] == "incomplete_answer"}
     assert refused == {"propose_events", "finish_draft"}
-    assert len(reader.requests) == 2 and run["run"]["status"] == "needs_input"
+    assert len(reader.requests) == 3 and run["run"]["status"] == "needs_input"
 
 
 def test_the_reservation_covers_the_live_reply_that_exceeded_it():
@@ -1313,7 +1314,7 @@ def test_a_revision_without_its_ids_is_refused_with_a_precise_message():
 
 
 def test_limits_002_values():
-    assert rr.MAX_OUTPUT_TOKENS == 32768 and rs.FETCH_TIMEOUT_S == 180
+    assert rr.MAX_OUTPUT_TOKENS == 16384 and rs.FETCH_TIMEOUT_S == 180     # 32,768 lowered by LIMITS-005
     assert rs.MAX_BYTES == 25 * 1024 * 1024 and rs.MAX_REDIRECTS == 5 and research.MAX_COMPANIES == 10
 
 
@@ -1680,14 +1681,153 @@ def test_brave_payloads_are_delivered_exactly_once_on_every_path(runs_dir, path)
 def test_a_length_cut_answer_dispatches_nothing_and_replays_nothing(runs_dir, kind):
     call = F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")
     output = [F.reasoning(), call] if kind == "reasoning_only" else [F.message("Partial thoughts"), call]
-    reader = F.FakeResponses([F.body(output, status="incomplete", incomplete="max_output_tokens")])
+    reader = F.FakeResponses([F.body(output, status="incomplete", incomplete="max_output_tokens"),
+                              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
     _, rid, tools = start(runs_dir, reader)
-    assert tools.fetcher.asked == [] and len(reader.requests) == 1             # nothing dispatched, no replay
+    assert tools.fetcher.asked == [] and len(reader.requests) == 2             # nothing dispatched
+    replay = json.dumps(reader.requests[1]["input"])
+    assert "c1" not in replay and "Partial thoughts" not in replay and "ENC1" not in replay   # nothing replayed
+    assert reader.requests[1]["input"][-1]["content"] == research.NUDGE_RUNAWAY
     run = run_json(runs_dir, rid)
     c = run["run"]["research"]["companies"]["PTGX"]
-    assert c["limitation"]["kind"] == "incomplete" and c["empty_answers"] == 0 and run["sources"] == []
+    assert c["status"] == "finished" and c["empty_answers"] == 0 and run["sources"] == []
     assert any(x["tool"] == "fetch_url" and x["issues"][0]["code"] == "incomplete_answer"
                for x in run["run"]["research"]["refusals"])
     turn = json.loads((runs_dir / rid / "research" / "turns" / "PTGX-001.json").read_text())
     assert turn["response"]["status"] == "incomplete"                         # kept for audit
     assert run["run"]["spend_usd"] > 0                                        # and settled
+
+
+# ---------------------------------------------------------------- live brief-v2 run: OUTCOME-001, ctgov, search dedupe
+
+JNJ = "https://www.jnj.com/media-center/press-releases/fda-approval-of-icotyde"
+JNJ_BLOCK = (REPO / "tests" / "fixtures" / "jnj_block_page.html").read_bytes()
+
+
+def test_a_maintenance_page_is_could_not_access_never_a_source(runs_dir):
+    wire = "https://www.prnewswire.com/news-releases/fda-approves-icotyde.html"
+    ev = F.event("ICOTYDE approval", "The FDA approved ICOTYDE on March 18, 2026.", date_text="March 18, 2026",
+                 date="2026-03-18")
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": JNJ, "purpose": "J&J release"}, "c0")]),
+        F.body([F.call("fetch_url", {"url": wire, "purpose": "the wire copy"}, "c1")]),
+        F.body([F.call("propose_events", {"events": [ev]}, "c2")]),
+        F.body([F.call("finish_draft", {"dispositions": [
+            {"row_id": "e1", "disposition": "context", "related_row_id": None, "reason": "x"}],
+            "limitations": []}, "c3")])])
+    _, rid, _ = start(runs_dir, reader, pages={
+        JNJ: (200, "text/html", JNJ_BLOCK),
+        wire: (200, "text/html", F.html("The FDA approved ICOTYDE on March 18, 2026."))})
+    out = json.loads(reader.requests[1]["input"][-1]["output"])
+    assert out["issues"][0]["code"] == "could_not_access"
+    msg = out["issues"][0]["message"]
+    assert "block/maintenance page" in msg and "PR Newswire" in msg and "investor.jnj.com" in msg
+    run = run_json(runs_dir, rid)
+    assert [s["url"] for s in run["sources"]] == [wire]                  # the block page is not a source
+    f = run["run"]["research"]["companies"]["PTGX"]["capture_failures"][0]
+    assert f["outcome"] == "could_not_access" and "site served a block/maintenance page" in f["reason"]
+    assert next(r for r in run["rows"] if r["id"] == "e1")["source_id"] == "src-r1-ptgx"
+
+
+def test_block_detection_spares_a_real_short_page():
+    ok = rs.Fetched("u", "u", 200, "text/html", F.html("Topline data in Q2 2027 for ICARUS."))
+    assert rs.block_reason(ok) is None
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", JNJ_BLOCK)).startswith("site served")
+    assert rs.block_reason(rs.Fetched("u", "u", 202, "text/html", b"<p>queued</p>")).startswith("site served")
+
+
+def test_ctgov_null_strings_are_null_and_study_pages_go_to_the_api(runs_dir):
+    study = json.dumps({"protocolSection": {"identificationModule": {"nctId": "NCT05210790", "briefTitle": "VERIFY"},
+                                            "statusModule": {"primaryCompletionDateStruct": {"date": "2026-12"}}}})
+    search = json.dumps({"studies": [json.loads(study)]})
+    pages = {rs.CTGOV_STUDY.format(nct="NCT05210790"): (200, "application/json", study.encode()),
+             rs.ctgov_search_url("rusfertide"): (200, "application/json", search.encode())}
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_ctgov", {"nct_id": "null", "query": "rusfertide", "cursor": "null"}, "c0")]),
+        F.body([F.call("fetch_url", {"url": "https://clinicaltrials.gov/study/NCT05210790", "purpose": "x"}, "c1")]),
+        F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "x"}, "c2")]),
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")])])
+    _, rid, tools = start(runs_dir, reader, pages=pages)
+    assert "pageToken" not in tools.fetcher.asked[0]
+    out0 = json.loads(reader.requests[1]["input"][-1]["output"])
+    assert out0["status"] == "ok" and out0["data"]["studies"][0]["nct_id"] == "NCT05210790"
+    run = run_json(runs_dir, rid)
+    src = run["sources"][0]
+    assert src["retrieval"]["tool"] == "fetch_ctgov" and src["url"].startswith("https://clinicaltrials.gov/api/v2/")
+    out1 = json.loads(reader.requests[2]["input"][-1]["output"])
+    assert any("primaryCompletionDateStruct.date: 2026-12" in l for l in out1["data"]["text"][0]["lines"])
+
+
+def test_an_identical_brave_query_is_answered_from_memory_without_a_request_or_charge(runs_dir):
+    brave = F.FakeBrave({"PTGX Q3 2026 earnings date": [PR1]})
+    script = [F.body([F.call("brave_search", {"query": "PTGX Q3 2026 earnings date", "count": 5}, "b1")]),
+              F.body([F.call("brave_search", {"query": "  ptgx q3 2026 EARNINGS date ", "count": 5}, "b2")]),
+              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])]
+    reader, rid = _brave_run(runs_dir, brave, extra=script)
+    assert brave.queries == ["PTGX Q3 2026 earnings date"]                  # one Brave request
+    out = json.loads(reader.requests[2]["input"][-1]["output"])
+    assert out["data"]["already_searched"] and out["data"]["urls"] == [PR1] and "same results" in out["note"]
+    meta = run_json(runs_dir, rid)["run"]
+    assert meta["research"]["companies"]["PTGX"]["brave_requests"] == 1
+    assert any(s["kind"] == "repeat" and s["refs"].get("engine") == "Brave Search" for s in meta["research"]["steps"])
+
+
+
+# ---------------------------------------------------------------- LIMITS-005 (CVA): runaway replies like timeouts
+
+
+def _runaway():
+    return F.body([F.reasoning(), F.call("fetch_url", {"url": PR1, "purpose": "x"}, "r")], status="incomplete",
+                  incomplete="max_output_tokens", u=F.usage(i=2000, o=16384))
+
+
+def test_limits_005_reply_cap():
+    assert rr.MAX_OUTPUT_TOKENS == 16384
+
+
+def _spend_for(replies):
+    return round(sum(prices.cost_usd("Muse Spark", u["input_tokens"], u["output_tokens"]) for u in replies), 6)
+
+
+def test_one_runaway_continues_and_is_settled_once(runs_dir):
+    good = F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])
+    reader = F.FakeResponses([_runaway(), good])
+    _, rid, tools = start(runs_dir, reader)
+    meta = run_json(runs_dir, rid)["run"]
+    assert meta["research"]["companies"]["PTGX"]["status"] == "finished" and tools.fetcher.asked == []
+    assert meta["spend_usd"] == pytest.approx(_spend_for([_runaway()["usage"], good["usage"]]), abs=1e-6)
+    assert any(s["kind"] == "runaway" for s in meta["research"]["steps"])
+
+
+def test_two_runaways_in_a_row_stop_the_company_as_incomplete(runs_dir):
+    reader = F.FakeResponses([_runaway(), _runaway()])
+    _, rid, _ = start(runs_dir, reader)
+    meta = run_json(runs_dir, rid)["run"]
+    c = meta["research"]["companies"]["PTGX"]
+    assert c["status"] == "stopped" and c["limitation"]["kind"] == "incomplete"
+    assert "two replies in a row were cut off at the reply limit" in c["limitation"]["reason"]
+    assert meta["spend_usd"] == pytest.approx(_spend_for([_runaway()["usage"]] * 2), abs=1e-6)
+
+
+def test_runaway_good_runaway_continues(runs_dir):
+    mid = F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")])
+    fin = F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "x"}, "c2")])
+    end = F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])
+    reader = F.FakeResponses([_runaway(), mid, _runaway(), fin, end])
+    _, rid, tools = start(runs_dir, reader)
+    meta = run_json(runs_dir, rid)["run"]
+    assert meta["research"]["companies"]["PTGX"]["status"] == "finished" and tools.fetcher.asked == [PR1]
+    assert meta["spend_usd"] == pytest.approx(
+        _spend_for([_runaway()["usage"], mid["usage"], _runaway()["usage"], fin["usage"], end["usage"]]), abs=1e-6)
+
+
+def test_a_runaway_then_a_timeout_counts_as_two_in_a_row(runs_dir):
+    reader = F.FakeResponses([_runaway(), _timeout_reply()])
+    _, rid, _ = start(runs_dir, reader)
+    c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
+    assert c["status"] == "failed" and "twice in a row" in c["status_reason"]
+
+
+def test_a_bot_wall_asking_to_confirm_a_human_is_a_block_page():
+    page = b"<html><body><p>Please " + b"veri" + b"fy you are a human to continue.</p></body></html>"
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page)).startswith("site served a block")

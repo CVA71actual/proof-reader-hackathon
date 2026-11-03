@@ -105,6 +105,7 @@ MAX_COMPANIES = 10
 
 NUDGE_TOOLS = ("Use the tools: capture sources with the fetch tools, propose events with propose_events, record what "
                "you checked with record_coverage, and call finish_draft when you are done.")
+NUDGE_RUNAWAY = ("Your last reply was cut off at the reply limit; nothing from it ran. Reply with one tool call.")
 NUDGE_EMPTY = ("Your last answer had no tool call and no text. Continue the research with a tool call, or call "
                "finish_draft if you are done.")
 
@@ -1110,7 +1111,7 @@ def make_job_class():
                      {"role": "user", "content": "Company card:\n" + json.dumps(card)}]
             continuation = self.choices.get("research_continuation") or rr.CONTINUE_REPLAY
             history, pending, prev_id = list(first), list(first), None
-            prose_nudged, empty_streak, timeout_streak = False, 0, 0
+            prose_nudged, empty_streak, timeout_streak = False, 0, 0     # timeout_streak counts runaways too
             brave_problem = self.tools.brave.ready() if self.tools.brave is not None else "Brave Search is not configured."
             st["brave"] = brave_problem is None
             if brave_problem:
@@ -1165,18 +1166,18 @@ def make_job_class():
                         raise Stop("failed", "Technical failure: the model did not answer twice in a row "
                                              f"(read timeout {rr.RESEARCH_READ_TIMEOUT_S}s each).")
                     continue
-                timeout_streak = 0
                 if reply.error:
+                    timeout_streak = 0
                     self.step(ticker, "error", "Code", "runs.research", f"{reply.error}"
                               + (" It may have been billed; its reserved worst case was charged."
                                  if reply.may_have_been_billed else ""))
                     raise Stop("failed", f"Technical failure: {reply.error} It was not retried.")
                 if reply.status == "incomplete":
-                    # Manus 15:55 and 18:12: a length/incomplete termination is classified FIRST, before the empty
-                    # branch, replay, search recording and tool dispatch. NONE of its tool calls run, no finish_draft
-                    # is accepted, none of its text, reasoning or arguments is replayed; it is kept only in the turn
-                    # log for audit and was settled above. Reasoning-only length cuts land here too, never in the
-                    # empty-answer branch. The company stops incomplete; nothing is retried.
+                    # Manus 15:55/18:12 and LIMITS-005 (CVA): a reply cut off at the reply limit (a runaway) is classified
+                    # FIRST, before the empty branch, replay, search recording and dispatch. It is settled once as priced
+                    # (count above), NONE of its tool calls run, no finish_draft is accepted, nothing of it is replayed;
+                    # it stays in the turn log for audit. Like a timeout, the next turn goes on, with a short note; two
+                    # in a row (runaway or timeout, one counter) stop the company as incomplete.
                     why = reply.incomplete_reason or "no reason given"
                     self.note_attempt(True)
                     held = reply.function_calls()
@@ -1185,16 +1186,23 @@ def make_job_class():
                             self.research["refusals"].append({
                                 "at": now_utc(), "ticker": ticker, "call_id": call.get("call_id"),
                                 "tool": call.get("name"), "issues": [rc.issue(
-                                    "incomplete_answer", f"{call.get('name')} came in an answer the provider marked "
-                                                         f"incomplete ({why}); not executed.")]})
-                    self.step(ticker, "error", "Model", "Muse Spark",
-                              f"The answer was cut off (status incomplete: {why}); none of its "
-                              f"{len(held)} tool call(s) ran and nothing from it was accepted or replayed. "
-                              f"Kept in the turn log for audit.")
+                                    "incomplete_answer", f"{call.get('name')} came in a reply cut off at the reply "
+                                                         f"limit ({why}); not executed.")]})
+                    timeout_streak += 1
+                    self.step(ticker, "runaway", "Model", "Muse Spark",
+                              f"The reply was cut off (status incomplete: {why}); none of its {len(held)} tool call(s) "
+                              f"ran and nothing from it was accepted or replayed. Kept in the turn log for audit "
+                              f"({timeout_streak} cut off or unanswered in a row).")
                     self.save_ledger()
-                    raise Stop("incomplete", f"Incomplete: the model's answer was cut off (status incomplete: {why}); "
-                                             f"the proposals recorded so far are kept, the company is not finished. "
-                                             f"It was not retried.")
+                    if timeout_streak >= 2:
+                        raise Stop("incomplete", "Incomplete: two replies in a row were cut off at the reply limit "
+                                                 "(or did not answer). The proposals recorded so far are kept; not "
+                                                 "retried.")
+                    note = {"role": "user", "content": NUDGE_RUNAWAY}
+                    history.append(note)
+                    pending = [note]
+                    continue
+                timeout_streak = 0
                 self.note_attempt(reply.empty)
                 for s in reply.web_searches():
                     self.record_search(ticker, s)
@@ -1422,6 +1430,24 @@ def make_job_class():
             from capture.brave_search import NAME
             st = self.state[ticker]
             query = args["query"]
+            norm = " ".join(query.casefold().split())
+            with jobs.RUN_LOCK:
+                seen = self.research.setdefault("brave_answered", {}).get(norm)
+            if seen is not None:
+                # COMPACT-001 / SETTLE-001 (live brief-v2 run: one query sent ~15 times): an identical query already
+                # answered in this run is answered from memory, its URLs only: no new request, no charge. The repeat
+                # is recorded. A dedupe, not a limit: a different query always goes to Brave.
+                kept = {"call_id": cid, "status": "ok",
+                        "data": {"engine": NAME, "query": query, "urls": list(seen["urls"]), "already_searched": True,
+                                 "first_asked_at": seen["at"]},
+                        "note": "Already searched in this run; same results (no new request, no charge). Capture a "
+                                "lead with fetch_url, or search a different query."}
+                st["brave_calls"][cid] = kept
+                self.step(ticker, "repeat", "Code", "runs.research",
+                          f"Brave query “{query}” was already answered at {seen['at']}; its "
+                          f"{len(seen['urls'])} URLs were returned from memory, no new request.",
+                          engine=NAME, queries=[query], results=list(seen["urls"])[:20], call_id=cid)
+                return kept, False
             price = prices.request_cost_usd(NAME, 1)
             token = self.admit_paid(ticker, price)
             got = None
@@ -1453,6 +1479,8 @@ def make_job_class():
                       f"Searched with Brave Search: {query}. {len(got.urls)} result"
                       f"{'s' if len(got.urls) != 1 else ''} (leads, not evidence).",
                       engine=NAME, queries=[query], results=got.urls[:20], call_id=cid)
+            with jobs.RUN_LOCK:
+                self.research.setdefault("brave_answered", {})[norm] = {"urls": got.urls, "at": now_utc()}
             # the titles and snippets go to the model for this turn only (in memory); see redact_brave/compact
             return rc.envelope(cid, "ok", {"engine": NAME, "query": query, "results": got.results,
                                            "note": "Leads only: capture a source with fetch_url before citing it."}
@@ -1469,7 +1497,7 @@ def make_job_class():
             st = self.state[ticker]
             starts = st["turn_starts"]
             if len(starts) <= REPLAY_TURNS:
-                keep_from, dropped = (starts[0] if starts else len(history)), 0
+                keep_from, dropped = (starts[0] if starts else first_n), 0     # before any turn: all after first
             else:
                 keep_from, dropped = starts[-REPLAY_TURNS], len(starts) - REPLAY_TURNS
             last_start = starts[-1] if starts else len(history)
@@ -1580,6 +1608,13 @@ def make_job_class():
                     st["compacted"].add(id(item))
 
         def t_fetch_url(self, ticker, cid, args, tool="fetch_url", title=None):
+            m = re.match(r"https?://(?:www\.)?clinicaltrials\.gov/(?:study|ct2/show)/(NCT[0-9]{8})", args["url"], re.I)
+            if m and tool == "fetch_url":
+                # the study page is built by JavaScript (it captures empty); the registry's v2 API record is captured
+                self.step(ticker, "fetch", "Code", "runs.research",
+                          f"{args['url']} is a ClinicalTrials.gov study page; capturing its registry record "
+                          f"{m[1].upper()} through the v2 API instead.", call_id=cid)
+                return self.t_fetch_ctgov(ticker, cid, {"nct_id": m[1].upper(), "query": None, "cursor": None})
             limited = self._fetch_allowed(ticker)
             if limited:
                 return rc.envelope(cid, "error", None, [rc.issue("limit", limited)]), False
@@ -1598,15 +1633,18 @@ def make_job_class():
                 return self._capture_failed(ticker, cid, url, str(e), tool), False
             with jobs.RUN_LOCK:
                 self.company(ticker)["fetches"] += 1
+            blocked = rs.block_reason(fetched)
+            if blocked:      # OUTCOME-001: an interstitial is never a captured source
+                return self._capture_failed(ticker, cid, url, blocked, tool, fetched, blocked=True), False
             try:
                 source = self.register_source(ticker, cid, fetched, tool, title)
             except rs.CaptureFailed as e:
                 return self._capture_failed(ticker, cid, url, str(e), tool, fetched), False
             return rc.envelope(cid, "ok", self.source_view(ticker, source, [1])), False
 
-        def _capture_failed(self, ticker, cid, url, reason, tool, fetched=None):
+        def _capture_failed(self, ticker, cid, url, reason, tool, fetched=None, blocked=False):
             status = getattr(fetched, "status", None)
-            refused = status in (403, 404, 451)
+            refused = blocked or status in (403, 404, 451)
             rec = {"at": now_utc(), "url": url, "tool": tool, "reason": reason, "http_status": status,
                    "retrieved_at": getattr(fetched, "retrieved_at", None),
                    "outcome": "could_not_access" if refused else "capture_failed"}
@@ -1614,15 +1652,19 @@ def make_job_class():
                 self.company(ticker)["capture_failures"].append(rec)
                 self.manifest.append("capture_failed", ticker=ticker, call_id=cid, **rec)
             if refused:
+                why = reason if blocked else f"HTTP {status}"
                 self.step(ticker, "fetch", "Code", "capture.research_sources",
-                          f"Could not access {url}: HTTP {status} at {rec['retrieved_at']}. Recorded; research goes on.",
+                          f"Could not access {url}: {why} at {rec['retrieved_at']}. Recorded; research goes on.",
                           call_id=cid)
                 return rc.envelope(cid, "error", {"url": url, "http_status": status,
                                                   "retrieved_at": rec["retrieved_at"]}, [rc.issue(
-                    "could_not_access", f"The site answered HTTP {status}, so nothing from it was captured. Look for "
-                                        f"the same document at its primary origin: the company's SEC filing (an 8-K "
-                                        f"EX-99 press release via fetch_edgar), the company's investor-relations page, "
-                                        f"or the issuer's wire release. Do not try to get around the refusal.")])
+                    "could_not_access", (f"The {reason}, so nothing from it was captured." if blocked else
+                                         f"The site answered HTTP {status}, so nothing from it was captured.")
+                                        + " Look for the same document at another primary origin: the company's SEC "
+                                          "filing (an 8-K EX-99 press release via fetch_edgar), the issuer's or the "
+                                          "partner's investor-relations site (for example investor.jnj.com), or its "
+                                          "wire release (PR Newswire, Business Wire, GlobeNewswire). Do not try to get "
+                                          "around the refusal.")])
             self.step(ticker, "fetch", "Code", "capture.research_sources",
                       f"Capture failed for {url}: {reason} Nothing from it can be cited; recorded as a limitation.",
                       call_id=cid)
@@ -1833,7 +1875,8 @@ def make_job_class():
                                              "title": f"{ticker} {f['form']}" + (f" ({f['description']})"
                                                                                  if f["description"] else "")
                                                       + f", filed {f['filing_date']}"}
-            start = int(args["cursor"] or 0) if str(args["cursor"] or "0").isdigit() else 0
+            cursor = _nullish(args["cursor"])
+            start = int(cursor) if cursor and cursor.isdigit() else 0
             page = listing[start:start + EDGAR_PAGE]
             nxt = str(start + EDGAR_PAGE) if start + EDGAR_PAGE < len(listing) else None
             self.step(ticker, "fetch", "Code", "capture.research_sources",
@@ -1843,7 +1886,9 @@ def make_job_class():
                                            "note": "Leads only: capture a document with fetch_url to cite it."}), False
 
         def t_fetch_ctgov(self, ticker, cid, args):
-            nct, query = (args["nct_id"] or "").strip() or None, (args["query"] or "").strip() or None
+            # live brief-v2 run: the model sends the string "null" for unused fields; it means null (HTTP 400 before)
+            nct, query = _nullish(args["nct_id"]), _nullish(args["query"])
+            args = {**args, "cursor": _nullish(args.get("cursor"))}
             if (nct is None) == (query is None):
                 return rc.envelope(cid, "error", None, [rc.issue("malformed_argument",
                                                                  "Give exactly one of nct_id and query.")]), False
@@ -2172,6 +2217,14 @@ def make_job_class():
             return rc.envelope(cid, "ok" if not issues else "partial", {"finished": True}, issues), True
 
     return ResearchJob
+
+
+def _nullish(v):
+    """None for a value a model meant as empty: None, "", "null", "none", "nil" (any case, padded)."""
+    if v is None:
+        return None
+    t = str(v).strip()
+    return None if t.lower() in ("", "null", "none", "nil", "undefined") else t
 
 
 def _html_title(body: bytes, kind: str) -> str | None:
