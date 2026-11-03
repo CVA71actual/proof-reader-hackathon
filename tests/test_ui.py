@@ -1571,6 +1571,23 @@ def test_your_call_note_survives_background_polling():
         "(function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'textarea') rj2 = rj2 || c; walk(c); }); })(nodes['judgment-det']);",
         "if (!rj2 || rj2.value !== 'Because the date is wrong' || rj2.selectionStart !== 4)",
         "  { console.error('renderJudgment wiped the note: ' + (rj2 && rj2.value)); process.exit(7); }",
+        # fix-on-find (Claude re-review + Red Team 7f822fc): renderJudgment reads
+        # the LIVE box before its clear, so a caret moved without typing and a
+        # focused EMPTY box both survive the tick
+        "function liveNote() { var hit = null; (function walk(n) { (n.children || []).forEach(function (c) { if (!hit && c.id === 'qnote') hit = c; walk(c); }); })(nodes['judgment-det']); return hit; }",
+        "var gid = global.document.getElementById;",
+        "global.document.getElementById = function (id) { return id === 'qnote' ? liveNote() : gid(id); };",
+        "var rj3 = liveNote(); rj3.selectionStart = 9; rj3.selectionEnd = 9; global.document.activeElement = rj3;",
+        "renderJudgment();",
+        "var rj4 = liveNote();",
+        "if (rj4 === rj3 || rj4.selectionStart !== 9 || !rj4.focused || rj4.value !== 'Because the date is wrong')",
+        "  { console.error('caret/focus without input lost: ' + (rj4 && rj4.selectionStart) + '/' + (rj4 && rj4.focused)); process.exit(8); }",
+        "route.rowId = 'e2'; renderJudgment();",
+        "var rj5 = liveNote(); if (rj5.value !== '') { console.error('draft crossed rows'); process.exit(9); }",
+        "global.document.activeElement = rj5;",
+        "renderJudgment();",
+        "var rj6 = liveNote();",
+        "if (rj6 === rj5 || !rj6.focused || rj6.value !== '') { console.error('focused empty note lost focus'); process.exit(10); }",
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
@@ -1621,8 +1638,10 @@ def test_source_view_check_and_scroll_survive_background_polling():
         "var det = global.document.getElementById('srcDet');",
         "var fold = seeTheCheck({ name: 'quote_match', result: 'fail', reason: 'nearly matches', compared: { looked_for: 'x' } });",
         "if (fold.dataset.check !== 'quote_match') { console.error('no identity'); process.exit(2); }",
-        "fold.open = true;",
+        # the first render marks what the pane shows (restore records its key)
         "det.append(fold);",
+        "restoreSrcView();",
+        "fold.open = true;",
         "det.scrollTop = 300;",
         "captureSrcView();",
         # the refresh clears and rebuilds the pane (new node, closed, scroll kept)
@@ -1648,6 +1667,17 @@ def test_source_view_check_and_scroll_survive_background_polling():
         "det.append(fold4);",
         "restoreSrcView();",
         "if (fold4.open !== false || det.scrollTop !== 0) { console.error('stale restore'); process.exit(6); }",
+        # fix-on-find (Red Team 7f822fc): render() sets the route BEFORE
+        # renderSource captures — the old value's check and scroll must not be
+        # copied onto the new value in that order either
+        "fold4.open = true; det.scrollTop = 180;",
+        "route.valueId = 'v3';",
+        "captureSrcView();",
+        "det.children = []; det.scrollTop = 0;",
+        "var fold5 = seeTheCheck({ name: 'quote_match', result: 'fail', reason: 'nearly matches', compared: { looked_for: 'x' } });",
+        "det.append(fold5);",
+        "restoreSrcView();",
+        "if (fold5.open !== false || det.scrollTop !== 0) { console.error('route-first stale restore'); process.exit(7); }",
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
@@ -3370,6 +3400,12 @@ def test_check_results_words_and_capture_copy():
         "    warn.indexOf('Open the original to check.') === -1 ||",
         "    warn.indexOf('Text runs past the rendered page bottom.') === -1)",
         "  { console.error(warn); process.exit(9); }",
+        # fix-on-find (Red Team 7f822fc): no original URL -> no dead anchor
+        "sourceOf = function () { return {}; };",
+        "var warnNoUrl = checksSection({ checks: [], source_id: 's1' }, t2);",
+        "var anchors = 0; (function walk(n) { (n.children || []).forEach(function (c) { if (c && c.tag === 'a') anchors++; if (c) walk(c); }); })(warnNoUrl);",
+        "if (anchors || flatten(warnNoUrl).indexOf('Open the original to check.') !== -1) { console.error('dead link'); process.exit(19); }",
+        "sourceOf = function () { return { url: 'https://www.sec.gov/Archives/x' }; };",
         # unknown completeness only: neutral disclosure, no warning paragraph
         "var t3 = { effective_checks: [], fixes: [], check_history: [],",
         "  page_evidence: { capture_completeness: { completeness_not_established: true,",

@@ -1590,10 +1590,13 @@
       var warn = el('div', 'capwarn');
       warn.append('The captured page may be cut off. ');
       var osrc = row && row.source_id ? sourceOf(row) : null;
-      var oa = el('a', 'link', 'Open the original to check.');
-      if (osrc && osrc.url) { oa.href = osrc.url; oa.target = '_blank'; oa.rel = 'noopener'; }
-      else oa.remove();
-      warn.append(oa);
+      // fix-on-find (Red Team 7f822fc): the link only when there is an
+      // original to open — never an anchor without an href
+      if (osrc && osrc.url) {
+        var oa = el('a', 'link', 'Open the original to check.');
+        oa.href = osrc.url; oa.target = '_blank'; oa.rel = 'noopener';
+        warn.append(oa);
+      }
       if (capture.capture_incomplete_reason)
         warn.append(el('span', 'capwhy', ' ' + capture.capture_incomplete_reason));
       sec.append(warn);
@@ -1722,8 +1725,7 @@
   function renderAuditDet() {
     // the poll rebuilds this pane: opened folds and its scroll survive a
     // same-row refresh
-    captureFolds(document.getElementById('audit-det'),
-                 currentRunId() + '/audit/' + (audit.selected || ''));
+    captureFolds(document.getElementById('audit-det'));
     var host = clear(document.getElementById('audit-det'));
     var row = rowOf(audit.selected);
     if (!row) {
@@ -1739,11 +1741,15 @@
   // a changed target (or a deliberate navigation) resets them. A fold's
   // identity is its position among the pane's folds plus its check name — a
   // name alone re-opens the wrong fold when a check appears in two sections.
-  var foldKeep = null;
   function srcViewRouteKey() {
     return currentRunId() + '/' + route.srcId + '/' + route.page + '/' + (route.valueId || '');
   }
-  function captureFolds(hostEl, key) {
+  // fix-on-find (Red Team 7f822fc): the keep is keyed by what the pane SHOWED
+  // (hostEl.__foldKey, set at restore), not by the route at capture time —
+  // render() updates the route before the pane is rebuilt, so a route key
+  // there always equals the new key and copied the old folds onto a new row
+  // or value. The keep lives on its own host, so panes never clobber each other.
+  function captureFolds(hostEl) {
     var opens = [];
     if (hostEl.querySelectorAll) {
       var folds = hostEl.querySelectorAll('details.fold[data-check][open]');
@@ -1753,11 +1759,12 @@
         for (var j = 0; j < all.length; j++) if (all[j] === folds[i]) { opens.push(j + ':' + folds[i].getAttribute('data-check')); break; }
       }
     }
-    foldKeep = { key: key, opens: opens, scroll: hostEl.scrollTop };
+    hostEl.__foldKeep = { key: hostEl.__foldKey, opens: opens, scroll: hostEl.scrollTop };
   }
   function restoreFolds(hostEl, key) {
-    var keep = foldKeep;
-    foldKeep = null;
+    var keep = hostEl.__foldKeep;
+    hostEl.__foldKeep = null;
+    hostEl.__foldKey = key;
     if (!keep || keep.key !== key || !hostEl.querySelectorAll) return;
     var all = hostEl.querySelectorAll('details.fold[data-check]');
     keep.opens.forEach(function (k) {
@@ -1768,7 +1775,7 @@
     hostEl.scrollTop = keep.scroll;
   }
   function captureSrcView() {
-    captureFolds(document.getElementById('srcDet'), srcViewRouteKey());
+    captureFolds(document.getElementById('srcDet'));
   }
   function restoreSrcView() {
     restoreFolds(document.getElementById('srcDet'), srcViewRouteKey());
@@ -2760,8 +2767,18 @@
 
     // capture before the host clear: the poll rebuilds this pane and opened
     // folds + scroll survive only a same-row refresh
-    var judgKey = currentRunId() + '/judgment/' + (route.rowId || judgmentSel || '');
-    captureFolds(document.getElementById('judgment-det'), judgKey);
+    captureFolds(document.getElementById('judgment-det'));
+    // fix-on-find (Red Team / Claude re-review): snapshot the live 'Your call'
+    // note BEFORE the clear — the clear blurs it, and a caret moved without
+    // typing (click, arrows) never fires input
+    var liveNote = document.getElementById('qnote');
+    // only a box with something to keep (text, or the caret in it) records;
+    // an empty unfocused box on another row never wipes this row's draft
+    if (liveNote && liveNote.__row && (liveNote.value || document.activeElement === liveNote)) {
+      qnoteDraft = { rowId: liveNote.__row, value: liveNote.value,
+                     start: liveNote.selectionStart, end: liveNote.selectionEnd,
+                     focused: document.activeElement === liveNote };
+    }
     var mid = clear(document.getElementById('judgment-mid'));
     mid.append(el('div', 'empty', 'Pick a row on the left.'));
     var det = clear(document.getElementById('judgment-det'));
@@ -3125,26 +3142,19 @@
     sec.append(el('h4', null, 'Your call'));
     var note = el('textarea', 'note');
     note.id = 'qnote';
+    note.__row = row.id;   // the row this box belongs to
     sec.append(el('div', null, ''), note);
     note.placeholder = 'Why you decided this… (optional for Keep, required for Remove)';
-    if (keepNote && keepNote.rowId === row.id && keepNote.value) {
-      note.value = keepNote.value;
-      if (note.setSelectionRange && keepNote.start !== null && keepNote.start !== undefined) {
-        try { note.setSelectionRange(keepNote.start, keepNote.end); } catch (e) { /* not focused yet */ }
-      }
-      if (keepNote.focused && note.focus) note.focus();
-    }
+    // the same row's draft comes back — text, or a focused empty box
+    var restoreNote = !!(keepNote && keepNote.rowId === row.id && (keepNote.value || keepNote.focused));
+    if (restoreNote) note.value = keepNote.value || '';
     note.addEventListener('input', function () {
       qnoteDraft = { rowId: row.id, value: note.value,
                      start: note.selectionStart, end: note.selectionEnd,
                      focused: document.activeElement === note };
     });
-    note.addEventListener('focus', function () {
-      if (qnoteDraft && qnoteDraft.rowId === row.id) qnoteDraft.focused = true;
-    });
-    note.addEventListener('blur', function () {
-      if (qnoteDraft && qnoteDraft.rowId === row.id) qnoteDraft.focused = false;
-    });
+    // no focus/blur bookkeeping here: the pane clear itself blurs the box and
+    // would wipe the focus renderJudgment just recorded (fix-on-find)
     // G1-11: the decision buttons stay on one line — Remove… is never orphaned
     var br = el('div', 'btnrow nowrap');
     br.style.marginTop = '10px';
@@ -3203,6 +3213,13 @@
     // U23: the person can say the decision instead of typing it
     sec.append(sayControls(row));
     host.append(sec);
+    // focus and caret only take once the box is in the page
+    if (restoreNote) {
+      if (keepNote.focused && note.focus) note.focus();
+      if (note.setSelectionRange && keepNote.start !== null && keepNote.start !== undefined) {
+        try { note.setSelectionRange(keepNote.start, keepNote.end); } catch (e) { /* detached */ }
+      }
+    }
   }
 
   function judgmentDecidedPane(host, row, t) {

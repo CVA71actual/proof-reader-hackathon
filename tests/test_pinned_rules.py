@@ -429,7 +429,7 @@ var list = nodes['srcList'].children.map(function (f) { return { summary: f.chil
   pages: f.children.slice(1).map(function (b) { return texts(b).join(' '); }) }; });
 console.log(JSON.stringify({ list: list, sub: nodes['src-sub'].textContent }));
 """
-    out = _node(["dateShort", "btn", "captureSrcView", "restoreSrcView", "srcViewRouteKey", "renderSource"], body)
+    out = _node(["dateShort", "btn", "captureFolds", "restoreFolds", "captureSrcView", "restoreSrcView", "srcViewRouteKey", "renderSource"], body)
     assert out["sub"] == "Every page the rows were read from · 5 pages"
     assert out["list"] == [
         {"summary": "AAA 8-K exhibit 99.1 · filed 23 Oct 2026 · 3 pages",
