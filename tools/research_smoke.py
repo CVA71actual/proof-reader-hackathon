@@ -9,9 +9,10 @@ REVIEW ONLY (RESEARCHER-FULL-001 S2): review an EXISTING run's saved draft, with
     python -m tools.research_smoke --review RUN_DIR --cap-usd 1 --i-have-the-operator-go [--runs-dir DIR]
 
 RUN_DIR is never modified: it is copied to --runs-dir first (default: a new folder under /tmp) and the copy is reviewed.
---cap-usd is the review's budget on top of what the run already spent (the copy's cap becomes spent + cap). Muse
-Spark Open (BASETEN_API_KEY) reviews each company's draft with Brave Search (BRAVE_API_KEY) as its own search; disputed
-findings go to Muse Wonder (MODEL_API_KEY). Keys are never printed.
+--cap-usd is the review's budget on top of what the run already spent (the copy's cap becomes spent + cap). DeepSeek
+V4 Pro on Baseten (BASETEN_API_KEY; the declared fallback Muse Spark Open runs only if DeepSeek is not in Baseten's
+model list) reviews each company's draft with Brave Search (BRAVE_API_KEY) as its own search; disputed findings go to
+Muse Wonder (MODEL_API_KEY). Keys are never printed.
 
 It creates one research run (mode "research", the default research assignment, the given spending cap; every other
 limit off) in --runs-dir (default: a new folder under /tmp, never the served glass runs), drives it to its end in
@@ -140,15 +141,35 @@ def review_existing(src: Path, runs_dir: Path, cap_usd: float, tools=None) -> tu
     return dest, json.loads((dest / "run.json").read_text())["run"]["research"]
 
 
+def reviewer_line(research: dict) -> str:
+    """The reviewer that RAN (from the run's record), not the configured one."""
+    entries = [e for e in (research.get("review") or {}).values() if isinstance(e, dict) and "stage" in e]
+    ran = list(dict.fromkeys((e.get("reviewer_ran") or {}).get("name") or e.get("reviewer") or "unknown"
+                             for e in entries)) or ["none (no review ran)"]
+    acc = research.get("reviewer_access") or {}
+    why = ""
+    choices = [e.get("reviewer_choice") or {} for e in entries]
+    fb = next((c for c in choices if c.get("fallback_used")), None)
+    if fb:
+        status = (fb.get("primary_refused") or {}).get("http_status") or acc.get("http_status")
+        why = (f" (fallback: {fb.get('primary')} " + (f"refused {status}" if status else
+                                                     f"unavailable: {fb.get('primary_unavailable')}") + ")")
+    return f"Reviewer: {' and '.join(ran)}{why}"
+
+
 def review_main(args) -> int:
     from runs import research
+    from capture import research_reviewer as rv
     tools = research.ResearchTools()
-    for what, problem in (("reviewer", tools.reviewer.ready()), ("Brave Search", tools.brave.ready()),
-                          ("adjudicator", tools.adjudicator.ready())):
+    model, choice = rv.choose_reviewer(tools.reviewer, tools.reviewer_fallback)      # a free model-list check only
+    if model.ready():
+        print(f"reviewer: {model.ready()}")
+        return 2
+    print(f"Configured reviewer: {rv.identity(tools.reviewer)['name']} (declared fallback "
+          f"{rv.identity(tools.reviewer_fallback)['name']}); which one runs is decided at the start of the run.")
+    for what, problem in (("Brave Search", tools.brave.ready()), ("adjudicator", tools.adjudicator.ready())):
         if problem:
             print(f"{what}: {problem}")
-            if what == "reviewer":
-                return 2
     runs_dir = args.runs_dir or Path(tempfile.mkdtemp(prefix="proof-reader-review-smoke-"))
     if "proof-reader-glass" in str(Path(runs_dir).resolve()):
         print("Refused: the smoke run never writes into the served glass checkout.")
@@ -161,6 +182,7 @@ def review_main(args) -> int:
         return 2
     meta = json.loads((dest / "run.json").read_text())["run"]
     print(f"Copy: {dest}. Spend now ${meta['spend_usd'] or 0:.4f}; unpriced calls: {meta.get('unpriced_calls', 0)}")
+    print(reviewer_line(r))
     print(f"Run label: {r['label']}")
     for t, e in (r.get("review") or {}).items():
         u = e.get("usage") or {}

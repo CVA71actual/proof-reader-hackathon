@@ -114,7 +114,7 @@ def test_clean_review_after_research_labels_the_row_run_and_export(runs_dir, tmp
     leads = [json.loads(l) for l in manifest.splitlines() if '"stage": "independent_review"' in l]
     assert leads and leads[0]["urls"] == [PR2] and "SNIPPET" not in manifest and "TITLE-" not in manifest
     usage = r["companies"]["PTGX"]["review_usage"]
-    expected = 2 * prices.cost_usd("Muse Spark Open", 500, 100) + prices.request_cost_usd("Brave Search", 1)
+    expected = 2 * prices.cost_usd("DeepSeek V4 Pro", 500, 100) + prices.request_cost_usd("Brave Search", 1)
     assert usage["model_requests"] == 2 and usage["search_requests"] == 1
     assert usage["spend_usd"] == pytest.approx(expected)
     assert meta["spend_usd"] >= usage["spend_usd"]
@@ -793,3 +793,214 @@ def test_a_finished_company_is_recorded_as_finished_not_researching(runs_dir):
     finish = [s for s in r["steps"] if s["kind"] == "finish"]
     assert finish and all("Researching" not in s["text"] for s in finish)
     assert finish[0]["text"].startswith("The model finished: 1 proposal")
+
+
+
+# ------------------------------------------------------------------ MULTI-FAMILY-001 (CVA): DeepSeek V4 Pro reviews
+
+def test_deepseek_reviews_and_its_provider_and_family_are_recorded(runs_dir):
+    reviewer = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"}))])
+    _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer)
+    run = run_json(runs_dir, rid)
+    e = run["run"]["research"]["review"]["PTGX"]
+    assert e["reviewer_choice"]["fallback_used"] is False and e["reviewer"] == "DeepSeek V4 Pro"
+    fam = e["families"]
+    assert fam["reviewer"] == {"name": "DeepSeek V4 Pro", "model": F.REVIEWER_MODEL, "provider": "baseten",
+                               "family": "DeepSeek"}
+    assert fam["researcher"]["family"] == "Muse Spark (Meta)" and fam["same_family"] is False
+    assert e["label"] == "Agent research — independently reviewed by DeepSeek V4 Pro (no findings)"
+    assert run["run"]["research"]["companies"]["PTGX"]["review_usage"]["spend_usd"] == pytest.approx(
+        2 * prices.cost_usd("DeepSeek V4 Pro", 500, 100))
+    assert prices.REVIEWER_PRICES_PER_1M_USD["DeepSeek V4 Pro"] == {"input": 1.32, "output": 3.96,
+                                                                    "cached_input": 0.132}
+    assert "not yet confirmed" in prices.REVIEWER_PRICE_STATUS["DeepSeek V4 Pro"]
+    assert run["run"]["prices"]["reviewer_per_1m_tokens_usd"]["DeepSeek V4 Pro"]["output"] == 3.96
+
+
+def test_the_declared_fallback_runs_only_when_deepseek_is_unavailable_and_says_same_family(runs_dir):
+    primary = F.FakeChat([], unavailable="deepseek-ai/DeepSeek-V4-Pro-0813 is not in the provider's model list.")
+    fallback = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"}))], **F.FALLBACK)
+    tools = F.tools({PR1: (200, "text/html; charset=utf-8", PAGE1)})
+    tools.reviewer, tools.reviewer_fallback, tools.brave = primary, fallback, F.FakeBrave()
+    tools.adjudicator = F.FakeChat([], model=F.ADJUDICATOR_MODEL)
+    reader = F.FakeResponses(happy_script())
+    app = create_app(runs_dir=runs_dir, reader=reader, background=False, second_reader=None, wonder_reader=None,
+                     sam_reader=None, research_tools=tools, research_reader=reader)
+    rid = TestClient(app).post("/api/runs/new", json={"mode": "research", "companies": ["PTGX"],
+                                                      "as_of": "2026-11-02"}).json()["id"]
+    run = run_json(runs_dir, rid)
+    RUN_SCHEMA.validate(run)
+    e = run["run"]["research"]["review"]["PTGX"]
+    assert primary.sent == [] and len(fallback.sent) == 2
+    assert e["reviewer_choice"]["fallback_used"] is True and "not in the provider's model list" in \
+        e["reviewer_choice"]["primary_unavailable"]
+    assert e["families"]["same_family"] is True and e["families"]["reviewer"]["family"] == "Muse Spark (Meta)"
+    want = "Agent research — reviewed by Muse Spark Open (same model family as the researcher) (no findings)"
+    row = research_rows(run)[0]
+    for label in (e["label"], row["research"]["label"], run["run"]["research"]["label"]):
+        assert label == want and "independently" not in label
+    assert any("declared fallback" in s["text"] for s in run["run"]["research"]["steps"] if s["kind"] == "review")
+
+
+# ------------------------------------------------------------------ labels derived on load (e2e #180, CLAIM-001)
+
+def test_labels_are_derived_from_the_recorded_review_on_load_not_read_back_as_stored_text(runs_dir, tmp_path):
+    missing = "https://news.example.net/gone"
+    def lost(draft):
+        return ("report_finding", {"kind": "lost_condition",
+                                   "row_revision_ids": [{"row_id": draft[0]["row_id"], "revision_id": 1}],
+                                   "evidence": [{"source_id": "src-r1-ptgx", "quote": CONDITION}], "text": "dropped"})
+    reviewer = F.FakeChat([F.assess_then(("fetch", {"url": missing}), verdict="finding", before=(lost,)),
+                           _timed_out()])                                   # incomplete, one source not opened
+    wonder = F.FakeChat([F.verdict({"verdict": "unresolved", "reason": "unclear"})], model=F.ADJUDICATOR_MODEL)
+    client, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer, wonder)
+    path = runs_dir / rid / "run.json"
+    doc = json.loads(path.read_text())
+    # simulate a run saved by an older build: stored labels without the limit, no derived fields
+    old = "Agent research — partly reviewed (incomplete), findings so far"
+    doc["run"]["research"]["label"] = old
+    e = doc["run"]["research"]["review"]["PTGX"]
+    e["label"] = old
+    for k in ("label_kind", "limits", "reviewer_ran"):
+        e.pop(k, None)
+    for row in doc["rows"]:
+        if row.get("research"):
+            row["research"]["label"] = old
+    path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n")
+    before = path.read_bytes()
+    want = "1 source could not be opened"
+    api = client.get(f"/api/runs/{rid}").json()
+    labels = [api["run"]["research"]["label"]] + [r["research"]["label"] for r in api["rows"] if r.get("research")]
+    from report.data import load_run_dir
+    run, decisions = load_run_dir(runs_dir / rid)
+    view = build_view(run, decisions, generated_at="2026-11-02T20:00:00+00:00")
+    labels.append(view["research_label"])
+    for label in labels:
+        assert want in label and "partly reviewed by DeepSeek V4 Pro (incomplete)" in label, label
+    from report.build import build as build_report
+    out = build_report(rid, out=tmp_path / "rep", run_dir=runs_dir / rid)
+    assert want in " ".join("".join(p.get_text() for p in pymupdf.open(out["pdf"])).split())
+    assert path.read_bytes() == before                                       # the saved file is not rewritten
+
+
+# ------------------------------------------------------------------ ten-company dry run (DRYRUN-1/2/3)
+
+def test_dryrun_1_the_run_label_is_never_independent_when_a_company_did_not_finish_research(runs_dir):
+    reviewer = F.FakeChat([F.chat_tools(("finish_review", {"summary": "Nothing to review."}))])
+    _, rid, _ = start(runs_dir, F.FakeResponses([]), reviewer, limit=0.12)     # research starved at its share
+    run = run_json(runs_dir, rid)
+    r = run["run"]["research"]
+    assert r["companies"]["PTGX"]["status"] == "stopped" and r["review"]["PTGX"]["status"] == "complete"
+    assert "independently reviewed by" not in r["label"]
+    assert r["label"].startswith(research.LABEL) and "research did not finish for 1 of 1 company" in r["label"]
+    RUN_SCHEMA.validate(run)
+
+
+def test_dryrun_2_finish_beside_other_calls_twice_ends_the_review_incomplete(runs_dir):
+    mixed = [F.chat_tools(("search", {"query": f"q{i}"}), ("finish_review", {"summary": "done"})) for i in range(50)]
+    reviewer = F.FakeChat([F.assess_then()] + mixed)
+    _, rid, tools = start(runs_dir, F.FakeResponses(happy_script()), reviewer,
+                          brave=F.FakeBrave({f"q{i}": [] for i in range(50)}))
+    run = run_json(runs_dir, rid)
+    e = run["run"]["research"]["review"]["PTGX"]
+    assert len(reviewer.sent) == 3                                  # assess, mixed (reminded), mixed (stop)
+    assert tools.brave.queries == ["q0", "q1"]                      # the other calls of both replies still ran
+    assert e["status"] == "incomplete" and "not sent on its own after a reminder" in e["reason"]
+    reps = [s for s in run["run"]["research"]["steps"] if s["kind"] == "repeat" and
+            (s.get("refs") or {}).get("stage") == "independent_review"]
+    assert len(reps) == 2 and "reminded" in reps[0]["text"] and "ended incomplete" in reps[1]["text"]
+
+
+def test_dryrun_3_each_company_carries_its_review_status(runs_dir):
+    seen = []
+
+    def finish(messages):
+        rid = next(p.name for p in runs_dir.iterdir())
+        seen.append(run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]["review_status"])
+        return F.chat_tools(("finish_review", {"summary": "x"}))
+    reviewer = F.FakeChat([F.assess_then(), finish])
+    _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer)
+    c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
+    assert seen == ["reviewing"] and c["status"] == "finished" and c["review_status"] == "done"
+
+
+# ------------------------------------------------------------------ live test 5d028a8: the key may not use DeepSeek
+
+REFUSED = "Error code: 403 - please check the api-key you provided"
+
+
+def _two_company_run(runs_dir, primary, fallback):
+    reader = F.PerCompany({"PTGX": happy_script(), "ROIV": [F.body([F.call(
+        "finish_draft", {"dispositions": [], "limitations": []}, "f")])]})
+    tools = F.tools({PR1: (200, "text/html; charset=utf-8", PAGE1)})
+    ident = {"PTGX": ("1377121", "Protagonist Therapeutics, Inc."), "ROIV": ("1635088", "Roivant Sciences Ltd.")}
+    tools.resolve = lambda t: ident[t]
+    tools.reviewer, tools.reviewer_fallback, tools.brave = primary, fallback, F.FakeBrave()
+    tools.adjudicator = F.FakeChat([], model=F.ADJUDICATOR_MODEL)
+    app = create_app(runs_dir=runs_dir, reader=reader, background=False, second_reader=None, wonder_reader=None,
+                     sam_reader=None, research_tools=tools, research_reader=reader)
+    r = TestClient(app).post("/api/runs/new", json={"mode": "research", "companies": ["PTGX", "ROIV"],
+                                                     "as_of": "2026-11-02", "research_limits": {"concurrency": 1}})
+    assert r.status_code == 202, r.text
+    return run_json(runs_dir, r.json()["id"])
+
+
+def test_a_403_on_the_access_check_falls_back_once_per_run_and_says_same_family(runs_dir):
+    primary = F.FakeChat([], refuse=REFUSED)
+    fallback = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
+                           F.chat_tools(("finish_review", {"summary": "empty"}))], **F.FALLBACK)
+    run = _two_company_run(runs_dir, primary, fallback)
+    RUN_SCHEMA.validate(run)
+    r = run["run"]["research"]
+    assert primary.probes == 1 and primary.sent == []                # checked once per run, never retried
+    acc = r["reviewer_access"]
+    assert acc["refused"] is True and acc["http_status"] == 403 and "check the api-key" in acc["message"]
+    assert acc["fallback"] == "Muse Spark Open"
+    for t in ("PTGX", "ROIV"):
+        e = r["review"][t]
+        assert e["reviewer_choice"]["fallback_used"] is True and e["reviewer"] == "Muse Spark Open"
+        assert "HTTP 403" in e["reviewer_choice"]["primary_unavailable"]
+        assert e["families"]["same_family"] is True and e["multi_family"]["met"] is False
+        assert e["label"].startswith("Agent research — reviewed by Muse Spark Open (same model family as the "
+                                     "researcher)") and "independently" not in e["label"]
+    assert r["companies"]["PTGX"]["review_status"] == "done"
+    assert any("not retried" in s["text"] and "MULTI-FAMILY-001 not met" in s["text"] for s in r["steps"])
+
+
+def test_a_403_on_the_first_review_call_switches_to_the_fallback_without_retrying(runs_dir):
+    primary = F.FakeChat([], refuse=REFUSED)
+    primary.probe = lambda: None                                      # no access check: the first call is refused
+    fallback = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
+                           F.chat_tools(("finish_review", {"summary": "empty"}))], **F.FALLBACK)
+    run = _two_company_run(runs_dir, primary, fallback)
+    r = run["run"]["research"]
+    assert len(primary.sent) == 1                                     # one refused call in the whole run
+    assert r["review"]["PTGX"]["status"] == "complete" and r["review"]["ROIV"]["status"] == "complete"
+    assert all(r["review"][t]["reviewer"] == "Muse Spark Open" for t in ("PTGX", "ROIV"))
+    assert r["reviewer_access"]["refused"] is True and r["review"]["PTGX"]["multi_family"]["met"] is False
+    assert r["review"]["PTGX"]["usage"]["spend_usd"] >= 0
+
+
+def test_a_passing_access_check_keeps_deepseek_and_records_it(runs_dir):
+    primary = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
+                          F.chat_tools(("finish_review", {"summary": "empty"}))], probe=True)
+    run = _two_company_run(runs_dir, primary, F.FakeChat([], **F.FALLBACK))
+    r = run["run"]["research"]
+    assert primary.probes == 1 and r["reviewer_access"]["checked"] is True and r["reviewer_access"]["refused"] is False
+    assert all(r["review"][t]["reviewer"] == "DeepSeek V4 Pro" and r["review"][t]["multi_family"]["met"]
+               for t in ("PTGX", "ROIV"))
+
+
+def test_the_smoke_tool_names_the_reviewer_that_ran_not_the_configured_one(runs_dir):
+    from tools import research_smoke
+    primary = F.FakeChat([], refuse=REFUSED)
+    fallback = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
+                           F.chat_tools(("finish_review", {"summary": "empty"}))], **F.FALLBACK)
+    r = _two_company_run(runs_dir, primary, fallback)["run"]["research"]
+    assert research_smoke.reviewer_line(r) == "Reviewer: Muse Spark Open (fallback: DeepSeek V4 Pro refused 403)"
+    ok = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
+                     F.chat_tools(("finish_review", {"summary": "empty"}))], probe=True)
+    d = runs_dir / "ok"
+    d.mkdir()
+    r2 = _two_company_run(d, ok, F.FakeChat([], **F.FALLBACK))["run"]["research"]
+    assert research_smoke.reviewer_line(r2) == "Reviewer: DeepSeek V4 Pro"

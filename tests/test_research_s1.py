@@ -537,12 +537,13 @@ def test_a_failed_check_goes_back_once_as_typed_feedback_and_one_revision_is_acc
     second = _answer(reader, 3)["data"]["events"][0]
     assert second["status"] == "checked" and second["revision"] == 2 and not second["issues"]
     third = _answer(reader, 4)["data"]["events"][0]
-    assert third["status"] == "refused" and third["issues"][0]["code"] == "repair_not_offered"
+    # 5c (Codex finish decisions): an identical replay of the current revision is a no-op, not another revision
+    assert third["status"] == "unchanged" and third["revision"] == 2
     row = next(r for r in run["rows"] if r["id"] == "e1")
     assert row["research"]["revision"] == 2 and row["research"]["revisions"][0]["revision"] == 1
     assert row["research"]["revisions"][0]["issues"][0]["code"] == "quote_not_found"
     assert any(s["step"] == "Revised" for s in row["trail"])
-    assert run["run"]["research"]["refusals"]          # the refused third attempt is recorded, not dropped
+    assert len(row["research"]["revisions"]) == 1       # the replay made no third revision
 
 
 def test_an_unrepaired_failure_stays_a_proposal_for_a_person(runs_dir):
@@ -1887,14 +1888,14 @@ LONG_RELEASE = (f"<html><head><title>Acme reports Phase 3 maintenance data</titl
 
 
 def test_a_long_site_maintenance_page_is_a_block_page():
-    assert len(rs.readable_text(rs.sanitize_html(LONG_MAINTENANCE.decode())[0])) > rs.BLOCK_MAX_CHARS
+    assert len(rs.readable_text(rs.sanitize_html(LONG_MAINTENANCE.decode())[0])) > 2000   # Red Team: 2,652
     reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", LONG_MAINTENANCE))
     assert reason and reason.startswith("site served a block/maintenance page") and "title" in reason
 
 
 def test_a_short_down_for_scheduled_maintenance_page_is_a_block_page():
     reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", SHORT_DOWN))
-    assert reason and "down for scheduled maintenance" in reason
+    assert reason and "site is down" in reason
 
 
 def test_block_wording_dominating_a_long_page_without_a_headline_is_a_block_page():
@@ -1926,3 +1927,163 @@ def test_both_red_team_pages_are_refused_through_fetch_url(runs_dir):
     assert run["sources"] == []
     fails = run["run"]["research"]["companies"]["PTGX"]["capture_failures"]
     assert [f["outcome"] for f in fails] == ["could_not_access", "could_not_access"]
+
+
+# ---------------------------------------------------------------- dry run SEPN: code-recorded limitations count
+
+
+def test_a_company_whose_fetches_all_failed_never_reads_0_limitations(runs_dir):
+    """Ten-company dry run (SEPN): three could_not_access fetches, finish_draft with no stated limitation, and the
+    outcome said "0 limitations". CLAIM-001 / UNKNOWN-001: code-recorded failures are limitations too."""
+    from report.data import _research_lines
+    urls = [f"https://example.com/r{i}" for i in range(3)]
+    reader = F.FakeResponses(
+        [F.body([F.call("fetch_url", {"url": u, "purpose": "release"}, f"c{i}")]) for i, u in enumerate(urls)]
+        + [F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    _, rid, _ = start(runs_dir, reader, pages={u: (403, "text/html", b"<p>Forbidden</p>") for u in urls})
+    run = run_json(runs_dir, rid)
+    research = run["run"]["research"]
+    c = research["companies"]["PTGX"]
+    assert [f["outcome"] for f in c["capture_failures"]] == ["could_not_access"] * 3
+    assert "0 limitations recorded" not in c["status_reason"]
+    assert "0 limitations stated by the model" in c["status_reason"]
+    # this harness has no Brave key, so code also recorded one search limitation (Brave Search not configured)
+    assert c["search_limitations"][0]["engine"] == "Brave Search"
+    assert c["status_reason"].endswith("Limitations in all: 4 (0 stated by the model; recorded by code: 3 fetches "
+                                       "could not be accessed, 1 search failure).")
+    counts = research["audit"]["limitation_counts"]["PTGX"]
+    assert (counts["model"], counts["code"], counts["total"]) == (0, 4, 4)
+    assert research_audit.format_audit(research["audit"]).count("limitations (PTGX): 4 in all, 0 stated by the "
+                                                                "model, 4 recorded by code") == 1
+    _, lines = _research_lines(run["run"], run)
+    assert any(l.startswith("PTGX: finished") and "Limitations in all: 4" in l for l in lines)
+    assert sum(l.startswith("PTGX capture failed:") for l in lines) == 3
+
+
+def test_a_clean_company_counts_its_stated_limitation_only(runs_dir):
+    lim = {"question": "Q3 date", "tool_call_ids": [], "source_ids": [], "reason": "not announced"}
+    reader = F.FakeResponses([F.body([F.call("finish_draft", {"dispositions": [], "limitations": [lim]}, "f")])])
+    _, rid, _ = start(runs_dir, reader)
+    c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
+    assert c["status"] == "finished" and "1 limitation stated by the model." in c["status_reason"]
+    assert c["status_reason"].endswith("Limitations in all: 2 (1 stated by the model; recorded by code: 1 search "
+                                       "failure).")
+
+
+
+# ---------------------------------------------------------------- OUTCOME-001 Red Team #175 at 3ff7309: one principle
+# Block wording counts only when its subject is the site, page, service or system (or it is an access refusal / bot
+# wall); a page is a block page when that wording is its title or h1, or (final rule, 5a48646 review) when any prose
+# sentence carries it and fewer than five other prose sentences surround it. Detection is heuristic: a refused page is recorded with its reason and the reviewer remains the backstop.
+
+
+def test_rt_a_a_dateline_line_does_not_exempt_a_site_maintenance_page():
+    page = LONG_MAINTENANCE.replace(b"<h1>", b"<p>BOSTON, March 18, 2026</p><h1>")
+    reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page))
+    assert reason and reason.startswith("site served a block/maintenance page") and "title" in reason
+
+
+def test_rt_b_a_short_site_unavailable_for_maintenance_page_is_refused():
+    page = b"<html><body><p>We are sorry: the site is unavailable due to scheduled maintenance.</p></body></html>"
+    reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page))
+    assert reason and "site is unavailable" in reason
+
+
+def test_rt_c_maintenance_dosing_is_a_document_not_a_block_page():
+    page = b"<html><body><p>In the extension study, patients are undergoing maintenance dosing.</p></body></html>"
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page)) is None
+
+
+def test_a_release_mentioning_site_maintenance_in_passing_is_captured():
+    passing = ("<p>The company completed scheduled site maintenance at its Boston manufacturing facility in the "
+               "quarter.</p>")
+    short = ("<html><head><title>Acme second quarter results</title></head><body><h1>Acme Reports Second Quarter "
+             "Results</h1><p>Acme Therapeutics reported revenue growth and reaffirmed its 2026 guidance.</p>"
+             f"{passing}<p>Enrollment in the ACME-3 trial is complete.</p></body></html>").encode()
+    # Final rule (Operator, 5a48646 review): this short page, a site-subject statement with two other sentences, is
+    # now refused, like a block notice plus one fact sentence. Accepted residual risk: recorded with its reason.
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", short)).startswith("site served a block")
+    long_release = LONG_RELEASE.replace(b"</h1>", b"</h1>" + passing.encode())
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", long_release)) is None
+
+
+def test_rt_cases_through_fetch_url(runs_dir):
+    a, b, c = "https://example.com/a", "https://example.com/b", "https://example.com/c"
+    dated = LONG_MAINTENANCE.replace(b"<h1>", b"<p>BOSTON, March 18, 2026</p><h1>")
+    down = b"<html><body><p>We are sorry: the site is unavailable due to scheduled maintenance.</p></body></html>"
+    dosing = b"<html><body><p>In the extension study, patients are undergoing maintenance dosing.</p></body></html>"
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": a, "purpose": "release"}, "c0")]),
+        F.body([F.call("fetch_url", {"url": b, "purpose": "release"}, "c1")]),
+        F.body([F.call("fetch_url", {"url": c, "purpose": "release"}, "c2")]),
+        F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "x"}, "c3")]),
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    _, rid, _ = start(runs_dir, reader, pages={a: (200, "text/html", dated), b: (200, "text/html", down),
+                                               c: (200, "text/html", dosing)})
+    run = run_json(runs_dir, rid)
+    assert [s["url"] for s in run["sources"]] == [c]                    # only the dosing page is a source
+    fails = run["run"]["research"]["companies"]["PTGX"]["capture_failures"]
+    assert [(f["url"], f["outcome"]) for f in fails] == [(a, "could_not_access"), (b, "could_not_access")]
+    assert all(f["reason"].startswith("site served a block/maintenance page") for f in fails)
+
+
+def test_block_detection_stays_linear_on_a_long_unpunctuated_page():
+    import time
+    page = ("<html><body><p>" + "word " * 50000 + "</p></body></html>").encode()
+    t = time.monotonic()
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page)) is None
+    assert time.monotonic() - t < 2.0
+
+
+
+# ---------------------------------------------------------------- OUTCOME-001 Red Team #175 at 5a48646: final rule
+# Any site-subject block statement (or access refusal / bot wall) with fewer than five other prose sentences, or the
+# statement in the title or h1. Remaining adversarial edge cases are accepted residual risk: the reviewer is the
+# backstop and every refusal is recorded with its reason.
+
+FDA = "The FDA approved ICOTYDE on March 18, 2026."
+RT_DOWN = f"<html><body><p>Our website is down for scheduled maintenance. Please check back tomorrow. {FDA}</p></body></html>"
+RT_UNAVAILABLE = (f"<html><body><p>This website is unavailable due to scheduled maintenance. Please check back "
+                  f"tomorrow. {FDA}</p></body></html>")
+
+
+@pytest.mark.parametrize("page", [RT_DOWN, RT_UNAVAILABLE])
+def test_rt_5a48646_a_short_block_notice_with_one_fact_sentence_is_refused(page):
+    reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page.encode()))
+    assert reason and reason.startswith("site served a block/maintenance page") and "website is" in reason
+
+
+def test_rt_5a48646_b_check_back_tomorrow_is_block_wording():
+    page = f"<html><body><p>Please check back tomorrow. {FDA}</p></body></html>".encode()
+    reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page))
+    assert reason and "check back tomorrow" in reason
+
+
+def test_final_rule_controls_long_release_and_maintenance_dosing_are_captured():
+    passing = "<p>The company completed scheduled site maintenance at its Boston manufacturing facility.</p>"
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html",
+                                      LONG_RELEASE.replace(b"</h1>", b"</h1>" + passing.encode()))) is None
+    dosing = f"<html><body><p>Patients in the extension are undergoing maintenance dosing. {FDA}</p></body></html>"
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", dosing.encode())) is None
+    five = "".join(f"<p>Fact {w} about the program was reported in the quarter.</p>"
+                   for w in ("one", "two", "three", "four", "five"))
+    noted = f"<html><body><p>The site is down for scheduled maintenance.</p>{five}</body></html>".encode()
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", noted)) is None   # five other sentences: a document
+    four = noted.replace(b"<p>Fact five about the program was reported in the quarter.</p>", b"")
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", four)).startswith("site served a block")  # four
+
+
+def test_rt_5a48646_pages_through_fetch_url_store_nothing_and_match_no_row(runs_dir):
+    a, b = "https://example.com/down", "https://example.com/unavailable"
+    ev = F.event("ICOTYDE approval", FDA, date_text="March 18, 2026", date="2026-03-18")
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": a, "purpose": "release"}, "c0")]),
+        F.body([F.call("fetch_url", {"url": b, "purpose": "release"}, "c1")]),
+        F.body([F.call("propose_events", {"events": [ev]}, "c2")]),
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")])])
+    _, rid, _ = start(runs_dir, reader, pages={a: (200, "text/html", RT_DOWN.encode()),
+                                               b: (200, "text/html", RT_UNAVAILABLE.encode())})
+    run = run_json(runs_dir, rid)
+    assert run["sources"] == [] and not any(r.get("status") == "matched" for r in run["rows"])
+    fails = run["run"]["research"]["companies"]["PTGX"]["capture_failures"]
+    assert [(f["url"], f["outcome"]) for f in fails] == [(a, "could_not_access"), (b, "could_not_access")]

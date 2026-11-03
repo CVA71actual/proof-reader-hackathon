@@ -590,7 +590,12 @@ URLs are kept. Without a key the tool is not offered and the company's `search_l
 
 Independent review (RESEARCHER-FULL-001 S2 wiring, `runs/research.py` `review_company`): after each company's
 research ends, for any reason except a person's stop (finished, spend cap, a safety stop, a limit, a technical
-failure), `capture/research_reviewer.review_draft` (Muse Spark Open) attacks that company's draft. Its first message
+failure), `capture/research_reviewer.review_draft` attacks that company's draft. The reviewer is DeepSeek V4 Pro
+(`deepseek-ai/DeepSeek-V4-Pro-0813`, Baseten, family DeepSeek; MULTI-FAMILY-001, CVA 2026-11-02); Muse Spark Open is a
+declared fallback used only when DeepSeek is not in Baseten's model list (a free check), and then the record
+(`review[t].reviewer_choice`, `families.same_family: true`) and every label say it is the researcher's own family
+("reviewed by Muse Spark Open (same model family as the researcher)", never "independently"). Labels name the reviewer
+that ran, e.g. "Agent research — independently reviewed by DeepSeek V4 Pro (no findings)". Its first message
 is the rows with their row ids and revisions, the LIST of the company's captured sources (id, title, publisher, kind,
 URL, dates, page count, no text) and only the text of the pages the rows cite; it reads any other page with
 `read_source_pages` (at most `PAGES_PER_READ` = 5 per call, a recorded request-size default). Requests replay the last
@@ -641,6 +646,18 @@ Such a review is never clean; every label that claims a review carries them in p
 "Agent research — independently reviewed with findings — 1 source could not be opened", or for a complete review
 with no findings "Agent research — independently reviewed — 1 source could not be opened". Row, company, run, export
 and audit labels all carry it.
+
+Reviewer access (live test 5d028a8): the model list does not reflect key permissions, so once per run a one-token
+access check (`OneShotChat.probe`, through the gate) asks whether the key may use the reviewer. A 401/403 refusal is
+recorded in `run.research.reviewer_access` with the provider's message; the refused model is never retried, and the
+declared fallback (Muse Spark Open) reviews every company with the same-family label and `review[t].multi_family.met:
+false`. A refusal on a first real call (no access check) is handled the same way.
+
+Labels are derived, never read back (e2e #180, CLAIM-001 / UNKNOWN-001): `runs/research_labels.py
+derive_review_labels(run)` sets every row, company and run label from the recorded review (its status, the findings
+still current on the rows, the retrieval limits in its limitations, the reviewer that ran). It runs when a review is
+saved and on every load (`runs/check_load.bind_on_load`), so the API, the report view, the PDF and the DOCX always show
+what the record supports; a run saved by an older build gets the honest label without its file being rewritten.
 
 Finding lifetime (Red Team PR177_21e10cd): a finding stays current until a later COMPLETE review addresses its row and
 finds it resolved (no repeat finding of that kind, and the row assessed no_issue on the same revision; then
