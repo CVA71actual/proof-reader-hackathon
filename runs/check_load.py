@@ -12,6 +12,13 @@ from pathlib import Path
 
 
 def bind_on_load(run: dict, run_dir: Path, *, refuse_invalid_artifact: bool = False) -> dict:
+    """See _bind_on_load. PERF: one checker-content digest for this load (claim_assessment)."""
+    from runs.claim_assessment import checker_digest_scope
+    with checker_digest_scope():
+        return _bind_on_load(run, run_dir, refuse_invalid_artifact=refuse_invalid_artifact)
+
+
+def _bind_on_load(run: dict, run_dir: Path, *, refuse_invalid_artifact: bool = False) -> dict:
     """Refresh unbound/stale row checks against their exact saved page bytes, in memory."""
     from runs import sources
     from runs.claim_assessment import check_current, checks_current
@@ -152,6 +159,13 @@ def load_bound_run(run_dir: Path) -> dict:
 
 
 def bind_decisions_on_load(run: dict, decisions: list[dict], run_dir: Path) -> list[dict]:
+    """See _bind_decisions_on_load. PERF: one checker-content digest for this replay (claim_assessment)."""
+    from runs.claim_assessment import checker_digest_scope
+    with checker_digest_scope():
+        return _bind_decisions_on_load(run, decisions, run_dir)
+
+
+def _bind_decisions_on_load(run: dict, decisions: list[dict], run_dir: Path) -> list[dict]:
     """Refresh saved row re-checks from the exact stored page bytes, in memory.
 
     Decision lines stay append-only on disk. An old unbound re-check is history;

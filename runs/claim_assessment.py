@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from checks import event_checks
@@ -41,11 +43,45 @@ def _digest(value) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+# PERF (Manus 2026-11-03 08:09 §5, SAFE design): the checks-tree content digest is computed fresh, from the file
+# bytes, ONCE per stable operation (one current_state, one load, one request) and discarded when it ends. Nothing
+# outlives the operation: no import-lifetime cache, no mtime key, and no currency answer is ever cached (every
+# check_current still recomputes its whole binding). Outside a scope every call hashes the tree, as before.
+_DIGEST_SCOPE: ContextVar[dict | None] = ContextVar("checker_digest_scope", default=None)
+
+
+@contextmanager
+def checker_digest_scope():
+    """One stable operation. Nested scopes share the outermost; the digest is dropped when it exits."""
+    if _DIGEST_SCOPE.get() is not None:
+        yield
+        return
+    holder: dict = {}
+    token = _DIGEST_SCOPE.set(holder)
+    try:
+        yield
+    finally:
+        # Closed, so a context copied out of this operation (a thread or task started inside it) can never reuse
+        # the digest after the operation ends.
+        holder.clear()
+        holder["closed"] = True
+        _DIGEST_SCOPE.reset(token)
+
+
+def _checks_tree_digest() -> str:
+    files = sorted(REPO.joinpath("checks").rglob("*.py"))
+    return _digest({str(path.relative_to(REPO)): hashlib.sha256(path.read_bytes()).hexdigest() for path in files})
+
+
 def checker_version(check_name: str) -> str:
     if check_name not in {*CHECK_INPUTS, event_checks.QUOTE_ID}:
         return "unknown"
-    files = sorted(REPO.joinpath("checks").rglob("*.py"))
-    return _digest({str(path.relative_to(REPO)): hashlib.sha256(path.read_bytes()).hexdigest() for path in files})
+    scope = _DIGEST_SCOPE.get()
+    if scope is None or scope.get("closed"):
+        return _checks_tree_digest()
+    if "digest" not in scope:
+        scope["digest"] = _checks_tree_digest()
+    return scope["digest"]
 
 
 def page_evidence(source: dict, page_number, consumed_artifact: dict | None = None) -> dict:

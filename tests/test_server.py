@@ -148,10 +148,11 @@ def test_list_runs_reuses_bound_summary_until_an_input_changes(client, runs_dir,
     first_count += 2
     assert len(calls) == first_count
 
-    # A single-run GET retains its normal fresh bind path.
+    # A single-run GET retains its normal fresh bind path: one load per GET (PERF, approved 2026-11-03; the
+    # decision replay reuses the run the GET just loaded and verified).
     single = client.get("/api/runs/sample")
     single.raise_for_status()
-    assert len(calls) == first_count + 2
+    assert len(calls) == first_count + 1
 
     # A new, correctly declared words artifact invalidates only that run's list entry.
     run_path = runs_dir / "sample" / "run.json"

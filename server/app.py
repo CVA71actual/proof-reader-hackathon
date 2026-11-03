@@ -303,6 +303,14 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     validator = Draft202012Validator(json.loads(DECISION_SCHEMA.read_text()))
     app = FastAPI(title="Proof Reader decisions server", docs_url=None, redoc_url=None, openapi_url=None)
 
+    @app.middleware("http")
+    async def one_checker_digest_per_request(request: Request, call_next):
+        """PERF (Manus 08:09 §5): one request is one stable operation for the checks-code digest
+        (runs/claim_assessment.checker_digest_scope); it is computed fresh in the request and dropped after it."""
+        from runs.claim_assessment import checker_digest_scope
+        with checker_digest_scope():
+            return await call_next(request)
+
     @app.get("/api/settings")
     def get_settings() -> dict:
         """The run the app opens on when the address names none (`python -m runs.demo --run X`); null: the UI's own pick."""
@@ -493,14 +501,16 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     def get_calendar(run_id: str) -> dict:
         run = store.run(run_id)
         with DECISIONS_LOCK:
-            decisions = store.decisions(run_id)
+            # PERF (approved 2026-11-03): this GET reuses the run it just loaded and verified; one load per request
+            decisions = store.decisions(run_id, run=run)
         return {"run_id": run_id, "entries": calendar_entries(run, current_state(run, decisions))}
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str) -> dict:
         run = store.run(run_id)
         with DECISIONS_LOCK:
-            decisions = store.decisions(run_id)
+            # PERF (approved 2026-11-03): this GET reuses the run it just loaded and verified; one load per request
+            decisions = store.decisions(run_id, run=run)
         state = current_state(run, decisions)
         partition, window_start, window_end = run_interval_partition(run, state)
         job_path = store.run_dir(run_id) / "job.json"
