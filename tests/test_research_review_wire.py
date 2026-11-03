@@ -114,7 +114,7 @@ def test_clean_review_after_research_labels_the_row_run_and_export(runs_dir, tmp
     leads = [json.loads(l) for l in manifest.splitlines() if '"stage": "independent_review"' in l]
     assert leads and leads[0]["urls"] == [PR2] and "SNIPPET" not in manifest and "TITLE-" not in manifest
     usage = r["companies"]["PTGX"]["review_usage"]
-    expected = 2 * prices.cost_usd("DeepSeek V4 Pro", 500, 100) + prices.request_cost_usd("Brave Search", 1)
+    expected = 2 * prices.cost_usd("Claude Opus 5.5", 500, 100) + prices.request_cost_usd("Brave Search", 1)
     assert usage["model_requests"] == 2 and usage["search_requests"] == 1
     assert usage["spend_usd"] == pytest.approx(expected)
     assert meta["spend_usd"] >= usage["spend_usd"]
@@ -324,7 +324,9 @@ def test_research_stops_at_its_share_and_the_reserve_lets_the_review_run(runs_di
     # $0.12 cap: a research call's worst case (its 16,384-token reply cap alone is ~$0.07, plus input and searches)
     # exceeds research's 85% share ($0.102), so research stops at once; the reviewer's worst case (~$0.08) fits the
     # whole cap, so the review of the (empty) draft runs.
-    reviewer = F.FakeChat([F.chat_tools(("finish_review", {"summary": "Nothing to review."}))])
+    # a reviewer priced like Muse Spark Open, so its worst case (~$0.08) fits a cap research's share cannot
+    reviewer = F.FakeChat([F.chat_tools(("finish_review", {"summary": "Nothing to review."}))], name="Muse Spark Open",
+                          family="Muse Spark (Meta)", provider="baseten")
     _, rid, _ = start(runs_dir, F.FakeResponses([]), reviewer, limit=0.12)
     run = run_json(runs_dir, rid)
     r = run["run"]["research"]
@@ -798,19 +800,23 @@ def test_a_finished_company_is_recorded_as_finished_not_researching(runs_dir):
 
 # ------------------------------------------------------------------ MULTI-FAMILY-001 (CVA): DeepSeek V4 Pro reviews
 
-def test_deepseek_reviews_and_its_provider_and_family_are_recorded(runs_dir):
+def test_claude_reviews_and_its_provider_and_family_are_recorded(runs_dir):
     reviewer = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"}))])
     _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer)
     run = run_json(runs_dir, rid)
     e = run["run"]["research"]["review"]["PTGX"]
-    assert e["reviewer_choice"]["fallback_used"] is False and e["reviewer"] == "DeepSeek V4 Pro"
+    assert e["reviewer_choice"]["fallback_used"] is False and e["reviewer"] == "Claude Opus 5.5"
     fam = e["families"]
-    assert fam["reviewer"] == {"name": "DeepSeek V4 Pro", "model": F.REVIEWER_MODEL, "provider": "baseten",
-                               "family": "DeepSeek"}
+    assert fam["reviewer"] == {"name": "Claude Opus 5.5", "model": F.REVIEWER_MODEL, "provider": "anthropic",
+                               "family": "Claude"}
     assert fam["researcher"]["family"] == "Muse Spark (Meta)" and fam["same_family"] is False
-    assert e["label"] == "Agent research — independently reviewed by DeepSeek V4 Pro (no findings)"
+    assert e["multi_family"]["met"] is True
+    assert e["label"] == ("Agent research — independently reviewed by Claude Opus 5.5 (different model family from "
+                          "the researcher) (no findings)")
     assert run["run"]["research"]["companies"]["PTGX"]["review_usage"]["spend_usd"] == pytest.approx(
-        2 * prices.cost_usd("DeepSeek V4 Pro", 500, 100))
+        2 * prices.cost_usd("Claude Opus 5.5", 500, 100))
+    assert prices.REVIEWER_PRICES_PER_1M_USD["Claude Opus 5.5"] == {"input": 4.0, "output": 20.0,
+                                                                    "cached_input": 0.2}
     assert prices.REVIEWER_PRICES_PER_1M_USD["DeepSeek V4 Pro"] == {"input": 1.32, "output": 3.96,
                                                                     "cached_input": 0.132}
     assert "not yet confirmed" in prices.REVIEWER_PRICE_STATUS["DeepSeek V4 Pro"]
@@ -876,7 +882,8 @@ def test_labels_are_derived_from_the_recorded_review_on_load_not_read_back_as_st
     view = build_view(run, decisions, generated_at="2026-11-02T20:00:00+00:00")
     labels.append(view["research_label"])
     for label in labels:
-        assert want in label and "partly reviewed by DeepSeek V4 Pro (incomplete)" in label, label
+        assert want in label and "partly reviewed by Claude Opus 5.5 (different model family from the " \
+            "researcher) (incomplete)" in label, label
     from report.build import build as build_report
     out = build_report(rid, out=tmp_path / "rep", run_dir=runs_dir / rid)
     assert want in " ".join("".join(p.get_text() for p in pymupdf.open(out["pdf"])).split())
@@ -886,7 +893,8 @@ def test_labels_are_derived_from_the_recorded_review_on_load_not_read_back_as_st
 # ------------------------------------------------------------------ ten-company dry run (DRYRUN-1/2/3)
 
 def test_dryrun_1_the_run_label_is_never_independent_when_a_company_did_not_finish_research(runs_dir):
-    reviewer = F.FakeChat([F.chat_tools(("finish_review", {"summary": "Nothing to review."}))])
+    reviewer = F.FakeChat([F.chat_tools(("finish_review", {"summary": "Nothing to review."}))], name="Muse Spark Open",
+                          family="Muse Spark (Meta)", provider="baseten")
     _, rid, _ = start(runs_dir, F.FakeResponses([]), reviewer, limit=0.12)     # research starved at its share
     run = run_json(runs_dir, rid)
     r = run["run"]["research"]
@@ -981,13 +989,13 @@ def test_a_403_on_the_first_review_call_switches_to_the_fallback_without_retryin
     assert r["review"]["PTGX"]["usage"]["spend_usd"] >= 0
 
 
-def test_a_passing_access_check_keeps_deepseek_and_records_it(runs_dir):
+def test_a_passing_access_check_keeps_claude_and_records_it(runs_dir):
     primary = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
                           F.chat_tools(("finish_review", {"summary": "empty"}))], probe=True)
     run = _two_company_run(runs_dir, primary, F.FakeChat([], **F.FALLBACK))
     r = run["run"]["research"]
     assert primary.probes == 1 and r["reviewer_access"]["checked"] is True and r["reviewer_access"]["refused"] is False
-    assert all(r["review"][t]["reviewer"] == "DeepSeek V4 Pro" and r["review"][t]["multi_family"]["met"]
+    assert all(r["review"][t]["reviewer"] == "Claude Opus 5.5" and r["review"][t]["multi_family"]["met"]
                for t in ("PTGX", "ROIV"))
 
 
@@ -997,10 +1005,10 @@ def test_the_smoke_tool_names_the_reviewer_that_ran_not_the_configured_one(runs_
     fallback = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
                            F.chat_tools(("finish_review", {"summary": "empty"}))], **F.FALLBACK)
     r = _two_company_run(runs_dir, primary, fallback)["run"]["research"]
-    assert research_smoke.reviewer_line(r) == "Reviewer: Muse Spark Open (fallback: DeepSeek V4 Pro refused 403)"
+    assert research_smoke.reviewer_line(r) == "Reviewer: Muse Spark Open (fallback: Claude Opus 5.5 refused 403)"
     ok = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
                      F.chat_tools(("finish_review", {"summary": "empty"}))], probe=True)
     d = runs_dir / "ok"
     d.mkdir()
     r2 = _two_company_run(d, ok, F.FakeChat([], **F.FALLBACK))["run"]["research"]
-    assert research_smoke.reviewer_line(r2) == "Reviewer: DeepSeek V4 Pro"
+    assert research_smoke.reviewer_line(r2) == "Reviewer: Claude Opus 5.5"

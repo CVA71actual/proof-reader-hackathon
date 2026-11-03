@@ -9,10 +9,10 @@ REVIEW ONLY (RESEARCHER-FULL-001 S2): review an EXISTING run's saved draft, with
     python -m tools.research_smoke --review RUN_DIR --cap-usd 1 --i-have-the-operator-go [--runs-dir DIR]
 
 RUN_DIR is never modified: it is copied to --runs-dir first (default: a new folder under /tmp) and the copy is reviewed.
---cap-usd is the review's budget on top of what the run already spent (the copy's cap becomes spent + cap). DeepSeek
-V4 Pro on Baseten (BASETEN_API_KEY; the declared fallback Muse Spark Open runs only if DeepSeek is not in Baseten's
-model list) reviews each company's draft with Brave Search (BRAVE_API_KEY) as its own search; disputed findings go to
-Muse Wonder (MODEL_API_KEY). Keys are never printed.
+--cap-usd is the review's budget on top of what the run already spent (the copy's cap becomes spent + cap). Claude
+Opus 5.5 (ANTHROPIC_API_KEY, the anthropic SDK; the declared fallback Muse Spark Open on Baseten runs only if Claude is
+unavailable or refuses the key) reviews each company's draft with Brave Search (BRAVE_API_KEY) as its own search;
+disputed findings go to Muse Wonder (MODEL_API_KEY). Keys are never printed.
 
 It creates one research run (mode "research", the default research assignment, the given spending cap; every other
 limit off) in --runs-dir (default: a new folder under /tmp, never the served glass runs), drives it to its end in

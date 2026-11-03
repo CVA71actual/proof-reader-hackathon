@@ -590,12 +590,18 @@ URLs are kept. Without a key the tool is not offered and the company's `search_l
 
 Independent review (RESEARCHER-FULL-001 S2 wiring, `runs/research.py` `review_company`): after each company's
 research ends, for any reason except a person's stop (finished, spend cap, a safety stop, a limit, a technical
-failure), `capture/research_reviewer.review_draft` attacks that company's draft. The reviewer is DeepSeek V4 Pro
-(`deepseek-ai/DeepSeek-V4-Pro-0813`, Baseten, family DeepSeek; MULTI-FAMILY-001, CVA 2026-11-02); Muse Spark Open is a
-declared fallback used only when DeepSeek is not in Baseten's model list (a free check), and then the record
+failure), `capture/research_reviewer.review_draft` attacks that company's draft. The reviewer is Claude Opus 5.5
+(`claude-opus-5-5`, Anthropic, family Claude; MULTI-FAMILY-001, CVA 2026-11-03 "Claude for reviewer for now") through
+`capture/research_claude.py` (the anthropic SDK, imported lazily; `client.beta.messages.stream` + `get_final_message`,
+adaptive thinking with `block_binding: drop_block`, effort high, max_tokens 16384, tool_choice auto, server-side
+fallbacks "default" with the served model recorded in `review.served_by`; every assistant turn's content goes back
+unchanged; all tool results of a turn in one user message, `is_error` on failures; a `refusal` stop is recorded with its
+category). DeepSeek V4 Pro on Baseten stays a configured option (our Baseten key was refused for it, HTTP 403). Muse
+Spark Open is a declared fallback used only when Claude is unavailable or refused, and then the record
 (`review[t].reviewer_choice`, `families.same_family: true`) and every label say it is the researcher's own family
 ("reviewed by Muse Spark Open (same model family as the researcher)", never "independently"). Labels name the reviewer
-that ran, e.g. "Agent research — independently reviewed by DeepSeek V4 Pro (no findings)". Its first message
+that ran, e.g. "Agent research — independently reviewed by Claude Opus 5.5 (different model family from the researcher)
+(no findings)". Its first message
 is the rows with their row ids and revisions, the LIST of the company's captured sources (id, title, publisher, kind,
 URL, dates, page count, no text) and only the text of the pages the rows cite; it reads any other page with
 `read_source_pages` (at most `PAGES_PER_READ` = 5 per call, a recorded request-size default). Requests replay the last
