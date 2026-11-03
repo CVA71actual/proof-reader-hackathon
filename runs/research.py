@@ -1091,7 +1091,8 @@ def make_job_class():
                                        "delivered": {}, "settled": {}, "compacted": set(), "turn_starts": [],
                                        "brave_calls": {}, "brave_items": [],
                                        "window_end": window_end, "started": time.monotonic()}
-            assignment = self.choices.get("note_for_agent") or ""
+            from capture import research_instructions
+            assignment = research_instructions.research_assignment(self.choices.get("note_for_agent"))
             card = {"ticker": ticker, "company": company, "cik": st["cik"], "as_of": as_of.isoformat(),
                     "calendar_window": [as_of.isoformat(), window_end.isoformat()],
                     "search_tools": ("brave_search (primary), web_search (secondary)" if

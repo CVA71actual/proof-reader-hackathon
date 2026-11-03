@@ -192,7 +192,7 @@ def test_requests_replay_full_output_before_tool_results_with_auto_tool_choice(r
 
 def run_choices_note():
     from capture import research_instructions
-    return research_instructions.DEFAULT
+    return research_instructions.RESEARCH_DEFAULT
 
 
 def test_previous_response_id_sends_only_new_items(runs_dir):
@@ -1831,3 +1831,37 @@ def test_a_runaway_then_a_timeout_counts_as_two_in_a_row(runs_dir):
 def test_a_bot_wall_asking_to_confirm_a_human_is_a_block_page():
     page = b"<html><body><p>Please " + b"veri" + b"fy you are a human to continue.</p></body></html>"
     assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page)).startswith("site served a block")
+
+
+
+# ---------------------------------------------------------------- brief v2 default, DATE-001 one source of bounds
+
+
+def test_the_default_research_request_carries_brief_v2_and_a_note_comes_first(runs_dir):
+    import re as _re
+    from capture import research_instructions as ri
+    reader = F.FakeResponses([F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    start(runs_dir, reader)
+    assignment = reader.requests[0]["input"][0]["content"]
+    assert assignment.endswith(ri.WHERE_TO_LOOK) and ri.DEFAULT in assignment
+    assert "Regulators beyond the FDA: check the EMA, MHRA, PMDA, NMPA and TGA" in assignment
+    assert ri.research_assignment("Focus on PN-881.") == "Focus on PN-881.\n\n" + ri.WHERE_TO_LOOK
+    # verbatim from glass-queue/prompts/BRIEF_V2_2026-11-02.txt; its only banned-pattern hit is the brief's own
+    # "approved or filed assets" (regulatory approval), kept in a data file so the product-code rule still holds
+    assert [m.group(0) for m in _re.finditer(r"\w*(?:verif|prove|correct)\w*", ri.WHERE_TO_LOOK, _re.I)] == ["approved"]
+    assert ri.WHERE_TO_LOOK.startswith("Where to look, beyond the company's own filings and releases:")
+    assert ri.WHERE_TO_LOOK.count("\n- ") == 6
+
+
+def test_a_period_row_with_code_derived_bounds_is_placed_not_undated(runs_dir):
+    """Live brief-v2 run e1: 'early Q1 2027', date_match passed (2027-01-01 to 2027-01-31), audit said undated."""
+    quote = "into a comprehensive Phase 2 psoriasis program, with initiation expected in early Q1 2027."
+    ev = F.event("PN-881 Phase 2 initiation", quote, date_text="early Q1 2027")
+    reader, rid, run = _propose_run(runs_dir, [[ev]], pages={PR1: (200, "text/html", F.html(quote))})
+    row = next(r for r in run["rows"] if r["id"] == "e1")
+    assert row["date"] is None and {c["name"]: c["result"] for c in row["checks"]}["date_match"] == "pass"
+    w = run["run"]["research"]["audit"]["rows"][0]["window"]
+    assert w["result"] == "in_window" and (w["start"], w["end"]) == ("2027-01-01", "2027-01-31")
+    undated = F.event("A plan", quote, date_text=None)
+    assert research_audit.window_test(undated, __import__("datetime").date(2026, 11, 2),
+                                      __import__("datetime").date(2027, 5, 2))["result"] == "undated"

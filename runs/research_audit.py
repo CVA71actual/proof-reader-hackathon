@@ -92,6 +92,9 @@ def draft_audit(run_dir: Path, run: dict, decisions: list) -> dict:
     window_end = add_months(as_of, 6)
 
     rows = [r for r in run.get("rows", []) if r.get("research")]
+    # DATE-001 / UNKNOWN-001: one source of bounds. A period's bounds are the ones code derives with the date check
+    # (state values), the same values the calendar places by; the raw row keeps null for a period.
+    targets = current_state(run, decisions)["targets"]
     row_out = []
     for r in rows:
         src = by_id.get(r.get("source_id"))
@@ -103,7 +106,9 @@ def draft_audit(run_dir: Path, run: dict, decisions: list) -> dict:
                 problems.append(f"{r['id']} cites span source {s['source_id']}, which is not captured.")
         row_out.append({"id": r["id"], "ticker": r["ticker"], "title": r["title"], "date_text": r.get("date_text"),
                         "status": r["status"], "revision": r["research"]["revision"], "source_id": r.get("source_id"),
-                        "sourced": sourced, "window": window_test(r, as_of, window_end),
+                        "sourced": sourced,
+                        "window": window_test({**r, **{k: (targets.get(r["id"]) or {}).get("values", {}).get(k)
+                                                        for k in ("date", "date_end")}}, as_of, window_end),
                         "near_duplicates": list(r["research"].get("near_duplicates") or []),
                         "scope": row_scope(r, src)})
 
