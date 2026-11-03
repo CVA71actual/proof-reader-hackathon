@@ -137,6 +137,7 @@ def support_check_options() -> dict:
     the pinned local weights are present in this process. Nothing is downloaded or installed."""
     from capture import support_signal as ss
     from capture import support_process as sp
+    from capture import research_instructions
     python, weights = os.environ.get(sp.PYTHON_ENV, ""), os.environ.get(sp.WEIGHTS_ENV, "")
     have_python = bool(python) and Path(python).is_file()
     have_weights = bool(weights) and Path(weights).is_dir()
@@ -147,7 +148,10 @@ def support_check_options() -> dict:
                               "unavailable_reason": reason, "model": ss.MODEL, "model_revision": ss.MODEL_REVISION,
                               "note": "Advisory only: a finding is optional evidence beside the claim; it changes "
                                       "no check, acceptance, calendar or count. No finding is not 'verified'; could "
-                                      "not run is a recorded limitation. Off by default; bounded, never blocking."}}
+                                      "not run is a recorded limitation. Off by default; bounded, never blocking."},
+            # the full instruction set (CVA): the Where-to-look points appended to every research
+            # assignment, so the New Run screen can show them verbatim — one source of truth
+            "where_to_look": research_instructions.where_to_look_points()}
 
 
 def validate_limits(raw) -> dict:
