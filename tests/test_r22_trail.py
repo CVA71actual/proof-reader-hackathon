@@ -76,7 +76,8 @@ def test_a_second_reader_row_trail_has_the_same_shape(runs_dir):
     assert row["type_hint"] == "milestone"
     assert row["second_reader_proposal"]["proposal"]["event_type"] == "regulatory_decision"
     from runs.state import current_state
-    assert current_state(run, [])["targets"][row["id"]]["needs_attention"]
+    # CALENDAR-RULE-001 (with REVIEW-NOT-A-FLAG-001): a type-hint wording difference is kept on the row, not a conflict
+    assert not current_state(run, [])["targets"][row["id"]]["accepted"]
     assert_plain(run, "second reader")
 
 

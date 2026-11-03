@@ -80,9 +80,12 @@
     if (!t || typeof t.review_bucket !== 'string') return t ? t.group : undefined;
     if (t.review_bucket === 'accepted') return 'kept';
     if (t.review_bucket === 'excluded') return 'removed';
+    // CALENDAR-RULE-001: a clean proposal the server placed by itself (inclusion other than review) is listed
+    // apart from the rows that need review, never under a review or kept heading
+    if (typeof t.inclusion === 'string' && t.inclusion !== 'review' && t.inclusion !== 'kept') return 'auto';
     return t.group === 'kept' || t.group === 'removed' ? 'proposed' : t.group;
   }
-  var REVIEW_GROUP_ORDER = ['kept', 'proposed', 'corrected', 'removed', 'unverified', 'open'];
+  var REVIEW_GROUP_ORDER = ['kept', 'auto', 'proposed', 'corrected', 'removed', 'unverified', 'open'];
   // the review axis turns on when the projection is present at all — the
   // server's counts.review, or any row carrying a pivot-only field (a partial
   // row is uncounted even when the run ships no counts.review)
@@ -98,6 +101,7 @@
     return reviewAxis() ? REVIEW_GROUP_ORDER : GROUP_ORDER;
   }
   function groupName(g) {
+    if (g === 'auto') return 'Placed automatically — not reviewed by you';
     return g === 'proposed' ? 'Proposed — needs review' : GROUP_NAMES[g];
   }
   // one count per listed group: with the projection, the rows behind the
@@ -2417,15 +2421,22 @@
     var subrow = el('div', 'cal-subrow');
     // A-F2(b): the count includes the rows with no parsed day
     var total = rows.length + past.length + nodates.length + undated.length + timingUnresolved.length + later.length;
-    subrow.append(el('div', 'sub', 'Kept events, by date · ' + total + ' row' +
-      (total === 1 ? '' : 's') + ' · ' + (w.unresolved ? w.reason : w.anchor + ' – ' + w.end)));
+    // CALENDAR-RULE-001: the calendar holds kept rows and rows placed automatically; the headline names neither
+    // as the other, and splits them from the server's counts.inclusion when it sends them
+    var inc = detail.state && detail.state.counts && detail.state.counts.inclusion;
+    // (a server without counts.inclusion keeps the old kept-only calendar and its old words)
+    var split = inc ? ' · kept by you ' + inc.kept + ' · included automatically ' + inc.included : '';
+    subrow.append(el('div', 'sub', (inc ? 'Events on the calendar, by date · ' : 'Kept events, by date · ') + total + ' row' +
+      (total === 1 ? '' : 's') + split + ' · ' + (w.unresolved ? w.reason : w.anchor + ' – ' + w.end)));
     head.append(subrow);
     var rl = el('div', 'runlabel' + (meta.sample ? ' sample' : ''), meta.label || '');
     head.append(rl);
     host.append(head);
 
     if (!rows.length && !past.length && !nodates.length && !undated.length && !timingUnresolved.length && !later.length && !lastEvents.length) {
-      host.append(el('div', 'empty', 'Nothing kept yet — the calendar fills as rows are kept or corrected.'));
+      host.append(el('div', 'empty', inc
+        ? 'Nothing on the calendar yet. Rows with no issues are placed here automatically, and rows you keep appear here too.'
+        : 'Nothing kept yet — the calendar fills as rows are kept or corrected.'));
       det.append(el('div', 'empty', 'Pick an event to see its details.'));
       return;
     }
@@ -2652,8 +2663,12 @@
     // GROUP-AXIS-001: the review projection's count is the authority when the
     // server sends it; the client-side list is the fallback on older servers
     var reviewCounts = detail.state.counts && detail.state.counts.review;
+    // CALENDAR-RULE-001: the server's queue is the rows with issues (state.unresolved, counts.inclusion.review);
+    // a clean proposal placed automatically is not waiting for a decision
+    var inclusionCounts = detail.state.counts && detail.state.counts.inclusion;
     document.getElementById('judgment-sub').textContent =
-      'Waiting for your decision · ' + (reviewCounts ? reviewCounts.proposed : unresolved.length);
+      'Waiting for your decision · ' + (inclusionCounts ? inclusionCounts.review
+        : reviewCounts ? reviewCounts.proposed : unresolved.length);
 
     var host = clear(document.getElementById('judgment-rows'));
     if (!unresolved.length && !decided.length) {
@@ -2685,7 +2700,12 @@
     var t = rowTarget(row);
     // a corrected row that still needs a person gets the pending pane (Keep is
     // the answer the server accepts), not the decided one (Undo only)
-    if (needsAttention(t)) judgmentPendingPane(det, row, t);
+    // CALENDAR-RULE-001: a row placed automatically has no decision yet — it gets the same Keep / Fix / Remove
+    // as a row waiting for review, so Remove (and then Undo) works on every row
+    // (selected by the acceptance/inclusion projection, not by "never decided": a re-checked Fix on a placed row
+    // still leaves Keep / Fix again / Remove, with Undo beside them)
+    if (needsAttention(t) || (projected(t) && !t.accepted && t.review_bucket === 'proposed' &&
+        typeof t.inclusion === 'string')) judgmentPendingPane(det, row, t);
     else judgmentDecidedPane(det, row, t);
 
     if (route.dialog) openDialog(row, route.dialog);

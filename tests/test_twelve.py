@@ -322,13 +322,19 @@ def test_the_calendar_requires_explicit_keeps_for_checked_rows(runs_dir, index):
     run = run_of(runs_dir, rid)
     state = c.get(f"/api/runs/{rid}").json()["state"]
     entries = c.get(f"/api/runs/{rid}/calendar").json()["entries"]
-    assert entries == [] and all(state["targets"][r["id"]]["needs_attention"] for r in run["rows"])
+    # CALENDAR-RULE-001: before any Keep, only clean rows are listed, each marked as included automatically;
+    # the rows with issues wait for review
+    assert all(e["inclusion"] != "kept" and not state["targets"][e["id"]]["issues"] for e in entries)
+    assert all(state["targets"][r["id"]]["needs_attention"] == bool(state["targets"][r["id"]]["issues"])
+               for r in run["rows"])
+    clean = {e["id"] for e in entries}
     accepted = {r["id"] for r in run["rows"] if state["targets"][r["id"]]["group"] in ("kept", "corrected")}
     for target in accepted:
         reply = c.post(f"/api/runs/{rid}/decisions", json={"target": target, "action": "keep"})
         assert reply.status_code == 200, reply.text
     entries = c.get(f"/api/runs/{rid}/calendar").json()["entries"]
-    assert {e["id"] for e in entries} == accepted
+    assert {e["id"] for e in entries} == accepted | clean
+    assert {e["id"] for e in entries if e["inclusion"] == "kept"} == accepted
     assert entries and {e["ticker"] for e in entries} == {"AAA", "BBB"}
     assert all(e["group"] in ("kept", "corrected") for e in entries)
 
@@ -361,10 +367,10 @@ def test_the_command_prints_checks_separately_and_no_accepted_cost_until_a_human
     assert "run-1 · 2 companies · 6 months: done" in out and "pages read: 3" in out
     # GROUP-AXIS-001: every new row is a proposal, never accepted by checks.
     assert "check results:" in out
-    assert re.search(r"rows: Accepted by you 0, Proposed — needs review \d+, Excluded \d+", out)
+    assert re.search(r"rows: Kept by you 0, Included automatically \(not reviewed by you\) \d+, Needs your review \d+", out)
     assert re.search(r"values: kept \d+", out) and "needs attention:" in out
     assert re.search(r"mistakes caught by code \d+, second reader \d+, person \d+; excluded by code \d+", out)
-    assert "calendar: 0 accepted rows" in out
+    assert re.search(r"calendar: 0 kept by you, \d+ included automatically", out)
     assert re.search(r"cost: \$\d+\.\d{4}; accepted rows: 0; cost per accepted row: not computed", out)
     assert "second reader: read (image)" in out
     assert (runs_dir / "run-1" / "report").is_dir() and "report:" in out

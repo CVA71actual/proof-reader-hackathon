@@ -233,9 +233,10 @@ def test_bound_text_layer_and_box_pass_does_not_accept_a_proposal():
     assert target["effective_checks"]
     assert target["claim_assessments"]["visible_passage"]["result"] == "not_checked"
     assert target["group"] == "kept"
-    # GROUP-AXIS-001: a mechanical pass is not human acceptance.
-    assert target["on_calendar"] is False
-    assert target["needs_attention"] and not target["accepted"]
+    # GROUP-AXIS-001: a mechanical pass is not human acceptance. CALENDAR-RULE-001: clean, it is placed
+    # automatically and says it was not reviewed by you.
+    assert target["inclusion"] != "kept" and target["decision_label"] is None
+    assert not target["needs_attention"] and not target["accepted"]
     keep = {"target": row["id"], "action": "keep", "by": "person", "at": "2026-11-01T13:00:00Z",
             "review_basis": target["review_basis"]}
     accepted = current_state(run, [keep])["targets"][row["id"]]

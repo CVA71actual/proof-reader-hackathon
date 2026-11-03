@@ -68,6 +68,7 @@ from runs.claim_assessment import timing_evidence_current
 from runs.page_outcomes import read_view as page_outcomes_view
 from runs.proposal import CONTEXT_FIELDS, type_presentation
 from datetime import date
+from runs.review import INCLUSIONS
 
 
 def run_reference_date(run: dict) -> date | None:
@@ -244,6 +245,7 @@ def _base_targets(run: dict) -> dict:
             "values": values,
             "candidate_values": candidate_values,
             "candidate": copy.deepcopy(row),
+            "found_by": row.get("found_by"),
             "disagreement": dis,
         }
     for table in run.get("tables", []):
@@ -367,6 +369,9 @@ def _apply(base: dict, stack: list[dict]) -> dict:
         bounds = _period_bounds({**candidate, "checks": s.get("effective_checks") or []})
         if bounds:
             s["values"]["date"], s["values"]["date_end"] = bounds
+    # Whether the readers' disagreement is still open after the fixes replayed above (a Keep or Remove settles it
+    # through acceptance/exclusion, which clears issues on its own).
+    s["_disagreement_open"] = base.get("disagreement") is not None and unsettled
     s["decisions_in_effect"] = len(stack)
     s["decided_by_person"] = bool(stack)
     s["last_action"] = stack[-1]["action"] if stack else None
@@ -473,9 +478,13 @@ def current_state(run: dict, decisions: list) -> dict:
                 recorded_in ("run" or "decisions")
     excluded    {code, person}: rows left out under a rule, by who left them out
     exclusions  one entry per excluded row: target, rule, reason, by
-    unresolved  event rows whose derived review_bucket is proposed (counts.review.proposed).
+    unresolved  event rows that need a person's review (counts.inclusion.review): CALENDAR-RULE-001, rows with
+                issues or reviewer findings. A clean proposal is placed automatically (counts.inclusion
+                included/context/later/undated) and is not a review task; it is never counted as kept.
                 Passing checks or a field fix do not accept a proposal. A current bound Keep or
-                an exclusion takes it out; an expired Keep returns it to review.
+                an exclusion takes it out; an expired Keep is an issue and returns it to review.
+    counts.inclusion  event rows per inclusion: kept (by you), included (automatically, in the window), review,
+                context (past), later, undated, unplaced (no run reference date), excluded
     cost_per_kept_row_usd  run.spend_usd divided by event rows explicitly accepted for the calendar; null when the spend
                 was not recorded or no row is kept
     """
@@ -603,9 +612,8 @@ def current_state(run: dict, decisions: list) -> dict:
                                     "human_removed" if action == "remove" else "unresolved")
         if action == "keep" and not accepted:
             state["reason"] = state["review_history"][-1]["history_reason"]
-        if state["semantic_status"] == "unresolved" and state["group"] != "removed":
-            state["reason"] = ((state.get("reason") or "Checks recorded.")
-                               + " The event remains a proposal; a person must decide whether to keep it.")
+        # Acceptance first (issues are not derived yet, so this pass reads as review); the calendar rule is applied
+        # once issues are known, below.
         state.update(review_projection(state))
         state["type_presentation"] = type_presentation(base["candidate"], state["values"], state["fixes"])
 
@@ -630,10 +638,48 @@ def current_state(run: dict, decisions: list) -> dict:
 
     mistake_list = _mistake_list(run, states)
 
+    second_reader_catches = {m["target"] for m in mistake_list if m["caught_by"] == "second_reader"}
+    unreadable_pages = _unreadable_pages(run)
+    rows_by_id = {row.get("id"): row for row in run.get("rows", [])}
+    for t, s in states.items():
+        current_findings, finding_history = _review_findings(rows_by_id.get(t))
+        s["issues"] = row_issues(s, page_unreadable=_page_key(rows_by_id.get(t)) in unreadable_pages,
+                                 second_reader_mistake=t in second_reader_catches,
+                                 review_findings=current_findings,
+                                 research_issues=(_research_support_issues(rows_by_id.get(t), s["values"])
+                                                  if s["kind"] == "row" else ()))
+        if s["kind"] == "row":
+            # history stays on the record, shown as history, never as a current issue
+            s["review_findings_history"] = [_finding_text({**f, "current": True}) for f in finding_history]
+        s.pop("_disagreement_open", None)
+    counts["issues"] = sum(1 for s in states.values() if s["kind"] == "row" and s["issues"])
+
+    # CALENDAR-RULE-001: the one inclusion predicate (runs.review.review_projection), now that issues are known.
+    # Placement is the same interval_bucket the calendar partition uses, so state, screen and reports agree.
+    from runs.calendar import interval_bucket, research_placement, run_window
+    window = run_window(run)
+    for t, s in states.items():
+        if s["kind"] != "row":
+            continue
+        values = s["values"]
+        s["placement"] = None if window is None else interval_bucket(
+            {**values, "timing_state": s.get("timing_state"), "contingent": s.get("contingent"),
+             "placement_proposal": research_placement(rows_by_id.get(t) or {})}, *window)
+        s.update(review_projection(s))
+        if s["inclusion"] == "review":
+            s["reason"] = ((s.get("reason") or "Checks recorded.")
+                           + " The event remains a proposal; a person must decide whether to keep it.")
+        elif s["inclusion"] not in ("kept", "excluded"):
+            s["reason"] = ((s.get("reason") or "Checks recorded.")
+                           + " No issues were found, so it was placed automatically; it was not reviewed by you.")
+    counts["inclusion"] = {key: sum(1 for st in states.values() if st["kind"] == "row" and st["inclusion"] == key)
+                           for key in INCLUSIONS}
+
     exclusions = _exclusions(run, states)
     excluded = {k: sum(1 for x in exclusions if x["by"] == k) for k in EXCLUDED_BY}
     counts["excluded_by_person"] = excluded["person"]
-    unresolved = counts["review"]["proposed"]
+    # CALENDAR-RULE-001: the person's queue is the rows with issues, not every unreviewed proposal.
+    unresolved = counts["inclusion"]["review"]
 
     spend = (run.get("run") or {}).get("spend_usd")
     kept_rows = counts["review"]["accepted"]
@@ -642,6 +688,180 @@ def current_state(run: dict, decisions: list) -> dict:
             "counts": counts, "mistakes": mistakes, "mistake_list": mistake_list,
             "excluded": excluded, "exclusions": exclusions, "unresolved": unresolved, "ignored": ignored,
             "kept_rows": kept_rows, "cost_per_kept_row_usd": cost_per_kept_row_usd(spend, kept_rows)}
+
+
+EXPIRED_KEEP_LABEL = "Previous Keep — needs your review"
+# Fields where the two readers' values are facts that can be compared. Free-text fields (type_hint, title,
+# event type wording, context prose) differ by wording alone and are never an issue.
+DISAGREEMENT_ISSUE_FIELDS = ("date", "date_end", "date_text", "program", "indication", "company", "ticker", "quote",
+                             # CALENDAR-RULE-001: issues now decide automatic inclusion, so a disagreement on the
+                             # stated conditions (a lost qualification) or on which company the event is about
+                             # (attribution) is a conflict too. Prose fields (type hint, relevance, relation) still
+                             # differ by wording alone and are not.
+                             "conditions", "subject_company")
+
+
+def _page_key(row: dict | None):
+    return (row.get("source_id"), row.get("page_number")) if row else None
+
+
+def _unreadable_pages(run: dict) -> set:
+    """(source_id, page_number) of every page the run recorded as unreadable. An outcome with no page number
+    covers every page of its source (one page per source in a run)."""
+    out = set()
+    for item in (run.get("run") or {}).get("page_outcomes") or []:
+        if isinstance(item, dict) and item.get("unreadable") is True:
+            pages = [item.get("page_number")] if item.get("page_number") is not None else [
+                r.get("page_number") for r in run.get("rows", []) if r.get("source_id") == item.get("source_id")]
+            out.update((item.get("source_id"), p) for p in pages)
+    return out
+
+
+def _review_findings(row: dict | None) -> tuple[list, list]:
+    """CALENDAR-RULE-001: a research row's research.review_findings, read with the S2 producer's contract
+    (runs/research.py save_review: kind, text, row_id, revision_id, current, stale). Returns (current, history):
+      - current:false or stale:true is history: kept in the record, never a current issue;
+      - current:true for this row (row_id) and its current revision (research.revision) is a current issue;
+      - anything else (currentness missing, a different row or revision, an unreadable entry, a field that is not a
+        list) cannot be established as history, so it fails closed as a current issue."""
+    research = (row or {}).get("research")
+    if not isinstance(research, dict) or research.get("review_findings") is None:
+        return [], []
+    findings = research["review_findings"]
+    if not isinstance(findings, list):
+        return [None], []
+    current, history = [], []
+    for f in findings:
+        if isinstance(f, dict) and (f.get("current") is False or f.get("stale") is True):
+            history.append(f)
+            continue
+        if isinstance(f, dict) and f.get("current") is True:
+            rid, rev = f.get("row_id"), f.get("revision_id")
+            same_row = rid is None or str(rid) == str(row.get("id"))
+            same_rev = rev is None or str(rev) == str(research.get("revision"))
+            if not (same_row and same_rev):
+                f = {**f, "_identity": f"it names row {rid}, revision {rev}; this row is {row.get('id')}, "
+                                       f"revision {research.get('revision')}"}
+        current.append(f)
+    return current, history
+
+
+def _finding_text(finding) -> str:
+    if isinstance(finding, str) and finding.strip():
+        return f"The reviewer found: {finding.strip()}"
+    if isinstance(finding, dict):
+        kind = _plain_field(finding.get("kind") or "").strip()
+        # the producer writes `text`; `explanation` is an older alias
+        said = str(finding.get("text") or finding.get("explanation") or "").strip()
+        if kind or said:
+            out = "The reviewer found " + (f"{kind}: {said}" if kind and said else kind or said)
+            if finding.get("_identity"):
+                out += f" (not established as current: {finding['_identity']})"
+            elif finding.get("current") is not True:
+                out += " (not established as current)"
+            return out
+    return "The reviewer's finding could not be read"
+
+
+# CALENDAR-RULE-001: research.issues codes that are support failures on the cited evidence. capture_incomplete is a
+# disclosed capture limit, not a conflict; row-check mirrors are excluded below (the current row checks decide).
+_RESEARCH_SUPPORT_CODES = ("quote_not_found", "quote_on_hidden_text", "locator_mismatch", "dateline_as_event_date")
+
+
+def _research_support_issues(row: dict | None, values: dict) -> list[str]:
+    """The research intake's recorded support failures on the row's cited spans (runs/research_contract.py
+    research_issues), as plain issue text. An issue that only mirrors a saved row check is left to the current row
+    checks, which supersede it after a re-check; the dateline rule applies only while the date is the one it judged."""
+    research = (row or {}).get("research")
+    if not isinstance(research, dict) or not research.get("issues"):
+        return []
+    from runs.research_contract import CHECK_ISSUE
+    saved = [*(row.get("checks") or []), *(row.get("check_history") or [])]
+    mirrors = {(CHECK_ISSUE.get(c.get("name"), "check_failed"), f"{c.get('label') or c.get('name')} failed: {c.get('reason')}")
+               for c in saved if c.get("result") == "fail"}
+    out = []
+    for i in research["issues"] if isinstance(research["issues"], list) else [None]:
+        if not isinstance(i, dict):
+            out.append("A recorded evidence issue could not be read")
+            continue
+        code, message = i.get("code"), i.get("message")
+        if code not in _RESEARCH_SUPPORT_CODES or (code, message) in mirrors:
+            continue
+        if code == "dateline_as_event_date" and (values.get("date") != row.get("date") or values.get("date_end")):
+            continue
+        out.append(f"Cited evidence: {message or code}")
+    return out
+
+
+def row_issues(s: dict, *, page_unreadable: bool = False, second_reader_mistake: bool = False,
+               review_findings: list | tuple = (), research_issues: list | tuple = ()) -> list[str]:
+    """REVIEW-NOT-A-FLAG-001: every proposal needs review by design, so needing review is not an issue. The
+    issues are the real problems on a target, in short plain English; empty when there are none:
+      - a current effective check failed ("<check name> failed");
+      - the readers' disagreement on a factual field is still open, or the second reader caught a mistake on this target;
+      - the page could not be read, or the reader's answer could not be read (status unreadable);
+      - a previous Keep expired because the proposal or evidence changed;
+      - CALENDAR-RULE-001: the independent reviewer recorded a current finding on this research row, or the research
+        intake recorded a support failure on a cited span (research.issues);
+      - CALENDAR-RULE-001: the current value has no current checks (saved checks are history, an edit is not
+        re-checked yet, or its re-check could not run), or a dated row's date check could not run;
+      - CALENDAR-RULE-001: only the code's coverage scan, or only the second reader, found the row.
+    Otherwise a check that could not run, was not needed or was not checked is not an issue. An accepted or excluded
+    target has no issues. This reads the derived state; it never changes acceptance or grouping."""
+    if s["kind"] == "row":
+        if s.get("accepted") or s.get("review_bucket") == "excluded":
+            return []
+    elif s.get("group") == "removed":
+        return []
+    out = []
+    if s["kind"] == "row":
+        # CALENDAR-RULE-001: issues now decide automatic inclusion, so a row whose current value has no current
+        # support is an issue (fail closed), never clean: saved checks that are only history, an edit not yet
+        # re-checked, or an edit whose re-check could not run or stayed unresolved.
+        result = (s.get("recheck") or {}).get("result")
+        if s.get("needs_recheck"):
+            out.append("Your edit has not been checked yet")
+        elif s.get("fixes") and result in ("could_not_run", "unresolved"):
+            out.append("The checks could not run on your edit")
+        elif s.get("checks_stale") and s.get("check_history"):
+            out.append("The saved checks no longer match this page; they are history")
+        elif not s.get("effective_checks") and s.get("status") != "unreadable":
+            out.append("No current checks support this row")
+        # A row placed on a date needs that date supported by the quote: a date check that could not run (or is
+        # missing) on a dated row is missing material support. A failed date check is named below as a failure.
+        values = s.get("values") or {}
+        current = s.get("effective_checks") or []
+        if (values.get("date") or values.get("date_end")) and current and not s.get("needs_recheck"):
+            date_checks = [c for c in current if (c.get("name") or c.get("check")) == "date_match"]
+            if not date_checks or all(c.get("result") not in ("pass", "fail") for c in date_checks):
+                out.append("The date could not be checked against the quote")
+        # A row only one side found is a disagreement about whether the event is there at all.
+        found_by = s.get("found_by")
+        if found_by == "coverage":
+            out.append("Only the code's coverage scan found this row; the reader did not propose it")
+        elif found_by == "second_reader":
+            out.append("Only the second reader found this row")
+    for c in s.get("effective_checks") or []:
+        if c.get("result") == "fail":
+            out.append(f"{c.get('label') or _plain_field(c.get('name') or 'A check')} failed")
+    dis = s.get("disagreement")
+    if dis and s.get("_disagreement_open", True):
+        # Only a factual field: free text (type hint, title, ...) is each reader's own wording, not a problem.
+        factual = [x.get("field") for x in [dis, *(dis.get("also") or [])]
+                   if x.get("field") in DISAGREEMENT_ISSUE_FIELDS]
+        if factual:
+            out.append(f"The two readers disagree on the {_plain_field(factual[0]).lower()}")
+    if second_reader_mistake:
+        out.append("The second reader caught a mistake on this row")
+    if page_unreadable:
+        out.append("The page could not be read")
+    if s.get("status") == "unreadable":
+        out.append("The reader's answer could not be read")
+    if s.get("review_label") == EXPIRED_KEEP_LABEL:
+        out.append("Your earlier Keep expired because the evidence changed")
+    out.extend(_finding_text(f) for f in review_findings)
+    out.extend(research_issues)
+    return list(dict.fromkeys(out))
 
 
 def _target_models(run: dict) -> dict:

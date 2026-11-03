@@ -48,6 +48,6 @@ def test_retired_type_check_keeps_plural_proposal_held_without_a_mistake():
     assert escalate.candidates(run["rows"]) == []
     assert out["mistakes"] == {k: 0 for k in out["mistakes"]}
     assert out["mistake_list"] == []
-    assert out["unresolved"] == 1
+    assert out["unresolved"] == int(bool(out["targets"]["e1"]["issues"]))     # CALENDAR-RULE-001
     assert out["counts"]["review"]["proposed"] == 1  # review count is separate from mechanical groups
     assert run["rows"][0]["quote"] == quote and run["rows"][0]["date_text"] == "2027"

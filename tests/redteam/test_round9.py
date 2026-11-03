@@ -153,8 +153,8 @@ def test_retired_type_tool_preserves_reader_type_without_accepting_it(runs_dir):
     from runs.calendar import calendar_entries
     state = current_state(doc, [])
     assert not state["targets"][row["id"]]["accepted"]
-    assert state["targets"][row["id"]]["needs_attention"]
-    assert calendar_entries(doc, state) == []
+    from tests.pivot_assertions import assert_never_accepted
+    assert_never_accepted(doc, state, row["id"])
 
 
 @tools
@@ -281,5 +281,5 @@ def test_a_past_picture_page_proposal_stays_held_and_keeps_the_source_note(tmp_p
     from runs.calendar import calendar_entries
     state = current_state(doc, [])
     assert not state["targets"][row["id"]]["accepted"]
-    assert state["targets"][row["id"]]["needs_attention"]
-    assert calendar_entries(doc, state) == []
+    from tests.pivot_assertions import assert_never_accepted
+    assert_never_accepted(doc, state, row["id"])

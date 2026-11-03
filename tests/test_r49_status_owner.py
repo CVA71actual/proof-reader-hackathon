@@ -117,8 +117,8 @@ def test_a_one_sided_disagreement_with_passing_checks_still_needs_acceptance():
     run = _run(_row("undecided", "open", _five(), one_sided))
     t = current_state(run, [])["targets"]["e1"]
     assert t["status"] == "matched" and t["group"] == "kept"
-    # GROUP-AXIS-001: preserve mechanical assertions, require human acceptance.
-    assert t["needs_attention"] and not t["accepted"] and not t["on_calendar"]
+    # GROUP-AXIS-001: preserve mechanical assertions; no human acceptance. CALENDAR-RULE-001: placed automatically.
+    assert not t["accepted"] and t["inclusion"] != "kept" and not t["needs_attention"] and t["on_calendar"]
 
 
 # ---- Job 49b: one shared derivation (runs.state.derive_status) from the CURRENT effective checks
@@ -152,8 +152,8 @@ def test_saved_fail_rechecked_pass_is_mechanically_matched_but_not_accepted():
     run = _run(_row("failed", "open", _five("fail")))
     t = _rechecked(run, "pass")["targets"]["e1"]
     assert (t["status"], t["group"]) == ("matched", "kept")
-    # GROUP-AXIS-001: rechecking a value never accepts the interpretation.
-    assert t["needs_attention"] and not t["accepted"] and not t["on_calendar"]
+    # GROUP-AXIS-001: rechecking a value never accepts the interpretation. CALENDAR-RULE-001: placed automatically.
+    assert not t["accepted"] and t["inclusion"] != "kept" and not t["needs_attention"] and t["on_calendar"]
 
 
 def test_saved_fail_rechecked_pass_with_a_disagreement_stays_for_a_person():

@@ -117,9 +117,11 @@ def test_the_real_ptgx_rows_have_no_semantic_type_pass(ptgx_run):
         assert check["result"] == "not_needed" and check["code_ref"] == {"file": "checks/event_checks.py",
                                                                     "function": "type_match"}
         assert row["status"] == "matched"
-        assert state["targets"][row["id"]]["needs_attention"]
+        # CALENDAR-RULE-001: a clean row may be placed automatically, never accepted
+        assert state["targets"][row["id"]]["inclusion"] != "kept"
         assert not state["targets"][row["id"]]["accepted"]
-    assert calendar_entries(ptgx_run, state) == []
+    from tests.pivot_assertions import assert_no_fabricated_keep
+    assert_no_fabricated_keep(ptgx_run, state)
 
 
 def test_a_type_edit_is_not_a_semantic_verdict_or_human_acceptance(ptgx_run):
@@ -139,9 +141,11 @@ def test_a_type_edit_is_not_a_semantic_verdict_or_human_acceptance(ptgx_run):
     state = current_state(ptgx_run, [edit, line])
     assert not state["ignored"]
     assert state["targets"][row["id"]]["values"]["event_type"] == "trial_results"
-    assert state["targets"][row["id"]]["needs_attention"]
+    assert not state["targets"][row["id"]]["accepted"]
+    assert state["targets"][row["id"]]["decision_label"] == "Fixed by you — not yet accepted"
     assert state["mistakes"]["person"] == 0
-    assert calendar_entries(ptgx_run, state) == []
+    from tests.pivot_assertions import assert_no_fabricated_keep
+    assert_no_fabricated_keep(ptgx_run, state)
 
 
 # ---------------------------------------------------------------- Dated-sentence coverage
@@ -248,9 +252,10 @@ def test_reader_and_coverage_proposals_stay_held_until_current_human_acceptance(
     state = current_state(run, [])
     cov = run["rows"][1]["id"]
     assert state["targets"][cov]["group"] == "open"
-    # GROUP-AXIS-001: both the model proposal and the coverage candidate need review.
-    assert all(state["targets"][r["id"]]["needs_attention"] for r in run["rows"])
-    assert state["unresolved"] == len(run["rows"])
+    # CALENDAR-RULE-001: the coverage candidate (only the code found it) needs review; none is accepted.
+    assert state["targets"][cov]["needs_attention"] and state["targets"][cov]["issues"]
+    assert not any(state["targets"][r["id"]]["accepted"] for r in run["rows"])
+    assert state["unresolved"] == sum(bool(state["targets"][r["id"]]["issues"]) for r in run["rows"])
     assert cov not in {e["id"] for e in calendar_entries(run, state)}
     build_entry.write_run(run, tmp_path / "x")
     with TestClient(create_app(runs_dir=tmp_path)) as client:
@@ -260,7 +265,7 @@ def test_reader_and_coverage_proposals_stay_held_until_current_human_acceptance(
     assert after["targets"][cov]["group"] == "kept" and after["targets"][cov]["decided_by_person"] is True
     assert cov in {e["id"] for e in calendar_entries(run, after)}
     assert after["counts"]["review"]["accepted"] == 1
-    assert after["unresolved"] == len(run["rows"]) - 1
+    assert after["unresolved"] == state["unresolved"] - 1
 
 
 def test_a_complete_reading_adds_no_open_rows(ptgx_run):

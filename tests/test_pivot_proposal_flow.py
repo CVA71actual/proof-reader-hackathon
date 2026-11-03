@@ -119,10 +119,12 @@ def test_proposal_survives_saved_state_keep_undo_and_report_data(case):
     assert calendar_entries(run, undone) == calendar_entries(run, before)
     assert undone["targets"]["e1"]["needs_attention"] == before["targets"]["e1"]["needs_attention"]
     assert json.loads(json.dumps(undone))["targets"]["e1"]["values"]["conditions"] == proposal["conditions"]
-    # Required pivot gate, intentionally still red until the shared checker
-    # handoff: transporting a proposal is not semantic support for it.
-    assert before["targets"]["e1"]["needs_attention"]
-    assert not calendar_entries(run, before)
+    # Transporting a proposal is not semantic support for it: never accepted. CALENDAR-RULE-001: with no issue it
+    # is placed automatically and says so; with an issue it waits for review.
+    target = before["targets"]["e1"]
+    assert not target["accepted"] and target["inclusion"] != "kept"
+    assert target["needs_attention"] == bool(target["issues"])
+    assert all(e["inclusion"] != "kept" for e in calendar_entries(run, before))
 
 
 def test_unknown_page_second_reader_keeps_qualifications_without_checks():

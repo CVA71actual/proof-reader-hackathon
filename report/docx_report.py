@@ -46,6 +46,14 @@ def _line(doc: Document, text: str, *, size=9, bold=False, italic=False) -> None
     p.paragraph_format.space_after = Pt(2)
 
 
+def _status(row: dict) -> str:
+    """CALENDAR-RULE-001: a placed row's server label, then the person's tag when there is one (never "Kept by you"
+    for automatic inclusion: the tag is the decision label from report/data.py)."""
+    label = row.get("review_label") or ""
+    tag = row.get("person_tag")
+    return f"{label} · {tag}" if tag and tag != label else label
+
+
 def _decision(row: dict) -> str:
     """The person's ruling on an open row, verbatim from report/data.py; nothing when there is none."""
     label = row.get("decision_label")
@@ -126,7 +134,7 @@ def build_docx(view: dict) -> bytes:
 
     _heading(doc, "Calendar")
     _line(doc, f"Window: {view['calendar_window']}", size=8)
-    _line(doc, f"{view['group_labels']['accepted']} — ordered by date. Periods are shown as stated.", size=8)
+    _line(doc, view["calendar_heading"], size=8)
     if not view["calendar"] and not view.get("past") and not view.get("contingent") and not view.get("undated") and not view.get("timing_unresolved") and not view.get("later"):
         if view.get("no_accepted_rows_text"):
             _line(doc, view["no_accepted_rows_text"])
@@ -154,12 +162,11 @@ def build_docx(view: dict) -> bytes:
                 for p in cells[i].paragraphs:
                     for r in p.runs:
                         _set_run_font(r, size=8)
-    for key, label in (("past", "Past"), ("undated", "Undated · no timing stated"),
-                       ("timing_unresolved", "Timing unresolved"), ("contingent", "Contingent"), ("later", "Later")):
+    for key, label in view["placement_sections"]:
         if view.get(key):
             _heading(doc, f"{label} · {len(view[key])}")
             for row in view[key]:
-                _line(doc, f"{row['date_display']} · {row['ticker']} · {row['program']} · {row['event']} · "
+                _line(doc, f"{_status(row)} · {row['date_display']} · {row['ticker']} · {row['program']} · {row['event']} · "
                       f"{row['id']} · {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
                       f"indication: {row['indication'] or 'not stated'} · action: {row['action']} · {_context(row)} · {row['reason']}"
                       + (f" · {row['page_evidence_note']}" if row.get("page_evidence_note") else ""), size=8)
@@ -204,7 +211,7 @@ def build_docx(view: dict) -> bytes:
         for x in view["exclusions"]:
             _line(doc, f"{x['id']}: {x['rule_words']}")
 
-    _heading(doc, "Still open and unverified")
+    _heading(doc, view["needs_review_heading"])
     if not view["open_rows"]:
         _line(doc, "None.")
     else:
@@ -217,6 +224,7 @@ def build_docx(view: dict) -> bytes:
                   f"{r['indication'] or 'indication not stated'} · {r['event']} · {r['date_display']} · "
                   f"source {r['source_document']} ({r['source_id']}) page {r['page_number']} · {_context(r)} · "
                   f"quote: {r['quote']}: {r['reason']}"
+                  + (f" · Issues: {'; '.join(r['issues'])}" if r.get("issues") else "")
                   + (f" · {r['page_evidence_note']}" if r.get("page_evidence_note") else "")
                   + f" · timing: {r.get('timing_state') or 'unresolved'}"
                   + (" · Contingent" if r.get("contingent") else "")

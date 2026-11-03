@@ -1,12 +1,16 @@
 """The calendar list: which event rows may be placed on the calendar, computed from the state rule.
 
-A row reaches the calendar only after an explicit human Keep of its effective proposal.
-Mechanical checks and field fixes never grant semantic acceptance (on_calendar).
-An explicit Keep may accept a proposal with failed or unresolved checks; those
-checks remain visible. An expired Keep does not admit the changed proposal. Each entry carries the
-row's status and whether a person decided it, so the screen can show "Kept by you" beside a failed check and
-never turns it into a tick. Values are the current ones (a person's fix applied). Rows with no exact day or
-period start are listed after the dated ones, never dropped.
+CALENDAR-RULE-001 (CVA 2026-11-02): the one inclusion predicate is runs.review.review_projection. A row is eligible
+for the interval partition (on_calendar) when a person kept it, or when it is a clean proposal: not excluded, no
+issues, no reviewer findings. The partition then places it: in the run-anchored window -> the calendar (a clean
+row there reads "Included — not reviewed by you", a kept one "Kept by you"); wholly past -> Context (past); after the
+window -> Later; no date -> Undated: needs timing. A row with issues is not eligible until a person keeps it.
+Mechanical checks and field fixes never grant semantic acceptance. An explicit Keep may accept a proposal with
+failed or unresolved checks; those checks remain visible. An expired Keep does not admit the changed proposal (it
+is an issue). Each entry carries the row's status and whether a person decided it, so the screen can show "Kept
+by you" beside a failed check and never turns it into a tick, and never says "Kept by you" for automatic inclusion.
+Values are the current ones (a person's fix applied). Rows with no exact day or period start are listed after the
+dated ones, never dropped.
 """
 
 from __future__ import annotations
@@ -97,6 +101,56 @@ def on_calendar(state: dict) -> bool:
     return bool(state.get("on_calendar"))
 
 
+def research_placement(row: dict) -> str | None:
+    """A research row's own placement proposal (upcoming, contingent, undated, context, later, unresolved); None
+    for every other row."""
+    research = row.get("research")
+    return research.get("placement_proposal") if isinstance(research, dict) else None
+
+
+# A research proposal that is not future-facing never lands on the calendar, even when its date is in the window:
+# context -> Past; undated/unresolved with a date the code read -> Timing unresolved (never a day invented away).
+_NOT_FUTURE_FACING = {"context": "past", "undated": "timing_unresolved", "unresolved": "timing_unresolved"}
+
+
+def interval_bucket(row: dict, lower: date, upper: date) -> str:
+    """THE placement of one row against the window [lower, upper]: calendar, past, later, contingent, undated or
+    timing_unresolved. The period is tested on its END: a period that ends before the window starts is past; one
+    that starts after the window ends is later; any intersection is in the window. Used by current_state (the
+    inclusion predicate) and partition_intervals (the screen and reports), so both always agree."""
+    try:
+        start = date.fromisoformat(row.get("date") or "")
+    except (TypeError, ValueError):
+        start = None
+    if start is None:
+        if row.get("placement_proposal") == "context":
+            return "past"       # a completed fact with no date is context, not an event that needs timing
+        state = "contingent" if row.get("contingent") else (row.get("timing_state") or
+                 ("undated" if not row.get("date_text") else "timing_unresolved"))
+        return state if state in {"contingent", "undated", "timing_unresolved"} else "timing_unresolved"
+    try:
+        finish_value = row.get("date_end")
+        if not finish_value:
+            period_end = period_last_day(row)
+            finish_value = period_end.isoformat() if period_end else row.get("date")
+        finish = date.fromisoformat(finish_value or "")
+    except (TypeError, ValueError):
+        finish = start
+    if finish < start:
+        finish = start
+    if finish < lower:
+        return "past"
+    if start > upper:
+        return "later"
+    return _NOT_FUTURE_FACING.get(row.get("placement_proposal"), "calendar")
+
+
+def run_window(run: dict) -> tuple[date, date] | None:
+    """The six-month, run-anchored window; None when the run has no reference date (no wall-clock fallback)."""
+    start = run_reference_date(run)
+    return None if start is None else (start, add_months_to(start, 6))
+
+
 def calendar_entries(run: dict, state: dict) -> list[dict]:
     out = []
     for row in run.get("rows", []):
@@ -113,7 +167,8 @@ def calendar_entries(run: dict, state: dict) -> list[dict]:
             "date_display": s.get("date_display"), "date_text_cleared": s.get("date_text_cleared"),
             "timing_state": s.get("timing_state"), "contingent": s.get("contingent"),
             "assessment_status": s.get("assessment_status"),
-            "semantic_status": s.get("semantic_status"),
+            "semantic_status": s.get("semantic_status"), "inclusion": s.get("inclusion"), "placement": s.get("placement"),
+            "issues": list(s.get("issues") or []), "placement_proposal": research_placement(row),
             "review_label": s.get("review_label"), "decision_label": s.get("decision_label"),
             "page_number": row["page_number"], "group": s["group"], "status": s["status"],
             "decided_by_person": s["decided_by_person"], "last_action": s["last_action"],
@@ -133,39 +188,14 @@ def partition_intervals(entries: list[dict], anchor: str, end: str) -> dict[str,
     lower, upper = date.fromisoformat(anchor), date.fromisoformat(end)
     out = {key: [] for key in ("calendar", "past", "later", "contingent", "undated", "timing_unresolved")}
     for row in entries:
-        try:
-            start = date.fromisoformat(row.get("date") or "")
-        except (TypeError, ValueError):
-            start = None
-        if start is None:
-            state = "contingent" if row.get("contingent") else (row.get("timing_state") or
-                     ("undated" if not row.get("date_text") else "timing_unresolved"))
-            out[state if state in {"contingent", "undated", "timing_unresolved"} else "timing_unresolved"].append(row)
-            continue
-        try:
-            finish_value = row.get("date_end")
-            if not finish_value:
-                period_end = period_last_day(row)
-                finish_value = period_end.isoformat() if period_end else row.get("date")
-            finish = date.fromisoformat(finish_value or "")
-        except (TypeError, ValueError):
-            finish = start
-        if finish < start:
-            finish = start
-        if finish < lower:
-            out["past"].append(row)
-        elif start > upper:
-            out["later"].append(row)
-        else:
-            out["calendar"].append(row)
+        out[interval_bucket(row, lower, upper)].append(row)
     return out
 
 
 def run_interval_partition(run: dict, state: dict) -> tuple[dict[str, list[dict]], str | None, str | None]:
     """The six-month, run-anchored partition used by the screen and reports."""
-    start = run_reference_date(run)
-    if start is None:       # no wall-clock fallback: placement is unresolved
+    window = run_window(run)
+    if window is None:       # no wall-clock fallback: placement is unresolved
         return {"calendar": [], "later": [], "past": [], "contingent": calendar_entries(run, state)}, None, None
-    anchor = start.isoformat()
-    end = add_months_to(start, 6).isoformat()
+    anchor, end = window[0].isoformat(), window[1].isoformat()
     return partition_intervals(calendar_entries(run, state), anchor, end), anchor, end

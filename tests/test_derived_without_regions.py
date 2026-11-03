@@ -24,5 +24,6 @@ def test_derived_geometry_stays_narrow(tmp_path,mode,expected):
  assert check['result']==expected,check['reason']
  if expected!='pass':
   assert data['state']['targets'][row['id']]['status']!='matched'
-  assert not data['state']['targets'][row['id']]['on_calendar']
+  if data['state']['targets'][row['id']]['issues']:assert not data['state']['targets'][row['id']]['on_calendar']
+  else:assert not data['state']['targets'][row['id']]['accepted']
  else:assert 'region SAM' in check['reason']

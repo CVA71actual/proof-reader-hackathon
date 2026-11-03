@@ -72,6 +72,14 @@ def _footer_canvas(view):
     return _draw
 
 
+def _status(row: dict) -> str:
+    """CALENDAR-RULE-001: a placed row's server label, then the person's tag when there is one (never "Kept by you"
+    for automatic inclusion: the tag is the decision label from report/data.py)."""
+    label = row.get("review_label") or ""
+    tag = row.get("person_tag")
+    return f"{label} · {tag}" if tag and tag != label else label
+
+
 def _decision(row: dict) -> str:
     """The person's ruling on an open row, verbatim from report/data.py; nothing when there is none."""
     label = row.get("decision_label")
@@ -170,10 +178,7 @@ def build_pdf(view: dict) -> bytes:
     # Calendar
     story.append(_p("Calendar", styles["h1"]))
     story.append(_p(f"Window: {view['calendar_window']}", styles["small"]))
-    story.append(_p(
-        f"{view['group_labels']['accepted']} — ordered by date. Periods are shown as stated.",
-        styles["small"],
-    ))
+    story.append(_p(view["calendar_heading"], styles["small"]))
     if not view["calendar"] and not view.get("past") and not view.get("contingent") and not view.get("undated") and not view.get("timing_unresolved") and not view.get("later"):
         if view.get("no_accepted_rows_text"):
             story.append(_p(view["no_accepted_rows_text"], styles["body"]))
@@ -212,12 +217,11 @@ def build_pdf(view: dict) -> bytes:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ]))
         story.append(table)
-    for key, label in (("past", "Past"), ("undated", "Undated · no timing stated"),
-                       ("timing_unresolved", "Timing unresolved"), ("contingent", "Contingent"), ("later", "Later")):
+    for key, label in view["placement_sections"]:
         if view.get(key):
             story.append(_p(f"{label} · {len(view[key])}", styles["h1"]))
             for row in view[key]:
-                story.append(_p(f"{row['date_display']} · {row['ticker']} · {row['program']} · {row['event']} · "
+                story.append(_p(f"{_status(row)} · {row['date_display']} · {row['ticker']} · {row['program']} · {row['event']} · "
                         f"{row['id']} · {row['source_document']} ({row['source_id']}) · page {row['page_number']} · "
                                 f"indication: {row['indication'] or 'not stated'} · action: {row['action']} · "
                                 f"{_context(row)} · {row['reason']}" + (f" · {row['page_evidence_note']}" if row.get("page_evidence_note") else ""),
@@ -271,7 +275,7 @@ def build_pdf(view: dict) -> bytes:
             story.append(_p(f"{x['id']}: {x['rule_words']}", styles["body"]))
 
     # Still open and unverified
-    story.append(_p("Still open and unverified", styles["h1"]))
+    story.append(_p(view["needs_review_heading"], styles["h1"]))
     if not view["open_rows"]:
         story.append(_p("None.", styles["body"]))
     else:
@@ -285,6 +289,7 @@ def build_pdf(view: dict) -> bytes:
                 f"{r['indication'] or 'indication not stated'} · {r['event']} · {r['date_display']} · "
                 f"source {r['source_document']} ({r['source_id']}) page {r['page_number']} · {_context(r)} · "
                 f"quote: {r['quote']}: {r['reason']}"
+                + (f" · Issues: {'; '.join(r['issues'])}" if r.get("issues") else "")
                 + (f" · {r['page_evidence_note']}" if r.get("page_evidence_note") else "")
                 + f" · timing: {r.get('timing_state') or 'unresolved'}"
                 + (" · Contingent" if r.get("contingent") else "")

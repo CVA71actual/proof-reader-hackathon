@@ -23,8 +23,11 @@ def test_cli_never_calls_passing_checks_or_fix_only_accepted():
         state = current_state(run, log)
         text = '\n'.join(twelve.summary(run, state, calendar_entries(run, state)))
         assert 'check results: matched 1' in text  # Mechanical evidence remains independent.
-        assert f'Accepted by you {accepted}, Proposed — needs review {1-accepted}, Excluded 0' in text
-        assert f'calendar: {accepted} accepted row' in text
+        # CALENDAR-RULE-001: a clean in-window row is on the calendar either kept by you or included automatically
+        # (an edit with no re-check yet is an issue: neither kept nor included until it is checked or kept)
+        auto = int(log == [])     # every other log here carries the un-re-checked edit
+        assert f'calendar: {accepted} kept by you, {auto} included automatically' in text
+        assert f'rows: Kept by you {accepted}, Included automatically (not reviewed by you) {auto}' in text
         assert f'accepted rows: {accepted}; cost per accepted row: ' + ('$1.0000' if accepted else 'not computed') in text
         assert 'rows: kept' not in text and 'kept or corrected' not in text
         assert recheck_dates._counts(run, log) == {
