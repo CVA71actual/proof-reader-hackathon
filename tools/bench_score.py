@@ -5,12 +5,23 @@
 Scores one saved run folder (run.json + decisions.jsonl) against a per-ticker benchmark file of expected catalysts
 (tests/fixtures/bench/ptgx.json). No model, network or paid call: the run is loaded through the same code the UI
 and the exports use (runs.check_load -> runs.state.current_state -> runs.calendar.run_interval_partition), so the
-scorer sees exactly the rows, values and placements a person sees. The run folder is only read, never written.
+scorer sees exactly the rows, values and placements a person sees. The run folder is only read, never written: an output path that resolves into it (or onto a benchmark file)
+is refused before anything is written.
 
 What a result means. A benchmark item is matched to run rows by KEYWORD/ALIAS OVERLAP on the row's title + summary
 (relevance) + program + action, and the match is then compared on TIMING (period overlap) and on PLACEMENT CLASS.
 This is a keyword+timing match, not a judgement that the row is correct: two rows can share every keyword and say
 different things. Every match prints the words it matched and its timing comparison so a person can see why.
+
+Named events. An item for a named event (a conference, an investor day, a business review...) carries a required
+`name` alias group: generic words like "conference" are in every conference row, so the name is the event's
+identity. A row is a candidate for a named item only if it contains the name AND its timing is compatible; a row
+naming the event at another time is a different event and is listed as a near miss, not matched.
+
+Choosing among candidates. If any candidate satisfies both the timing and the expected placement, the item is
+found and the best row is chosen among those (more keyword groups hit first, then row order). Only when no
+candidate is compatible does the strongest keyword match stand as the misplaced row. All candidates stay in the
+output, in that order.
 
 Benchmark file (YAML or JSON):
     ticker: PTGX
@@ -18,6 +29,8 @@ Benchmark file (YAML or JSON):
       - id: pn881-ph2b
         description: PN-881 Phase 2b psoriasis initiation
         keywords: [[PN-881, PN881], [Phase 2b, Phase 2], psoriasis]   # alias groups; a group hits on any alias
+        name: [Wolfe, Wolfe Research]  # named events only (required when a keyword is a generic event word such as
+                                       # conference / investor day / business review): the event's identity
         min_groups: 2                  # groups that must hit (default: every group)
         timing: Q1 2027                # ISO date, 'Qn YYYY', 'Hn YYYY'/'nH YYYY', 'Month YYYY', 'Month D, YYYY',
                                        # 'YYYY', 'undated', or {start, end, text}; '~' prefix allows 14 days' slack
@@ -29,8 +42,9 @@ Categories (per ticker and in total):
     misplaced    keyword match, but the timing does not overlap or the placement class differs (a row the calendar
                  does not place, because it needs a person's review or was excluded, is misplaced too)
     missed       no run row matches the item's keywords
-    duplicates   two or more run rows match the same benchmark item, or rows whose normalized program + action +
-                 period coincide
+    duplicates   rows whose normalized program + action + period coincide (event identity). Rows that merely
+                 share a benchmark item's words are not duplicates: a Phase 1 completion and a Phase 2
+                 initiation of one program share words and are different events
     unmatched    run rows that match no benchmark item (extra or unknown)
 """
 from __future__ import annotations
@@ -56,6 +70,11 @@ DISCLAIMER = ("Keyword+timing match only. A 'found' row shares the benchmark ite
               "timing; it is not a judgement that the row's meaning is correct.")
 TEXT_FIELDS = ("title", "summary", "program", "action")
 BENCH_PLACEMENTS = ("upcoming", "context", "later", "undated")
+# Words that say what kind of event a row is, not which event: an item using one of them as a keyword is a named
+# event and must carry a `name` alias group.
+GENERIC_EVENT_WORDS = {"conference", "conferences", "fireside", "fireside chat", "presentation", "present",
+                       "investor day", "investor event", "business review", "capital markets day", "capital markets",
+                       "r and d day", "analyst day", "webcast", "symposium", "meeting", "congress"}
 _DEFAULT_APPROX_SLACK_DAYS = 14
 _MONTHS = {m.lower(): i for i, m in enumerate(calendar.month_name) if m}
 _MONTHS.update({m.lower(): i for i, m in enumerate(calendar.month_abbr) if m})
@@ -207,12 +226,16 @@ def run_rows(run: dict, state: dict, partition: dict) -> list[dict]:
         raw = rows_by_id.get(rid) or {}
         v = t.get("values") or {}
         research = raw.get("research") if isinstance(raw.get("research"), dict) else {}
-        fields = {"title": v.get("title") or raw.get("title"),
-                  "summary": raw.get("summary") or v.get("relevance") or raw.get("relevance"),
-                  "program": v.get("program") or raw.get("program"),
+        # The state's current values are what the UI shows (a person's fix applied): a field present in them is
+        # used exactly as it is, an empty string included. The raw row only supplies fields the state has no
+        # key for.
+        current = lambda field: v[field] if field in v else raw.get(field)
+        fields = {"title": current("title"),
+                  "summary": raw.get("summary") or current("relevance"),
+                  "program": current("program"),
                   "action": research.get("action")}
         text = " | ".join(str(fields[k]) for k in TEXT_FIELDS if fields.get(k))
-        row = {"id": rid, "ticker": (v.get("ticker") or raw.get("ticker") or "").upper(),
+        row = {"id": rid, "ticker": (current("ticker") or "").upper(),
                **fields, "text": text, "date": v.get("date"), "date_end": v.get("date_end"),
                "date_display": t.get("date_display"), "inclusion": t.get("inclusion"),
                "bucket": bucket_of.get(rid), "placement_proposal": research.get("placement_proposal"),
@@ -253,6 +276,15 @@ def load_bench(path: Path) -> dict:
         if not groups or any(not g or any(not isinstance(a, str) or not a.strip() for a in g) for g in groups):
             raise ValueError(f"{path}: item {item['id']} needs keywords (strings or lists of alias strings)")
         item["keywords"] = groups
+        name = item.get("name")
+        name = [name] if isinstance(name, str) else list(name or [])
+        if "name" in item and (not name or any(not isinstance(a, str) or not a.strip() for a in name)):
+            raise ValueError(f"{path}: item {item['id']}: name must be a non-empty alias string or a list of them")
+        generic = sorted({a for g in groups for a in g if normalize(a) in GENERIC_EVENT_WORDS})
+        if generic and not name:
+            raise ValueError(f"{path}: item {item['id']} uses generic event words {generic} and needs a 'name' "
+                             f"alias group (the event's identity, e.g. ['Wolfe', 'Wolfe Research'])")
+        item["name"] = name or None
         item["min_groups"] = int(item.get("min_groups") or len(groups))
         if not 1 <= item["min_groups"] <= len(groups):
             raise ValueError(f"{path}: item {item['id']}: min_groups must be between 1 and {len(groups)}")
@@ -276,27 +308,51 @@ def keyword_hits(item: dict, row: dict) -> tuple[list[str], list[str]]:
     return matched, missed
 
 
+def name_hit(item: dict, row: dict) -> str | None:
+    """The first name alias the row contains; None for an item without a name."""
+    return next((alias for alias in (item.get("name") or []) if phrase_in(alias, row["text"])), None)
+
+
 def score_item(item: dict, rows: list[dict]) -> dict:
-    candidates = []
+    candidates, near_misses = [], []
+    named = bool(item.get("name"))
     for row in rows:
+        name = name_hit(item, row) if named else None
+        if named and not name:
+            continue
         matched, missed = keyword_hits(item, row)
         if len(matched) < item["min_groups"]:
             continue
         timing = compare_timing(item["timing_parsed"], row["timing"])
+        if named and not timing["compatible"]:
+            # the same name at another time is another event (next year's conference), not this one
+            near_misses.append({"row_id": row["id"], "title": row["title"], "name": name, "matched_words": matched,
+                                "timing": timing["explanation"], "date_display": row["date_display"]})
+            continue
         placement_ok = row["placement_class"] == item["placement"]
         candidates.append({
             "row_id": row["id"], "title": row["title"], "program": row["program"], "action": row["action"],
-            "matched_words": matched, "unmatched_groups": missed, "groups_hit": f"{len(matched)}/{len(item['keywords'])}",
+            "name": name, "matched_words": ([name] if name else []) + matched, "unmatched_groups": missed,
+            "groups_hit": f"{len(matched)}/{len(item['keywords'])}",
             "searched": row["text"], "timing_compatible": timing["compatible"], "timing": timing["explanation"],
             "row_placement": row["placement_class"], "expected_placement": item["placement"],
             "placement_ok": placement_ok, "date_display": row["date_display"],
         })
-    candidates.sort(key=lambda c: (-len(c["matched_words"]), not c["timing_compatible"], not c["placement_ok"],
-                                   _row_order(c["row_id"])))
+    # Compatible rows (timing and placement) come first; the lexical tie-break (more groups hit) applies only
+    # within that subset, so a stronger keyword match at the wrong time never masks a compatible row.
+    candidates.sort(key=lambda c: (not (c["timing_compatible"] and c["placement_ok"]), -len(c["matched_words"]),
+                                   not c["timing_compatible"], not c["placement_ok"], _row_order(c["row_id"])))
     result = {"id": item["id"], "description": item.get("description"), "expected_timing": item["timing_parsed"]["text"],
-              "expected_placement": item["placement"], "candidates": candidates}
+              "expected_placement": item["placement"], "name": item.get("name"), "candidates": candidates,
+              "near_misses": near_misses}
     if not candidates:
-        result.update({"category": "missed", "best": None, "why": "no run row matches the item's keywords"})
+        why = "no run row matches the item's keywords"
+        if named:
+            why = f"no run row names {item['name'][0]!r} with the item's keywords within the expected timing"
+            if near_misses:
+                why += " (named at another time: " + ", ".join(
+                    f"{n['row_id']} {n['date_display'] or 'undated'}" for n in near_misses) + ")"
+        result.update({"category": "missed", "best": None, "why": why})
         return result
     best = candidates[0]
     problems = []
@@ -315,12 +371,9 @@ def period_key(row: dict) -> str:
 
 
 def duplicates(item_results: list[dict], rows: list[dict]) -> list[dict]:
+    """Possible duplicates need event identity: the same normalized program, action and period. Rows that only
+    share a benchmark item's words are not grouped (they stay visible as that item's candidates)."""
     out = []
-    for r in item_results:
-        ids = [c["row_id"] for c in r["candidates"]]
-        if len(ids) >= 2:
-            out.append({"rule": "same benchmark item", "item": r["id"], "rows": ids,
-                        "detail": {c["row_id"]: c["matched_words"] for c in r["candidates"]}})
     groups: dict[tuple, list[str]] = {}
     for row in rows:
         program, action = normalize(row.get("program")), normalize(row.get("action"))
@@ -443,15 +496,36 @@ def folder_digest(run_dir: Path) -> dict[str, str]:
             for p in sorted(run_dir.rglob("*")) if p.is_file()}
 
 
+def refuse_unsafe_output(out: Path, run_dir: Path, bench_files: list[Path]) -> None:
+    """Raise ValueError if the output path resolves into the run folder (run.json, decisions.jsonl, a subfolder,
+    through a symlink or an alias) or onto a supplied benchmark file. Called before anything is written."""
+    out, run_dir = Path(out), Path(run_dir)
+    target = out.resolve()
+    run = run_dir.resolve()
+    if target == run or run in target.parents:
+        raise ValueError(f"--json {out}: refusing to write inside the run folder {run_dir} (resolves to {target}); "
+                         f"the run folder is only read, never written")
+    for b in bench_files:
+        if target == Path(b).resolve():
+            raise ValueError(f"--json {out}: refusing to overwrite the benchmark file {b}")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m tools.bench_score", description=__doc__.split("\n\n")[1])
     ap.add_argument("run_dir", type=Path, help="a saved run folder: run.json + decisions.jsonl (+ pages/)")
     ap.add_argument("bench_file", type=Path, nargs="+", help="benchmark file(s), one per ticker (.yaml/.yml/.json)")
     ap.add_argument("--json", type=Path, default=None, help="also write the full result as JSON to this file")
     args = ap.parse_args(argv)
+    if args.json:
+        try:
+            refuse_unsafe_output(args.json, args.run_dir, args.bench_file)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
     result = _json_ready(score(args.run_dir, args.bench_file))
     print(render(result))
     if args.json:
+        refuse_unsafe_output(args.json, args.run_dir, args.bench_file)      # once more, right before the write
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(result, indent=1) + "\n")
         print(f"\nJSON written to {args.json}")

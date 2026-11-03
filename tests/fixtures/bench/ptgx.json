@@ -1,6 +1,6 @@
 {
  "ticker": "PTGX",
- "label": "Protagonist Therapeutics \u2014 known catalysts",
+ "label": "Protagonist Therapeutics — known catalysts",
  "items": [
   {
    "id": "pn881-ph2b-psoriasis",
@@ -76,10 +76,11 @@
   {
    "id": "conf-wolfe-2026-11-10",
    "description": "Wolfe Research healthcare conference, Nov 10 2026",
+   "name": [
+    "Wolfe",
+    "Wolfe Research"
+   ],
    "keywords": [
-    [
-     "Wolfe"
-    ],
     [
      "conference",
      "fireside",
@@ -87,17 +88,17 @@
      "present"
     ]
    ],
-   "min_groups": 1,
    "timing": "2026-11-10",
    "placement": "upcoming"
   },
   {
    "id": "conf-truist-2026-11-12",
    "description": "Truist Securities conference, Nov 12 2026",
+   "name": [
+    "Truist",
+    "Truist Securities"
+   ],
    "keywords": [
-    [
-     "Truist"
-    ],
     [
      "conference",
      "fireside",
@@ -105,17 +106,16 @@
      "present"
     ]
    ],
-   "min_groups": 1,
    "timing": "2026-11-12",
    "placement": "upcoming"
   },
   {
    "id": "conf-ubs-2026-11-16",
    "description": "UBS healthcare conference, Nov 16 2026",
+   "name": [
+    "UBS"
+   ],
    "keywords": [
-    [
-     "UBS"
-    ],
     [
      "conference",
      "fireside",
@@ -123,17 +123,16 @@
      "present"
     ]
    ],
-   "min_groups": 1,
    "timing": "2026-11-16",
    "placement": "upcoming"
   },
   {
    "id": "conf-jefferies-2026-11-17",
    "description": "Jefferies healthcare conference, Nov 17 2026",
+   "name": [
+    "Jefferies"
+   ],
    "keywords": [
-    [
-     "Jefferies"
-    ],
     [
      "conference",
      "fireside",
@@ -141,7 +140,6 @@
      "present"
     ]
    ],
-   "min_groups": 1,
    "timing": "2026-11-17",
    "placement": "upcoming"
   },
@@ -196,12 +194,12 @@
   {
    "id": "jnj-enterprise-business-review",
    "description": "J&J Enterprise Business Review, Dec 8 2026",
+   "name": [
+    "J&J",
+    "Johnson & Johnson",
+    "JNJ"
+   ],
    "keywords": [
-    [
-     "J&J",
-     "Johnson & Johnson",
-     "JNJ"
-    ],
     [
      "Enterprise Business Review",
      "business review"
@@ -213,10 +211,10 @@
   {
    "id": "takeda-capital-markets-day",
    "description": "Takeda Capital Markets Day, Dec 11 2026",
+   "name": [
+    "Takeda"
+   ],
    "keywords": [
-    [
-     "Takeda"
-    ],
     [
      "Capital Markets Day",
      "capital markets",
@@ -259,11 +257,11 @@
   {
    "id": "acr-psa-late-breaking",
    "description": "ACR PsA late-breaking presentation, Nov 10 2026",
+   "name": [
+    "ACR",
+    "American College of Rheumatology"
+   ],
    "keywords": [
-    [
-     "ACR",
-     "American College of Rheumatology"
-    ],
     [
      "late-breaking",
      "late breaking",

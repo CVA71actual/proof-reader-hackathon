@@ -16,7 +16,13 @@ Cases the rows cover (see tests/test_bench_score.py):
     e5, e6  duplicate     two rows for the J&J Enterprise Business Review on Dec 8 2026
     e7, e8  duplicate     two rows with the same program + action + period that match no benchmark item (extras)
     e9  unmatched         a routine earnings call, not in the benchmark
-    (missed items are simply absent: the conferences, ICONIC-PsA 2, TGA, ACR, the OLE, the Takeda payments...)
+    e10..e13  found       four named investor conferences (Wolfe, Truist, UBS, Jefferies) on four dates: each
+                          benchmark item names its conference, so each is one separate found item, no duplicates
+    e14, e15  duplicate   two more PN-881 Phase 2b psoriasis rows with the same Q1 2027 period (same program +
+                          action + period as each other; e1's derived period is January, so e1 is not in the group)
+    e16  distinct         PN-881 Phase 1 completion, Q1 2027: shares the program, the period and the word
+                          "psoriasis" with e14/e15 but is a different event (action differs), never a duplicate
+    (missed items are simply absent: ICONIC-PsA 2, TGA, ACR, the OLE, the Takeda payments...)
 """
 from __future__ import annotations
 
@@ -52,6 +58,13 @@ SOURCE = {
         "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026.",
         "The rusfertide launch is expected in the fourth quarter of 2026.",
         "The company will host its third quarter earnings call on November 5, 2026.",
+        "Management will present at the Wolfe Research Healthcare Conference on November 10, 2026.",
+        "Management will join a fireside chat at the Truist Securities Healthcare Conference on November 12, 2026.",
+        "The company will present at the UBS Global Healthcare Conference on November 16, 2026.",
+        "Management will present at the Jefferies London Healthcare Conference on November 17, 2026.",
+        "The PN-881 Phase 2b psoriasis study is planned to start in Q1 2027.",
+        "Initiation of the Phase 2b study of PN-881 in psoriasis is expected in the first quarter of 2027.",
+        "Completion of the PN-881 Phase 1 study is expected in Q1 2027, supporting the psoriasis program.",
     ],
 }
 
@@ -76,6 +89,20 @@ ROWS = [
      "upcoming", "the fourth quarter of 2026", "2026-10-01", "2026-12-31", 7, "Launch timing restated."),
     ("e9", "Third quarter earnings call", None, "earnings", "host earnings call",
      "upcoming", "November 5, 2026", "2026-11-05", None, 8, "Routine quarterly call."),
+    ("e10", "Wolfe Research Healthcare Conference presentation", None, "conference", "present at conference",
+     "upcoming", "November 10, 2026", "2026-11-10", None, 9, "Investor conference appearance."),
+    ("e11", "Truist Securities Healthcare Conference fireside chat", None, "conference", "present at conference",
+     "upcoming", "November 12, 2026", "2026-11-12", None, 10, "Investor conference appearance."),
+    ("e12", "UBS Global Healthcare Conference presentation", None, "conference", "present at conference",
+     "upcoming", "November 16, 2026", "2026-11-16", None, 11, "Investor conference appearance."),
+    ("e13", "Jefferies London Healthcare Conference presentation", None, "conference", "present at conference",
+     "upcoming", "November 17, 2026", "2026-11-17", None, 12, "Investor conference appearance."),
+    ("e14", "PN-881 Phase 2b psoriasis study start", "PN-881", "trial initiation", "initiate Phase 2b",
+     "upcoming", "Q1 2027", "2027-01-01", "2027-03-31", 13, "Second row for the same program start."),
+    ("e15", "Phase 2b study of PN-881 in psoriasis", "PN-881", "trial initiation", "initiate Phase 2b",
+     "upcoming", "the first quarter of 2027", "2027-01-01", "2027-03-31", 14, "Restated program start."),
+    ("e16", "PN-881 Phase 1 study completion", "PN-881", "trial completion", "complete Phase 1",
+     "upcoming", "Q1 2027", "2027-01-01", "2027-03-31", 15, "Phase 1 completion supports the psoriasis program."),
 ]
 
 
@@ -91,7 +118,7 @@ def build(out_dir: Path = OUT) -> dict:
             "id": rid, "ticker": TICKER, "company": COMPANY, "event_type": "unknown", "type_hint": hint,
             "relevance": relevance, "conditions": [], "subject_company": COMPANY, "relation": "wholly-owned",
             "title": title, "date_text": date_text, "date": date, "date_end": date_end, "quote": quote,
-            "program": program, "indication": "psoriasis" if rid == "e1" else None,
+            "program": program, "indication": "psoriasis" if rid in ("e1", "e14", "e15") else None,
             "source_id": source["id"], "page_number": 1, "box": box_of_text(quote, words_doc["words"]),
             "proposed_by": "bench fixture (no model)", "sample": True,
             "research": {"label": "Bench fixture — made-up row", "revision": 1, "call_id": "bench",
