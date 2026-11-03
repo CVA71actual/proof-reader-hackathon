@@ -833,7 +833,8 @@ def make_job_class():
             ticket = gate({"phase": "reserve", "stage": "reviewer_access", "kind": "model",
                            "model": getattr(primary, "model", None),
                            "price_name": getattr(primary, "price_name", None) or rv.identity(primary)["name"],
-                           "request_bytes": 200, "max_output_tokens": rv.PROBE_MAX_TOKENS, "searches": 0})
+                           "request_bytes": 200, "searches": 0,
+                           "max_output_tokens": getattr(primary, "probe_max_tokens", rv.PROBE_MAX_TOKENS)})
             if not ticket or ticket.get("admitted") is False:
                 return {"checked": False, "reason": f"The access check was not admitted: "
                                                     f"{(ticket or {}).get('reason')}"}

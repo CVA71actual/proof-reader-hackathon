@@ -18,7 +18,7 @@ from runs.research_contract import LABEL
 
 RESEARCHER_PROVIDER = "meta"
 RESEARCHER_FAMILY = "Muse Spark (Meta)"
-PRIMARY_REVIEWER = {"name": "DeepSeek V4 Pro", "family": "DeepSeek"}
+PRIMARY_REVIEWER = {"name": "Claude Opus 5.5", "family": "Claude"}
 
 
 def review_label(kind: str, who: dict | None) -> str:
@@ -26,7 +26,8 @@ def review_label(kind: str, who: dict | None) -> str:
     if kind == "none" or not who or not who.get("name"):
         return LABEL
     same = who.get("family") == RESEARCHER_FAMILY
-    by = who["name"] + (" (same model family as the researcher)" if same else "")
+    by = who["name"] + (" (same model family as the researcher)" if same
+                        else " (different model family from the researcher)" if who.get("family") else "")
     reviewed = ("reviewed by " if same else "independently reviewed by ") + by
     return {"clean": f"Agent research — {reviewed} (no findings)",
             "findings": f"Agent research — {reviewed} with findings",

@@ -73,15 +73,20 @@ from typing import Any, Callable
 
 from capture import http
 
-# MULTI-FAMILY-001 (CVA 2026-11-02): the reviewer is DeepSeek V4 Pro on Baseten, a different model family from the
-# researcher (Muse Spark, Meta). Muse Spark Open stays a DECLARED fallback, used only when DeepSeek is unavailable; it is
-# the open-weights member of the researcher's own family, and the record and labels say so when it ran.
-REVIEWER_NAME = "DeepSeek V4 Pro"
+# MULTI-FAMILY-001 (CVA 2026-11-03: "Claude for reviewer for now"): the reviewer is Claude Opus 5.5 (Anthropic), a
+# different model family from the researcher (Muse Spark, Meta); capture/research_claude.py is its adapter. Muse Spark
+# Open stays a DECLARED fallback, used only when Claude is unavailable or refused; it is the open-weights member of the
+# researcher's own family, and the record and labels say so when it ran. DeepSeek V4 Pro (Baseten) is kept as a
+# configured option (DEEPSEEK_*): our Baseten key was refused for it (HTTP 403, live test 5d028a8).
+REVIEWER_NAME = "Claude Opus 5.5"
 PROBE_MAX_TOKENS = 1
 REFUSED_STATUSES = (401, 403)
-REVIEWER_MODEL_ID = "deepseek-ai/DeepSeek-V4-Pro-0813"
-REVIEWER_PROVIDER = "baseten"
-REVIEWER_FAMILY = "DeepSeek"
+REVIEWER_MODEL_ID = "claude-opus-5-5"
+REVIEWER_PROVIDER = "anthropic"
+REVIEWER_FAMILY = "Claude"
+DEEPSEEK_NAME = "DeepSeek V4 Pro"
+DEEPSEEK_MODEL_ID = "deepseek-ai/DeepSeek-V4-Pro-0813"
+DEEPSEEK_FAMILY = "DeepSeek"
 FALLBACK_REVIEWER_NAME = "Muse Spark Open"
 FALLBACK_REVIEWER_FAMILY = "Muse Spark (Meta)"
 ADJUDICATOR_NAME = "Muse Wonder"
@@ -117,6 +122,9 @@ class ChatReply:
     http_status: int | None = None
     may_have_been_billed: bool = False
     timed_out: bool = False
+    raw_content: list | None = None      # a Claude reply's content blocks, to go back into the history unchanged
+    stop_details: dict | None = None     # a Claude refusal's category and explanation
+    served_by: dict | None = None        # which model answered (a server-side fallback may have)
 
 
 def _int_or_none(v) -> int | None:
@@ -277,12 +285,18 @@ ASSESS_ROWS_PER_TURN = 5
 VERDICTS = ("no_issue", "finding")
 
 
-def reviewer_model() -> OneShotChat:
-    """DeepSeek V4 Pro on Baseten: Chat Completions with function tools (Baseten lists tools, json_mode and reasoning
-    for it), the same key and base URL as Muse Spark Open."""
+def reviewer_model():
+    """Claude Opus 5.5 through the Messages API (capture/research_claude.py; the SDK is imported lazily)."""
+    from capture.research_claude import ClaudeChat
+    return ClaudeChat()
+
+
+def deepseek_reviewer_model() -> OneShotChat:
+    """DeepSeek V4 Pro on Baseten (Chat Completions with function tools; the same key and base URL as Muse Spark
+    Open). A configured option, not the default."""
     from capture import second_reader
-    return OneShotChat(REVIEWER_NAME, second_reader.BASETEN_BASE_URL, REVIEWER_MODEL_ID, "BASETEN_API_KEY",
-                       REVIEWER_PROVIDER, REVIEWER_FAMILY)
+    return OneShotChat(DEEPSEEK_NAME, second_reader.BASETEN_BASE_URL, DEEPSEEK_MODEL_ID, "BASETEN_API_KEY",
+                       "baseten", DEEPSEEK_FAMILY)
 
 
 def fallback_reviewer_model() -> OneShotChat:
@@ -684,6 +698,8 @@ class ReviewResult:
     family: str | None = None
     reviewer_name: str | None = None
     access_refused: dict | None = None
+    served_by: list = field(default_factory=list)
+    refusal: dict | None = None
     not_reviewed: list = field(default_factory=list)
     cited_unread: list = field(default_factory=list)
     pages_read: dict = field(default_factory=dict)
@@ -712,6 +728,7 @@ class ReviewResult:
                 "limitations": self.limitations, "ignored_finishes": self.ignored_finishes,
                 "model": self.model, "requested_model": self.requested_model, "provider": self.provider,
                 "family": self.family, "reviewer": self.reviewer_name, "access_refused": self.access_refused,
+                "served_by": self.served_by, "refusal": self.refusal,
                 "turns": self.turns, "searches": self.searches, "fetches": self.fetches, "usage": self.usage,
                 "summary": self.summary, "settings": self.settings}
 
@@ -795,6 +812,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
             reviewed_rows=[{"row_id": r["row_id"], "revision_id": r["revision_id"]} for r in rows.values()],
             model=state["model"], requested_model=getattr(model, "model", None), provider=who["provider"],
             family=who["family"], reviewer_name=who["name"], access_refused=state.get("access_refused"),
+            served_by=state.get("served_by") or [], refusal=state.get("refusal"),
             turns=state["turns"], searches=searches, fetches=fetches, usage=gate.usage(),
             summary=state["summary"], settings=settings,
             assessments=list(assessed.values()), order_refusals=order_refusals, nothing_material=nothing_material,
@@ -1105,10 +1123,12 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         try:
             messages = request_messages()
             ticket = gate.reserve("model", model.model, who["price_name"], _bytes([messages, REVIEWER_TOOLS]),
-                                  http.MAX_COMPLETION_TOKENS, 0, keep_back())
+                                  getattr(model, "max_tokens", None) or http.MAX_COMPLETION_TOKENS, 0, keep_back())
         except GateRefused as e:
             return result(INCOMPLETE, f"The spend gate refused the next reviewer call: {e}")
         reply = _chat(model, messages, tools=REVIEWER_TOOLS)
+        if reply.served_by:
+            state.setdefault("served_by", []).append({"turn": state["turns"] + 1, **reply.served_by})
         if not reply.error:      # sent and answered: the pages in it were delivered
             srcs.commit()
         # BRAVE-PRIMARY-001 single delivery: search titles and snippets reach the model in exactly one request; once
@@ -1124,6 +1144,13 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
             if reply.http_status in REFUSED_STATUSES:
                 state["access_refused"] = {"http_status": reply.http_status, "message": reply.error}
             return result(INCOMPLETE, reply.error)
+        if reply.finish_reason == "refusal":
+            # classified before any tool runs: a declined reply establishes nothing; its category is recorded
+            d = reply.stop_details or {}
+            state["refusal"] = {"category": d.get("category"), "explanation": d.get("explanation"),
+                                "model": reply.model}
+            return result(INCOMPLETE, f"The reviewer declined the request (refusal, category "
+                                      f"{d.get('category') or 'not given'}); nothing in that reply was used.")
         if reply.finish_reason == TRUNCATED:
             # Classified before any tool in it runs: a cut-off reply establishes nothing, even a parseable
             # finish_review. Findings recorded in earlier turns are kept.
@@ -1135,10 +1162,13 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         if not reply.tool_calls:
             return result(INCOMPLETE, "The reviewer stopped without calling finish_review, so the review is not "
                                       "complete; its text was not taken as a result.")
-        turn = [{"role": "assistant", "content": reply.content,
-                 "tool_calls": [{"id": c["id"], "type": "function",
-                                 "function": {"name": c["name"], "arguments": c["arguments"]}}
-                                for c in reply.tool_calls]}]
+        assistant = {"role": "assistant", "content": reply.content,
+                     "tool_calls": [{"id": c["id"], "type": "function",
+                                     "function": {"name": c["name"], "arguments": c["arguments"]}}
+                                    for c in reply.tool_calls]}
+        if reply.raw_content is not None:      # Claude: the full content, thinking blocks included, unchanged
+            assistant["provider_content"] = reply.raw_content
+        turn = [assistant]
         turns.append(turn)
         # finish_review counts only when it is the reply's ONLY tool call: alongside a search, fetch or finding the
         # model has not yet seen those results, so its "finished" is ignored and it must finish alone later.
