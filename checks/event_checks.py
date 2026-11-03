@@ -825,6 +825,37 @@ def _same_phrase_in_quote(dt: str, q: str, filed: date | str | None) -> str | No
     return None
 
 
+# A date text that is a whole clause ("with initiation expected in early first quarter 2027"): the one date or period
+# it ends on, after "in" / "during" / "on" (optionally "the"), is read and checked as if it were the date text.
+_CLAUSE_TAIL = re.compile(r"(?:^|\s)(?:in|during|on)\s+(?:the\s+)?$", re.I)
+
+
+def date_in_clause(date_text: str | None, filed: date | str | None = None) -> str | None:
+    """The date or period words printed inside a date text written as a clause, or None.
+
+    Only when the whole text is not itself a date this check reads (parse_date_phrase gives 'none', no relative or
+    'today' wording), and the text names exactly ONE distinct date or period (named_dates): zero or two different
+    ones is never guessed. That one must END the text (a full stop or comma after it is allowed) and come right
+    after "in", "during" or "on" ("in the" too): words after it ("2027 and beyond", "Q1 2027 at the earliest") or a
+    bounding word before it ("by", "before", "after", "until", "no later than") change what the period means, so the
+    text stays unread. The words returned are the reader's own; date_match then checks them exactly as a short
+    date text (they must be printed in the quote)."""
+    dt = _norm_quote(date_text)
+    if not dt or is_today_word(dt) or date_phrase_flag(dt) or relative_period(dt, filed) is not None:
+        return None
+    if parse_date_phrase(dt, filed)[0] != "none":
+        return None
+    found = named_dates(dt)
+    if len({_canon(fix_wording(expand_short_year(m[0]))) for m in found}) != 1:
+        return None
+    last = found[-1]
+    if dt[last.end():].strip(" .,;") or _canon(last[0]) == _canon(dt):
+        return None
+    if not _CLAUSE_TAIL.search(dt[:last.start()]):
+        return None
+    return last[0]
+
+
 def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
                date_end: str | None = None, *, event_type: str | None = None, title: str | None = None,
                program: str | None = None, filed: date | str | None = None,
@@ -852,7 +883,19 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
     'today' / 'announced today' / 'this morning' / 'earlier today' is the day in `today` (the release dateline, or the
     filing date when no dateline is printed; release_day): the row's date must be that day.
     Anything vaguer ('later this year') with no date given: not_needed.
+    A date text written as a clause ('with initiation expected in early first quarter 2027'): the one date or period
+    it ends on (date_in_clause) is checked as the date text, and the reason names the words read.
     """
+    inner = date_in_clause(date_text, filed)
+    if inner is not None:
+        # The date text is a clause around one date or period: check those words as the date text, unchanged.
+        got = date_match(inner, date_iso, quote, date_end, event_type=event_type, title=title, program=program,
+                         filed=filed, today=today, chosen=chosen)
+        kind = "date" if parse_date_phrase(inner, filed)[0] == "day" else "period"
+        compared = dict(got.compared)
+        compared["timing"] = {**compared.get("timing", {}), "wording": date_text}
+        return CheckResult(got.check, got.label, got.result,
+                           f"Read the {kind} '{inner}' from the date text. {got.reason}", compared)
     dt = _norm_quote(date_text)     # the same marks as the quote: a typographic apostrophe in both reads alike
     looked_for = (f"{date_iso} to {date_end}" if date_end else date_iso) or dt
     phrase_kind, phrase_start, phrase_end = parse_date_phrase(dt, filed)
