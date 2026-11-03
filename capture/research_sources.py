@@ -660,21 +660,24 @@ def capture_document(fetched: Fetched, run_dir: Path, source_id: str, *,
 # OUTCOME-001, one principle (Operator ruling on Red Team #175 at 3ff7309): block wording is wording whose subject is
 # the site, page, service or system itself ("the site is down", "this page is temporarily unavailable", "site
 # maintenance", "we'll be back soon"), or an access refusal / bot wall. Never the bare word "maintenance": "patients
-# are undergoing maintenance dosing" is a document. A page is a block page when that wording is its title or h1, or
-# makes up most of its prose sentences, whatever else the page holds (a dateline does not exempt it).
+# are undergoing maintenance dosing" is a document. The final rule (Operator, Red Team #175 at 5a48646): a page is a
+# block page when that wording is its title or h1, whatever its length; or when any prose sentence carries it and the
+# page has fewer than BLOCK_OTHER_SENTENCES other prose sentences (a block notice plus one fact sentence is still a
+# block notice; a long document mentioning site maintenance in passing is captured).
 # Detection is a heuristic: a refused page is recorded with its reason, and the reviewer remains the backstop.
 _re = __import__("re")
-_SUBJECT = r"(?:web ?site|site|web ?page|page|service|system|server|portal)s?"
+_SUBJECT = r"(?:web ?site|site|page|portal|server|service|system)s?"
 _SITE_STATE = (rf"\b{_SUBJECT}\s+(?:(?:is|are|has been|have been|was|were|will be|may be|is being)\s+)?"
                r"(?:(?:currently|temporarily|now|briefly|still|being)\s+)*"
                r"(?:down|offline|unavailable|under (?:\w+ )?maintenance|undergoing (?:\w+ ){0,2}maintenance|"
                r"(?:being )?(?:updated|upgraded)|maintenance)\b")
-_BOT_WALL = (r"\bwe(?:'|’)?ll be back\b|\b(?:please )?(?:check|come) back (?:later|soon|shortly)\b|\baccess denied\b|\brequest blocked\b|\b(?:access|request|you|your (?:\w+ )?(?:ip|address|access|request))\s+(?:has|have)\s+been blocked\b|"
+_BOT_WALL = (r"\bwe(?:'|’)?ll be back\b|\b(?:please )?(?:check|come) back (?:later|tomorrow|soon|shortly)\b|\baccess denied\b|\brequest blocked\b|\b(?:access|request|you|your (?:\w+ )?(?:ip|address|access|request))\s+(?:has|have)\s+been blocked\b|"
              r"\bare you a robot\b|\bcaptcha\b|\bunusual traffic\b|\battention required\b|\bjust a moment\b|"
              r"\bchecking your browser\b|\benable javascript and cookies\b|\bplease switch to a different browser\b|"
              r"\b403 forbidden\b|\byou don(?:'|’)?t have permission to access\b|\bbot detection\b|"
              r"\bsecurity check\b|\bver\w{0,3}y (?:that )?you are (?:a )?human\b")
 _BLOCK_WORDING = _re.compile(f"{_SITE_STATE}|{_BOT_WALL}")
+BLOCK_OTHER_SENTENCES = 5
 _HEADLINE = _re.compile(r"(?is)<(title|h1)\b[^>]*>(.*?)</\1\s*>")
 _SENTENCE_BREAK = _re.compile(r"(?<=[.!?…])\s+")
 
@@ -696,7 +699,8 @@ def _prose_sentences(text: str) -> list[str]:
 
 def block_reason(fetched: "Fetched") -> str | None:
     """'site served a block/maintenance page (...)' when the answer is an interstitial rather than the document: block
-    wording (see above) in the title or h1, or in most of the page's prose sentences. No length limit."""
+    wording (see above) in the title or h1; or in any prose sentence of a page with fewer than BLOCK_OTHER_SENTENCES
+    other prose sentences."""
     if fetched.status is not None and not 200 <= fetched.status < 300:
         return None        # an error status is reported as itself (403/404/451 could_not_access, others failed)
     if fetched.status is not None and fetched.status not in (200, 203):
@@ -715,9 +719,9 @@ def block_reason(fetched: "Fetched") -> str | None:
             return f"site served a block/maintenance page (“{hit}” in the {where}, {len(text)} characters of text)"
     prose = _prose_sentences(text)
     hits = [h for h in map(_block_hit, prose) if h]
-    if hits and 2 * len(hits) > len(prose):
-        return (f"site served a block/maintenance page (“{hits[0]}” in {len(hits)} of {len(prose)} prose "
-                f"sentences, {len(text)} characters of text)")
+    if hits and len(prose) - len(hits) < BLOCK_OTHER_SENTENCES:
+        return (f"site served a block/maintenance page (“{hits[0]}”, with {len(prose) - len(hits)} other prose "
+                f"sentence{'s' if len(prose) - len(hits) != 1 else ''}, {len(text)} characters of text)")
     return None
 
 
