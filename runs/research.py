@@ -853,6 +853,24 @@ def make_job_class():
             from capture.brave_search import NAME
             st = self.state[ticker]
             query = args["query"]
+            norm = " ".join(query.casefold().split())
+            with jobs.RUN_LOCK:
+                seen = self.research.setdefault("brave_answered", {}).get(norm)
+            if seen is not None:
+                # COMPACT-001 / SETTLE-001 (live brief-v2 run: one query sent ~15 times): an identical query already
+                # answered in this run is answered from memory, its URLs only: no new request, no charge. The repeat
+                # is recorded. A dedupe, not a limit: a different query always goes to Brave.
+                kept = {"call_id": cid, "status": "ok",
+                        "data": {"engine": NAME, "query": query, "urls": list(seen["urls"]), "already_searched": True,
+                                 "first_asked_at": seen["at"]},
+                        "note": "Already searched in this run; same results (no new request, no charge). Capture a "
+                                "lead with fetch_url, or search a different query."}
+                st["brave_calls"][cid] = kept
+                self.step(ticker, "repeat", "Code", "runs.research",
+                          f"Brave query “{query}” was already answered at {seen['at']}; its "
+                          f"{len(seen['urls'])} URLs were returned from memory, no new request.",
+                          engine=NAME, queries=[query], results=list(seen["urls"])[:20], call_id=cid)
+                return kept, False
             price = prices.request_cost_usd(NAME, 1)
             token = self.admit_paid(ticker, price)
             got = None
@@ -884,6 +902,8 @@ def make_job_class():
                       f"Searched with Brave Search: {query}. {len(got.urls)} result"
                       f"{'s' if len(got.urls) != 1 else ''} (leads, not evidence).",
                       engine=NAME, queries=[query], results=got.urls[:20], call_id=cid)
+            with jobs.RUN_LOCK:
+                self.research.setdefault("brave_answered", {})[norm] = {"urls": got.urls, "at": now_utc()}
             # the titles and snippets go to the model for this turn only (in memory); see redact_brave/compact
             return rc.envelope(cid, "ok", {"engine": NAME, "query": query, "results": got.results,
                                            "note": "Leads only: capture a source with fetch_url before citing it."}
@@ -1011,6 +1031,13 @@ def make_job_class():
                     st["compacted"].add(id(item))
 
         def t_fetch_url(self, ticker, cid, args, tool="fetch_url", title=None):
+            m = re.match(r"https?://(?:www\.)?clinicaltrials\.gov/(?:study|ct2/show)/(NCT[0-9]{8})", args["url"], re.I)
+            if m and tool == "fetch_url":
+                # the study page is built by JavaScript (it captures empty); the registry's v2 API record is captured
+                self.step(ticker, "fetch", "Code", "runs.research",
+                          f"{args['url']} is a ClinicalTrials.gov study page; capturing its registry record "
+                          f"{m[1].upper()} through the v2 API instead.", call_id=cid)
+                return self.t_fetch_ctgov(ticker, cid, {"nct_id": m[1].upper(), "query": None, "cursor": None})
             limited = self._fetch_allowed(ticker)
             if limited:
                 return rc.envelope(cid, "error", None, [rc.issue("limit", limited)]), False
@@ -1029,15 +1056,18 @@ def make_job_class():
                 return self._capture_failed(ticker, cid, url, str(e), tool), False
             with jobs.RUN_LOCK:
                 self.company(ticker)["fetches"] += 1
+            blocked = rs.block_reason(fetched)
+            if blocked:      # OUTCOME-001: an interstitial is never a captured source
+                return self._capture_failed(ticker, cid, url, blocked, tool, fetched, blocked=True), False
             try:
                 source = self.register_source(ticker, cid, fetched, tool, title)
             except rs.CaptureFailed as e:
                 return self._capture_failed(ticker, cid, url, str(e), tool, fetched), False
             return rc.envelope(cid, "ok", self.source_view(ticker, source, [1])), False
 
-        def _capture_failed(self, ticker, cid, url, reason, tool, fetched=None):
+        def _capture_failed(self, ticker, cid, url, reason, tool, fetched=None, blocked=False):
             status = getattr(fetched, "status", None)
-            refused = status in (403, 404, 451)
+            refused = blocked or status in (403, 404, 451)
             rec = {"at": now_utc(), "url": url, "tool": tool, "reason": reason, "http_status": status,
                    "retrieved_at": getattr(fetched, "retrieved_at", None),
                    "outcome": "could_not_access" if refused else "capture_failed"}
@@ -1045,15 +1075,19 @@ def make_job_class():
                 self.company(ticker)["capture_failures"].append(rec)
                 self.manifest.append("capture_failed", ticker=ticker, call_id=cid, **rec)
             if refused:
+                why = reason if blocked else f"HTTP {status}"
                 self.step(ticker, "fetch", "Code", "capture.research_sources",
-                          f"Could not access {url}: HTTP {status} at {rec['retrieved_at']}. Recorded; research goes on.",
+                          f"Could not access {url}: {why} at {rec['retrieved_at']}. Recorded; research goes on.",
                           call_id=cid)
                 return rc.envelope(cid, "error", {"url": url, "http_status": status,
                                                   "retrieved_at": rec["retrieved_at"]}, [rc.issue(
-                    "could_not_access", f"The site answered HTTP {status}, so nothing from it was captured. Look for "
-                                        f"the same document at its primary origin: the company's SEC filing (an 8-K "
-                                        f"EX-99 press release via fetch_edgar), the company's investor-relations page, "
-                                        f"or the issuer's wire release. Do not try to get around the refusal.")])
+                    "could_not_access", (f"The {reason}, so nothing from it was captured." if blocked else
+                                         f"The site answered HTTP {status}, so nothing from it was captured.")
+                                        + " Look for the same document at another primary origin: the company's SEC "
+                                          "filing (an 8-K EX-99 press release via fetch_edgar), the issuer's or the "
+                                          "partner's investor-relations site (for example investor.jnj.com), or its "
+                                          "wire release (PR Newswire, Business Wire, GlobeNewswire). Do not try to get "
+                                          "around the refusal.")])
             self.step(ticker, "fetch", "Code", "capture.research_sources",
                       f"Capture failed for {url}: {reason} Nothing from it can be cited; recorded as a limitation.",
                       call_id=cid)
@@ -1264,7 +1298,8 @@ def make_job_class():
                                              "title": f"{ticker} {f['form']}" + (f" ({f['description']})"
                                                                                  if f["description"] else "")
                                                       + f", filed {f['filing_date']}"}
-            start = int(args["cursor"] or 0) if str(args["cursor"] or "0").isdigit() else 0
+            cursor = _nullish(args["cursor"])
+            start = int(cursor) if cursor and cursor.isdigit() else 0
             page = listing[start:start + EDGAR_PAGE]
             nxt = str(start + EDGAR_PAGE) if start + EDGAR_PAGE < len(listing) else None
             self.step(ticker, "fetch", "Code", "capture.research_sources",
@@ -1274,7 +1309,9 @@ def make_job_class():
                                            "note": "Leads only: capture a document with fetch_url to cite it."}), False
 
         def t_fetch_ctgov(self, ticker, cid, args):
-            nct, query = (args["nct_id"] or "").strip() or None, (args["query"] or "").strip() or None
+            # live brief-v2 run: the model sends the string "null" for unused fields; it means null (HTTP 400 before)
+            nct, query = _nullish(args["nct_id"]), _nullish(args["query"])
+            args = {**args, "cursor": _nullish(args.get("cursor"))}
             if (nct is None) == (query is None):
                 return rc.envelope(cid, "error", None, [rc.issue("malformed_argument",
                                                                  "Give exactly one of nct_id and query.")]), False
@@ -1592,6 +1629,14 @@ def make_job_class():
             return rc.envelope(cid, "ok" if not issues else "partial", {"finished": True}, issues), True
 
     return ResearchJob
+
+
+def _nullish(v):
+    """None for a value a model meant as empty: None, "", "null", "none", "nil" (any case, padded)."""
+    if v is None:
+        return None
+    t = str(v).strip()
+    return None if t.lower() in ("", "null", "none", "nil", "undefined") else t
 
 
 def _html_title(body: bytes, kind: str) -> str | None:

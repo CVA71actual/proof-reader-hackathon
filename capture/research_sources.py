@@ -651,6 +651,39 @@ def capture_document(fetched: Fetched, run_dir: Path, source_id: str, *,
             "completeness": [completeness_fields(w) for _, w in pages]}
 
 
+# ---------------------------------------------------------------- block and interstitial pages (OUTCOME-001)
+
+# A site that serves its maintenance page, a bot wall or an access-denied page to our fetcher has given us nothing:
+# such a page is never a captured source (live brief-v2 run: jnj.com served "Site Maintenance" seven times and the
+# model read it as "nothing material"). Detected only on short pages, from the page's own words.
+BLOCK_PHRASES = ("site maintenance", "under maintenance", "access denied", "request blocked", "has been blocked",
+                 "are you a robot", "verify you are human", "verify you are a human", "captcha", "unusual traffic",
+                 "attention required", "just a moment", "checking your browser", "enable javascript and cookies",
+                 "please switch to a different browser", "temporarily unavailable", "403 forbidden",
+                 "you don't have permission to access", "bot detection", "security check")
+BLOCK_MAX_CHARS = 2000
+
+
+def block_reason(fetched: "Fetched") -> str | None:
+    """'site served a block/maintenance page (...)' when the answer is an interstitial rather than the document."""
+    if fetched.status is not None and not 200 <= fetched.status < 300:
+        return None        # an error status is reported as itself (403/404/451 could_not_access, others failed)
+    if fetched.status is not None and fetched.status not in (200, 203):
+        return f"site served a block/maintenance page (unusual status HTTP {fetched.status})"
+    if kind_of(fetched.content_type, fetched.body, fetched.final_url) != "html":
+        return None
+    text = readable_text(sanitize_html(fetched.body.decode("utf-8", errors="replace"))[0])
+    if len(text) > BLOCK_MAX_CHARS:
+        return None
+    low = " ".join(text.lower().split())
+    hit = next((p for p in BLOCK_PHRASES if p in low), None)
+    if hit:
+        return f"site served a block/maintenance page (“{hit}”, {len(text)} characters of text)"
+    if not low:
+        return "site served a block/maintenance page (no readable text)"
+    return None
+
+
 # ---------------------------------------------------------------- SEC listing (leads) and ClinicalTrials.gov
 
 

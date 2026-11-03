@@ -1690,3 +1690,77 @@ def test_a_length_cut_answer_dispatches_nothing_and_replays_nothing(runs_dir, ki
     turn = json.loads((runs_dir / rid / "research" / "turns" / "PTGX-001.json").read_text())
     assert turn["response"]["status"] == "incomplete"                         # kept for audit
     assert run["run"]["spend_usd"] > 0                                        # and settled
+
+
+# ---------------------------------------------------------------- live brief-v2 run: OUTCOME-001, ctgov, search dedupe
+
+JNJ = "https://www.jnj.com/media-center/press-releases/fda-approval-of-icotyde"
+JNJ_BLOCK = (REPO / "tests" / "fixtures" / "jnj_block_page.html").read_bytes()
+
+
+def test_a_maintenance_page_is_could_not_access_never_a_source(runs_dir):
+    wire = "https://www.prnewswire.com/news-releases/fda-approves-icotyde.html"
+    ev = F.event("ICOTYDE approval", "The FDA approved ICOTYDE on March 18, 2026.", date_text="March 18, 2026",
+                 date="2026-03-18")
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": JNJ, "purpose": "J&J release"}, "c0")]),
+        F.body([F.call("fetch_url", {"url": wire, "purpose": "the wire copy"}, "c1")]),
+        F.body([F.call("propose_events", {"events": [ev]}, "c2")]),
+        F.body([F.call("finish_draft", {"dispositions": [
+            {"row_id": "e1", "disposition": "context", "related_row_id": None, "reason": "x"}],
+            "limitations": []}, "c3")])])
+    _, rid, _ = start(runs_dir, reader, pages={
+        JNJ: (200, "text/html", JNJ_BLOCK),
+        wire: (200, "text/html", F.html("The FDA approved ICOTYDE on March 18, 2026."))})
+    out = json.loads(reader.requests[1]["input"][-1]["output"])
+    assert out["issues"][0]["code"] == "could_not_access"
+    msg = out["issues"][0]["message"]
+    assert "block/maintenance page" in msg and "PR Newswire" in msg and "investor.jnj.com" in msg
+    run = run_json(runs_dir, rid)
+    assert [s["url"] for s in run["sources"]] == [wire]                  # the block page is not a source
+    f = run["run"]["research"]["companies"]["PTGX"]["capture_failures"][0]
+    assert f["outcome"] == "could_not_access" and "site served a block/maintenance page" in f["reason"]
+    assert next(r for r in run["rows"] if r["id"] == "e1")["source_id"] == "src-r1-ptgx"
+
+
+def test_block_detection_spares_a_real_short_page():
+    ok = rs.Fetched("u", "u", 200, "text/html", F.html("Topline data in Q2 2027 for ICARUS."))
+    assert rs.block_reason(ok) is None
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", JNJ_BLOCK)).startswith("site served")
+    assert rs.block_reason(rs.Fetched("u", "u", 202, "text/html", b"<p>queued</p>")).startswith("site served")
+
+
+def test_ctgov_null_strings_are_null_and_study_pages_go_to_the_api(runs_dir):
+    study = json.dumps({"protocolSection": {"identificationModule": {"nctId": "NCT05210790", "briefTitle": "VERIFY"},
+                                            "statusModule": {"primaryCompletionDateStruct": {"date": "2026-12"}}}})
+    search = json.dumps({"studies": [json.loads(study)]})
+    pages = {rs.CTGOV_STUDY.format(nct="NCT05210790"): (200, "application/json", study.encode()),
+             rs.ctgov_search_url("rusfertide"): (200, "application/json", search.encode())}
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_ctgov", {"nct_id": "null", "query": "rusfertide", "cursor": "null"}, "c0")]),
+        F.body([F.call("fetch_url", {"url": "https://clinicaltrials.gov/study/NCT05210790", "purpose": "x"}, "c1")]),
+        F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "x"}, "c2")]),
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")])])
+    _, rid, tools = start(runs_dir, reader, pages=pages)
+    assert "pageToken" not in tools.fetcher.asked[0]
+    out0 = json.loads(reader.requests[1]["input"][-1]["output"])
+    assert out0["status"] == "ok" and out0["data"]["studies"][0]["nct_id"] == "NCT05210790"
+    run = run_json(runs_dir, rid)
+    src = run["sources"][0]
+    assert src["retrieval"]["tool"] == "fetch_ctgov" and src["url"].startswith("https://clinicaltrials.gov/api/v2/")
+    out1 = json.loads(reader.requests[2]["input"][-1]["output"])
+    assert any("primaryCompletionDateStruct.date: 2026-12" in l for l in out1["data"]["text"][0]["lines"])
+
+
+def test_an_identical_brave_query_is_answered_from_memory_without_a_request_or_charge(runs_dir):
+    brave = F.FakeBrave({"PTGX Q3 2026 earnings date": [PR1]})
+    script = [F.body([F.call("brave_search", {"query": "PTGX Q3 2026 earnings date", "count": 5}, "b1")]),
+              F.body([F.call("brave_search", {"query": "  ptgx q3 2026 EARNINGS date ", "count": 5}, "b2")]),
+              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])]
+    reader, rid = _brave_run(runs_dir, brave, extra=script)
+    assert brave.queries == ["PTGX Q3 2026 earnings date"]                  # one Brave request
+    out = json.loads(reader.requests[2]["input"][-1]["output"])
+    assert out["data"]["already_searched"] and out["data"]["urls"] == [PR1] and "same results" in out["note"]
+    meta = run_json(runs_dir, rid)["run"]
+    assert meta["research"]["companies"]["PTGX"]["brave_requests"] == 1
+    assert any(s["kind"] == "repeat" and s["refs"].get("engine") == "Brave Search" for s in meta["research"]["steps"])
