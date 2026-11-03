@@ -60,21 +60,20 @@ from runs.ids import reserve_row_numbers
 from runs.state import run_reference_date
 
 LABEL = rc.LABEL
-# RESEARCHER-FULL-001 S2 wiring: the labels a research result can carry (limits are appended after " — "). Never "verified".
-LABEL_REVIEWED_CLEAN = "Agent research — independently reviewed (no findings)"
-LABEL_REVIEWED_FINDINGS = "Agent research — independently reviewed with findings"
-LABEL_PARTIAL_FINDINGS = "Agent research — partly reviewed (incomplete), findings so far"
-# a complete review with no findings whose only gaps are recorded retrieval limits; always followed by them
-LABEL_REVIEWED_LIMITED = "Agent research — independently reviewed"
+# The labels (CLAIM-001 / MULTI-FAMILY-001) live in runs/research_labels.py: one derivation from the recorded review,
+# used when a review is saved and on every load (runs/check_load.bind_on_load).
+from runs.research_labels import (PRIMARY_REVIEWER, RESEARCHER_FAMILY, RESEARCHER_PROVIDER,  # noqa: E402
+                                  derive_review_labels, review_label)
+LABEL_REVIEWED_CLEAN = review_label("clean", PRIMARY_REVIEWER)
+LABEL_REVIEWED_FINDINGS = review_label("findings", PRIMARY_REVIEWER)
+LABEL_PARTIAL_FINDINGS = review_label("partial", PRIMARY_REVIEWER)
+LABEL_REVIEWED_LIMITED = review_label("limited", PRIMARY_REVIEWER)
 LABELS = (LABEL, LABEL_REVIEWED_CLEAN, LABEL_REVIEWED_FINDINGS, LABEL_PARTIAL_FINDINGS, LABEL_REVIEWED_LIMITED)
 # The review reserve: a code default (not a hidden limit; recorded in run.research.review_reserve and on the Agent
 # trail). Research is admitted only under (1 - fraction) of the run's spending cap, so the independent review always
 # has room to run; the review itself is admitted under the whole cap. No reserve is held when the reviewer cannot run.
 REVIEW_RESERVE_FRACTION = 0.15
 REVIEW_STAGE = "independent_review"
-# MULTI-FAMILY-001 (register): the producer's provider and model family, recorded beside the reviewer's
-RESEARCHER_PROVIDER = "meta"
-RESEARCHER_FAMILY = "Muse Spark (Meta)"
 DEFAULT_SPEND_CAP_USD = 30.0
 DEFAULT_CONCURRENCY = 3
 RESEARCH_TURN_LIMIT = 1_000_000     # a research run is not paused by the page-mode turn budget; turns are counted only
@@ -211,7 +210,7 @@ class ResearchTools:
     renderer and the ticker -> (cik, company) resolver. Tests pass fakes; the defaults are live."""
 
     def __init__(self, fetcher=None, render_html=None, resolve=None, brave=None, reviewer=None, adjudicator=None,
-                 support_detector=None):
+                 reviewer_fallback=None, support_detector=None):
         from capture import research_reviewer as rv
         from capture.brave_search import LiveBrave
         self.fetcher = fetcher or rs.LiveFetcher()
@@ -220,8 +219,10 @@ class ResearchTools:
         self.brave = brave if brave is not None else LiveBrave()      # BRAVE-PRIMARY-001: the primary search
         # S2: the independent reviewer (Muse Spark Open) and the adjudicator (Muse Wonder); tests pass fakes
         self.reviewer = reviewer if reviewer is not None else rv.reviewer_model()
-        # LETTUCE-OPTION: the support detector (None: capture/support_signal.py loads the pinned local weights from
-        # LETTUCE_WEIGHTS_PATH, or reports could_not_run); tests pass a fake
+        self.reviewer_fallback = (reviewer_fallback if reviewer_fallback is not None
+                                  else rv.fallback_reviewer_model())       # declared; used only if the reviewer is not
+        # LETTUCE-OPTION: the support detector (None: the out-of-process worker, capture/support_process.py, with
+        # LETTUCE_PYTHON and LETTUCE_WEIGHTS_PATH; could_not_run without them); tests pass a fake
         self.support_detector = support_detector
         self.adjudicator = adjudicator if adjudicator is not None else rv.adjudicator_model()
 
@@ -355,6 +356,9 @@ def make_job_class():
             self.state: dict[str, dict] = {}        # per company, in memory: sources, keys, call ids, history
             self.cap_reached: str | None = None     # set once the run's spend cap stops every company
             self.first_attempts: list[bool] = []    # empty? for the first five generation attempts of the run
+            import threading
+            self._access_lock = threading.Lock()     # the reviewer access check runs once per run
+            self._reviewer_pick: tuple | None = None
 
         # ------------------------------------------------------------ ledger
 
@@ -367,6 +371,8 @@ def make_job_class():
                 if isinstance(self.meta.get("prices"), dict):
                     self.meta["prices"]["per_1k_searches_usd"] = prices.search_snapshot()
                     self.meta["prices"]["per_1k_requests_usd"] = prices.request_snapshot()
+                    self.meta["prices"]["reviewer_per_1m_tokens_usd"] = {
+                        m: dict(v) for m, v in prices.REVIEWER_PRICES_PER_1M_USD.items()}
                 r = self.meta.setdefault("research", {})
                 r.setdefault("label", LABEL)
                 r["limits"] = dict(self.limits)
@@ -377,7 +383,7 @@ def make_job_class():
                         "company": None, "requests": 0, "searches": 0, "fetches": 0, "pages_delivered": 0,
                         "sources": 0, "proposals": 0, "spend_usd": 0.0, "unpriced_calls": 0,
                         "empty_answers": 0, "started_at": None, "finished_at": None, "limitation": None,
-                        "capture_failures": [], "finish": None})
+                        "capture_failures": [], "finish": None, "review_status": "queued"})
                 for k in ("steps", "refusals", "coverage", "consolidations", "repeats", "kill_conditions"):
                     r.setdefault(k, [])
                 if not isinstance(r.get("review"), dict) or "stage" in r["review"]:
@@ -511,13 +517,18 @@ def make_job_class():
 
         def reviewer_problem(self) -> str | None:
             """Why the independent reviewer cannot run in this process, or None."""
-            reviewer = getattr(self.tools, "reviewer", None)
-            if reviewer is None:
-                return "No independent reviewer is configured."
-            try:
-                return reviewer.ready()
-            except Exception as e:
-                return f"The reviewer could not be prepared ({type(e).__name__})."
+            problems = []
+            for reviewer in (getattr(self.tools, "reviewer", None), getattr(self.tools, "reviewer_fallback", None)):
+                if reviewer is None:
+                    continue
+                try:
+                    why = reviewer.ready()
+                except Exception as e:
+                    why = f"The reviewer could not be prepared ({type(e).__name__})."
+                if why is None:
+                    return None
+                problems.append(why)
+            return " ".join(problems) or "No independent reviewer is configured."
 
         def review_reserve(self) -> dict:
             """run.research.review_reserve: the share of the cap research leaves for the review (recorded, shown)."""
@@ -584,8 +595,9 @@ def make_job_class():
                                       f"({jobs.money(self.meta['spend_usd'] or 0)} spent).")
                 time.sleep(0.05)      # another call is in flight: queue behind it
 
-        def review_usage(self, ticker: str) -> dict:
-            return self.company(ticker).setdefault("review_usage", {
+        def review_usage(self, ticker: str | None) -> dict:
+            holder = self.company(ticker) if ticker is not None else self.research.setdefault("reviewer_access", {})
+            return holder.setdefault("review_usage", {
                 "model_requests": 0, "search_requests": 0, "fetches": 0, "spend_usd": 0.0, "unpriced_calls": 0,
                 "worst_case_charged_usd": 0.0})
 
@@ -606,7 +618,9 @@ def make_job_class():
                     name, bound = BRAVE, None
                     worst = prices.request_cost_usd(BRAVE, req.get("searches") or 1)
                 else:
-                    name = jobs.price_name(str(req.get("model") or ""))
+                    pn = req.get("price_name")
+                    name = pn if isinstance(pn, str) and prices.has_price(pn) else jobs.price_name(str(req.get("model")
+                                                                                                    or ""))
                     bound = int(req.get("request_bytes") or 0) + REQUEST_OVERHEAD_TOKENS
                     out = req.get("max_output_tokens")
                     worst = prices.cost_usd(name, bound, out) if isinstance(out, int) else None
@@ -784,59 +798,80 @@ def make_job_class():
             return rv.disputes_from_findings(record.get("findings") or [],
                                              [self.review_proposal(r) for r in rows_by_id.values()], ticker)
 
-        @staticmethod
-        def review_limits(record: dict) -> dict:
-            """What the review could not do, counted for the labels (OUTCOME-001 / CLAIM-001): sources it could not
-            open (a failed fetch, a captured source whose text could not be given) and searches that did not complete."""
-            lims = record.get("limitations") or []
-            sources_ = sum(1 for x in lims if x.get("kind") == "fetch") + len(record.get("sources_not_given") or [])
-            return {"sources_not_opened": sources_, "searches_not_completed": sum(1 for x in lims
-                                                                                  if x.get("kind") == "search")}
+        def reviewer_for_run(self, ticker: str) -> tuple:
+            """The reviewer for this run, decided ONCE: the primary unless it is not in the provider's model list or
+            the provider refuses the key for it (a 401/403 on a one-token access check); then the declared fallback.
+            The model list does not reflect key permissions, so the access check is a request."""
+            from capture import research_reviewer as rv
+            with self._access_lock:
+                if self._reviewer_pick is not None:
+                    return self._reviewer_pick
+                primary, fallback = self.tools.reviewer, getattr(self.tools, "reviewer_fallback", None)
+                model, choice = rv.choose_reviewer(primary, fallback)
+                access = {"checked": False, "reason": "No access check was made."}
+                if not choice["fallback_used"] and callable(getattr(primary, "probe", None)):
+                    access = self.probe_reviewer(primary)
+                with jobs.RUN_LOCK:
+                    self.research.setdefault("reviewer_access", {}).update(
+                        {"model": getattr(primary, "model", None), "name": rv.identity(primary)["name"], **access})
+                if access.get("refused") and fallback is not None:
+                    self._reviewer_pick = self.refused_reviewer(ticker, access, locked=True)
+                    return self._reviewer_pick
+                if choice.get("fallback_used"):
+                    self.step(ticker, "review", "Code", "runs.research",
+                              f"{choice['primary']} is unavailable ({choice['primary_unavailable']}); the declared "
+                              f"fallback {choice['name']} reviews instead. It is the researcher's own model family, so "
+                              f"the review is not called independent.", stage=REVIEW_STAGE)
+                self._reviewer_pick = (model, choice)
+                return self._reviewer_pick
 
-        @staticmethod
-        def limits_text(limits: dict) -> str:
-            n, m = limits.get("sources_not_opened", 0), limits.get("searches_not_completed", 0)
-            parts = ([f"{n} source{'s' if n != 1 else ''} could not be opened"] if n else []) + \
-                    ([f"{m} search{'es' if m != 1 else ''} did not complete"] if m else [])
-            return (" — " + "; ".join(parts)) if parts else ""
+        def probe_reviewer(self, primary) -> dict:
+            """One request with a one-token reply, through the run's gate; records whether the key may use the
+            model. Not a retry and not part of a review."""
+            from capture import research_reviewer as rv
+            gate = self.review_gate(None)
+            ticket = gate({"phase": "reserve", "stage": "reviewer_access", "kind": "model",
+                           "model": getattr(primary, "model", None),
+                           "price_name": getattr(primary, "price_name", None) or rv.identity(primary)["name"],
+                           "request_bytes": 200, "max_output_tokens": rv.PROBE_MAX_TOKENS, "searches": 0})
+            if not ticket or ticket.get("admitted") is False:
+                return {"checked": False, "reason": f"The access check was not admitted: "
+                                                    f"{(ticket or {}).get('reason')}"}
+            reply = None
+            try:
+                reply = primary.probe()
+            finally:
+                gate({"phase": "settle", "ticket": ticket, "stage": "reviewer_access", "kind": "model",
+                      "usage": {"prompt_tokens": getattr(reply, "prompt_tokens", None),
+                                "completion_tokens": getattr(reply, "completion_tokens", None), "searches": 0},
+                      "error": getattr(reply, "error", None) if reply is not None else "No access check reply.",
+                      "may_have_been_billed": bool(getattr(reply, "may_have_been_billed", False))})
+            if reply is None:
+                return {"checked": False, "reason": "The reviewer model has no access check."}
+            refused = reply.http_status in rv.REFUSED_STATUSES
+            return {"checked": True, "at": now_utc(), "refused": refused, "http_status": reply.http_status,
+                    "message": reply.error if reply.error else None}
 
-        @staticmethod
-        def base_label(status: str | None, clean: bool, has_findings: bool, only_limits: bool) -> str:
-            """'independently reviewed ...' only for a COMPLETE review; findings from a review that did not finish
-            read 'partly reviewed (incomplete), findings so far'; a complete review whose only gaps are recorded
-            retrieval limits reads 'independently reviewed' plus them (never clean); nothing else claims a review."""
-            if status == "complete":
-                if clean:
-                    return LABEL_REVIEWED_CLEAN
-                if has_findings:
-                    return LABEL_REVIEWED_FINDINGS
-                return LABEL_REVIEWED_LIMITED if only_limits else LABEL
-            return LABEL_PARTIAL_FINDINGS if has_findings else LABEL
-
-        def with_limits(self, base: str, limits: dict) -> str:
-            return base if base in (LABEL, LABEL_REVIEWED_CLEAN) else base + self.limits_text(limits)
-
-        def run_review_label(self) -> str:
-            """The run's label: reviewed (no findings) only when every company's review is complete and clean;
-            'independently reviewed ...' only when every company's review is complete; partly reviewed when findings
-            exist but some review did not complete; otherwise not independently reviewed. Retrieval limits of any
-            company are carried in the run label."""
-            reviews = self.research.get("review") or {}
-            entries = [reviews.get(t) for t in self.research["companies"]]
-            done = [e for e in entries if isinstance(e, dict)]
-            limits = {k: sum((e.get("limits") or {}).get(k, 0) for e in done)
-                      for k in ("sources_not_opened", "searches_not_completed")}
-            bases = [e.get("label_base", e.get("label")) for e in done]
-            if done and len(done) == len(entries) and all(b == LABEL_REVIEWED_CLEAN for b in bases):
-                return LABEL_REVIEWED_CLEAN
-            if done and len(done) == len(entries) and all(e.get("status") == "complete" for e in done):
-                if any(b == LABEL_REVIEWED_FINDINGS for b in bases):
-                    return self.with_limits(LABEL_REVIEWED_FINDINGS, limits)
-                if all(b in (LABEL_REVIEWED_CLEAN, LABEL_REVIEWED_LIMITED) for b in bases):
-                    return self.with_limits(LABEL_REVIEWED_LIMITED, limits)
-            if any(b in (LABEL_REVIEWED_FINDINGS, LABEL_PARTIAL_FINDINGS) for b in bases):
-                return self.with_limits(LABEL_PARTIAL_FINDINGS, limits)
-            return LABEL
+        def refused_reviewer(self, ticker: str, refusal: dict, locked: bool = False) -> tuple:
+            """The provider refused the key for the primary reviewer: record it, never retry it, and use the declared
+            fallback for the rest of the run (same family: the label says so; MULTI-FAMILY-001 is not met)."""
+            from capture import research_reviewer as rv
+            primary, fallback = self.tools.reviewer, self.tools.reviewer_fallback
+            why = (f"refused by the provider (HTTP {refusal.get('http_status')}): "
+                   f"{refusal.get('message') or 'access refused'}")
+            choice = {**rv.identity(fallback), "fallback_used": True, "primary": rv.identity(primary)["name"],
+                      "primary_unavailable": why, "primary_refused": {k: refusal.get(k) for k in
+                                                                      ("http_status", "message")}}
+            with jobs.RUN_LOCK:
+                self.research.setdefault("reviewer_access", {}).update(
+                    {"refused": True, "http_status": refusal.get("http_status"), "message": refusal.get("message"),
+                     "fallback": choice["name"]})
+            self.step(ticker, "review", "Code", "runs.research",
+                      f"{choice['primary']} was {why}. It is not retried; the declared fallback {choice['name']} "
+                      f"reviews instead. It is the researcher's own model family, so the review is not called "
+                      f"independent (MULTI-FAMILY-001 not met for this run).", stage=REVIEW_STAGE)
+            self._reviewer_pick = (fallback, choice)
+            return self._reviewer_pick
 
         def review_company(self, ticker: str, ended_kind: str, ended_reason: str) -> dict:
             """After a company's research ends (for any reason but a person's stop), the independent reviewer attacks
@@ -854,6 +889,10 @@ def make_job_class():
                 adj = {"stage": "adjudication", "status": "not_run", "reason": "The review did not run.",
                        "outcomes": [], "skipped": [], "usage": None}
                 return self.save_review(ticker, rows, record, adj, ended, started, [])
+            with jobs.RUN_LOCK:      # DRYRUN-3: a finished company is not "done" while its review runs
+                self.company(ticker)["review_status"] = "reviewing"
+                self.save_ledger()
+            reviewer, choice = self.reviewer_for_run(ticker)
             st = self.ensure_state(ticker)
             given, not_given = [], []
             for s in st["sources"].values():
@@ -868,14 +907,25 @@ def make_job_class():
             self.step(ticker, "review", "Code", "runs.research",
                       f"Independent review of {ticker} started after its research ended ({ended_kind}): "
                       f"{len(rows)} proposal{'s' if len(rows) != 1 else ''} and {len(given)} captured source"
-                      f"{'s' if len(given) != 1 else ''} sent to {rv.REVIEWER_NAME}; its own search is Brave Search.",
+                      f"{'s' if len(given) != 1 else ''} sent to {choice['name']}; its own search is Brave Search.",
                       stage=REVIEW_STAGE)
             fetched: list[dict] = []
             try:
                 record = rv.review_draft(company=company, assignment=self.choices.get("note_for_agent") or "",
                                          proposals=[self.review_proposal(r) for r in rows], sources=given,
                                          search=self.review_search(ticker), fetch_capture=self.review_fetch(ticker, fetched),
-                                         spend_gate=self.review_gate(ticker), model=self.tools.reviewer)
+                                         spend_gate=self.review_gate(ticker), model=reviewer)
+                refused = record.get("access_refused")
+                fallback = getattr(self.tools, "reviewer_fallback", None)
+                if refused and not choice.get("fallback_used") and fallback is not None:
+                    # the provider refused the key for this model on a real call: never retried; the declared fallback
+                    # reviews this company and every later one in the run
+                    reviewer, choice = self.refused_reviewer(ticker, refused)
+                    record = rv.review_draft(company=company, assignment=self.choices.get("note_for_agent") or "",
+                                             proposals=[self.review_proposal(r) for r in rows], sources=given,
+                                             search=self.review_search(ticker),
+                                             fetch_capture=self.review_fetch(ticker, fetched),
+                                             spend_gate=self.review_gate(ticker), model=reviewer)
             except Exception as e:      # the type only: nothing that could carry request details
                 record = {"stage": REVIEW_STAGE, "status": "incomplete", "clean": False, "findings": [],
                           "rejected": [], "limitations": [],
@@ -905,7 +955,7 @@ def make_job_class():
                 adj = {"stage": "adjudication", "status": "not_needed",
                        "reason": "No finding disputes a row's reading, so nothing was sent to Muse Wonder.",
                        "outcomes": [], "skipped": [], "usage": None}
-            return self.save_review(ticker, rows, record, adj, ended, started, disputes)
+            return self.save_review(ticker, rows, record, adj, ended, started, disputes, choice)
 
         @staticmethod
         def finding_basis(row: dict) -> str:
@@ -914,13 +964,14 @@ def make_job_class():
             spans = [[e.get("source_id"), e.get("page_number"), e.get("quote")] for e in r.get("evidence") or []]
             return hashlib.sha256(json.dumps([r.get("revision"), spans], sort_keys=True).encode()).hexdigest()
 
-        def save_review(self, ticker, rows, record, adj, ended, started, disputes) -> dict:
+        def save_review(self, ticker, rows, record, adj, ended, started, disputes, choice=None) -> dict:
             """Persist one review attempt. Earlier findings are never dropped (Red Team PR177_21e10cd): one whose row
             revision or evidence changed is stale (IDENTITY-001); otherwise it stays current until a later COMPLETE
             review addresses that row and finds it resolved (no repeat finding of that kind, and the row assessed
             no_issue on the same revision). A repeat in a complete review supersedes it. New findings are added."""
             from capture import research_reviewer as rv
             at = now_utc()
+            who_ran = {k: (choice or {}).get(k) for k in ("name", "model", "provider", "family")} if choice else None
             rows_by_id = {r["id"]: r for r in rows}
             outcomes = {o.get("dispute_id"): o for o in adj.get("outcomes") or []}
             reviewed = {(str(x["row_id"]), str(x["revision_id"]))
@@ -978,11 +1029,6 @@ def make_job_class():
                             "basis": self.finding_basis(row),
                             "evidence": f["evidence"], "review_status": status,
                             "reviewed_at": at, "adjudication": adjudication})
-                company_has = False
-                limits = self.review_limits(record)
-                only_limits = (status == "complete" and not record.get("findings") and not record.get("rejected")
-                               and not record.get("cited_pages_unread") and not record.get("rows_not_assessed")
-                               and any(limits.values()))
                 for row in rows:
                     rev = row["research"]["revision"]
                     # reviewed_revision: the revision a COMPLETED review covered; null when the review did not finish
@@ -995,39 +1041,28 @@ def make_job_class():
                         "reviewed_revision": rev if reviewed_this else (
                             prev.get("reviewed_revision") if status != "complete" and
                             prev.get("reviewed_revision") == rev else None)}
-                    current = [f for f in row["research"]["review_findings"] if f.get("current")]
-                    company_has = company_has or bool(current)
-                    # CLAIM-001 (Red Team PR177_8cd269a): "independently reviewed" only when the LATEST attempt is
-                    # complete; findings carried through an attempt that did not complete read "partly reviewed"
-                    if status == "complete" and current:
-                        base = LABEL_REVIEWED_FINDINGS
-                    elif current:
-                        base = LABEL_PARTIAL_FINDINGS
-                    elif status == "complete" and record.get("clean") and reviewed_this:
-                        base = LABEL_REVIEWED_CLEAN
-                    elif only_limits and reviewed_this:
-                        base = LABEL_REVIEWED_LIMITED
-                    else:
-                        base = LABEL
-                    row["research"]["label"] = self.with_limits(base, limits)
                 omissions = [f for f in record.get("findings") or [] if not f["row_revision_ids"]]
                 carried_omissions = [o for o in (prior or {}).get("unbound_findings") or []]   # never silently dropped
                 unbound = carried_omissions + [{**f, "attempt": attempt, "review_status": status} for f in omissions]
-                label_base = self.base_label(status, bool(record.get("clean")), company_has or bool(unbound),
-                                             only_limits)
-                label = self.with_limits(label_base, limits)
                 attempts = (prior.get("attempts") or []) + [{k: prior.get(k) for k in (
                     "attempt", "status", "reason", "label", "started_at", "finished_at")}] if prior else []
                 entry = {"stage": REVIEW_STAGE, "ticker": ticker, "attempt": attempt, "status": status,
-                         "reason": record.get("reason"), "clean": bool(record.get("clean")), "label": label,
-                         "label_base": label_base, "limits": limits,
-                         "reviewer": rv.REVIEWER_NAME, "adjudicator": rv.ADJUDICATOR_NAME, "search": "Brave Search",
+                         "reason": record.get("reason"), "clean": bool(record.get("clean")),
+                         "reviewer": (who_ran or {}).get("name"), "reviewer_ran": who_ran, "reviewer_choice": choice,
+                         "adjudicator": rv.ADJUDICATOR_NAME, "search": "Brave Search",
                          "families": {
                              "researcher": {"model": getattr(self.reader, "model", None),
                                             "provider": RESEARCHER_PROVIDER, "family": RESEARCHER_FAMILY},
-                             "reviewer": {"model": record.get("model") or getattr(self.tools.reviewer, "model", None),
-                                          "provider": rv.REVIEWER_PROVIDER, "family": rv.REVIEWER_FAMILY},
-                             "same_family": RESEARCHER_FAMILY == rv.REVIEWER_FAMILY},
+                             "reviewer": {"name": (who_ran or {}).get("name"),
+                                          "model": record.get("model") or (who_ran or {}).get("model"),
+                                          "provider": (who_ran or {}).get("provider"),
+                                          "family": (who_ran or {}).get("family")},
+                             "adjudicator": {"name": rv.ADJUDICATOR_NAME, "provider": rv.ADJUDICATOR_PROVIDER,
+                                             "family": rv.ADJUDICATOR_FAMILY},
+                             "same_family": (who_ran or {}).get("family") == RESEARCHER_FAMILY},
+                         "multi_family": {"met": bool(who_ran) and (who_ran or {}).get("family") != RESEARCHER_FAMILY,
+                                          "reason": ((choice or {}).get("primary_unavailable")
+                                                     if (who_ran or {}).get("family") == RESEARCHER_FAMILY else None)},
                          "research_ended": ended, "started_at": started, "finished_at": at,
                          "reviewed_basis": sorted([list(k) for k in reviewed]),
                          "disputes": [{"dispute_id": d["dispute_id"], "finding_id": d["finding_id"],
@@ -1037,17 +1072,26 @@ def make_job_class():
                          "review": record, "adjudication": adj, "usage": dict(self.review_usage(ticker)),
                          "attempts": attempts}
                 self.research.setdefault("review", {})[ticker] = entry
+                self.company(ticker)["review_status"] = {"complete": "done"}.get(status, status or "incomplete")
+                derive_review_labels(self.run)          # every label, from the record (the same function as on load)
+                label = entry["label"]
                 self.save_ledger()
             for f in record.get("findings") or []:
                 o = outcomes.get(f"{ticker}-{f['finding_id']}")
                 rows_txt = ", ".join(f"{x['row_id']} rev {x['revision_id']}" for x in f["row_revision_ids"]) or "no row"
-                self.step(ticker, "finding", "Model", rv.REVIEWER_NAME,
+                self.step(ticker, "finding", "Model", f.get("by") or (who_ran or {}).get("name") or rv.REVIEWER_NAME,
                           f"Finding {f['finding_id']} ({f['kind'].replace('_', ' ')}) on {rows_txt}: {f['text'][:600]}"
                           + (f" — {rv.ADJUDICATOR_NAME}: {o['outcome'].replace('_', ' ')}"
                              + (f" ({o['reason'][:200]})" if o.get("reason") else "") + "; never a human acceptance."
                              if o else ""),
                           stage=REVIEW_STAGE, finding_id=f["finding_id"], finding_kind=f["kind"],
                           rows=[x["row_id"] for x in f["row_revision_ids"]])
+            for k, x in enumerate(record.get("ignored_finishes") or [], 1):
+                self.step(ticker, "repeat", "Model", (who_ran or {}).get("name") or rv.REVIEWER_NAME,
+                          f"finish_review came beside other calls (turn {x.get('turn')}); "
+                          + ("it was ignored and the reviewer was reminded to send it on its own."
+                             if k == 1 else "it was ignored again, so the review ended incomplete."),
+                          stage=REVIEW_STAGE, turn=x.get("turn"))
             lims = record.get("limitations") or []
             self.step(ticker, "review", "Code", "runs.research",
                       f"Independent review of {ticker}: {record.get('status')}. {record.get('reason')}"
@@ -1063,7 +1107,7 @@ def make_job_class():
 
         def finish_review_labels(self) -> None:
             with jobs.RUN_LOCK:
-                self.research["label"] = self.run_review_label()
+                derive_review_labels(self.run)
 
         def review_only(self, tickers: list[str] | None = None, note: str | None = None) -> None:
             """Review an EXISTING run's saved draft without researching again (tools/research_smoke.py --review)."""
@@ -1137,7 +1181,8 @@ def make_job_class():
                 kind, reason = "failed", f"Technical failure: an unexpected error ({type(e).__name__})."
             with jobs.RUN_LOCK:
                 c["status"] = {"finished": "finished", "failed": "failed"}.get(kind, "stopped")
-                c["status_reason"] = reason
+                # CLAIM-001 / UNKNOWN-001: the outcome line counts code-recorded access and search failures too
+                c["status_reason"] = f"{reason} {rc.limitation_sentence(c)}"
                 c["finished_at"] = now_utc()
                 if kind != "finished":
                     c["limitation"] = {"kind": kind, "reason": reason, "at": now_utc(),
@@ -1921,7 +1966,7 @@ def make_job_class():
 
         def sec_filing_lead(self, ticker: str, cid: str, url: str) -> dict | None:
             """An SEC archive document captured by its URL (an exhibit, say) takes its filing date from the filer's
-            submissions list, matched by accession: without it 'by year-end' or a yearless day has no year to count
+            submissions list, matched by accession: without it 'by year-end' has no year to count
             from (live run 3). One SEC metadata request per filer, cached; recorded in the manifest."""
             m = re.search(r"/Archives/edgar/data/(\d+)/(\d{18})/", url or "")
             if not m:
@@ -2086,7 +2131,8 @@ def make_job_class():
         def t_revise(self, ticker, cid, args):
             result = self.intake(ticker, cid, 0, args["event"], (args["id"], args["expected_revision"]))
             self.save_ledger()
-            return rc.envelope(cid, "ok" if result["status"] == "checked" else "partial", {"events": [result]}), False
+            return rc.envelope(cid, "ok" if result["status"] in ("checked", "unchanged") else "partial",
+                               {"events": [result]}), False
 
         def intake(self, ticker: str, cid: str, n: int, ev: dict, revision: tuple | None = None) -> dict:
             st = self.state[ticker]
@@ -2096,7 +2142,7 @@ def make_job_class():
                                                           f"{ev['ticker']}.", f"events[{n}]")]
             else:
                 problems = rc.event_runtime_issues(ev, n, st["sources"])
-            existing = None
+            existing, update = None, "repair" if revision is not None else None
             if not problems and revision is not None:
                 rid, rev = revision
                 existing = next((r for r in self.run["rows"] if r["id"] == rid and r.get("research")
@@ -2107,9 +2153,21 @@ def make_job_class():
                 elif existing["research"]["revision"] != rev:
                     problems = [rc.issue("stale_revision", f"revise_event expected_revision: {rid} is at revision "
                                                            f"{existing['research']['revision']}, not {rev}.", rid)]
+                elif existing["research"].get("evidence_key") == rc.evidence_key(ev):
+                    # an identical replay is a no-op, never another revision
+                    self.step(ticker, "check", "Code", "runs.research_contract",
+                              f"revise_event for {rid} repeats revision {rev} exactly: no new revision.",
+                              call_id=cid, row_id=rid)
+                    return {"index": n, "status": "unchanged", "id": rid, "revision": rev,
+                            "issues": existing["research"]["issues"]}
+                elif self.evidence_update(existing, ev) is None:
+                    update = "evidence_update"
                 elif not existing["research"]["feedback"]["repair_open"]:
                     problems = [rc.issue("repair_not_offered", f"{rid} already had its one repair; it stays "
-                                                               f"recorded for a person.", rid)]
+                                                               f"recorded for a person. A revision that only ADDS "
+                                                               f"newly captured evidence (every existing span kept, "
+                                                               f"the event itself unchanged) is accepted at any time: "
+                                                               f"{self.evidence_update(existing, ev)}", rid)]
             if problems:
                 with jobs.RUN_LOCK:
                     self.research["refusals"].append({"at": at, "ticker": ticker, "call_id": cid, "index": n,
@@ -2126,7 +2184,7 @@ def make_job_class():
                           f"Proposal {n + 1} repeats {rid} exactly (same event and evidence): the same row.",
                           call_id=cid, row_id=rid)
                 return {"index": n, "status": "duplicate", "id": rid, "issues": []}
-            row = self.build_row(ticker, cid, ev, existing, at)
+            row = self.build_row(ticker, cid, ev, existing, at, update)
             issues = row["research"]["issues"]
             for span in ev["evidence"]:
                 self.settle(ticker, span["source_id"], row["id"])
@@ -2164,7 +2222,40 @@ def make_job_class():
                 out["linked_near_duplicates"] = row["research"]["near_duplicates"]
             return out
 
-        def build_row(self, ticker: str, cid: str, ev: dict, existing: dict | None, at: str) -> dict:
+        @staticmethod
+        def proposed_fields(ev: dict) -> dict:
+            return {k: copy.deepcopy(v) for k, v in ev.items() if k != "evidence"}
+
+        @staticmethod
+        def span_key(sp: dict) -> list:
+            return [sp.get("source_id"), sp.get("page_number"), sp.get("quote"), sp.get("word_ids"),
+                    sorted(sp.get("roles") or [])]
+
+        def evidence_update(self, existing: dict, ev: dict) -> str | None:
+            """5c (Codex finish decisions): None when `ev` is an evidence update of `existing` (the event itself
+            unchanged, every existing span kept in place, at least one span added); otherwise why not."""
+            r = existing["research"]
+            before = r.get("proposed")
+            if before is None:      # a row made before the proposal was kept: compare what the row records
+                before = None
+                same = all(existing.get(k) == ev.get(k) for k in ("title", "date_text", "date", "date_end",
+                                                                  "conditions", "program", "indication"))
+                same = same and r.get("primary_span_index") == ev.get("primary_span_index")
+            else:
+                same = before == self.proposed_fields(ev)
+            if not same:
+                return "the event fields differ from the current revision (that is a repair, not an evidence update)."
+            old = [self.span_key(sp) for sp in existing["research"].get("proposed_evidence")
+                   or ev["evidence"][:0]] or [self.span_key(sp) for sp in r["evidence"]]
+            new = [self.span_key(sp) for sp in ev["evidence"]]
+            if new[:len(old)] != old:
+                return "every existing evidence span must be kept, in its place."
+            if len(new) <= len(old):
+                return "no evidence was added."
+            return None
+
+        def build_row(self, ticker: str, cid: str, ev: dict, existing: dict | None, at: str,
+                      update: str | None = None) -> dict:
             st = self.state[ticker]
             spans, words_by_span = [], []
             for span in ev["evidence"]:
@@ -2206,7 +2297,10 @@ def make_job_class():
                         "placement_proposal": ev["placement_proposal"], "prior_row_ids": list(ev["prior_row_ids"]),
                         "conditions_state": ("not_established" if ev["conditions"] is None else
                                              "none_stated" if ev["conditions"] == [] else "stated"),
-                        "near_duplicates": [], "revisions": [], "evidence_key": rc.evidence_key(ev)}
+                        "near_duplicates": [], "revisions": [], "evidence_key": rc.evidence_key(ev),
+                        "proposed": self.proposed_fields(ev),
+                        "proposed_evidence": copy.deepcopy(ev["evidence"]),
+                        "update": update or "proposal"}
             timing_ctx = row.get("research") or {}
             row["research"] = research
             research["timing_span_index"] = timing_k
@@ -2221,13 +2315,22 @@ def make_job_class():
                 old = {kk: copy.deepcopy(v) for kk, v in existing.items() if kk not in ("trail", "research")}
                 research["revisions"] = existing["research"]["revisions"] + [{
                     "revision": existing["research"]["revision"], "row": old,
-                    "issues": existing["research"]["issues"], "evidence": existing["research"]["evidence"]}]
-                research["feedback"] = {"repair_open": False, "given_at": existing["research"]["feedback"]["given_at"],
-                                        "repaired_at": at}
+                    "issues": existing["research"]["issues"], "evidence": existing["research"]["evidence"],
+                    "replaced_by": update or "repair"}]
+                if update == "evidence_update":
+                    # 5c: new captured evidence, not a mistake caught; the one repair allowance is untouched
+                    research["feedback"] = copy.deepcopy(existing["research"]["feedback"])
+                    text = (f"Revision {revision} added newly captured evidence to revision {revision - 1} (an "
+                            f"evidence update, not a repair); every earlier span is kept and the earlier revision is "
+                            f"in its history.")
+                else:
+                    research["feedback"] = {"repair_open": False,
+                                            "given_at": existing["research"]["feedback"]["given_at"],
+                                            "repaired_at": at}
+                    text = (f"Revision {revision} replaced revision {revision - 1} after the typed feedback; the "
+                            f"earlier revision is kept in its history.")
                 row["trail"] = existing["trail"] + [s for s in row["trail"] if s["step"] in ("Checked", "Researched")]
-                row["trail"].append({"step": "Revised", "tag": "Code", "who": "runs.research", "at": at,
-                                     "text": f"Revision {revision} replaced revision {revision - 1} after the typed "
-                                             f"feedback; the earlier revision is kept in its history."})
+                row["trail"].append({"step": "Revised", "tag": "Code", "who": "runs.research", "at": at, "text": text})
             return row
 
         def apply_timing_span(self, row, ev, k, one_page, words_by_span, consumed, at) -> int | None:
@@ -2247,7 +2350,7 @@ def make_job_class():
             from runs.claim_assessment import timing_snapshot
             tpage = next(p for p in tsrc["pages"] if p["page_number"] == span["page_number"])
             _, t_consumed = sources.load_page_evidence(self.dir, tpage)
-            today = event_checks.release_day(words, tsrc.get("published_date"))
+            today = event_checks.release_day(words, tsrc.get("published_date"), anchor=span["quote"])
             row["research"] = {"timing": timing_snapshot(tsrc, tpage, span["quote"], t_consumed),
                                "timing_release_day": today[0].isoformat() if today else None}
             results = recheck.row_checks(row, one_page, words_by_span[k], consumed_artifact=consumed)
@@ -2363,7 +2466,7 @@ def make_job_class():
                 if not open_:
                     c["status_reason"] = (f"The model finished: {len(mine)} proposal{'s' if len(mine) != 1 else ''}, "
                                           f"{len(args['limitations'])} limitation"
-                                          f"{'s' if len(args['limitations']) != 1 else ''} recorded."
+                                          f"{'s' if len(args['limitations']) != 1 else ''} stated by the model."
                                           + (f" {len(missing)} without a disposition." if missing else ""))
             if open_:
                 self.step(ticker, "check", "Code", "runs.research_contract",
