@@ -1927,12 +1927,26 @@ def test_research_s1_ui_surfaces():
         "    text: 'Proposed 1 event', refs: { row_id: 'e1' } },",
         "  { n: 4, at: '2026-11-02T10:06:00Z', ticker: 'ACME', kind: 'check', tag: 'Code', who: 'Code',",
         "    text: 'Quote check: pass' } ];",
-        "var tb = textOf(researchTrailBlock(steps));",
+        "var tb = textOf(researchTrailBlock({ steps: steps }));",
         "if (tb.indexOf('Agent research — not independently reviewed') === -1) { console.error('trail title'); process.exit(2); }",
         "if (tb.indexOf('Muse Spark') === -1 || tb.indexOf('Search') === -1 || tb.indexOf('Searched: ACME phase 3 results 2027') === -1)",
         "  { console.error(tb); process.exit(3); }",
         "if (tb.indexOf('Fetch') === -1 || tb.indexOf('Proposal') === -1 || tb.indexOf('Check') === -1)",
         "  { console.error('kinds'); process.exit(4); }",
+        # G1-1: a module path never prints as the actor — the tag 'Code' does
+        "var mod = textOf(researchTrailBlock({ steps: [",
+        "  { at: '2026-11-02T10:00:00Z', kind: 'start', who: 'runs.research', tag: 'Code', text: 'Started.' },",
+        "  { at: '2026-11-02T10:00:01Z', kind: 'search', who: 'capture.research_sources', tag: 'Code', text: 'Listed.' },",
+        "  { at: '2026-11-02T10:00:02Z', kind: 'request', who: 'Muse Spark', tag: 'Model', text: 'Sent.' } ] }));",
+        "if (mod.indexOf('runs.research') !== -1 || mod.indexOf('capture.research_sources') !== -1)",
+        "  { console.error(mod); process.exit(15); }",
+        "if (mod.indexOf('Started.') === -1 || mod.indexOf('Listed.') === -1 || mod.indexOf('Muse Spark') === -1)",
+        "  { console.error(mod); process.exit(16); }",
+        # the record's own label leads the block when there is one
+        "var lbl = textOf(researchTrailBlock({ label: 'Agent research — partly reviewed by Muse Spark Open (same model family as the researcher) (incomplete), findings so far',",
+        "  steps: [ { at: 't', kind: 'review', who: 'Muse Spark Open', tag: 'Model', text: 'Reviewed.' } ] }));",
+        "if (lbl.indexOf('partly reviewed by Muse Spark Open') === -1 || lbl.indexOf('not independently reviewed') !== -1)",
+        "  { console.error(lbl); process.exit(17); }",
         # per-company progress
         "var cb = textOf(researchCompanyBlock({ ACME: { status: 'researching', requests: 5, searches: 12,",
         "  fetches: 4, pages_delivered: 9, spend_usd: 0.42, status_reason: '' }, BTBR: { status: 'failed',",
@@ -2071,7 +2085,7 @@ def test_source_view_check_and_scroll_survive_background_polling():
 
 
     # wiring pins: each surface renders from run.research / row.research
-    for word in ("function runResearch(", "researchTrailBlock(rs.steps)",
+    for word in ("function runResearch(", "researchTrailBlock(rs)",
                  "researchCompanyBlock(runResearch() && runResearch().companies)",
                  "researchNotFoundBlock(runResearch() && runResearch().coverage)",
                  "researchLabelLine(row)", "researchContextSection(row)",
@@ -2142,7 +2156,7 @@ def test_research_s1_surfaces_read_the_real_get_envelope(tmp_path):
         "const kinds = {}; rs.steps.forEach(s => kinds[s.kind] = true);",
         "for (const k of ['request', 'search', 'fetch', 'proposal', 'check', 'coverage', 'finish'])",
         "  if (!kinds[k]) { console.error('missing step kind ' + k); process.exit(3); }",
-        "const tb = textOf(H.ev('researchTrailBlock')(rs.steps)).join(' ');",
+        "const tb = textOf(H.ev('researchTrailBlock')(rs)).join(' ');",
         "if (tb.indexOf('Agent research — not independently reviewed') === -1 || tb.indexOf('Search') === -1)",
         "  { console.error(tb.slice(0, 200)); process.exit(4); }",
         "const cb = textOf(H.ev('researchCompanyBlock')(rs.companies)).join(' ');",
@@ -3877,6 +3891,9 @@ def test_judgment_checks_show_current_results_and_label_original_history():
         _grab_fn(js, "passOutcomeDate"),
         _grab_fn(js, "checksSection"),
         "var PASS_OUTCOME_WORDS = { date_match: passOutcomeDate, quote_match: 'Quote matches source', selector_match: 'Citation located' };",
+        "var TIMING_CAVEAT = 'This compares the printed timing only; whether this timing belongs to this event needs your review.';",
+        "var TIMING_CAVEAT_OLD = 'This compares date bounds only; whether the date belongs to this event needs your review.';",
+        _grab_fn(js, "timingReason"),
         "var raw = [{result:'fail', label:'Original value failure', reason:'Old value.'}];",
         "var current = [{result:'pass', label:'Fixed value pass', reason:'Re-check on new value.'}];",
         "var done = flatten(checksSection({checks:raw}, {fixes:[{}], effective_checks:current, check_history:raw, recheck:{result:'pass'}}));",
@@ -3913,6 +3930,9 @@ def test_check_results_words_and_capture_copy():
         _grab_fn(js, "passOutcomeDate"),
         _grab_fn(js, "checksSection"),
         "var PASS_OUTCOME_WORDS = { date_match: passOutcomeDate, quote_match: 'Quote matches source', selector_match: 'Citation located' };",
+        "var TIMING_CAVEAT = 'This compares the printed timing only; whether this timing belongs to this event needs your review.';",
+        "var TIMING_CAVEAT_OLD = 'This compares date bounds only; whether the date belongs to this event needs your review.';",
+        _grab_fn(js, "timingReason"),
         "var checks = [",
         "  { name: 'date_match', result: 'pass', label: 'Date read as written',",
         "    timing: { wording: 'first half of calendar year 2027' } },",
@@ -5068,7 +5088,7 @@ console.log(JSON.stringify(out, null, 1));
 # c1313667 is CHECK-RESULTS-WORDS-001's date outcome ('Timing matches source'
 # in place of a bare 'passed' on every pane's passing date check) — re-verified
 # by diffing both renders surface by surface: that one line is the only change
-_MAIN_SHAPED_RENDER_SHA256 = "c131366741881e980ee57cf0f587c2e5d0bb279686f29d3a3ffa5450183c9cb8"
+_MAIN_SHAPED_RENDER_SHA256 = "f98299d4cdc02b6e83e0ce55788c7895954046ba5282bdc571f6187e5dab65e4"
 
 
 def _review_render(tmp_path, shape):
@@ -6533,6 +6553,9 @@ def test_lettuce_ui_shell_and_finding_helpers():
         "if (note.indexOf('Protagonist Therapeutics') === -1 || note.indexOf('page 3') === -1) fail(5, note);",
         "if (note.indexOf('Advisory only') === -1) fail(6, note);",
         "if (/verif/i.test(note)) fail(7, note);",
+        # CLAIM-001: the detector's flag is potential, never stated as fact
+        "if (note.indexOf('may not be supported by the cited source') === -1) fail(16, note);",
+        "if (note.indexOf('flagged as not supported') !== -1) fail(17, note);",
         # trail wording: not run carries the reason; no finding is not 'verified'
         "var t1 = supportStepText({ refs: { result: 'could_not_run', row_id: 'e1' },",
         "  text: 'Support check (LettuceDetect, advisory) e1: could not run (the pinned weights are not installed (LETTUCE_WEIGHTS_PATH is not a directory)).' });",
@@ -6545,8 +6568,16 @@ def test_lettuce_ui_shell_and_finding_helpers():
         "  text: 'Support check (LettuceDetect, advisory) e2: no finding.' });",
         "if (t2.indexOf('No finding') !== 0 || /verif/i.test(t2)) fail(9, t2);",
         "var t3 = supportStepText({ refs: { result: 'unsupported_spans', row_id: 'e1' },",
-        "  text: 'Support check (LettuceDetect, advisory) e1: unsupported spans.' });",
+        "  text: 'Support check (LettuceDetect, advisory) e1: unsupported spans.' }, findings.e1);",
         "if (t3.indexOf('Potentially unsupported wording') !== 0) fail(10, t3);",
+        # a stale served finding never reads as a current one (item 1)
+        "var t4 = supportStepText({ refs: { result: 'unsupported_spans', row_id: 'e4' },",
+        "  text: 'Support check (LettuceDetect, advisory) e4: unsupported spans.' }, findings.e4);",
+        "if (t4.indexOf('Earlier check (no longer current)') !== 0 || t4.indexOf('changed after it ran.') === -1)",
+        "  fail(14, t4);",
+        # an unknown step result is recorded as unknown — never a finding (UNKNOWN-001)
+        "var t5 = supportStepText({ refs: { result: 'something_new', row_id: 'e1' }, text: 'x' }, findings.e1);",
+        "if (t5 !== 'Result not recorded.') fail(15, t5);",
         # the trail steps: this row only, attribution 'LettuceDetect'
         "var steps = [",
         "  { who: 'capture.support_signal', at: '2026-11-02T00:00:00Z', refs: { row_id: 'e1', result: 'unsupported_spans' }, text: 'x' },",
@@ -6590,17 +6621,208 @@ def test_lettuce_new_run_checkbox_unavailable_shows_reason_and_never_sends():
     _run_node(_new_run_sheet_script([
         "els['nr-support'] = { checked: true, disabled: false };",
         "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: null, available: false,",
-        "                                        unavailable_reason: 'the pinned weights are not installed' } });",
+        "                                        unavailable_reason: 'the pinned weights are not installed (LETTUCE_WEIGHTS_PATH is not a directory)' } });",
         "if (!els['nr-support'].disabled) fail(2, 'unavailable box enabled');",
-        "if (nodes['nr-support-hint'].textContent !== 'the pinned weights are not installed')",
+        # plain words on screen; the server's sentence (env var names and all) is the hover title only
+        "if (nodes['nr-support-hint'].textContent !== 'LettuceDetect is not available on this computer.')",
         "  fail(3, nodes['nr-support-hint'].textContent);",
+        "if (nodes['nr-support-hint'].title !== 'the pinned weights are not installed (LETTUCE_WEIGHTS_PATH is not a directory)')",
+        "  fail(9, nodes['nr-support-hint'].title);",
+        "if (/[A-Z_]{6,}/.test(nodes['nr-support-hint'].textContent)) fail(10, 'env var name on screen');",
+        # a tick never survives the answer that the check is unavailable
+        "if (els['nr-support'].checked) fail(11, 'unavailable box stays ticked');",
         "if (nrSupportValue() !== null) fail(4, 'unavailable must send off');",
         "startRunNow();",
         "if (!posts.length || posts[0].support_check !== null) fail(5, JSON.stringify(posts));",
         # a failed options read: disabled with the retry line, still off
         "applySupportOptions(null);",
         "if (!els['nr-support'].disabled) fail(6, 'not-loaded box enabled');",
+        "if (els['nr-support'].checked) fail(12, 'not-loaded box ticked');",
         "if (nodes['nr-support-hint'].textContent.indexOf('could not be loaded') === -1) fail(7);",
         "if (nrSupportValue() !== null) fail(8, 'not-loaded must send off');",
         "console.log('ok');",
     ], extra_fns=('supportFromOptions', 'applySupportOptions', 'nrSupportValue')))
+
+
+def test_history_checks_read_neutral_and_timing_caveat_verbatim():
+    # the Red Team timing ruling: a current date pass's caveat reads the ruling's
+    # words verbatim; history (stale) passes wear a neutral dot and 'passed
+    # then' — never a green dot, never the current 'Timing matches source'
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    script = "\n".join([
+        "function el(tag, cls, value) { return {tag:tag, cls:cls, textContent:value || '', children:[], style:{}, dataset:{}, append:function(){ this.children.push.apply(this.children, arguments); }}; }",
+        "function checkDot(result) { return el('span', 'dot ' + result); }",
+        "function esc(value) { return el('span', null, value); }",
+        "function checkResultWord(result) { return ({ pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed', unresolved: 'unresolved' })[result] || result; }",
+        "function seeTheCheck(check) { return el('details', null, 'details ' + check.label); }",
+        "function flatten(node) { return (typeof node === 'string' ? node : node.textContent || '') + (node.children || []).map(flatten).join(' '); }",
+        _grab_fn(js, "effectiveChecks"),
+        _grab_fn(js, "dateFinding"),
+        _grab_fn(js, "passOutcome"),
+        _grab_fn(js, "passOutcomeDate"),
+        _grab_fn(js, "timingReason"),
+        _grab_fn(js, "checksSection"),
+        "var PASS_OUTCOME_WORDS = { date_match: passOutcomeDate, quote_match: 'Quote matches source', selector_match: 'Citation located' };",
+        "var TIMING_CAVEAT = 'This compares the printed timing only; whether this timing belongs to this event needs your review.';",
+        "var TIMING_CAVEAT_OLD = 'This compares date bounds only; whether the date belongs to this event needs your review.';",
+        "var current = [{ name: 'date_match', result: 'pass', label: 'Date period found in quote', timing: { wording: 'H1 2027' },",
+        "    reason: 'The quote names a period. ' + TIMING_CAVEAT_OLD }];",
+        "var history = [{ name: 'date_match', result: 'pass', label: 'Date wording present in quote', timing: { wording: 'H1 2027' } },",
+        "  { name: 'quote_match', result: 'pass', label: 'Quote found on page' },",
+        "  { name: 'quote_match', result: 'fail', label: 'Quote found on page', reason: 'Old conflict.' }];",
+        "var t = { effective_checks: current, fixes: [], check_history: history, checks_stale: true, page_evidence: {} };",
+        "var sec = checksSection({ checks: current }, t);",
+        "var out = flatten(sec);",
+        # the current pass keeps its outcome and carries the ruling's caveat
+        "if (out.indexOf('Timing matches source: H1 2027') === -1) { console.error('current outcome'); process.exit(2); }",
+        "if (out.indexOf(TIMING_CAVEAT) === -1) { console.error('verbatim caveat missing'); process.exit(3); }",
+        "if (out.indexOf(TIMING_CAVEAT_OLD) !== -1) { console.error('old caveat still shown'); process.exit(4); }",
+        # the history section: no current outcome, no green dot, fail stays red
+        "var histAt = out.indexOf('Saved checks · history (not current)');",
+        "if (histAt < 0) { console.error('history header'); process.exit(5); }",
+        "var hist = out.slice(histAt);",
+        "if (hist.indexOf('Timing matches source') !== -1) { console.error('history wears the current outcome'); process.exit(6); }",
+        "if (hist.indexOf('passed then') === -1) { console.error('passed then missing'); process.exit(7); }",
+        "if (hist.indexOf('Old conflict.') === -1) { console.error('history conflict lost'); process.exit(8); }",
+        "function dotsByHeader(node) { var o = {}, cur = '(head)';",
+        "  (node.children || []).forEach(function (c) {",
+        "    if (c.tag === 'h4') { cur = c.textContent; o[cur] = []; return; }",
+        "    if (c.cls && /(^|\\s)chk(\\s|$)/.test(c.cls))",
+        "      (c.children || []).forEach(function (cc) {",
+        "        if (cc.cls && /(^|\\s)dot(\\s|$)/.test(cc.cls)) (o[cur] = o[cur] || []).push(cc.cls); }); });",
+        "  return o; }",
+        "var dots = dotsByHeader(sec);",
+        "var curDots = (dots['Checks · by Code'] || []).join(' ');",
+        "var histDots = (dots['Saved checks · history (not current)'] || []).join(' ');",
+        "if (curDots.indexOf('dot pass') === -1) { console.error('current pass not green: ' + curDots); process.exit(9); }",
+        "if (/dot pass/.test(histDots)) { console.error('history pass is green: ' + histDots); process.exit(10); }",
+        "if (histDots.indexOf('dot history') === -1) { console.error('history neutral dot missing: ' + histDots); process.exit(11); }",
+        "if (histDots.indexOf('dot fail') === -1) { console.error('history fail not red: ' + histDots); process.exit(12); }",
+        # a date pass the server sent with no reason still carries the caveat
+        "var bare = timingReason({ name: 'date_match', result: 'pass' });",
+        "if (bare !== TIMING_CAVEAT) { console.error('bare caveat: ' + bare); process.exit(13); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_lettuce_real_envelope_pane_and_trail(tmp_path):
+    # NEXT-CALLER-001: one test through the real boundary — the GET /api/runs/{id}
+    # envelope (top-level support_findings; run.research.steps) drives the real
+    # detailsPane and renderTrail to final DOM
+    import json
+    import subprocess
+
+    body = {
+        "rows": [
+            {"id": "e1", "ticker": "ACME", "title": "ACME Phase 2 start", "program": "ACME-1",
+             "source_id": "s1", "page_number": 31, "checks": [], "proposed_by": "Muse Spark"},
+            {"id": "e2", "ticker": "ACME", "title": "ACME Phase 3 readout", "program": "ACME-2",
+             "source_id": "s1", "page_number": 31, "checks": [], "proposed_by": "Muse Spark"},
+            {"id": "e3", "ticker": "ACME", "title": "ACME filing", "source_id": "s1",
+             "page_number": 31, "checks": [], "proposed_by": "Muse Spark"},
+            {"id": "e4", "ticker": "ACME", "title": "ACME approval", "source_id": "s1",
+             "page_number": 31, "checks": [], "proposed_by": "Muse Spark"},
+        ],
+        "support_findings": {
+            "e1": {"result": "unsupported_spans", "spans": [{"start": 0, "end": 5, "text": "Phase"}]},
+            "e2": {"result": "stale", "spans": []},
+            "e3": {"result": "no_finding", "spans": []},
+            "e4": {"result": "could_not_run", "spans": [], "reason": "the pinned weights are not installed"},
+        },
+        "run": {"id": "run1", "label": "Run 1", "number": 1, "started_at": "2026-11-02T00:00:00Z",
+                "research": {"label": "Agent research — not independently reviewed", "steps": [
+                    {"who": "capture.support_signal", "tag": "Code", "kind": "check", "at": "2026-11-02T00:01:00Z",
+                     "refs": {"row_id": "e1", "result": "unsupported_spans"}, "text": "Support check (LettuceDetect, advisory) e1: unsupported spans."},
+                    {"who": "capture.support_signal", "tag": "Code", "kind": "check", "at": "2026-11-02T00:01:01Z",
+                     "refs": {"row_id": "e2", "result": "unsupported_spans"}, "text": "Support check (LettuceDetect, advisory) e2: unsupported spans."},
+                    {"who": "capture.support_signal", "tag": "Code", "kind": "check", "at": "2026-11-02T00:01:02Z",
+                     "refs": {"row_id": "e3", "result": "no_finding"}, "text": "Support check (LettuceDetect, advisory) e3: no finding."},
+                    {"who": "capture.support_signal", "tag": "Code", "kind": "check", "at": "2026-11-02T00:01:03Z",
+                     "refs": {"row_id": "e4", "result": "could_not_run"}, "text": "Support check (LettuceDetect, advisory) e4: could not run (the pinned weights are not installed)."},
+                ]}},
+        "sources": [{"id": "s1", "kind": "filing", "publisher": "ACME Corp", "pages": [{"page_number": 31}]}],
+        "mistakes": [], "tables": [],
+        "calendar_partition": {"calendar": [], "past": [], "later": [], "undated": [],
+                               "timing_unresolved": [], "contingent": []},
+        "calendar_window": {"start": "2026-11-01", "end": "2027-05-01"},
+    }
+    targets = {r["id"]: {"group": "proposed"} for r in body["rows"]}
+    js = (UI / "app.js").read_text()
+    script = "\n".join([
+        "const fs = require('fs');",
+        "function make(tag) {",
+        "  return { tag, className: '', textContent: '', children: [], style: {}, hidden: false, value: '', dataset: {},",
+        "    classList: { toggle() {}, add() {}, remove() {}, contains() { return false; } },",
+        "    append(...a) { for (const c of a) this.children.push(typeof c === 'string' ? { textContent: c, children: [] } : c); },",
+        "    appendChild(c) { this.children.push(c); return c; }, addEventListener() {}, removeEventListener() {},",
+        "    setAttribute(k, v) { this[k] = v; }, getAttribute() { return null; },",
+        "    querySelector() { return null; }, querySelectorAll() { return []; }, focus() {}, scrollIntoView() {}, remove() {},",
+        "    getBoundingClientRect() { return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }; },",
+        "    set innerHTML(v) { this.children = []; this._html = v; }, get innerHTML() { return this._html || ''; },",
+        "    firstChild: null };",
+        "}",
+        "const nodes = {};",
+        "global.document = { createElement: make, createTextNode: t => ({ textContent: String(t), children: [] }),",
+        "  getElementById: id => (nodes[id] = nodes[id] || make('div')), querySelector: () => null, querySelectorAll: () => [],",
+        "  addEventListener() {}, body: make('body'), documentElement: make('html'), title: '', activeElement: null };",
+        "global.window = { addEventListener() {}, location: { hash: '' }, matchMedia: () => ({ matches: false, addEventListener() {} }),",
+        "  setTimeout, history: { replaceState() {}, pushState() {} }, getComputedStyle: () => ({}) };",
+        "global.location = window.location; global.history = window.history;",
+        "global.localStorage = { getItem() { return null; }, setItem() {} };",
+        "global.fetch = () => new Promise(() => {});",
+        "global.requestAnimationFrame = () => 0;",
+        "let src = fs.readFileSync(" + json.dumps(str(UI / "app.js")) + ", 'utf8');",
+        "src = src.replace(/route = parseHash\\(\\);\\s*boot\\(\\);\\s*\\}\\)\\(\\);\\s*$/,",
+        "  'global.__H = { get detail(){return detail;}, set detail(v){detail=v;}, ev: function(s){ return eval(s); } };\\n})();');",
+        "if (!/global\\.__H/.test(src)) throw new Error('no boot hook');",
+        "eval(src);",
+        "const H = global.__H;",
+        "function textOf(n, out) { out = out || []; if (!n) return out; if (n.textContent) out.push(n.textContent);",
+        "  (n.children || []).forEach(c => textOf(c, out)); return out; }",
+        "H.detail = " + json.dumps({"id": "run1", "run": body,
+                                   "state": {"targets": targets, "mistake_list": [], "exclusions": []}}) + ";",
+        "H.ev(\"route = { screen: 'audit', runId: 'run1', rowId: null, dialog: null }\");",
+        # the pane: a current finding shows the understated note; every other
+        # result adds nothing
+        "function paneText(id) { const host = make('div');",
+        "  H.ev('detailsPane')(host, H.ev('rowOf')(id), { actions: true, back: 'audit' });",
+        "  return textOf(host).join(' '); }",
+        "var p1 = paneText('e1');",
+        "if (p1.indexOf('Potentially unsupported wording') === -1 || p1.indexOf('“Phase”') === -1)",
+        "  { console.error('e1 note: ' + p1.slice(0, 160)); process.exit(2); }",
+        "if (p1.indexOf('may not be supported by the cited source') === -1)",
+        "  { console.error('e1 wording: ' + p1.slice(0, 160)); process.exit(3); }",
+        "['e2', 'e3', 'e4'].forEach(function (id) {",
+        "  var p = paneText(id);",
+        "  if (p.indexOf('Potentially unsupported wording') !== -1 || p.indexOf('“Phase”') !== -1)",
+        "    { console.error(id + ' pane should stay clean: ' + p.slice(0, 160)); process.exit(4); }",
+        "});",
+        # the trail: the record's own label leads the block; a stale finding
+        # reads as an earlier check, never as a current finding
+        "H.ev(\"route = { screen: 'trail', runId: 'run1', rowId: 'e2', dialog: null }\");",
+        "H.ev('renderTrail')();",
+        "var trailText = textOf(nodes['trail-mid']).join(' ');",
+        "if (trailText.indexOf('Agent research — not independently reviewed') === -1)",
+        "  { console.error('trail header: ' + trailText.slice(0, 160)); process.exit(5); }",
+        "if (trailText.indexOf('Earlier check (no longer current)') === -1)",
+        "  { console.error('stale trail line: ' + trailText.slice(0, 200)); process.exit(6); }",
+        "if (/Potentially unsupported wording/.test(trailText))",
+        "  { console.error('stale reads as current'); process.exit(7); }",
+        "H.ev(\"route = { screen: 'trail', runId: 'run1', rowId: 'e3', dialog: null }\");",
+        "H.ev('renderTrail')();",
+        "var t3 = textOf(nodes['trail-mid']).join(' ');",
+        "if (t3.indexOf('No finding') === -1 || /verif/i.test(t3) && t3.indexOf('not a statement') === -1)",
+        "  { console.error('no-finding trail line: ' + t3.slice(0, 200)); process.exit(8); }",
+        "H.ev(\"route = { screen: 'trail', runId: 'run1', rowId: 'e4', dialog: null }\");",
+        "H.ev('renderTrail')();",
+        "var t4 = textOf(nodes['trail-mid']).join(' ');",
+        "if (t4.indexOf('Not run') === -1)",
+        "  { console.error('not-run trail line: ' + t4.slice(0, 200)); process.exit(9); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=90)
+    assert got.returncode == 0, got.stdout + got.stderr

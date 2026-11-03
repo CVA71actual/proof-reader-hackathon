@@ -358,6 +358,18 @@
     quote_match: 'Quote matches source',
     selector_match: 'Citation located'
   };
+  // OPERATOR_RULING_TIMING_LABEL: the caveat under a current date pass reads
+  // the ruling's words verbatim. The UI owns this sentence (checks/ keeps its
+  // own reason text untouched); the code's older wording is rewritten here.
+  var TIMING_CAVEAT = 'This compares the printed timing only; whether this timing belongs to this event needs your review.';
+  var TIMING_CAVEAT_OLD = 'This compares date bounds only; whether the date belongs to this event needs your review.';
+  function timingReason(c) {
+    var r = c && c.reason ? String(c.reason) : '';
+    if (r.indexOf(TIMING_CAVEAT_OLD) >= 0) return r.replace(TIMING_CAVEAT_OLD, TIMING_CAVEAT);
+    if (c && c.name === 'date_match' && c.result === 'pass' && r.indexOf(TIMING_CAVEAT) < 0)
+      return r ? r + ' ' + TIMING_CAVEAT : TIMING_CAVEAT;
+    return r;
+  }
   function checkResultWord(result) { return CHECK_WORDS[result] || result; }
 
   // ---------------------------------------------------------------- theme
@@ -1079,12 +1091,17 @@
   var CONDITIONS_WORDS = { not_established: 'Conditions not established',
     none_stated: 'No conditions stated', stated: 'Conditions stated' };
   // one actor per step, the kind in plain words, the step's own sentence
-  function researchTrailBlock(steps) {
+  // the header is the record's own label — a partly-reviewed run never reads
+  // 'not independently reviewed' here while its review steps list below
+  function researchTrailBlock(rs) {
     var box = el('div', 'rstrail');
-    box.append(el('div', 'rstitle', 'Agent research — not independently reviewed'));
-    (steps || []).forEach(function (s2) {
+    box.append(el('div', 'rstitle', (rs && rs.label) || 'Agent research — not independently reviewed'));
+    ((rs && rs.steps) || []).forEach(function (s2) {
       var line = el('div', 'rsstep');
-      line.append(el('span', 'rswho', s2.who || s2.tag || ''));
+      // G1-1: a module path (runs.research) never prints — the actor is the
+      // step's tag ('Code'); model names pass through unchanged
+      var who = /^[a-z_]+(\.[a-z_]+)+$/.test(s2.who || '') ? (s2.tag || 'Code') : (s2.who || s2.tag || '');
+      line.append(el('span', 'rswho', who));
       line.append(el('span', 'rskind', RESEARCH_STEP_WORDS[s2.kind] || s2.kind || ''));
       line.append(el('span', 'rstext', s2.text || ''));
       if (s2.at) line.append(el('span', 'rsat', hm(s2.at)));
@@ -1416,7 +1433,7 @@
   }
   function supportNoteText(f, src, row) {
     var words = f.spans.map(function (s) { return '“' + s.text + '”'; });
-    return words.join(' · ') + ' — flagged as not supported by the cited source' +
+    return words.join(' · ') + ' — may not be supported by the cited source' +
       (src ? ' (' + src.publisher + ' · page ' + row.page_number + ')' : '') +
       '. Advisory only; it changes no check, count or decision.';
   }
@@ -1443,7 +1460,13 @@
       return 'Not run' + (why ? ': ' + why : '') + '.';
     }
     if (result === 'no_finding') return 'No finding — no wording was flagged. This is not a statement that the claim is supported.';
-    return 'Potentially unsupported wording in the proposed title.';
+    // a changed claim or source hides old spans immediately: only a CURRENT
+    // finding reads as a finding; anything else is earlier-check or unknown
+    if (result === 'unsupported_spans') {
+      if (finding && finding.result === 'unsupported_spans') return 'Potentially unsupported wording in the proposed title.';
+      if (finding) return 'Earlier check (no longer current): the claim or its cited source changed after it ran.';
+    }
+    return 'Result not recorded.';
   }
 
   // details pane (shared by audit + judgment)
@@ -1782,7 +1805,7 @@
       sec.append(el('div', 'hint', 'Words came from a model transcription of the captured page image; their geometry is approximate.'));
     }
 
-    function appendChecks(label, checks, emptyText) {
+    function appendChecks(label, checks, emptyText, isHistory) {
       sec.append(el('h4', null, label));
       if (!checks.length) {
         sec.append(el('div', null, emptyText));
@@ -1791,21 +1814,26 @@
       checks.forEach(function (c) {
       var line = el('div', 'chk');
       var finding = dateFinding(c);
-      var outcome = passOutcome(c);
-      // a passing scoped comparison reads as its observed outcome (green); a
-      // failure stays red and names its conflict — never amber on a match
+      // history lines never wear the current outcome or a green dot — a pass
+      // that was true then reads neutral ('passed then'), a conflict stays red
+      var outcome = isHistory ? null : passOutcome(c);
       line.append(outcome ? checkDot('pass')
-        : finding ? el('span', 'dot finding unresolved') : checkDot(c.result));
+        : isHistory && c.result === 'pass' ? el('span', 'dot history')
+        : finding ? el('span', 'dot finding unresolved')
+        : checkDot(c.result));
       var cn = el('span', 'cn');
       cn.append(esc(c.label), el('span', 'wtag', 'Code'));
       line.append(cn);
-      var cr = el('span', 'cr', outcome ? outcome : finding ? '' : checkResultWord(c.result));
+      var cr = el('span', 'cr', outcome ? outcome
+        : isHistory && c.result === 'pass' ? 'passed then'
+        : finding ? '' : checkResultWord(c.result));
       line.append(cr);
       sec.append(line);
-      if (c.reason) {
+      var reasonText = timingReason(c);
+      if (reasonText) {
         var r = el('div');
         r.style.cssText = 'font-size:12px;color:var(--sub);padding:0 0 2px 17px';
-        r.textContent = c.reason;
+        r.textContent = reasonText;
         sec.append(r);
       }
       sec.append(seeTheCheck(c));
@@ -1828,7 +1856,7 @@
       sec.append(vline, el('div', 'hint', visible.reason));
     }
     if (history.length) appendChecks(t.checks_stale ? 'Saved checks · history (not current)' : 'Original checks · history (before edit)', history,
-      'No original checks were recorded.');
+      'No original checks were recorded.', true);
     return sec;
   }
 
@@ -1853,7 +1881,8 @@
     d.append(box);
     var res = el('div', 'recline');
     if (dateFinding(c)) {
-      if (c.reason) res.append(c.reason);
+      var tr = timingReason(c);
+      if (tr) res.append(tr);
     } else {
       res.append('Result: ', el('b', null, checkResultWord(c.result)));
       if (c.reason) res.append(' — ' + c.reason);
@@ -2342,7 +2371,7 @@
     var mid = clear(document.getElementById('trail-mid'));
     var det = clear(document.getElementById('trail-det'));
     var rs = runResearch();
-    if (rs && rs.steps && rs.steps.length) mid.append(researchTrailBlock(rs.steps));
+    if (rs && rs.steps && rs.steps.length) mid.append(researchTrailBlock(rs));
     var row = rowOf(trailSel) || detail.run.rows[0] || null;
     if (!row) {
       mid.append(el('div', 'empty', 'No rows in this run.'));
@@ -4687,10 +4716,19 @@
     var box = document.getElementById('nr-support');
     var hint = document.getElementById('nr-support-hint');
     box.disabled = !nrSupport.available;
+    // an unavailable (or not-yet-loaded) check never shows a tick the run
+    // would not read
+    if (!nrSupport.available) box.checked = false;
     if (!nrSupport.touched && nrSupport.available && body.support_check.default &&
         nrSupport.choices.indexOf(body.support_check.default) >= 0) box.checked = true;
     if (!nrSupport.loaded) hint.textContent = 'This choice could not be loaded. Close and open New run to try again.';
-    else if (!nrSupport.available) hint.textContent = nrSupport.reason || 'The wording check is not available on this machine.';
+    else if (!nrSupport.available) {
+      // plain words only — the server's sentence (env var names and all) is
+      // the hover title, off the screen
+      hint.textContent = 'LettuceDetect is not available on this computer.';
+      if (nrSupport.reason) hint.title = nrSupport.reason;
+      else hint.removeAttribute('title');
+    }
     else hint.textContent = 'Advisory only — a flag changes no check, count or decision.';
   }
   document.getElementById('nr-support').addEventListener('change', function () { nrSupport.touched = true; });
@@ -5000,7 +5038,9 @@
     // the hint promises; a loaded default is never overwritten
     if (!nrResearch.loaded) A.settings().then(function (s) { applyResearchSettings(s); });
     else updateNoteHint();
-    // the wording-check choice: refresh each open, like the company list
+    // the wording-check choice: refresh each open, like the company list —
+    // the box stays disabled until the options answer
+    document.getElementById('nr-support').disabled = true;
     A.researchOptions().then(function (o) { applySupportOptions(o); });
   });
   document.getElementById('nr-cancel').addEventListener('click', function () { newrunWrap.hidden = true; });
