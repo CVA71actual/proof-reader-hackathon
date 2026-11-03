@@ -457,7 +457,7 @@ def make_job_class():
                     # Strict admission (Manus 15:04): the call is made only if spend + every reservation in
                     # flight + its own worst case fits under the cap. Page mode keeps its own rule.
                     token = jobs.reserve_budget(self.dir.name, self.meta["spend_usd"], limit, worst,
-                                                alone_may_cross=False)
+                                                alone_may_cross=False, owner=self)
                     if token is not None:
                         return token, worst, input_bound
                     if not jobs._RESERVED.get(self.dir.name):
@@ -586,7 +586,7 @@ def make_job_class():
                                       "accept the unknown cost.")
                     limit = self.choices["spending_limit_usd"]
                     token = jobs.reserve_budget(self.dir.name, self.meta["spend_usd"], limit, worst,
-                                                alone_may_cross=False)
+                                                alone_may_cross=False, owner=self)
                     if token is not None:
                         return token, None
                     if not jobs._RESERVED.get(self.dir.name):
@@ -1648,7 +1648,7 @@ def make_job_class():
                         raise Stop("unpriced", "A call could not be priced, so the spending cap cannot be kept.")
                     limit = self.research_limit()
                     token = jobs.reserve_budget(self.dir.name, self.meta["spend_usd"], limit, worst,
-                                                alone_may_cross=False)
+                                                alone_may_cross=False, owner=self)
                     if token is not None:
                         return token
                     if not jobs._RESERVED.get(self.dir.name):
@@ -2586,5 +2586,7 @@ def run_research(runs_dir: Path, run_id: str, reader, tools: ResearchTools | Non
     finally:
         with jobs.RUN_LOCK:
             jobs.ACTIVE_RUNS.discard(job.dir.name)
-            jobs._RESERVED.pop(job.dir.name, None)       # nothing of this run is in flight once its job has ended
+            # INTEGRATION-002: release only this job's own reservations; a sibling's ticket (a voice call in
+            # flight) stays until its owner settles it
+            jobs.release_owned(job.dir.name, job)
         job.remove_unrecorded_pages()

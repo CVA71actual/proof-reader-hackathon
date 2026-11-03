@@ -134,7 +134,11 @@ _RESERVED: dict[str, dict[int, float]] = {}
 _NEXT_TOKEN = [0]
 
 
-def reserve_budget(run_id: str, spent: float, limit, worst: float, alone_may_cross: bool = False) -> int | None:
+_OWNERS: dict[int, object] = {}      # INTEGRATION-002: who holds each reservation token (None: the caller holds it)
+
+
+def reserve_budget(run_id: str, spent: float, limit, worst: float, alone_may_cross: bool = False,
+                   owner=None) -> int | None:
     """Reserve `worst` dollars of the run's limit. Returns a token to release, or None when spend + the reservations
     already held + `worst` would pass the limit. With no limit, nothing is held back (a token is still returned).
     `alone_may_cross`: a reader call keeps the run's long-standing rule when nothing else is in flight (it is made while
@@ -150,6 +154,8 @@ def reserve_budget(run_id: str, spent: float, limit, worst: float, alone_may_cro
                 return None
         _NEXT_TOKEN[0] += 1
         held[_NEXT_TOKEN[0]] = worst
+        if owner is not None:
+            _OWNERS[_NEXT_TOKEN[0]] = owner
         return _NEXT_TOKEN[0]
 
 
@@ -159,8 +165,19 @@ def release_budget(run_id: str, token: int | None) -> None:
     with RUN_LOCK:
         held = _RESERVED.get(run_id, {})
         held.pop(token, None)
+        _OWNERS.pop(token, None)
         if not held:
             _RESERVED.pop(run_id, None)
+
+
+def release_owned(run_id: str, owner) -> int:
+    """INTEGRATION-002: release only the reservations `owner` holds on this run (a finished job's cleanup), never a
+    sibling's outstanding ticket such as a voice call in flight. Returns how many were released."""
+    with RUN_LOCK:
+        mine = [t for t in _RESERVED.get(run_id, {}) if _OWNERS.get(t) is owner]
+    for t in mine:
+        release_budget(run_id, t)
+    return len(mine)
 
 
 VOICE_BUSY_MESSAGE = "A model call is in progress; try the spoken decision again in a moment."
@@ -930,10 +947,25 @@ class Job:
             return
         if disk.get("voice_turns"):
             self.job["voice_turns"] = disk["voice_turns"]
+        self._reconcile_voice_unpriced(disk)
         log = self.job["log"]
         missing = [e for e in disk.get("log", []) if e not in log]
         if missing:
             self.job["log"] = sorted(log + missing, key=lambda e: e.get("at") or "")      # stable: ties keep order
+
+    def _reconcile_voice_unpriced(self, disk: dict) -> None:
+        """INTEGRATION-001 (Manus 05:31): an unknown cost the voice route recorded while this worker held its own copy
+        of job.json is added to this worker's ledger, once; the worker's later save never resets it."""
+        disk_voice = disk.get("voice_unpriced_calls") or 0
+        mine = self.job.get("voice_unpriced_calls") or 0
+        if isinstance(disk_voice, int) and disk_voice > mine:
+            self.job["unpriced_calls"] = unpriced_count(self.job) + (disk_voice - mine)
+            self.job["voice_unpriced_calls"] = disk_voice
+            models = self.job.setdefault("unpriced_models", [])
+            for m in disk.get("unpriced_models") or []:
+                if m not in models:
+                    models.append(m)
+            self.meta["unpriced_calls"] = unpriced_count(self.job)
 
     def stop(self, status: str, reason: str) -> None:
         if status == "failed" and self.current_page:
@@ -977,6 +1009,11 @@ class Job:
     def refresh_spend(self) -> None:
         """The persisted run.json spend is the truth (a voice call may have raised it since this worker last wrote)."""
         with RUN_LOCK:
+            if getattr(self, "job", None) is not None:
+                try:  # INTEGRATION-001: the unknown-cost ledger is refreshed with the spend, before every admission
+                    self._reconcile_voice_unpriced(json.loads((self.dir / "job.json").read_text()))
+                except (OSError, ValueError):
+                    pass
             try:
                 disk = json.loads((self.dir / "run.json").read_text())["run"].get("spend_usd")
             except (OSError, ValueError, KeyError):
@@ -2093,6 +2130,9 @@ def record_voice_unpriced(runs_dir: Path, run_id: str, billed_attempts: int, mod
         job_file = run_dir / "job.json"
         job = json.loads(job_file.read_text()) if job_file.is_file() else {"log": []}
         job["unpriced_calls"] = job.get("unpriced_calls", 0) + 1
+        # INTEGRATION-001: a separate, only-growing count of unknown costs recorded by the voice route, which a run
+        # worker reconciles into its own ledger (never overwrites) on every refresh and save
+        job["voice_unpriced_calls"] = job.get("voice_unpriced_calls", 0) + 1
         models = job.setdefault("unpriced_models", [])
         if model not in models:
             models.append(model)

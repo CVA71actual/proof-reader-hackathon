@@ -30,6 +30,11 @@ import tempfile
 from pathlib import Path
 
 
+# INTEGRATION-003 (Manus 05:31): the smoke script's own ceiling, kept at the $30 first set for a live smoke check. The run
+# caps CVA authorized are separate: $80 for the 10-company submission run, $100 for the judges' run (set on New Run).
+SMOKE_CEILING_USD = 30
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--ticker", default=None)
@@ -44,8 +49,10 @@ def main(argv: list[str] | None = None) -> int:
     if not args.go:
         print("Refused: this is a paid live run. Pass --i-have-the-operator-go only with the Operator's go and CVA's cap.")
         return 2
-    if not (0 < args.cap_usd <= 30):
-        print("Refused: --cap-usd must be above $0 and at most the $30 CVA approved.")
+    if not (0 < args.cap_usd <= SMOKE_CEILING_USD):
+        print(f"Refused: --cap-usd must be above $0 and at most ${SMOKE_CEILING_USD:.0f}, this smoke script's own ceiling "
+              f"for a live check. It is not a run cap: CVA authorized $80 for the 10-company submission run and $100 for "
+              f"the judges' run, which a New Run sets itself.")
         return 2
     if args.review is not None:
         return review_main(args)
@@ -137,7 +144,7 @@ def review_existing(src: Path, runs_dir: Path, cap_usd: float, tools=None) -> tu
     finally:
         with jobs.RUN_LOCK:
             jobs.ACTIVE_RUNS.discard(dest.name)
-            jobs._RESERVED.pop(dest.name, None)
+            jobs.release_owned(dest.name, job)
     return dest, json.loads((dest / "run.json").read_text())["run"]["research"]
 
 
