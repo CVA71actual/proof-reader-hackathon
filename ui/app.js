@@ -4173,12 +4173,17 @@
                       (tk.reason ? ' · ' + tk.reason : '')));
       }
     });
+    // while the paste box holds text the run reads only the pasted tickers, so
+    // a captured name you ticked shows unticked (and disabled): a ticked box is
+    // always a company the run reads. The choice is kept in nrChosen and comes
+    // back ticked when the box is cleared.
+    var pastedNow = !!document.getElementById('nr-tickers').value.trim();
     (nrCompanies || []).forEach(function (t) {
       if (!nrChosen[t]) return;
       any = true;
       var l = el('label', 'tk2');
       var i = el('input');
-      i.type = 'checkbox'; i.className = 'nr-co'; i.value = t; i.checked = true;
+      i.type = 'checkbox'; i.className = 'nr-co'; i.value = t; i.checked = !pastedNow;
       l.append(i, document.createTextNode(' ' + t));
       i.addEventListener('change', function () {
         if (i.checked) return;
