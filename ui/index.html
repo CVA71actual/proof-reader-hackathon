@@ -141,10 +141,8 @@
     <h4>Spending limit <span class="opt">(USD — leave empty for no limit)</span></h4>
     <input class="fld" id="nr-limit" inputmode="decimal" placeholder="2.00" style="width:130px">
     <h4>Research instructions <span class="opt">(optional)</span></h4>
-    <textarea class="fld" id="nr-note" rows="3" placeholder="What the research should focus on"></textarea>
+    <textarea class="fld" id="nr-note" rows="12" style="resize:vertical;min-height:200px" placeholder="What the research should focus on"></textarea>
     <div class="hint" id="nr-note-hint">Guides the research; the source checks still run on every row.</div>
-    <h4 id="nr-wtl-sec" hidden>Also sent on every research run:</h4>
-    <div class="hint" id="nr-wtl"></div>
     <div hidden>
     <h4>Models <span class="opt">(page-reading runs only)</span></h4>
     <label><input type="radio" name="nr-models" id="nr-models-one" value="one"> Muse Spark only</label>
@@ -161,7 +159,7 @@
     <label><input type="checkbox" id="nr-support" disabled> Wording check by a hallucination model (advisory; on by default)</label>
     <div class="hint" id="nr-support-hint">Flags proposed wording the cited source may not support. A flag changes no check, count or decision.</div>
     <div class="errline" id="nr-error" hidden></div>
-    <div class="btnrow" style="margin-top:16px">
+    <div class="btnrow nr-actions">
       <button class="btn pri" id="nr-go">Run now</button>
       <span class="hint" id="nr-preparing" hidden></span>
       <button class="btn" id="nr-cancel">Cancel</button>

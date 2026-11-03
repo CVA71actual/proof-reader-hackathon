@@ -528,6 +528,15 @@
       return t.decided_by_person && !needsAttention(t);
     });
   }
+  // glass adviser (3): a Fix is not a Keep. A person-fixed row the projection
+  // does not carry as accepted wears a badge that says 'not reviewed by you',
+  // so it must not sit under 'Decided by you' either — one projection, one
+  // story. It lists under 'Corrected by you, not kept'.
+  function fixedNotKept(t) {
+    if (!t.decided_by_person || needsAttention(t)) return false;
+    if (t.group === 'removed' || t.group === 'kept') return false;
+    return typeof t.accepted === 'boolean' ? !t.accepted : t.group === 'corrected';
+  }
   // ONE-MODEL-RUN-001: a run started with Muse Spark only (choices.models
   // 'one'); the same sentences as runs/one_model.py
   var ONE_MODEL_LINE = 'One model: Muse Spark only (no second reader, no escalation).';
@@ -1601,8 +1610,13 @@
     // #52 type provenance: the server's label:value pairs when it sends them
     var typePairs = typePresentationPairs(t);
     if (typePairs) {
-      kv(typePairs[0][0], typePairs[0][1]);
-      kv(typePairs[1][0], typePairs[1][1]);
+      // glass adviser (4): plain words in the pane — the legacy rule's
+      // internal label reads 'Category', and an empty value drops its line
+      // instead of printing 'Not supplied'
+      typePairs.forEach(function (pr) {
+        if (pr[1] === 'Not supplied') return;
+        kv(pr[0] === 'Category (from old keyword rule)' ? 'Category' : pr[0], pr[1]);
+      });
     } else {
       kv('Type', eventWord(row.event_type));
     }
@@ -1906,7 +1920,8 @@
       var line = el('div', 'chk');
       var finding = dateFinding(c);
       // history lines never wear the current outcome or a green dot — a pass
-      // that was true then reads neutral ('passed then'), a conflict stays red
+      // that was true then reads neutral ('passed before your edit'), a
+      // conflict stays red
       var outcome = isHistory ? null : passOutcome(c);
       line.append(outcome ? checkDot('pass')
         : isHistory && c.result === 'pass' ? el('span', 'dot history')
@@ -1916,7 +1931,7 @@
       cn.append(esc(c.label), el('span', 'wtag', 'Code'));
       line.append(cn);
       var cr = el('span', 'cr', outcome ? outcome
-        : isHistory && c.result === 'pass' ? 'passed then'
+        : isHistory && c.result === 'pass' ? 'passed before your edit'
         : finding ? '' : checkResultWord(c.result));
       line.append(cr);
       sec.append(line);
@@ -1946,8 +1961,12 @@
       vline.append(el('span', 'cn', visible.label), el('span', 'cr', 'not checked'));
       sec.append(vline, el('div', 'hint', visible.reason));
     }
-    if (history.length) appendChecks(t.checks_stale ? 'Saved checks · history (not current)' : 'Original checks · history (before edit)', history,
-      'No original checks were recorded.', true);
+    // glass adviser (4): the 'before edit' history belongs to actual edits —
+    // a never-edited row never shows an 'ORIGINAL CHECKS · HISTORY' block
+    if (history.length && (hasFix || t.checks_stale)) {
+      appendChecks(t.checks_stale ? 'Saved checks · history (not current)' : 'Original checks · history (before edit)', history,
+        'No original checks were recorded.', true);
+    }
     return sec;
   }
 
@@ -2929,7 +2948,12 @@
     }
     if (later.length) {
       wrap.append(el('div', 'mo', 'Later · ' + later.length));
-      later.forEach(function (r) {
+      // glass adviser (5): the Later section reads in date order — a period
+      // sorts by its start, then the exact-day rows of the same date
+      later.slice().sort(function (a, b) {
+        if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+        return (b.period ? 1 : 0) - (a.period ? 1 : 0);
+      }).forEach(function (r) {
         var written = shownDateText(r.t, r.row) || r.date;
         wrap.append(calRow(r, written, !!r.period));
       });
@@ -2992,8 +3016,37 @@
         navigate({ runId: currentRunId(), screen: 'trail', rowId: pick.row.id });
       }));
     }
+    // glass adviser (1): the calendar pane decides too — Keep / Fix / Remove
+    // (+ Undo) with the same dialogs and expected_basis as the audit log,
+    // without leaving the calendar
+    var pt = rowTarget(pick.row);
+    var calPending = needsAttention(pt) ||
+      (projected(pt) && !pt.accepted && pt.review_bucket === 'proposed' &&
+       typeof pt.inclusion === 'string');
+    if (calPending) {
+      br.append(btn('btn pri', 'Keep', function () {
+        postDecision(pick.row.id, { target: pick.row.id, action: 'keep', note: null },
+          'Kept by you.', { screen: 'calendar', w: calWindow().win });
+      }));
+      br.append(btn('btn', 'Fix…', function () {
+        navigate({ runId: currentRunId(), screen: 'calendar', rowId: pick.row.id,
+                   dialog: 'fix', w: calWindow().win });
+      }));
+      br.append(btn('btn danger', 'Remove…', function () {
+        navigate({ runId: currentRunId(), screen: 'calendar', rowId: pick.row.id,
+                   dialog: 'remove', w: calWindow().win });
+      }));
+    }
+    if (projected(pt) && typeof pt.last_action === 'string' && !!pt.last_action) {
+      br.append(btn('btn', 'Undo', function () {
+        postDecision(pick.row.id, { target: pick.row.id, action: 'undo', note: null },
+          'Undone.', { screen: 'calendar', w: calWindow().win });
+      }));
+    }
     sa.append(br);
     det.append(sa);
+    if (route.dialog) openDialog(pick.row, route.dialog);
+    else closeDialog();
   }
 
   // G3-2: the day cell — a single day, or a day range kept as a range
@@ -3071,6 +3124,8 @@
         : reviewCounts ? reviewCounts.proposed : unresolved.length);
 
     var host = clear(document.getElementById('judgment-rows'));
+    var fixedNK = decided.filter(function (r) { return fixedNotKept(rowTarget(r)); });
+    var plainDecided = decided.filter(function (r) { return !fixedNotKept(rowTarget(r)); });
     if (!unresolved.length && !decided.length) {
       // PROJECTION-004: with the inclusion projection, a clean proposal is
       // placed automatically — that is not a person decision, so the empty
@@ -3082,9 +3137,14 @@
         host.append(el('div', 'grp', 'Waiting for you · ' + unresolved.length));
         unresolved.forEach(function (r) { host.append(judgmentRow(r)); });
       }
-      if (decided.length) {
-        host.append(el('div', 'grp', 'Decided by you · ' + decided.length));
-        decided.forEach(function (r) { host.append(judgmentRow(r)); });
+      if (fixedNK.length) {
+        // glass adviser (3): a Fix is not a Keep — the group says what the badge says
+        host.append(el('div', 'grp', 'Corrected by you, not kept · ' + fixedNK.length));
+        fixedNK.forEach(function (r) { host.append(judgmentRow(r)); });
+      }
+      if (plainDecided.length) {
+        host.append(el('div', 'grp', 'Decided by you · ' + plainDecided.length));
+        plainDecided.forEach(function (r) { host.append(judgmentRow(r)); });
       }
     }
     var on = host.querySelector('.row.on');
@@ -3107,17 +3167,26 @@
           focused: document.activeElement === liveNote };
     }
     var mid = clear(document.getElementById('judgment-mid'));
-    mid.append(el('div', 'empty', 'Pick a row on the left.'));
     var det = clear(document.getElementById('judgment-det'));
     var row = rowOf(judgmentSel) || unresolved[0] || null;
     if (route.rowId && rowOf(route.rowId)) row = rowOf(route.rowId);
     if (!row) {
+      mid.append(el('div', 'empty', 'Pick a row on the left.'));
       det.append(el('div', 'empty', 'Nothing waiting.'));
       closeDialog();
       return;
     }
     judgmentSel = row.id;
     var t = rowTarget(row);
+    // glass adviser (2): with a row open, the middle column shows its source
+    // and quote — never a bare 'Pick a row' beside an open decision
+    var jsrc = sourceOf(row);
+    var jmid = el('div', 'jmidcard');
+    jmid.append(el('div', 'ttl', row.title || '(no title)'));
+    if (jsrc) jmid.append(el('div', 'hint', jsrc.publisher + ' · page ' + row.page_number));
+    var jquote = (t.values && t.values.quote) || row.quote;
+    if (jquote) jmid.append(el('div', 'srcq', '“' + jquote + '”'));
+    mid.append(jmid);
     // a corrected row that still needs a person gets the pending pane (Keep is
     // the answer the server accepts), not the decided one (Undo only)
     // CALENDAR-RULE-001: a row placed automatically has no decision yet — it gets the same Keep / Fix / Remove
@@ -3652,7 +3721,9 @@
         return;
       }
       // drop the dialog from the hash BEFORE re-rendering, or it would re-open on the old state
-      navigate({ runId: currentRunId(), screen: (opts && opts.screen) || 'judgment', rowId: rowId });
+      var nav = { runId: currentRunId(), screen: (opts && opts.screen) || 'judgment', rowId: rowId };
+      if (opts && opts.w) nav.w = opts.w;
+      navigate(nav);
       return refresh().then(function () {
         if (body.action !== 'undo') toast(successMsg || 'Decided.');
       });
@@ -3684,6 +3755,15 @@
     var br = dialogHost.querySelector('.btnrow');
     if (br) dialogHost.insertBefore(e, br);
     else dialogHost.append(e);
+  }
+
+  // glass adviser: a dialog cancelled from the calendar returns there (the
+  // window preserved); from any other screen the Cancel targets are unchanged
+  function dialogHome(row, fallback) {
+    if (typeof route !== 'undefined' && route && route.screen === 'calendar') {
+      return { runId: currentRunId(), screen: 'calendar', rowId: row.id, w: route.w || null };
+    }
+    return fallback;
   }
 
   function openDialog(row, action) {
@@ -3788,7 +3868,7 @@
                              expected_basis: dialogMount ? dialogMount.basis : null },
         'Kept by you — code had removed it.', { screen: 'audit' });
     }), btn('btn', 'Cancel', function () {
-      navigate({ runId: currentRunId(), screen: 'audit', rowId: row.id });
+      navigate(dialogHome(row, { runId: currentRunId(), screen: 'audit', rowId: row.id }));
     }));
     dialogHost.append(br);
     dialogWrap.hidden = false;
@@ -3811,7 +3891,7 @@
                              expected_basis: dialogMount ? dialogMount.basis : null },
         'Removed by you — moved to checked and removed.');
     }), btn('btn', 'Cancel', function () {
-      navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id });
+      navigate(dialogHome(row, { runId: currentRunId(), screen: 'judgment', rowId: row.id }));
     }));
     dialogHost.append(br);
     dialogWrap.hidden = false;
@@ -3884,7 +3964,7 @@
         toast(n === 1 ? 'The fix was discarded.' : 'The fixes were discarded.');
         var undoOne = function (left) {
           if (left <= 0) {
-            navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id });
+            navigate(dialogHome(row, { runId: currentRunId(), screen: 'judgment', rowId: row.id }));
             return refresh();
           }
           return A.decide(currentRunId(), { target: row.id, action: 'undo', note: null })
@@ -3898,7 +3978,7 @@
         };
         undoOne(n);
       } else {
-        navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id });
+        navigate(dialogHome(row, { runId: currentRunId(), screen: 'judgment', rowId: row.id }));
       }
     });
     br.append(btn('btn pri', 'Save fix', function () {
@@ -3972,7 +4052,7 @@
           showDialogError(why);
           if (!keepAnyway) {
             keepAnyway = btn('btn', 'Keep anyway', function () {
-              navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id });
+              navigate(dialogHome(row, { runId: currentRunId(), screen: 'judgment', rowId: row.id }));
               return refresh().then(function () {
                 toast(st.group === 'corrected'
                   ? 'The fix stands — Fixed by you · still open.'
@@ -3988,7 +4068,7 @@
         else if (fx && fx.mistake) what += ' — counted as a mistake caught by you.';
         else if (fx && fx.not_counted_reason && !fx.mistake) what += ' — ' + fx.not_counted_reason;
         // the dialog closes with the hash; the re-check result shows on the row's pane
-        navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id });
+        navigate(dialogHome(row, { runId: currentRunId(), screen: 'judgment', rowId: row.id }));
         return refresh().then(function () { toast(what); });
       }).catch(function () {
         pending = false;
@@ -4886,20 +4966,6 @@
     var fresh = supportFromOptions(body);
     fresh.touched = nrSupport.touched;
     nrSupport = fresh;
-    // CVA: the full instruction set — the Where-to-look points the server
-    // appends to every research assignment, shown verbatim (one source of
-    // truth in the options answer); an older server without the field hides
-    // the section rather than guessing
-    var wtl = body && body.where_to_look;
-    var wtlSec = document.getElementById('nr-wtl-sec');
-    var wtlHost = document.getElementById('nr-wtl');
-    if (Array.isArray(wtl) && wtl.length && wtlHost && wtlSec) {
-      clear(wtlHost);
-      wtl.forEach(function (p) { wtlHost.append(el('div', null, String(p))); });
-      wtlSec.hidden = false;
-    } else if (wtlSec) {
-      wtlSec.hidden = true;
-    }
     var box = document.getElementById('nr-support');
     var hint = document.getElementById('nr-support-hint');
     // a stale tooltip never survives a later answer (e.g. available after

@@ -457,7 +457,7 @@ def _judgment_screen(row_id):
     names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket", "rowBadge", "checkDot", "checkResultWord",
              "projected", "reviewClass", "fixStillOpen", "needsAttention", "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
              "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds", "restoreFolds",
-             "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith", "captureFolds", "restoreFolds",
+             "judgmentDecidedPane", "renderJudgment", "fixedNotKept", "sayControls", "cancelSay", "sayBusyWith", "captureFolds", "restoreFolds",
              "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText", "shownField", "projectionComplete", "partialProjection")
     current_run_id_stub = 'function currentRunId() { return "run"; }\n'
     rows = [
@@ -1279,7 +1279,8 @@ def test_research_instructions_pins():
     # #52: the New run note becomes 'Research instructions' — a real textarea,
     # no 200-char cap, default and limit from GET /api/settings only
     html = (UI / "index.html").read_text()
-    assert '<textarea class="fld" id="nr-note" rows="3"' in html
+    assert '<textarea class="fld" id="nr-note" rows="12"' in html
+    assert 'resize:vertical' in html
     assert 'Research instructions' in html
     note_line = html[html.index('id="nr-note"') - 40:html.index('id="nr-note"') + 60]
     assert 'maxlength' not in note_line, note_line
@@ -2025,7 +2026,7 @@ def test_your_call_note_survives_background_polling():
              "supportFindingFor", "supportNoteText",
              "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "disagreementSection",
              "postDecision", "checkFnFor", "reportUrl", "reportRefusalReason", "dayInWords", "eventWord",
-             "renderJudgment", "researchLabelLine", "researchContextSection")
+             "renderJudgment", "fixedNotKept", "researchLabelLine", "researchContextSection")
     fns = "\n".join(_grab_fn(js, n) for n in names)
     script = "\n".join([
         "var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed', unreadable: 'unreadable', undecided: 'undecided' };",
@@ -2384,7 +2385,7 @@ def test_empty_judgment_queue_never_claims_auto_inclusions_were_decided():
              "supportFindingFor", "supportNoteText",
              "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "disagreementSection",
              "checkFnFor", "reportUrl", "reportRefusalReason", "dayInWords", "eventWord",
-             "researchLabelLine", "researchContextSection", "renderJudgment")
+             "researchLabelLine", "researchContextSection", "renderJudgment", "fixedNotKept")
     fns = "\n".join(_grab_fn(js, n) for n in names)
     script = "\n".join([
         "var FIELD_WORDS = { date_text: 'Date as written', date: 'Date', event_type: 'Event type' };",
@@ -3207,7 +3208,7 @@ def test_u24_g1r2_cancel_after_a_failed_recheck_discards_the_fix():
     import subprocess
 
     js = (UI / "app.js").read_text()
-    fns = _grab_fn(js, "fixDialog")
+    fns = _grab_fn(js, "fixDialog") + "\n" + _grab_fn(js, "dialogHome")
     script = f"""
 var FIELD_WORDS = {{ date_text: 'Date as written', date: 'Date', event_type: 'Event type',
   title: 'Title', company: 'Company', ticker: 'Ticker', program: 'Program',
@@ -3404,7 +3405,7 @@ console.log('ok');
     import subprocess
 
     js = (UI / "app.js").read_text()
-    fns = _grab_fn(js, "fixDialog")
+    fns = _grab_fn(js, "fixDialog") + "\n" + _grab_fn(js, "dialogHome")
     script = f"""
 var FIELD_WORDS = {{ date_text: 'Date as written', date: 'Date' }};
 var FIX_FIELDS = ['date_text', 'date'];
@@ -5223,7 +5224,7 @@ def test_cleared_date_text_regression_addendum3():
              "rowBadge", "checkDot", "checkResultWord", "projected", "reviewClass", "fixStillOpen",
              "needsAttention", "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows",
              "mistakeFor", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds", "restoreFolds",
-             "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith", "captureFolds", "restoreFolds",
+             "judgmentDecidedPane", "renderJudgment", "fixedNotKept", "sayControls", "cancelSay", "sayBusyWith", "captureFolds", "restoreFolds",
              "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText", "shownField",
              "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane",
              "supportFindingFor", "supportNoteText", "researchLabelLine", "researchContextSection",
@@ -5726,7 +5727,7 @@ console.log(JSON.stringify(out, null, 1));
 # c1313667 is CHECK-RESULTS-WORDS-001's date outcome ('Timing matches source'
 # in place of a bare 'passed' on every pane's passing date check) — re-verified
 # by diffing both renders surface by surface: that one line is the only change
-_MAIN_SHAPED_RENDER_SHA256 = "f98299d4cdc02b6e83e0ce55788c7895954046ba5282bdc571f6187e5dab65e4"
+_MAIN_SHAPED_RENDER_SHA256 = "d9f41ba179c33cadd27c182d511a7eaaec80d4d742984edf945c7949a4839010"
 
 
 def _review_render(tmp_path, shape):
@@ -7297,68 +7298,290 @@ def test_support_attempt_renders_once_in_the_trail():
     _run_node(script)
 
 
-def test_new_run_shows_the_full_instruction_set_served_by_the_server():
-    # CVA 16:44: New Run shows the full instruction set — a read-only
-    # 'Also sent on every research run:' section with the six Where-to-look
-    # points, served by the server (one source of truth). The shown text must
-    # equal the block research_instructions appends to every assignment.
+def test_one_instructions_box_carries_the_servers_full_default():
+    # CVA 18:57: ONE instructions box. The editable box is prefilled with the
+    # default text the server serves (GET /api/settings
+    # research_instructions_default — the S1 coder makes it the full brief),
+    # an untouched start sends exactly that text, and the read-only 'Also
+    # sent on every research run' section is gone. The box is tall and
+    # resizable so most of the brief is visible.
     import json
     import subprocess
 
     from fastapi.testclient import TestClient
 
-    from capture import research_instructions
     from server.app import create_app
 
-    # the six points, straight from the data file the assignment appends
-    want = research_instructions.where_to_look_points()
-    assert len(want) == 6, want
-    block = research_instructions.WHERE_TO_LOOK
-    for p in want:
-        assert "- " + p in block
-    # and the assignment path really appends them
-    assignment = research_instructions.research_assignment("Focus on catalysts.")
-    for p in want:
-        assert p in assignment
+    html = (UI / "index.html").read_text()
+    assert "Also sent on every research run" not in html
+    assert 'id="nr-wtl"' not in html and "nr-wtl-sec" not in html
+    assert 'id="nr-note" rows="12"' in html
+    assert 'resize:vertical' in html and "min-height:200px" in html
 
-    # the server serves them next to /api/research/options
-    served = TestClient(create_app(runs_dir=REPO / "runs", ui_dir=UI)).get("/api/research/options").json()
-    assert served["where_to_look"] == want
+    served = TestClient(create_app(runs_dir=REPO / "runs", ui_dir=UI)).get("/api/settings").json()
+    default_text = served["research_instructions_default"]
+    assert isinstance(default_text, str) and default_text.strip()
 
-    # the sheet renders the served list verbatim
     js = (UI / "app.js").read_text()
-    fns = "\n".join(_grab_fn(js, n) for n in
-                    ("el", "clear", "supportFromOptions", "applySupportOptions", "nrSupportValue"))
+    fns = "\n".join(_grab_fn(js, n) for n in ("el", "nrError", "notePayload", "applyResearchSettings", "noteHintText", "researchFromSettings", "updateNoteHint"))
     script = "\n".join([
-        "var nrSupport = { loaded: false, available: false, reason: null, choices: [], touched: false };",
-        "var nrSupportSeq = 0; var nrSupportPending = false;",
-        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, hidden: false,",
-        "  disabled: false, checked: false, title: '', value: '',",
-        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
-        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
-        "  removeAttribute: function (k) { delete this[k]; } }; }",
+        "var nrResearch = { defaultText: null, maxLength: null, loaded: false };",
         "var nodes = {};",
-        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
-        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        "global.document = { createElement: function () { return { textContent: '', children: [], append: function () {} }; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = { value: '', textContent: '', hidden: false }; return nodes[id]; } };",
         fns,
-        "function textOf(node, out) { out = out || []; if (node && node.textContent) out.push(node.textContent);",
-        "  ((node && node.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
-        "applySupportOptions(" + json.dumps(served) + ");",
-        "if (nodes['nr-wtl-sec'].hidden) { console.error('section hidden with served points'); process.exit(2); }",
-        "var shown = textOf(nodes['nr-wtl']);",
-        "var want = " + json.dumps(want) + ";",
-        "for (var i = 0; i < want.length; i++)",
-        "  if (shown.indexOf(want[i]) === -1) { console.error('point ' + i + ' missing: ' + shown.slice(0, 200)); process.exit(3); }",
-        # an older server without the field hides the section — nothing guessed
-        "applySupportOptions({ support_check: { choices: ['lettucedetect'], default: null, available: true,",
-        "                                        unavailable_reason: null } });",
-        "if (!nodes['nr-wtl-sec'].hidden) { console.error('section shown without served points'); process.exit(4); }",
+        "applyResearchSettings(" + json.dumps(served) + ");",
+        "var box = nodes['nr-note'];",
+        "if (box.value !== " + json.dumps(default_text) + ") { console.error('box not prefilled with the served default'); process.exit(2); }",
+        "if (notePayload() !== " + json.dumps(default_text) + ") { console.error('untouched payload differs from the served default'); process.exit(3); }",
+        "box.value = '  Edited exactly.  ';",
+        "if (notePayload() !== '  Edited exactly.  ') { console.error('edited text not sent as typed'); process.exit(4); }",
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
     assert got.returncode == 0, got.stdout + got.stderr
 
 
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+
+
+def test_fixed_not_kept_gets_its_own_group_and_the_mid_column_shows_the_row():
+    # glass adviser (3) + (2): a Fix is not a Keep — the row lists under
+    # 'Corrected by you, not kept', never under 'Decided by you' (group and
+    # badge now tell the same story); and the judgment middle column shows
+    # the open row's source and quote, not 'Pick a row on the left'.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket",
+             "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
+             "reviewClass", "fixStillOpen", "needsAttention",
+             "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
+             "fixedNotKept", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
+             "captureFolds", "restoreFolds", "judgmentDecidedPane",
+             "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck",
+             "listReasonLine",
+             "shownDateText", "shownField", "whySection", "keptCurrent", "codeExclusionHistory", "detailsPane",
+             "supportFindingFor", "supportNoteText",
+             "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "disagreementSection",
+             "checkFnFor", "reportUrl", "reportRefusalReason", "dayInWords", "eventWord",
+             "researchLabelLine", "researchContextSection", "renderJudgment")
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    script = "\n".join([
+        "var FIELD_WORDS = { date_text: 'Date as written', date: 'Date', event_type: 'Event type' };",
+        "var NO_ERROR = 'x';",
+        "var EVENT_WORDS = { filing: 'Filing' };",
+        "var RULE_WORDS = {};",
+        "var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed', unreadable: 'unreadable', undecided: 'undecided' };",
+        "var CHECK_WORDS = { pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed', unresolved: 'unresolved' };",
+        "var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };",
+        "function currentRunId() { return 'run1'; }",
+        "function navigate() {}",
+        "function postDecision(id, body) {}",
+        "function exclusionFor() { return null; }",
+        "function codeExclusionHistory() { return null; }",
+        "function closeDialog() {}",
+        "function openDialog() {}",
+        "function seeTheCheck() { return { textContent: '', children: [] }; }",
+        "function toast() {}",
+        "function mistakeTypeWord(t) { return t; }",
+        "var detail = { id: 'run1', run: { rows: [], mistakes: [], sources: [ { id: 's1', publisher: 'Sample publisher' } ],",
+        "    tables: [], run: { label: 'probe' } },",
+        "  state: { targets: {}, exclusions: [], mistake_list: [], unresolved: 1,",
+        "    counts: { inclusion: { review: 1, kept: 0, included: 0 }, review: { proposed: 1 } } } };",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, hidden: false, value: '',",
+        "  checked: false, dataset: {}, open: false, scrollTop: 0,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  querySelector: function () { return null; }, remove: function () {}, focus: function () { this.focused = true; },",
+        "  setSelectionRange: function (a, b) { this.selectionStart = a; this.selectionEnd = b; } }; }",
+        "var nodes = {}; var sayRec = null; var qnoteDraft = {}; var judgmentSel = null;",
+        "var route = { screen: 'judgment', rowId: 'e1', dialog: null };",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; }, activeElement: null };",
+        fns,
+        "function clear(node) { node.children = []; node.textContent = ''; return node; }",
+        "function textOf(node, out) { out = out || []; if (node && node.textContent) out.push(node.textContent);",
+        "  ((node && node.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        "function mk(id, title, t) {",
+        "  return { row: { id: id, title: title, ticker: 'ACME', proposed_by: 'Muse Spark', checks: [],",
+        "      date_text: 'Q3 2027', date: null, event_type: 'filing', quote: 'the fixed quote',",
+        "      source_id: 's1', page_number: 1 }, t: t }; }",
+        "var base = { needs_recheck: false, recheck: null, issues: [], values: { quote: 'the fixed quote' },",
+        "  fixes: [], reason: null, disagreement: null, status: 'proposed', on_calendar: false };",
+        "var e1 = mk('e1', 'FIXED ROW', Object.assign({}, base, { group: 'corrected', decided_by_person: true,",
+        "  needs_attention: false, accepted: false, last_action: 'fix', fixes: [ { field: 'title' } ],",
+        "  review_bucket: 'proposed', inclusion: 'review', review_label: 'Corrected — not reviewed by you',",
+        "  decision_label: 'Fixed by you' }));",
+        "var e2 = mk('e2', 'KEPT ROW', Object.assign({}, base, { group: 'kept', decided_by_person: true,",
+        "  needs_attention: false, accepted: true, last_action: 'keep',",
+        "  review_bucket: 'accepted', inclusion: 'kept', review_label: 'Checked and kept',",
+        "  decision_label: 'Kept by you' }));",
+        "var e3 = mk('e3', 'OPEN ROW', Object.assign({}, base, { group: 'open', decided_by_person: false,",
+        "  needs_attention: true, accepted: false, last_action: null,",
+        "  review_bucket: 'proposed', inclusion: 'review', review_label: 'Proposed — needs review',",
+        "  decision_label: null }));",
+        "detail.run.rows = [e1.row, e2.row, e3.row];",
+        "detail.state.targets = { e1: e1.t, e2: e2.t, e3: e3.t };",
+        "renderJudgment();",
+        "var listTxt = textOf(nodes['judgment-rows']);",
+        "if (listTxt.indexOf('Corrected by you, not kept · 1') === -1) { console.error('fixed-not-kept group missing: ' + listTxt); process.exit(2); }",
+        "if (listTxt.indexOf('Decided by you · 1') === -1) { console.error('decided group wrong: ' + listTxt); process.exit(3); }",
+        "if (listTxt.indexOf('Corrected by you, not kept') > listTxt.indexOf('Decided by you'))",
+        "  { console.error('fixed-not-kept listed after Decided by you'); process.exit(4); }",
+        "var midTxt = textOf(nodes['judgment-mid']);",
+        "if (midTxt.indexOf('Pick a row on the left') !== -1) { console.error('placeholder beside an open row'); process.exit(5); }",
+        "if (midTxt.indexOf('Sample publisher · page 1') === -1 || midTxt.indexOf('the fixed quote') === -1)",
+        "  { console.error('mid column lacks source/quote: ' + midTxt); process.exit(6); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_pane_drops_internal_wording():
+    # glass adviser (4): the legacy keyword-rule label reads 'Category'; an
+    # empty proposed type drops its line (never 'Not supplied'); the
+    # 'Original checks · history (before edit)' block appears only after an
+    # actual edit; a historic pass reads 'passed before your edit'.
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    hist_fns = "\n".join(_grab_fn(js, n) for n in
+                          ("effectiveChecks", "dateFinding", "passOutcome", "passOutcomeDate",
+                           "timingReason", "checksSection"))
+    script = "\n".join([
+        "function el(tag, cls, value) { return {tag:tag, cls:cls, textContent:value || '', children:[], style:{}, dataset:{}, append:function(){ this.children.push.apply(this.children, arguments); }}; }",
+        "function checkDot(result) { return el('span', 'dot ' + result); }",
+        "function esc(value) { return el('span', null, value); }",
+        "function checkResultWord(result) { return ({ pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed', unresolved: 'unresolved' })[result] || result; }",
+        "function seeTheCheck(check) { return el('details', null, 'details ' + check.label); }",
+        "function flatten(node) { return (typeof node === 'string' ? node : node.textContent || '') + (node.children || []).map(flatten).join(' '); }",
+        hist_fns,
+        "var PASS_OUTCOME_WORDS = { date_match: passOutcomeDate, quote_match: 'Quote matches source', selector_match: 'Citation located' };",
+        "var TIMING_CAVEAT = 'caveat'; var TIMING_CAVEAT_OLD = 'old caveat';",
+        "var history = [ { name: 'quote_match', result: 'pass', label: 'Quote found on page' } ];",
+        "var current = [ { name: 'quote_match', result: 'pass', label: 'Quote found on page' } ];",
+        # never-edited row: no 'before edit' history block at all
+        "var t0 = { effective_checks: current, fixes: [], check_history: history, checks_stale: false, page_evidence: {} };",
+        "var out0 = flatten(checksSection({ checks: current }, t0));",
+        "if (out0.indexOf('Original checks') !== -1 || out0.indexOf('before edit') !== -1)",
+        "  { console.error('history block on a never-edited row: ' + out0.slice(0, 160)); process.exit(2); }",
+        # edited row: the block is there, in plain words
+        "var t1 = { effective_checks: current, fixes: [ { field: 'title' } ], check_history: history,",
+        "           checks_stale: false, page_evidence: {} };",
+        "var out1 = flatten(checksSection({ checks: current }, t1));",
+        "if (out1.indexOf('Original checks · history (before edit)') === -1) { console.error('edit history missing'); process.exit(3); }",
+        "if (out1.indexOf('passed before your edit') === -1) { console.error('plain history words missing'); process.exit(4); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+    # the type provenance lines: plain 'Category', empty hint dropped
+    names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket",
+             "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
+             "reviewClass", "fixStillOpen", "needsAttention",
+             "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
+             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds",
+             "restoreFolds", "judgmentDecidedPane",
+             "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck",
+             "listReasonLine",
+             "shownDateText", "shownField", "whySection", "keptCurrent", "codeExclusionHistory", "detailsPane",
+             "supportFindingFor", "supportNoteText",
+             "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "disagreementSection",
+             "checkFnFor", "reportUrl", "reportRefusalReason", "dayInWords", "eventWord",
+             "researchLabelLine", "researchContextSection")
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    script2 = "\n".join([
+        "var FIELD_WORDS = { date_text: 'Date as written', date: 'Date', event_type: 'Event type' };",
+        "var NO_ERROR = 'x';",
+        "var EVENT_WORDS = { filing: 'Filing', trial_results: 'Trial results' };",
+        "var RULE_WORDS = {};",
+        "var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed' };",
+        "var CHECK_WORDS = { pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed', unresolved: 'unresolved' };",
+        "var DECIDED_BADGE = { kept: 'Kept by you', corrected: 'Fixed by you', removed: 'Removed by you' };",
+        "function currentRunId() { return 'run1'; }",
+        "function navigate() {}",
+        "function postDecision() {}",
+        "function exclusionFor() { return null; }",
+        "function codeExclusionHistory() { return null; }",
+        "function closeDialog() {}",
+        "function openDialog() {}",
+        "function seeTheCheck() { return { textContent: '', children: [] }; }",
+        "function toast() {}",
+        "function mistakeTypeWord(t) { return t; }",
+        "var detail = { id: 'run1', run: { rows: [], mistakes: [], sources: [], tables: [], run: { label: 'probe' } },",
+        "  state: { targets: {}, exclusions: [], mistake_list: [] } };",
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, hidden: false, value: '',",
+        "  checked: false, dataset: {}, open: false, scrollTop: 0,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
+        "  querySelector: function () { return null; }, remove: function () {}, focus: function () { this.focused = true; },",
+        "  setSelectionRange: function (a, b) { this.selectionStart = a; this.selectionEnd = b; } }; }",
+        "var nodes = {}; var sayRec = null; var qnoteDraft = {}; var judgmentSel = null;",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; }, activeElement: null };",
+        fns,
+        "function clear(node) { node.children = []; node.textContent = ''; return node; }",
+        "function textOf(node, out) { out = out || []; if (node && node.textContent) out.push(node.textContent);",
+        "  ((node && node.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        "var row = { id: 'e1', title: 'ROW', ticker: 'ACME', company: 'Acme', proposed_by: 'Muse Spark', checks: [],",
+        "  date_text: 'Q3 2027', date: null, event_type: 'filing', quote: 'q', source_id: 's1', page_number: 1 };",
+        "var t = { group: 'open', status: 'undecided', decided_by_person: false, needs_attention: true,",
+        "  needs_recheck: false, recheck: null, last_action: null, review_label: 'Proposed — needs review',",
+        "  review_bucket: 'proposed', accepted: false, decision_label: null, on_calendar: false, issues: [],",
+        "  type_presentation: { category: 'trial_results', category_label: 'Category (from old keyword rule)',",
+        "    type_hint: null, type_hint_label: \"Reader's proposed type\" },",
+        "  values: { date_text: 'Q3 2027' }, fixes: [], reason: null, disagreement: null };",
+        "detail.state.targets = { e1: t };",
+        "var host = global.document.getElementById('judgment-det');",
+        "detailsPane(host, row, { back: null });",
+        "var txt = textOf(host);",
+        "if (txt.indexOf('from old keyword rule') !== -1) { console.error('internal label on screen: ' + txt.slice(0, 200)); process.exit(5); }",
+        "if (txt.indexOf('Not supplied') !== -1) { console.error('Not supplied on screen'); process.exit(6); }",
+        "if (txt.indexOf('Trial results') === -1) { console.error('category value lost'); process.exit(7); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script2, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+
+def test_calendar_pane_decides_without_leaving_the_calendar():
+    # glass adviser (1): the calendar row pane carries Keep / Fix / Remove
+    # (+ Undo) with the same dialogs (expected_basis via the dialog mount) —
+    # and a dialog cancelled from the calendar returns to the calendar.
+    js = (UI / "app.js").read_text()
+    cal = _grab_fn(js, "renderCalendar")
+    for word in ("'Keep'", "'Fix…'", "'Remove…'", "'Undo'", "openDialog(pick.row, route.dialog)",
+                 "dialog: 'fix'", "dialog: 'remove'", "screen: 'calendar', rowId: pick.row.id"):
+        assert word in cal, word
+    assert "dialogHome(row" in _grab_fn(js, "removeDialog")
+    assert "dialogHome(row" in _grab_fn(js, "keepAnywayDialog")
+    assert _grab_fn(js, "fixDialog").count("dialogHome(row") >= 3
+
+
+def test_new_run_action_row_is_sticky_and_the_button_counts_companies():
+    # glass adviser (6): the sheet's action row is sticky at the bottom while
+    # the long sheet scrolls; the start button sleeps at zero companies.
+    css = (UI / "styles.css").read_text()
+    assert ".sheet .nr-actions{position:sticky;bottom:-20px;" in css
+    html = (UI / "index.html").read_text()
+    assert 'class="btnrow nr-actions"' in html
+    js = (UI / "app.js").read_text()
+    sync = _grab_fn(js, "syncStartButton")
+    assert "'Run now · ' + n" in sync
+    assert "btn.disabled = !!nrBusy || !n;" in sync
+
+
+def test_later_section_sorts_by_start_date():
+    # glass adviser (5): the Later section reads in date order (a period by
+    # its start), not the server's list order.
+    js = (UI / "app.js").read_text()
+    cal = _grab_fn(js, "renderCalendar")
+    assert "later.slice().sort(" in cal
 def test_checks_on_every_run_section_renders_with_default_on_checkbox():
     # CVA-approved 16:50 order: one 'Checks on every run' section — read-only
     # fact lines, then the wording-check checkbox ON by default; the old
@@ -7538,7 +7761,7 @@ def test_lettuce_older_options_answer_never_overrides_the_newer():
         "if (histAt < 0) { console.error('history header'); process.exit(5); }",
         "var hist = out.slice(histAt);",
         "if (hist.indexOf('Timing matches source') !== -1) { console.error('history wears the current outcome'); process.exit(6); }",
-        "if (hist.indexOf('passed then') === -1) { console.error('passed then missing'); process.exit(7); }",
+        "if (hist.indexOf('passed before your edit') === -1) { console.error('plain history words missing'); process.exit(7); }",
         "if (hist.indexOf('Old conflict.') === -1) { console.error('history conflict lost'); process.exit(8); }",
         "function dotsByHeader(node) { var o = {}, cur = '(head)';",
         "  (node.children || []).forEach(function (c) {",
