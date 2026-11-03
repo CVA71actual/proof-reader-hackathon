@@ -763,33 +763,40 @@ def _finding_text(finding) -> str:
     return "The reviewer's finding could not be read"
 
 
-# CALENDAR-RULE-001: research.issues codes that are support failures on the cited evidence. capture_incomplete is a
-# disclosed capture limit, not a conflict; row-check mirrors are excluded below (the current row checks decide).
-_RESEARCH_SUPPORT_CODES = ("quote_not_found", "quote_on_hidden_text", "locator_mismatch", "dateline_as_event_date")
-
-
 def _research_support_issues(row: dict | None, values: dict) -> list[str]:
-    """The research intake's recorded support failures on the row's cited spans (runs/research_contract.py
-    research_issues), as plain issue text. An issue that only mirrors a saved row check is left to the current row
-    checks, which supersede it after a re-check; the dateline rule applies only while the date is the one it judged."""
+    """Support failures on the row's cited evidence spans, from the span check results on research.evidence (the
+    loader re-runs them on the words each span consumes now: runs/check_load.py), worded as the research intake
+    words them (runs/research_contract.research_issues): a secondary quote not on its page, a quote only in hidden
+    text, word ids not on the page, a page that could not be loaded. The primary quote is left to the current row
+    checks. From research.issues only the dateline rule is taken, while the date is the one it judged."""
     research = (row or {}).get("research")
-    if not isinstance(research, dict) or not research.get("issues"):
+    if not isinstance(research, dict):
         return []
-    from runs.research_contract import CHECK_ISSUE
-    saved = [*(row.get("checks") or []), *(row.get("check_history") or [])]
-    mirrors = {(CHECK_ISSUE.get(c.get("name"), "check_failed"), f"{c.get('label') or c.get('name')} failed: {c.get('reason')}")
-               for c in saved if c.get("result") == "fail"}
     out = []
-    for i in research["issues"] if isinstance(research["issues"], list) else [None]:
-        if not isinstance(i, dict):
-            out.append("A recorded evidence issue could not be read")
+    evidence = research.get("evidence") if isinstance(research.get("evidence"), list) else []
+    primary = research.get("primary_span_index", 0)
+    for k, sc in enumerate(evidence):
+        if not isinstance(sc, dict):
+            out.append("Cited evidence: a recorded span could not be read")
             continue
-        code, message = i.get("code"), i.get("message")
-        if code not in _RESEARCH_SUPPORT_CODES or (code, message) in mirrors:
-            continue
-        if code == "dateline_as_event_date" and (values.get("date") != row.get("date") or values.get("date_end")):
-            continue
-        out.append(f"Cited evidence: {message or code}")
+        tag = "primary span" if k == primary else f"span {k}"
+        where = f"{sc.get('source_id')} page {sc.get('page_number')}"
+        changed = " (its words changed after it was first checked)" if sc.get("rechecked_on_load") else ""
+        if sc.get("quote_match") == "could_not_run":
+            out.append(f"Cited evidence: the quote of {tag} could not be checked: {sc.get('quote_match_reason')}")
+        elif k != primary and sc.get("quote_match") not in (None, "pass"):
+            out.append(f"Cited evidence: The quote of {tag} is not printed on {where}: "
+                       f"{sc.get('quote_match_reason')}{changed}")
+        elif sc.get("quote_match") == "pass" and sc.get("printed_quote_match") not in (None, "pass"):
+            out.append(f"Cited evidence: The quote of {tag} matches only words shorter than 2pt (hidden or sub-2pt "
+                       f"text), not printed text.{changed}")
+        if sc.get("unknown_word_ids"):
+            out.append(f"Cited evidence: Word ids {', '.join(map(str, sc['unknown_word_ids'][:6]))} of {tag} are "
+                       f"not on that page.{changed}")
+    for i in research.get("issues") if isinstance(research.get("issues"), list) else []:
+        if isinstance(i, dict) and i.get("code") == "dateline_as_event_date" \
+                and values.get("date") == row.get("date") and not values.get("date_end"):
+            out.append(f"Cited evidence: {i.get('message') or 'the date is the release dateline'}")
     return out
 
 

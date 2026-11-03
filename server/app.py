@@ -59,7 +59,11 @@ _CODE_REF = re.compile(r"^checks/([A-Za-z0-9_]+)\.py:([A-Za-z_][A-Za-z0-9_]*)$")
 NO_SUCH_CHECK = "No check code has that reference; only functions under checks/ can be shown."
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
-BODY_FIELDS = {"target", "action", "note", "fix", "by"}
+BODY_FIELDS = {"target", "action", "note", "fix", "by", "expected_basis"}
+# DIALOGS-001: a decision made in a dialog may say which proposal/evidence it was shown (the target's review_basis,
+# or just its sha256). When the target has changed since, nothing is written.
+STALE_DECISION_REASON = ("This row changed since you opened it: its proposal or evidence is different now. Nothing was "
+                         "saved. Look at it again, then decide.")
 
 
 def now_utc() -> str:
@@ -544,7 +548,7 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
             # Every page file run.json names is checked again here, at decision time, not only the words file
             # the re-check reads: a file changed since the run was loaded refuses the decision before any write.
             verify_page_files(store.run_dir(run_id), run)
-            return _decide(store, run_id, run, line)
+            return _decide(store, run_id, run, line, expected_basis=body.get("expected_basis"))
 
     @app.post("/api/runs/{run_id}/voice/decide")
     async def voice_decide(run_id: str, request: Request, target: str = "") -> dict:
@@ -667,9 +671,27 @@ def jobs_view(store: RunStore, run_id: str) -> dict:
     return json.loads((store.run_dir(run_id) / "run.json").read_text())["run"]
 
 
-def _decide(store: RunStore, run_id: str, run: dict, line: dict) -> dict:
-    """Check the decision against the current state, re-check a fix, append. The caller holds DECISIONS_LOCK."""
+def _expected_sha(expected) -> str | None:
+    if isinstance(expected, str):
+        return expected
+    if isinstance(expected, dict) and isinstance(expected.get("sha256"), str):
+        return expected["sha256"]
+    raise HTTPException(422, "expected_basis must be the row's review_basis or its sha256.")
+
+
+def _decide(store: RunStore, run_id: str, run: dict, line: dict, expected_basis=None) -> dict:
+    """Check the decision against the current state, re-check a fix, append. The caller holds DECISIONS_LOCK.
+
+    DIALOGS-001: with expected_basis (what the person was shown), the decision is refused with 409, and nothing is
+    written, unless it equals the target's current review_basis. Without it, callers work as before."""
     decisions = store.decisions(run_id)
+    if expected_basis is not None:
+        want = _expected_sha(expected_basis)
+        shown_target = current_state(run, decisions)["targets"].get(line.get("target"))
+        if shown_target is None:
+            raise HTTPException(422, "No row or table value has that id.")
+        if (shown_target.get("review_basis") or {}).get("sha256") != want:
+            raise HTTPException(409, STALE_DECISION_REASON)
     if line["action"] == "keep":
         before = current_state(run, decisions)
         target = before["targets"].get(line.get("target"))
