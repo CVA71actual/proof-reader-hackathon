@@ -1362,6 +1362,103 @@ def test_research_instructions_both_start_paths_send_the_exact_text():
     assert got.returncode == 0, got.stdout + got.stderr
 
 
+def test_research_s1_ui_surfaces():
+    # RESEARCHER-FULL-001 S1: the documented projection rendered as sent, no UI
+    # semantic logic — agent trail steps (one actor per step), per-company
+    # progress, searched-not-found notes, the row label, the Context section,
+    # and the source retrieval block (URL, hash, retrieval time)
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    names = ("el", "esc", "clear", "hm", "num", "money",
+             "researchTrailBlock", "researchCompanyBlock", "researchNotFoundBlock",
+             "researchLabelLine", "researchContextSection", "srcmetaBar")
+    fns = "\n".join(_grab_fn(js, n) for n in names)
+    script = "\n".join([
+        "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {},",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
+        "  createTextNode: function (t) { return { nodeType: 3, textContent: t }; } };",
+        "function esc(v) { return String(v); }",
+        "function dateTimeWords(iso) { return String(iso).replace('T', ' '); }",
+        "var RESEARCH_STEP_WORDS = { request: 'Request', search: 'Search', fetch: 'Fetch', proposal: 'Proposal', check: 'Check', coverage: 'Coverage', finish: 'Finish', limit: 'Limit', repeat: 'Repeat', error: 'Error', prose: 'Note' };",
+        "var RESEARCH_STATUS_WORDS = { queued: 'Queued', researching: 'Researching', finished: 'Finished', stopped: 'Stopped', failed: 'Failed' };",
+        "var CONDITIONS_WORDS = { not_established: 'Conditions not established', none_stated: 'No conditions stated', stated: 'Conditions stated' };",
+        fns,
+        "function textOf(n, out) { out = out || []; if (typeof n === 'string') out.push(n);",
+        "  else if (n && n.textContent) out.push(n.textContent);",
+        "  ((n && n.children) || []).forEach(function (c) { textOf(c, out); }); return out.join('\\n'); }",
+        # the agent trail: one actor per step, plain kind words, the step's sentence
+        "var steps = [",
+        "  { n: 1, at: '2026-11-02T10:00:00Z', ticker: 'ACME', kind: 'search', tag: 'Model', who: 'Muse Spark',",
+        "    text: 'Searched: ACME phase 3 results 2027', refs: { queries: ['ACME phase 3 results 2027'] } },",
+        "  { n: 2, at: '2026-11-02T10:01:00Z', ticker: 'ACME', kind: 'fetch', tag: 'Code', who: 'Code',",
+        "    text: 'Fetched https://example.com/press/1', refs: { source_id: 's1' } },",
+        "  { n: 3, at: '2026-11-02T10:05:00Z', ticker: 'ACME', kind: 'proposal', tag: 'Model', who: 'Muse Spark',",
+        "    text: 'Proposed 1 event', refs: { row_id: 'e1' } },",
+        "  { n: 4, at: '2026-11-02T10:06:00Z', ticker: 'ACME', kind: 'check', tag: 'Code', who: 'Code',",
+        "    text: 'Quote check: pass' } ];",
+        "var tb = textOf(researchTrailBlock(steps));",
+        "if (tb.indexOf('Agent research — not independently reviewed') === -1) { console.error('trail title'); process.exit(2); }",
+        "if (tb.indexOf('Muse Spark') === -1 || tb.indexOf('Search') === -1 || tb.indexOf('Searched: ACME phase 3 results 2027') === -1)",
+        "  { console.error(tb); process.exit(3); }",
+        "if (tb.indexOf('Fetch') === -1 || tb.indexOf('Proposal') === -1 || tb.indexOf('Check') === -1)",
+        "  { console.error('kinds'); process.exit(4); }",
+        # per-company progress
+        "var cb = textOf(researchCompanyBlock({ ACME: { status: 'researching', requests: 5, searches: 12,",
+        "  fetches: 4, pages_delivered: 9, spend_usd: 0.42, status_reason: '' }, BTBR: { status: 'failed',",
+        "  status_reason: 'The SEC could not be reached.', requests: 2 } }));",
+        "if (cb.indexOf('ACME') === -1 || cb.indexOf('Researching') === -1 || cb.indexOf('12 searches') === -1 ||",
+        "    cb.indexOf('9 pages delivered') === -1 || cb.indexOf('$0.42') === -1)",
+        "  { console.error(cb); process.exit(5); }",
+        "if (cb.indexOf('BTBR') === -1 || cb.indexOf('Failed') === -1 || cb.indexOf('The SEC could not be reached.') === -1)",
+        "  { console.error(cb); process.exit(6); }",
+        # searched, not found — with the scope note once
+        "var nb = textOf(researchNotFoundBlock([",
+        "  { ticker: 'ACME', category: 'pipeline', question: 'Phase 2 readout timing', searched_not_found: true,",
+        "    scope_note: \"'Not found' covers these queries and sources at these times only, not the whole web.\" },",
+        "  { ticker: 'ACME', category: 'partnerships', question: 'Licensing deals found: 2' } ]));",
+        "if (!nb || nb.indexOf('Searched, not found') === -1 || nb.indexOf('Phase 2 readout timing') === -1)",
+        "  { console.error(nb); process.exit(7); }",
+        "if (nb.indexOf('Licensing deals') !== -1) { console.error('non-gap leaked'); process.exit(8); }",
+        "if (nb.indexOf('covers these queries and sources at these times only') === -1) { console.error('scope lost'); process.exit(9); }",
+        # nothing found -> no block
+        "if (researchNotFoundBlock([{ question: 'x' }]) !== null) { console.error('empty block'); process.exit(10); }",
+        # the row label + Context section
+        "var row = { id: 'e1', research: { label: 'Agent research — not independently reviewed', revision: 3,",
+        "  conditions_state: 'stated', issues: [{ code: 'KNOWN_OMITTED', message: 'A condition is stated but not assessed.' }] } };",
+        "var ll = textOf(researchLabelLine(row));",
+        "if (ll !== 'Agent research — not independently reviewed') { console.error(ll); process.exit(11); }",
+        "if (researchLabelLine({ id: 'e2' }) !== null) { console.error('label on a plain row'); process.exit(12); }",
+        "var ctx = textOf(researchContextSection(row));",
+        "if (ctx.indexOf('Context') === -1 || ctx.indexOf('Conditions stated') === -1 ||",
+        "    ctx.indexOf('A condition is stated but not assessed.') === -1 || ctx.indexOf('Proposal revision 3') === -1)",
+        "  { console.error(ctx); process.exit(13); }",
+        # source retrieval block: URL, retrieval time, original hash, pages
+        "var sm = textOf(srcmetaBar({ id: 's1', publisher: 'Example', kind: 'company_release',",
+        "  title: 'T', url: 'https://example.com/p', published_date: '2026-10-01',",
+        "  captured_at: '2026-11-02T10:01:00+00:00', sha256: 'ab' + 'cd'.repeat(31),",
+        "  retrieval: { tool: 'fetch_url', requested_url: 'https://example.com/p', final_url: 'https://example.com/p',",
+        "    retrieved_at: '2026-11-02T10:01:05+00:00', original_sha256: '12' + '34'.repeat(31),",
+        "    pages_captured: 2, pages_total: 3 } }));",
+        "if (sm.indexOf('URL') === -1 || sm.indexOf('https://example.com/p') === -1 ||",
+        "    sm.indexOf('Retrieved') === -1 || sm.indexOf('2026-11-02 10:01:05') === -1 ||",
+        "    sm.indexOf('Original SHA-256') === -1 || sm.indexOf('1234') === -1 || sm.indexOf('Pages captured') === -1 ||",
+        "    sm.indexOf('2 of 3') === -1)",
+        "  { console.error(sm); process.exit(14); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+    # wiring pins: each surface renders from run.research / row.research
+    for word in ("function runResearch(", "researchTrailBlock(rs.steps)",
+                 "researchCompanyBlock(runResearch() && runResearch().companies)",
+                 "researchNotFoundBlock(runResearch() && runResearch().coverage)",
+                 "researchLabelLine(row)", "researchContextSection(row)",
+                 "source.retrieval", "rs && rs.steps && rs.steps.length"):
+        assert word in js, word
+
+
 def test_ticker_intake_pins():
     # TICKER-INTAKE-001: the New run sheet intakes pasted tickers through the
     # server — no hard-coded list, plain words, inline errors (the red line)
@@ -3628,8 +3725,8 @@ def test_cleared_date_text_regression_addendum3():
              "mistakeFor", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
              "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith",
              "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText", "shownField",
-             "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane",
-             "disagreementSection", "whySection", "checksSection", "keptCurrent", "codeExclusionHistory", "projectionComplete", "partialProjection", "projectionComplete", "partialProjection")
+             "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane", "researchLabelLine", "researchContextSection",
+             "disagreementSection", "whySection", "checksSection", "keptCurrent", "codeExclusionHistory", "projectionComplete", "partialProjection", "projectionComplete", "partialProjection", "researchLabelLine", "researchContextSection")
     fns = "\n".join(_grab_fn(js, n) for n in names)
     script = "\n".join([
         "var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed', unreadable: 'unreadable', undecided: 'undecided' };",
@@ -4533,7 +4630,7 @@ def test_m1_undo_click_posts_the_undo(tmp_path):
              "unresolvedRows", "decidedRows", "mistakeFor", "judgmentRow", "correctedSection", "checksSection",
              "judgmentPendingPane", "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay",
              "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText",
-             "shownField", "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane",
+             "shownField", "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane", "researchLabelLine", "researchContextSection", "researchLabelLine", "researchContextSection",
              "disagreementSection", "whySection", "keptCurrent", "codeExclusionHistory", "projectionComplete", "partialProjection", "projectionComplete", "partialProjection")
     fns = "\n".join(_grab_fn(js, n) for n in names)
     harness = "\n".join([

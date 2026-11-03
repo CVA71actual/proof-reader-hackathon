@@ -1037,6 +1037,92 @@
     audit.selected = vis.length ? vis[0].id : null;
   }
 
+  // ---------------- RESEARCHER-FULL-001 S1: the research projection, rendered
+  // as the server sends it — no UI semantic logic (runs/README.md "Research runs")
+  function runResearch() {
+    return (detail && detail.run && detail.run.research) || null;
+  }
+  var RESEARCH_STEP_WORDS = { request: 'Request', search: 'Search', fetch: 'Fetch',
+    proposal: 'Proposal', check: 'Check', coverage: 'Coverage', finish: 'Finish',
+    limit: 'Limit', repeat: 'Repeat', error: 'Error', prose: 'Note' };
+  var RESEARCH_STATUS_WORDS = { queued: 'Queued', researching: 'Researching',
+    finished: 'Finished', stopped: 'Stopped', failed: 'Failed' };
+  var CONDITIONS_WORDS = { not_established: 'Conditions not established',
+    none_stated: 'No conditions stated', stated: 'Conditions stated' };
+  // one actor per step, the kind in plain words, the step's own sentence
+  function researchTrailBlock(steps) {
+    var box = el('div', 'rstrail');
+    box.append(el('div', 'rstitle', 'Agent research — not independently reviewed'));
+    (steps || []).forEach(function (s2) {
+      var line = el('div', 'rsstep');
+      line.append(el('span', 'rswho', s2.who || s2.tag || ''));
+      line.append(el('span', 'rskind', RESEARCH_STEP_WORDS[s2.kind] || s2.kind || ''));
+      line.append(el('span', 'rstext', s2.text || ''));
+      if (s2.at) line.append(el('span', 'rsat', hm(s2.at)));
+      box.append(line);
+    });
+    return box;
+  }
+  // per-company progress for the run card
+  function researchCompanyBlock(companies) {
+    if (!companies) return null;
+    var ticks = Object.keys(companies);
+    if (!ticks.length) return null;
+    var box = el('div', 'rscomp');
+    ticks.forEach(function (t) {
+      var c = companies[t] || {};
+      var line = el('div', 'rscline');
+      line.append(el('b', null, t));
+      line.append(el('span', 'rsst', RESEARCH_STATUS_WORDS[c.status] || c.status || ''));
+      var bits = [];
+      if (c.requests !== null && c.requests !== undefined) bits.push(num(c.requests) + ' requests');
+      if (c.searches !== null && c.searches !== undefined) bits.push(num(c.searches) + ' searches');
+      if (c.fetches !== null && c.fetches !== undefined) bits.push(num(c.fetches) + ' fetches');
+      if (c.pages_delivered !== null && c.pages_delivered !== undefined) bits.push(num(c.pages_delivered) + ' pages delivered');
+      if (c.spend_usd !== null && c.spend_usd !== undefined) bits.push(money(c.spend_usd));
+      if (bits.length) line.append(el('span', 'rscounts', bits.join(' · ')));
+      var why = c.status_reason || (c.limitation && c.limitation.reason) || '';
+      if (why) line.append(el('span', 'rswhy', why));
+      box.append(line);
+    });
+    return box;
+  }
+  // 'Searched, not found' notes for the Audit log
+  function researchNotFoundBlock(coverage) {
+    var recs = (coverage || []).filter(function (r) { return r && r.searched_not_found; });
+    if (!recs.length) return null;
+    var box = el('div', 'rsnf');
+    box.append(el('h4', null, 'Searched, not found'));
+    recs.forEach(function (r) {
+      box.append(el('div', 'rsnfl',
+        (r.ticker ? r.ticker + ' · ' : '') + (r.category || '') + ': ' + (r.question || '')));
+    });
+    var scope = recs[0].scope_note;
+    if (scope) box.append(el('div', 'hint', scope));
+    return box;
+  }
+  // the row's research label and its Context section (completed facts)
+  function researchLabelLine(row) {
+    var rs = row && row.research;
+    if (!rs || !rs.label) return null;
+    return el('div', 'rslabel', rs.label);
+  }
+  function researchContextSection(row) {
+    var rs = row && row.research;
+    if (!rs) return null;
+    var facts = [];
+    if (rs.conditions_state && CONDITIONS_WORDS[rs.conditions_state]) facts.push(CONDITIONS_WORDS[rs.conditions_state]);
+    (rs.issues || []).forEach(function (i2) { if (i2 && i2.message) facts.push(i2.message); });
+    if (rs.revision !== null && rs.revision !== undefined) facts.push('Proposal revision ' + rs.revision);
+    if (!facts.length) return null;
+    var sec = el('div', 'sec');
+    sec.append(el('h4', null, 'Context'));
+    var box = el('div', 'ba blue');
+    facts.forEach(function (f) { box.append(el('div', null, f)); });
+    sec.append(box);
+    return sec;
+  }
+
   function renderAuditRows() {
     var host = clear(document.getElementById('audit-rows'));
     var vis = visibleAuditRows();
@@ -1071,6 +1157,8 @@
     });
     var on = host.querySelector('.row.on');
     if (on) revealRow(on);
+    var nf = researchNotFoundBlock(runResearch() && runResearch().coverage);
+    if (nf) host.append(nf);
   }
 
   function auditRow(row, t) {
@@ -1208,6 +1296,17 @@
         '· SHA-256 ' + source.rendered_from.sha256.slice(0, 16) + '…');
       meta.append(s);
     }
+    // RESEARCHER-FULL-001 S1: a source fetched by the agent's tools — where it
+    // came from, when, and the hash of the exact bytes received
+    var rt = source.retrieval;
+    if (rt) {
+      kv('URL', rt.final_url || rt.requested_url || '—');
+      if (rt.retrieved_at) kv('Retrieved', dateTimeWords(rt.retrieved_at));
+      if (rt.original_sha256) kv('Original SHA-256', rt.original_sha256.slice(0, 16) + '…');
+      if (rt.pages_captured !== null && rt.pages_captured !== undefined &&
+          rt.pages_total !== null && rt.pages_total !== undefined)
+        kv('Pages captured', rt.pages_captured + ' of ' + rt.pages_total);
+    }
     return meta;
   }
 
@@ -1274,6 +1373,10 @@
 
   // details pane (shared by audit + judgment)
   function detailsPane(host, row, opts) {
+    var rsLabel = researchLabelLine(row);
+    if (rsLabel) host.append(rsLabel);
+    var rsCtx = researchContextSection(row);
+    if (rsCtx) host.append(rsCtx);
     opts = opts || {};
     clear(host);
     var t = rowTarget(row);
@@ -2078,6 +2181,8 @@
 
     var mid = clear(document.getElementById('trail-mid'));
     var det = clear(document.getElementById('trail-det'));
+    var rs = runResearch();
+    if (rs && rs.steps && rs.steps.length) mid.append(researchTrailBlock(rs.steps));
     var row = rowOf(trailSel) || detail.run.rows[0] || null;
     if (!row) {
       mid.append(el('div', 'empty', 'No rows in this run.'));
@@ -4585,6 +4690,8 @@
       var cw = costPerKeptRowWords();
       if (cw) bits.push(cw);
       host.append(el('div', 'jb-sub', bits.join(' · ')));
+      var rsc = researchCompanyBlock(runResearch() && runResearch().companies);
+      if (rsc) host.append(rsc);
       host.hidden = false;
       return;
     }
