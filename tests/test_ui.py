@@ -1769,7 +1769,7 @@ def test_your_call_note_survives_background_polling():
              "shownDateText", "shownField", "whySection", "keptCurrent", "codeExclusionHistory", "detailsPane",
              "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "disagreementSection",
              "postDecision", "checkFnFor", "reportUrl", "reportRefusalReason", "dayInWords", "eventWord",
-             "renderJudgment")
+             "renderJudgment", "researchLabelLine", "researchContextSection")
     fns = "\n".join(_grab_fn(js, n) for n in names)
     script = "\n".join([
         "var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed', unreadable: 'unreadable', undecided: 'undecided' };",
