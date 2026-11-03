@@ -44,6 +44,24 @@ PRICE_STATUS = {
     "Muse Spark Open": "confirmed 2026-10-29, baseten.co",
     "Muse Voice Transcribe": "confirmed 2026-10-29, dev.meta.ai",
 }
+# US dollars per 1,000 requests, for a search API priced per request: Brave Search (BRAVE-PRIMARY-001, CVA 2026-11-02,
+# $5 per 1,000 requests).
+PRICES_PER_1K_REQUESTS_USD = {
+    "Brave Search": 5.00,
+}
+REQUEST_PRICE_STATUS = {
+    "Brave Search": "set by CVA 2026-11-02 (BRAVE-PRIMARY-001): $5 per 1,000 requests",
+}
+
+
+def request_cost_usd(name: str, requests: int | None) -> float | None:
+    """The cost of requests to a per-request priced API; None when unpriced or the count is not a count."""
+    price = PRICES_PER_1K_REQUESTS_USD.get(name)
+    if price is None or not _count(requests):
+        return None
+    return round(requests * price / 1000, ROUND_TO)
+
+
 SEARCH_PRICE_STATUS = {
     "Muse Spark": "confirmed 2026-11-02, dev.meta.ai/docs/search-grounding ($2.50 per 1,000 searches)",
 }
@@ -124,6 +142,11 @@ def snapshot() -> dict:
     recomputed later at the prices it was tallied at."""
     return {"per_1m_tokens_usd": {m: dict(p) for m, p in PRICES_PER_1M_USD.items()},
             "per_image_usd": dict(PRICES_PER_IMAGE_USD), "per_hour_usd": dict(PRICES_PER_HOUR_USD)}
+
+
+def request_snapshot() -> dict:
+    """The per-request prices in force, added to run.prices by a research run."""
+    return dict(PRICES_PER_1K_REQUESTS_USD)
 
 
 def search_snapshot() -> dict:

@@ -162,10 +162,12 @@ class ResearchTools:
     """What the loop reaches outside the process with: a fetcher (get(url) -> research_sources.Fetched), the HTML
     renderer and the ticker -> (cik, company) resolver. Tests pass fakes; the defaults are live."""
 
-    def __init__(self, fetcher=None, render_html=None, resolve=None):
+    def __init__(self, fetcher=None, render_html=None, resolve=None, brave=None):
+        from capture.brave_search import LiveBrave
         self.fetcher = fetcher or rs.LiveFetcher()
         self.render_html = render_html or rs.chrome_render
         self.resolve = resolve or self._resolve
+        self.brave = brave if brave is not None else LiveBrave()      # BRAVE-PRIMARY-001: the primary search
 
     def _resolve(self, ticker: str) -> tuple[str, str]:
         from capture.fetch_filings import resolve_cik
@@ -304,6 +306,7 @@ def make_job_class():
             with jobs.RUN_LOCK:
                 if isinstance(self.meta.get("prices"), dict):
                     self.meta["prices"]["per_1k_searches_usd"] = prices.search_snapshot()
+                    self.meta["prices"]["per_1k_requests_usd"] = prices.request_snapshot()
                 r = self.meta.setdefault("research", {})
                 r.setdefault("label", LABEL)
                 r["limits"] = dict(self.limits)
@@ -523,10 +526,14 @@ def make_job_class():
                                        "calls": {}, "actions": {}, "leads": {}, "history_bytes": 0,
                                        "fetch_by_url": {}, "finish_attempts": 0, "as_of": as_of,
                                        "delivered": {}, "settled": {}, "compacted": set(), "turn_starts": [],
+                                       "brave_calls": {}, "brave_items": [],
                                        "window_end": window_end, "started": time.monotonic()}
             assignment = self.choices.get("note_for_agent") or ""
             card = {"ticker": ticker, "company": company, "cik": st["cik"], "as_of": as_of.isoformat(),
                     "calendar_window": [as_of.isoformat(), window_end.isoformat()],
+                    "search_tools": ("brave_search (primary), web_search (secondary)" if
+                                     (self.tools.brave is not None and self.tools.brave.ready() is None)
+                                     else "brave_search is unavailable in this run; use web_search"),
                     "note": "Research events upcoming in the window; include relevant recent history as context."}
             first = [{"role": "user", "content": "Research assignment (from the person, exactly as written):\n"
                                                  + assignment},
@@ -534,7 +541,15 @@ def make_job_class():
             continuation = self.choices.get("research_continuation") or rr.CONTINUE_REPLAY
             history, pending, prev_id = list(first), list(first), None
             prose_nudged, empty_streak, timeout_streak = False, 0, 0
-            functions = rc.function_tools()
+            brave_problem = self.tools.brave.ready() if self.tools.brave is not None else "Brave Search is not configured."
+            st["brave"] = brave_problem is None
+            if brave_problem:
+                with jobs.RUN_LOCK:
+                    self.company(ticker)["search_limitations"] = [{"engine": "Brave Search", "at": now_utc(),
+                                                                   "reason": brave_problem}]
+                self.step(ticker, "limit", "Code", "runs.research",
+                          f"{brave_problem} Research continues on Meta's web_search.", engine="Brave Search")
+            functions = rc.function_tools(brave=st["brave"])
             while True:
                 self.check_company_limits(ticker)
                 searches_left = self.searches_left(ticker)
@@ -667,6 +682,8 @@ def make_job_class():
                     item = {"type": "function_call_output", "call_id": call["call_id"],
                             "output": json.dumps(result, ensure_ascii=False)}
                     data = result.get("data") if isinstance(result.get("data"), dict) else {}
+                    if call.get("name") == "brave_search" and data.get("engine") == "Brave Search":
+                        st["brave_items"].append((item, c["requests"]))
                     if data.get("source_id") and data.get("text"):      # page text delivered: compactable later
                         st["delivered"].setdefault(data["source_id"], []).append(
                             (item, [t["page_number"] for t in data["text"]], c["requests"]))
@@ -733,10 +750,21 @@ def make_job_class():
                           f"({rec['times']} times). Recorded; the loop goes on.", call_id=call.get("call_id"))
             seen.append(res)
 
+        def redact_brave(self, ticker: str, body: dict) -> dict:
+            """BRAVE-PRIMARY-001 storage policy: a turn log keeps a Brave answer as its query and URLs only."""
+            ids = self.state.get(ticker, {}).get("brave_calls") or {}
+            if not ids:
+                return body
+            out = copy.deepcopy(body)
+            for item in out.get("input", []):
+                if item.get("type") == "function_call_output" and item.get("call_id") in ids:
+                    item["output"] = json.dumps(ids[item["call_id"]], ensure_ascii=False)
+            return out
+
         def save_turn(self, ticker: str, n: int, body: dict, reply: rr.ResponsesReply, cost) -> None:
             folder = self.dir / "research" / "turns"
             folder.mkdir(parents=True, exist_ok=True)
-            rec = {"ticker": ticker, "n": n, "at": now_utc(), "request": body,
+            rec = {"ticker": ticker, "n": n, "at": now_utc(), "request": self.redact_brave(ticker, body),
                    "response": {"id": reply.response_id, "model": reply.model, "status": reply.status,
                                 "incomplete_reason": reply.incomplete_reason, "output": reply.output,
                                 "usage": {"input_tokens": reply.input_tokens, "output_tokens": reply.output_tokens,
@@ -773,12 +801,90 @@ def make_job_class():
                 self.step(ticker, "check", "Code", "runs.research_contract",
                           f"Refused {name}: " + "; ".join(p["message"] for p in problems), call_id=cid)
                 return rc.envelope(cid, "error", None, problems), False
-            handler = {"fetch_url": self.t_fetch_url, "fetch_edgar": self.t_fetch_edgar,
+            handler = {"brave_search": self.t_brave, "fetch_url": self.t_fetch_url, "fetch_edgar": self.t_fetch_edgar,
                        "fetch_ctgov": self.t_fetch_ctgov, "read_source_pages": self.t_read_pages,
                        "propose_events": self.t_propose, "record_coverage": self.t_coverage,
                        "nothing_material": self.t_nothing_material, "revise_event": self.t_revise,
                        "finish_draft": self.t_finish}[name]
             return handler(ticker, cid, args)
+
+        def admit_paid(self, ticker: str, worst: float) -> int | None:
+            """The same strict gate for a non-model paid request (Brave): spend + reservations + worst under the cap,
+            or Stop. Queues behind calls in flight."""
+            while True:
+                if self.stop_requested():
+                    raise Stop("person", "Stopped by a person before the next paid request.")
+                if self.cap_reached:
+                    raise Stop("spend_cap", self.cap_reached)
+                with jobs.RUN_LOCK:
+                    self.refresh_spend()
+                    if jobs.unknown_unaccepted(self.job):
+                        raise Stop("unpriced", "A call could not be priced, so the spending cap cannot be kept.")
+                    limit = self.choices["spending_limit_usd"]
+                    token = jobs.reserve_budget(self.dir.name, self.meta["spend_usd"], limit, worst,
+                                                alone_may_cross=False)
+                    if token is not None:
+                        return token
+                    if not jobs._RESERVED.get(self.dir.name):
+                        reason = (f"Spending cap reached: budget reached: the next request's bound {jobs.money(worst)} "
+                                  f"would exceed the {jobs.money(limit)} cap. Raise the cap to research more.")
+                        self.cap_reached = reason
+                        raise Stop("spend_cap", reason)
+                time.sleep(0.05)
+
+        def settle_paid(self, ticker: str, token, cost: float, what: str) -> None:
+            try:
+                with jobs.RUN_LOCK:
+                    self.refresh_spend()
+                    self.meta["spend_usd"] = round((self.meta["spend_usd"] or 0) + cost, prices.ROUND_TO)
+                    c = self.company(ticker)
+                    c["spend_usd"] = round(c["spend_usd"] + cost, prices.ROUND_TO)
+                    c[what] = c.get(what, 0) + 1
+                    self.save(refresh=False)
+            finally:
+                jobs.release_budget(self.dir.name, token)
+
+        def t_brave(self, ticker, cid, args):
+            """BRAVE-PRIMARY-001: the primary search. Leads only; paid per request through the same strict gate; one
+            attempt (no retry); a 429 is a recorded limitation. Storage: query + URLs only (capture/brave_search.py)."""
+            from capture.brave_search import NAME
+            st = self.state[ticker]
+            query = args["query"]
+            price = prices.request_cost_usd(NAME, 1)
+            token = self.admit_paid(ticker, price)
+            got = None
+            try:
+                got = self.tools.brave.search(query, args.get("count") or 10)
+            finally:
+                billed = got is None or got.error is None or got.may_have_been_billed
+                self.settle_paid(ticker, token, price if billed else 0.0, "brave_requests")
+            kept = {"call_id": cid, "status": "ok" if not got.error else "error",
+                    "data": {"engine": NAME, "query": query, "urls": got.urls},
+                    "note": "Brave result titles and snippets are not stored (Brave terms); only the query and URLs."}
+            st["brave_calls"][cid] = kept
+            with jobs.RUN_LOCK:
+                self.manifest.append("leads", ticker=ticker, tool="brave_search", engine=NAME, call_id=cid,
+                                     query=query, urls=got.urls, error=got.error, http_status=got.http_status)
+            if got.error:
+                if got.rate_limited:
+                    with jobs.RUN_LOCK:
+                        self.company(ticker).setdefault("search_limitations", []).append(
+                            {"engine": NAME, "at": now_utc(), "reason": got.error, "query": query})
+                self.step(ticker, "search", "Code", "capture.brave_search",
+                          f"Brave Search failed for “{query}”: {got.error} Not retried; recorded."
+                          + (" Use web_search meanwhile." if got.rate_limited else ""),
+                          engine=NAME, queries=[query], results=[], call_id=cid)
+                return rc.envelope(cid, "error", {"engine": NAME, "query": query}, [rc.issue(
+                    "rate_limited" if got.rate_limited else "search_failed",
+                    f"{got.error} Use web_search for this query.")]), False
+            self.step(ticker, "search", "Code", "capture.brave_search",
+                      f"Searched with Brave Search: {query}. {len(got.urls)} result"
+                      f"{'s' if len(got.urls) != 1 else ''} (leads, not evidence).",
+                      engine=NAME, queries=[query], results=got.urls[:20], call_id=cid)
+            # the titles and snippets go to the model for this turn only (in memory); see redact_brave/compact
+            return rc.envelope(cid, "ok", {"engine": NAME, "query": query, "results": got.results,
+                                           "note": "Leads only: capture a source with fetch_url before citing it."}
+                               ), False
 
         def _fetch_allowed(self, ticker: str) -> str | None:
             cap = self.limits["max_fetches_per_company"]
@@ -875,6 +981,11 @@ def make_job_class():
             the call/output pairing the API requires stays valid; the evidence stays in the captured files and can be
             read again with read_source_pages. (With previous_response_id the provider keeps its own history.)"""
             st = self.state[ticker]
+            for item, turn in st["brave_items"]:
+                if turn < current_turn and id(item) not in st["compacted"]:
+                    # BRAVE-PRIMARY-001: titles and snippets live only for the turn that delivered them
+                    item["output"] = json.dumps(st["brave_calls"][item["call_id"]], ensure_ascii=False)
+                    st["compacted"].add(id(item))
             for sid, items in st["delivered"].items():
                 if sid not in st["settled"]:
                     continue

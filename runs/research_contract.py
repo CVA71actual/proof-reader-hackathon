@@ -46,7 +46,9 @@ CONTROLLER = (
     "web broadly, open primary sources (SEC filings, company releases and presentations, ClinicalTrials.gov, "
     "regulators, partners, meetings), follow leads, and propose upcoming events.\n"
     "Rules:\n"
-    "- web_search results and snippets are LEADS, never evidence. Before you cite anything, capture it with "
+    "- Search: use brave_search first for discovery; use web_search when Brave finds too little or as a cross-check. "
+    "If the company card says brave_search is unavailable, use web_search.\n"
+    "- Search results and snippets are LEADS, never evidence. Before you cite anything, capture it with "
     "fetch_url, fetch_edgar (then fetch_url on a listed document) or fetch_ctgov (an NCT id), and read it "
     "(fetch results show page 1; read_source_pages shows other pages).\n"
     "- Cite only captured sources: source_id, page_number and the quote copied exactly as printed, with word_ids "
@@ -112,6 +114,10 @@ EVENT = {
 }
 
 ARGUMENTS = {
+    "brave_search": {
+        "type": "object", "additionalProperties": False, "required": ["query", "count"],
+        "properties": {"query": {"type": "string", "minLength": 1},
+                       "count": {"type": ["integer", "null"], "minimum": 1, "maximum": 20}}},
     "fetch_edgar": {
         "type": "object", "additionalProperties": False, "required": ["cik", "forms", "since", "until", "cursor"],
         "properties": {"cik": {"type": "string", "pattern": "^[0-9]{1,10}$"},
@@ -177,6 +183,8 @@ ARGUMENTS = {
 }
 
 DESCRIPTIONS = {
+    "brave_search": "PRIMARY web search (Brave). Returns titles, URLs and snippets as LEADS only: capture a source "
+                    "with fetch_url before citing it.",
     "fetch_edgar": "List the company's SEC filings (form, filing date, accession, document URL) between since and "
                    "until (ISO dates). A listing is leads: capture a document with fetch_url before citing it.",
     "fetch_url": "Capture a public URL (HTML, PDF, text): code saves the bytes, hashes them, renders pages and words. "
@@ -198,10 +206,10 @@ DESCRIPTIONS = {
 VALIDATORS = {name: Draft202012Validator(schema) for name, schema in ARGUMENTS.items()}
 
 
-def function_tools() -> list[dict]:
-    """The flat Responses API function tools."""
+def function_tools(brave: bool = True) -> list[dict]:
+    """The flat Responses API function tools (brave_search only when Brave is available in this run)."""
     return [{"type": "function", "name": name, "description": DESCRIPTIONS[name], "parameters": schema}
-            for name, schema in ARGUMENTS.items()]
+            for name, schema in ARGUMENTS.items() if brave or name != "brave_search"]
 
 
 def envelope(call_id: str, status: str, data=None, issues: list | None = None) -> dict:

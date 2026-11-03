@@ -180,7 +180,7 @@ def test_requests_replay_full_output_before_tool_results_with_auto_tool_choice(r
     assert first["store"] is False and "previous_response_id" not in first
     assert first["tools"][0] == {"type": "web_search", "search_context_size": "medium"}
     assert "max_tool_calls" not in first          # no search limit is on unless a person sets one
-    assert {t["name"] for t in first["tools"][1:]} == set(rc.ARGUMENTS)
+    assert {t["name"] for t in first["tools"][1:]} == set(rc.ARGUMENTS) - {"brave_search"}   # no key in tests
     assert all("function" not in t for t in first["tools"][1:])       # flat Responses form
     # the instructions are the compact controller; the assignment is its own input item, exactly
     assert first["instructions"] == rc.CONTROLLER and len(rc.CONTROLLER) < 3000       # compact, not the 3,996 brief
@@ -1541,3 +1541,98 @@ def test_class_hidden_text_in_a_text_capture_is_recorded_as_visibility_unknown(t
                               tmp_path, "src-r1-x", render_html=broken)
     assert got["rendered"]["form"] == "text" and got["rendered"]["visibility"] == "unknown"
     assert any(l.startswith("Visibility unknown") for l in got["rendered"]["limitations"])
+
+
+
+# ---------------------------------------------------------------- BRAVE-PRIMARY-001 (CVA): Brave is the primary search
+
+
+def _brave_run(runs_dir, brave, extra=None, limit=None):
+    script = [F.body([F.call("brave_search", {"query": "Protagonist PDUFA 2027", "count": 5}, "b1")]),
+              F.body([F.call("fetch_url", {"url": PR1, "purpose": "Brave lead"}, "c1")]),
+              F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "x"}, "c2")]),
+              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")])]
+    reader = F.FakeResponses(extra or script)
+    tools = F.tools({PR1: (200, "text/html", PAGE1)})
+    tools.brave = brave
+    app = create_app(runs_dir=runs_dir, reader=reader, background=False, second_reader=None, wonder_reader=None,
+                     sam_reader=None, research_tools=tools, research_reader=reader)
+    body = {"mode": "research", "companies": ["PTGX"], "as_of": "2026-11-02"}
+    if limit is not None:
+        body["spending_limit_usd"] = limit
+    rid = TestClient(app).post("/api/runs/new", json=body).json()["id"]
+    return reader, rid
+
+
+def test_brave_is_offered_first_used_and_its_leads_reach_the_model(runs_dir):
+    brave = F.FakeBrave({"Protagonist PDUFA 2027": [PR1, PR2]})
+    reader, rid = _brave_run(runs_dir, brave)
+    first = reader.requests[0]
+    names = [t.get("name") for t in first["tools"]]
+    assert "brave_search" in names and "brave_search (primary)" in json.dumps(first["input"])
+    assert "use brave_search first for discovery" in rc.CONTROLLER
+    assert brave.queries == ["Protagonist PDUFA 2027"]
+    out = json.loads(reader.requests[1]["input"][-1]["output"])
+    assert out["data"]["results"][0]["title"] == f"TITLE-{PR1}"          # the model sees titles for its turn
+    run = run_json(runs_dir, rid)
+    step = next(s for s in run["run"]["research"]["steps"] if s["kind"] == "search")
+    assert step["refs"]["engine"] == "Brave Search" and step["refs"]["results"] == [PR1, PR2]
+    assert run["run"]["research"]["companies"]["PTGX"]["status"] == "finished"
+
+
+def test_brave_titles_and_snippets_are_never_stored(runs_dir):
+    brave = F.FakeBrave({"Protagonist PDUFA 2027": [PR1, PR2]})
+    reader, rid = _brave_run(runs_dir, brave)
+    stored = []
+    for f in (runs_dir / rid).rglob("*"):
+        if f.is_file() and f.suffix in (".json", ".jsonl"):
+            stored.append(f.read_text(errors="replace"))
+    blob = "\n".join(stored)
+    assert "TITLE-" not in blob and "SNIPPET-" not in blob
+    assert PR1 in blob and "Protagonist PDUFA 2027" in blob                 # query and URLs are kept
+    later = json.dumps(reader.requests[2]["input"])                          # retired after its turn
+    assert "SNIPPET-" not in later and PR1 in later
+
+
+def test_brave_is_priced_per_request_in_the_same_ledger(runs_dir):
+    assert prices.PRICES_PER_1K_REQUESTS_USD["Brave Search"] == 5.00
+    assert prices.request_cost_usd("Brave Search", 1) == 0.005
+    reader, rid = _brave_run(runs_dir, F.FakeBrave({"Protagonist PDUFA 2027": [PR1]}))
+    meta = run_json(runs_dir, rid)["run"]
+    model = 4 * prices.cost_usd("Muse Spark", 1000, 200)
+    assert meta["spend_usd"] == pytest.approx(model + 0.005, abs=1e-6)
+    assert meta["research"]["companies"]["PTGX"]["brave_requests"] == 1
+    assert meta["prices"]["per_1k_requests_usd"] == {"Brave Search": 5.0}
+
+
+def test_a_brave_429_is_a_recorded_limitation_without_retry(runs_dir):
+    brave = F.FakeBrave(rate_limited=True)
+    script = [F.body([F.call("brave_search", {"query": "q", "count": None}, "b1")]),
+              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")])]
+    reader, rid = _brave_run(runs_dir, brave, extra=script)
+    assert brave.queries == ["q"]                                           # one attempt
+    out = json.loads(reader.requests[1]["input"][-1]["output"])
+    assert out["issues"][0]["code"] == "rate_limited" and "web_search" in out["issues"][0]["message"]
+    c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
+    assert c["search_limitations"][0]["reason"].endswith("(HTTP 429).") and c["status"] == "finished"
+
+
+def test_without_a_brave_key_the_tool_is_unavailable_recorded_and_research_goes_on(runs_dir):
+    script = [F.body([F.search("ptgx", [PR1]), F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")]),
+              F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "x"}, "c2")]),
+              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")])]
+    reader, rid = _brave_run(runs_dir, F.FakeBrave(key=False), extra=script)
+    assert "brave_search" not in [t.get("name") for t in reader.requests[0]["tools"]]
+    assert "brave_search is unavailable" in json.dumps(reader.requests[0]["input"])
+    c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
+    assert "no BRAVE_API_KEY" in c["search_limitations"][0]["reason"] and c["status"] == "finished"
+
+
+def test_a_brave_request_is_admitted_through_the_strict_cap(runs_dir):
+    run = jobs.create_run(runs_dir, jobs.validate_choices({"mode": "research", "companies": ["PTGX"],
+                                                           "spending_limit_usd": 1.0}), as_of="2026-11-02")
+    path = runs_dir / run["run"]["id"] / "run.json"
+    doc = json.loads(path.read_text())
+    doc["run"]["spend_usd"] = 0.998
+    path.write_text(json.dumps(doc))
+    assert jobs.reserve_budget("brave-cap", 0.998, 1.0, 0.005, alone_may_cross=False) is None

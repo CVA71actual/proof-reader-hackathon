@@ -164,7 +164,8 @@ def tools(pages, resolve=("PTGX", "1377121", "Protagonist Therapeutics, Inc.")):
         if t not in ident:
             raise KeyError(t)
         return ident[t]
-    return ResearchTools(fetcher=FakeFetcher(pages), render_html=offline_render, resolve=res)
+    return ResearchTools(fetcher=FakeFetcher(pages), render_html=offline_render, resolve=res,
+                         brave=FakeBrave(key=False))
 
 
 def event(title, quote, *, source="src-r1-ptgx", page=1, date_text=None, date=None, date_end=None, program=None,
@@ -177,3 +178,24 @@ def event(title, quote, *, source="src-r1-ptgx", page=1, date_text=None, date=No
             "relevance": None, "relevance_kind": "none", "placement_proposal": "upcoming", "primary_span_index": 0,
             "evidence": evidence, "prior_row_ids": []}
     return ev if rid is None else {"id": rid, "expected_revision": rev, "event": ev}
+
+
+class FakeBrave:
+    """A scripted Brave Search: answers by query; records every query. key=False: unavailable (no BRAVE_API_KEY)."""
+    name = "Brave Search"
+
+    def __init__(self, answers=None, key=True, rate_limited=False):
+        self.answers, self.key, self.rate_limited, self.queries = dict(answers or {}), key, rate_limited, []
+
+    def ready(self):
+        from capture.brave_search import NO_KEY
+        return None if self.key else NO_KEY
+
+    def search(self, query, count=10):
+        from capture.brave_search import BraveResult
+        self.queries.append(query)
+        if self.rate_limited:
+            return BraveResult(query, error="Brave Search rate limit reached (HTTP 429).", http_status=429,
+                               rate_limited=True)
+        return BraveResult(query, results=[{"title": f"TITLE-{u}", "url": u, "snippet": f"SNIPPET-{u}"}
+                                           for u in self.answers.get(query, [])], http_status=200)

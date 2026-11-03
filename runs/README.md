@@ -580,3 +580,10 @@ with retrieval times); `consolidations`; `repeats`; `kill_conditions`; `reservat
 (`not_requested_by_mode` in S1); `audit` (the draft audit, `runs/research_audit.py`). Exact requests and responses
 are under `research/turns/`. A person stops a research run with `POST /api/runs/{id}/research-stop`. A research run
 is not resumed in S1.
+
+Search (BRAVE-PRIMARY-001, CVA 2026-11-02): `brave_search` (Brave Search, `capture/brave_search.py`, key from
+BRAVE_API_KEY) is the primary search; Meta's built-in `web_search` is secondary. Brave is priced at $5 per 1,000
+requests (`runs/prices.py`, run.prices.per_1k_requests_usd) and admitted through the same strict gate; one attempt,
+a 429 is a recorded `search_limitations` entry. Storage policy: Brave titles and snippets reach the model for one turn
+only and are never written to run.json, the Agent trail, research/turns/ or the manifest; only the query and result
+URLs are kept. Without a key the tool is not offered and the company's `search_limitations` says so.

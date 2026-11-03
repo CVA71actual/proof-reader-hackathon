@@ -94,7 +94,8 @@
               "properties": {"input": {"type": "number"}, "output": {"type": "number"}, "cached_input": {"type": "number"}}}},
             "per_image_usd": {"type": "object", "additionalProperties": {"type": "number"}},
             "per_hour_usd": {"type": "object", "additionalProperties": {"type": "number"}},
-            "per_1k_searches_usd": {"type": "object", "additionalProperties": {"type": "number"}, "description": "US dollars per 1,000 built-in web searches (Responses API search grounding)."}
+            "per_1k_searches_usd": {"type": "object", "additionalProperties": {"type": "number"}, "description": "US dollars per 1,000 built-in web searches (Responses API search grounding)."},
+            "per_1k_requests_usd": {"type": "object", "additionalProperties": {"type": "number"}, "description": "US dollars per 1,000 requests to a per-request priced search API (Brave Search)."}
           }
         },
         "status": {"enum": ["queued", "running", "paused_turn_limit", "needs_input", "done", "failed"],
