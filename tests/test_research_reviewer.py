@@ -79,9 +79,28 @@ def finish(summary="done"):
     return call("finish_review", {"summary": summary})
 
 
-def run(replies, search=None, fetch=None, gate=None, **kw):
+def assess_all(verdict="no_issue"):
+    """The row-first turn (A-TO-Z-001): every draft row gets a verdict before any search or fetch."""
+    return tools(call("assess_rows", {"assessments": [{"row_id": p["row_id"], "revision_id": p["revision_id"],
+                                                       "verdict": verdict} for p in PROPOSALS]}))
+
+
+def with_assessment(replies):
+    """Row first: the assessment rides in the first reply when that reply does more than finish (so call counts are
+    unchanged); a finish-only first reply gets its own assessment turn before it."""
+    replies = list(replies)
+    if not replies:
+        return replies
+    first = replies[0]
+    if isinstance(first, ChatReply) and any(c["name"] != "finish_review" for c in first.tool_calls):
+        first.tool_calls = assess_all().tool_calls + list(first.tool_calls)
+        return replies
+    return [assess_all()] + replies
+
+
+def run(replies, search=None, fetch=None, gate=None, assess_first=True, **kw):
     gate = gate or FakeGate()
-    model = FakeModel(replies)
+    model = FakeModel(with_assessment(replies) if assess_first else list(replies))
     rec = rv.review_draft(company="MIRM", assignment="Research catalysts.", proposals=PROPOSALS, sources=SOURCES,
                           search=search or (lambda q: [{"url": "https://example.com/newer", "snippet": "EXPAND Oct 12"}]),
                           fetch_capture=fetch or (lambda url: FETCHED.get(url)), spend_gate=gate, model=model, **kw)
@@ -456,7 +475,9 @@ def test_retrieval_failure_covered_later_by_the_same_capture_is_clean():
         attempts.append(url)
         return None if len(attempts) == 1 else FETCHED["https://example.com/newer"]
     rec, _, _ = run([tools(call("fetch", {"url": "https://example.com/newer"})),
-                     tools(call("fetch", {"url": "https://example.com/newer"})), tools(finish())], fetch=flaky)
+                     tools(call("fetch", {"url": "https://example.com/newer"})),
+                     tools(call("nothing_material", {"source_id": "S3", "reason": "no new event"})),
+                     tools(finish())], fetch=flaky)
     assert rec["limitations"] == [] and rec["clean"] is True
     assert len(attempts) == 2           # the model asked twice; the module itself never retries
 
@@ -554,7 +575,7 @@ def test_finish_beside_a_search_is_ignored_until_issued_alone():
                          tools(finish("Read the search results; nothing material."))])
     assert len(model.sent) == 2                                   # the search result went back before finishing
     fed = [json.loads(m["content"]) for m in model.sent[1] if m["role"] == "tool"]
-    assert fed[0]["status"] == "ok" and fed[1]["status"] == "ignored"
+    assert fed[-2]["status"] == "ok" and fed[-1]["status"] == "ignored"       # (fed[0] is the row assessment)
     assert rec["ignored_finishes"] == [{"turn": 1, "reason": rv.FINISH_NOT_ALONE}]
     assert rec["status"] == "complete" and rec["summary"] == "Read the search results; nothing material."
 
@@ -607,7 +628,7 @@ def test_valid_search_after_a_timeout_clears_the_limitation_end_to_end(good):
 def test_unsupported_finish_reason_is_incomplete_and_its_finish_unused(reason):
     r = tools(finish("No findings."))
     r.finish_reason = reason
-    rec, model, gate = run([r])
+    rec, model, gate = run([r], assess_first=False)
     assert rec["status"] == "incomplete" and rec["clean"] is False and rec["summary"] is None
     assert repr(reason) in rec["reason"] and model.replies == []
     assert [e["phase"] for e in gate.events] == ["reserve", "settle"]

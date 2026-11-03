@@ -658,7 +658,7 @@ def test_repeated_identical_action_is_recorded_and_the_loop_goes_on(runs_dir):
         F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")]),
         F.body([F.call("read_source_pages", read, "c1")]),
         F.body([F.call("read_source_pages", read, "c2")]),
-        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")]),
+        F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "nothing material (A-TO-Z-001)"}, "nm"), F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")]),
     ])
     _, rid, _ = start(runs_dir, reader)
     r = run_json(runs_dir, rid)["run"]["research"]
@@ -693,7 +693,7 @@ def test_kill_condition_empty_answer_rate_is_recorded_and_surfaced(runs_dir):
     empty = F.body([F.reasoning()])         # a finished answer with no tool call and no text
     script = [empty, F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c1")]), empty,
               F.body([F.call("read_source_pages", {"source_id": "src-r1-ptgx", "pages": [1], "purpose": "x"}, "c2")]),
-              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")])]
+              F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "nothing material (A-TO-Z-001)"}, "nm"), F.call("finish_draft", {"dispositions": [], "limitations": []}, "c3")])]
     reader = F.FakeResponses(script)
     _, rid, _ = start(runs_dir, reader)
     r = run_json(runs_dir, rid)["run"]["research"]
@@ -1144,7 +1144,7 @@ def test_a_403_is_could_not_access_and_the_primary_source_path_goes_on(runs_dir)
     reader = F.FakeResponses([
         F.body([F.call("fetch_url", {"url": blocked, "purpose": "news"}, "c0")]),
         F.body([F.call("fetch_url", {"url": primary, "purpose": "the 8-K EX-99 release"}, "c1")]),
-        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c2")])])
+        F.body([F.call("nothing_material", {"source_id": "src-r2-ptgx", "reason": "nothing material (A-TO-Z-001)"}, "nm"), F.call("finish_draft", {"dispositions": [], "limitations": []}, "c2")])])
     _, rid, tools = start(runs_dir, reader, pages={blocked: (403, "text/html", b""),
                                                    primary: (200, "text/html", PAGE1)})
     out = json.loads(reader.requests[1]["input"][-1]["output"])
@@ -1153,7 +1153,8 @@ def test_a_403_is_could_not_access_and_the_primary_source_path_goes_on(runs_dir)
     run = run_json(runs_dir, rid)
     c = run["run"]["research"]["companies"]["PTGX"]
     assert c["capture_failures"][0]["outcome"] == "could_not_access" and c["capture_failures"][0]["url"] == blocked
-    assert c["status"] == "finished" and run["sources"][0]["url"] == primary and run["sources"][0]["kind"] == "filing"
+    assert c["status"] == "finished", (c["status_reason"], [s["id"] for s in run["sources"]])
+    assert run["sources"][0]["url"] == primary and run["sources"][0]["kind"] == "filing"
     assert "never work around a refusal" in rc.CONTROLLER
     # one honest request each, no retry or disguise (plus the SEC submissions list for the document's filing date)
     assert tools.fetcher.asked == [blocked, primary, rs.SUBMISSIONS_URL.format(cik="1377121")]

@@ -69,6 +69,9 @@ LABELS = (LABEL, LABEL_REVIEWED_CLEAN, LABEL_REVIEWED_FINDINGS, LABEL_PARTIAL_FI
 # has room to run; the review itself is admitted under the whole cap. No reserve is held when the reviewer cannot run.
 REVIEW_RESERVE_FRACTION = 0.15
 REVIEW_STAGE = "independent_review"
+# MULTI-FAMILY-001 (register): the producer's provider and model family, recorded beside the reviewer's
+RESEARCHER_PROVIDER = "meta"
+RESEARCHER_FAMILY = "Muse Spark (Meta)"
 DEFAULT_SPEND_CAP_USD = 30.0
 DEFAULT_CONCURRENCY = 3
 RESEARCH_TURN_LIMIT = 1_000_000     # a research run is not paused by the page-mode turn budget; turns are counted only
@@ -910,19 +913,24 @@ def make_job_class():
                             "evidence": f["evidence"], "review_status": status,
                             "reviewed_at": at, "adjudication": adjudication})
                 company_has = False
+                verdicts = {(str(a["row_id"]), str(a["revision_id"])): a for a in record.get("assessments") or []}
                 for row in rows:
                     rev = row["research"]["revision"]
                     # reviewed_revision: the revision a COMPLETED review covered; null when the review did not finish
                     reviewed_this = status == "complete" and (row["id"], str(rev)) in reviewed
                     prev = row["research"].get("review") or {}
+                    a = verdicts.get((row["id"], str(rev)))
                     row["research"]["review"] = {
                         "status": status, "attempt": attempt, "at": at,
+                        "verdict": a["verdict"] if a else None,
                         "reviewed_revision": rev if reviewed_this else (
                             prev.get("reviewed_revision") if status != "complete" and
                             prev.get("reviewed_revision") == rev else None)}
                     current = [f for f in row["research"]["review_findings"] if f.get("current")]
                     company_has = company_has or bool(current)
-                    if any(f.get("review_status") == "complete" for f in current):
+                    # CLAIM-001 (Red Team PR177_8cd269a): "independently reviewed" only when the LATEST attempt is
+                    # complete; findings carried through an attempt that did not complete read "partly reviewed"
+                    if status == "complete" and current:
                         row["research"]["label"] = LABEL_REVIEWED_FINDINGS
                     elif current:
                         row["research"]["label"] = LABEL_PARTIAL_FINDINGS
@@ -940,6 +948,12 @@ def make_job_class():
                 entry = {"stage": REVIEW_STAGE, "ticker": ticker, "attempt": attempt, "status": status,
                          "reason": record.get("reason"), "clean": bool(record.get("clean")), "label": label,
                          "reviewer": rv.REVIEWER_NAME, "adjudicator": rv.ADJUDICATOR_NAME, "search": "Brave Search",
+                         "families": {
+                             "researcher": {"model": getattr(self.reader, "model", None),
+                                            "provider": RESEARCHER_PROVIDER, "family": RESEARCHER_FAMILY},
+                             "reviewer": {"model": record.get("model") or getattr(self.tools.reviewer, "model", None),
+                                          "provider": rv.REVIEWER_PROVIDER, "family": rv.REVIEWER_FAMILY},
+                             "same_family": RESEARCHER_FAMILY == rv.REVIEWER_FAMILY},
                          "research_ended": ended, "started_at": started, "finished_at": at,
                          "reviewed_basis": sorted([list(k) for k in reviewed]),
                          "disputes": [{"dispute_id": d["dispute_id"], "finding_id": d["finding_id"],
@@ -966,6 +980,10 @@ def make_job_class():
                       + (f" {len(lims)} review limitation{'s' if len(lims) != 1 else ''} recorded." if lims else "")
                       + (f" {len(record.get('rejected') or [])} finding attempt(s) rejected by code."
                          if record.get("rejected") else "")
+                      + (f" Rows assessed: {len(record.get('assessments') or [])} of {len(rows)}."
+                         + (f" {len(record.get('order_refusals') or [])} search/fetch request(s) refused until rows "
+                            f"were assessed or a fetched source was settled (A-TO-Z-001)."
+                            if record.get("order_refusals") else "") if "assessments" in record else "")
                       + f" Label: {label}.", stage=REVIEW_STAGE, status=record.get("status"), label=label)
             return entry
 
@@ -2123,6 +2141,11 @@ def make_job_class():
                       + [rc.issue("missing_disposition", f"{r} has no disposition.", r) for r in missing]
                       + [rc.issue("malformed_argument", f"{r} is marked duplicate of a row that is not one of this "
                                                         f"company's proposals.", r) for r in dup_bad])
+            open_ = self.unsettled(ticker)
+            # A-TO-Z-001 (register): a draft cannot end finished with an unconcluded unit
+            issues += [rc.issue("settle_first", f"A-TO-Z-001: {sid} was captured and not settled: propose_events "
+                                                f"citing it, or nothing_material with the reason, before finishing.",
+                                sid) for sid in open_]
             st["finish_attempts"] += 1
             if issues and st["finish_attempts"] == 1:
                 self.step(ticker, "check", "Code", "runs.research_contract",
@@ -2135,7 +2158,13 @@ def make_job_class():
                 c["finish"] = {"by": "finish_draft", "at": now_utc(), "call_id": cid,
                                "dispositions": args["dispositions"], "limitations": args["limitations"],
                                "missing_dispositions": missing, "issues": issues,
-                               "unsettled_sources": self.unsettled(ticker)}
+                               "unsettled_sources": open_}
+            if open_:
+                self.step(ticker, "check", "Code", "runs.research_contract",
+                          f"finish_draft not accepted as finished: {', '.join(open_)} still unsettled (A-TO-Z-001).",
+                          call_id=cid)
+                raise Stop("incomplete", f"Incomplete: the model finished with {', '.join(open_)} captured and not "
+                                         f"settled (A-TO-Z-001), so the draft is not complete.")
                 c["status_reason"] = (f"The model finished: {len(mine)} proposal{'s' if len(mine) != 1 else ''}, "
                                       f"{len(args['limitations'])} limitation{'s' if len(args['limitations']) != 1 else ''} "
                                       f"recorded." + (f" {len(missing)} without a disposition." if missing else ""))

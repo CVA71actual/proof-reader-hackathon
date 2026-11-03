@@ -236,3 +236,15 @@ def verdict(obj, p=300, c=80, finish="stop"):
     from capture.research_reviewer import ChatReply
     return ChatReply(ADJUDICATOR_MODEL, content=json.dumps(obj), finish_reason=finish, prompt_tokens=p,
                      completion_tokens=c)
+
+
+def assess_then(*calls, verdict="no_issue", before=(), p=500, c=100):
+    """A reviewer reply (a callable on the request) that gives every draft row a verdict, row first (A-TO-Z-001),
+    then makes `calls`. `before` calls run ahead of the assessment (a report_finding the verdict refers to)."""
+    def reply(messages):
+        draft = json.loads(messages[1]["content"])["draft_proposals"]
+        before_ = [b(draft) if callable(b) else b for b in before]
+        assess = ("assess_rows", {"assessments": [{"row_id": r["row_id"], "revision_id": r["revision_id"],
+                                                   "verdict": verdict} for r in draft]})
+        return chat_tools(*before_, assess, *calls, p=p, c=c)
+    return reply

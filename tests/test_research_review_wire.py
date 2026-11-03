@@ -85,7 +85,7 @@ def steps(run, kind):
 # ------------------------------------------------------------------ a clean review
 
 def test_clean_review_after_research_labels_the_row_run_and_export(runs_dir, tmp_path):
-    reviewer = F.FakeChat([F.chat_tools(("search", {"query": "Protagonist EXPAND topline"})),
+    reviewer = F.FakeChat([F.assess_then(("search", {"query": "Protagonist EXPAND topline"})),
                            F.chat_tools(("finish_review", {"summary": "Checked the draft; nothing wrong."}))])
     client, rid, tools = start(runs_dir, F.FakeResponses(happy_script()), reviewer)
     run, state, view = exported(runs_dir, rid)
@@ -100,7 +100,7 @@ def test_clean_review_after_research_labels_the_row_run_and_export(runs_dir, tmp
     assert rec["reviewed_basis"] == [[row["id"], "1"]]
     assert row["research"]["review_findings"] == []
     assert row["research"]["review"] == {"status": "complete", "reviewed_revision": 1, "attempt": 1,
-                                         "at": rec["finished_at"]}
+                                         "verdict": "no_issue", "at": rec["finished_at"]}
     assert row["research"]["label"] == research.LABEL_REVIEWED_CLEAN
     # the reviewer saw the draft bound by revision, and the captured source text, never researcher reasoning
     sent = draft_of(reviewer.sent[0])
@@ -132,13 +132,12 @@ def test_clean_review_after_research_labels_the_row_run_and_export(runs_dir, tmp
 # ------------------------------------------------------------------ findings, a fetched source, adjudication
 
 def finding_script():
-    def first(messages):
-        rid = draft_of(messages)["draft_proposals"][0]["row_id"]
-        return F.chat_tools(("report_finding", {
-            "kind": "lost_condition", "row_revision_ids": [{"row_id": rid, "revision_id": 1}],
+    def lost(draft):
+        return ("report_finding", {
+            "kind": "lost_condition", "row_revision_ids": [{"row_id": draft[0]["row_id"], "revision_id": 1}],
             "evidence": [{"source_id": "src-r1-ptgx", "quote": CONDITION}],
-            "text": "The NDA plan is subject to FDA feedback; the draft drops the condition."}))
-    return [first,
+            "text": "The NDA plan is subject to FDA feedback; the draft drops the condition."})
+    return [F.assess_then(verdict="finding", before=(lost,)),
             F.chat_tools(("search", {"query": "Protagonist EXPAND topline"})),
             F.chat_tools(("fetch", {"url": PR2})),
             F.chat_tools(("report_finding", {"kind": "omission", "row_revision_ids": [],
@@ -243,7 +242,7 @@ def test_truncated_review_is_incomplete_and_not_labelled_reviewed(runs_dir):
 # ------------------------------------------------------------------ a failed Brave search blocks clean
 
 def test_failed_brave_search_is_a_limitation_and_blocks_clean(runs_dir):
-    reviewer = F.FakeChat([F.chat_tools(("search", {"query": "Protagonist EXPAND topline"})),
+    reviewer = F.FakeChat([F.assess_then(("search", {"query": "Protagonist EXPAND topline"})),
                            F.chat_tools(("finish_review", {"summary": "Nothing found."}))])
     _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer, brave=F.FakeBrave(rate_limited=True))
     run, _, view = exported(runs_dir, rid)
@@ -259,7 +258,7 @@ def test_failed_brave_search_is_a_limitation_and_blocks_clean(runs_dir):
 
 
 def test_no_brave_key_refuses_the_reviewer_search_at_the_gate(runs_dir):
-    reviewer = F.FakeChat([F.chat_tools(("search", {"query": "Protagonist EXPAND topline"}))])
+    reviewer = F.FakeChat([F.assess_then(("search", {"query": "Protagonist EXPAND topline"}))])
     _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer, brave=F.FakeBrave(key=False))
     rec = run_json(runs_dir, rid)["run"]["research"]["review"]["PTGX"]
     assert rec["status"] == "incomplete" and "Brave Search" in rec["reason"] and rec["label"] == research.LABEL
@@ -279,6 +278,30 @@ def test_gate_refusal_after_an_unpriced_call_makes_the_review_incomplete(runs_di
     assert rec["status"] == "incomplete" and "spend gate refused" in rec["reason"]
     assert "could not be priced" in rec["reason"] and reviewer.sent == []
     assert rec["label"] == research.LABEL
+    # a refused request delivered nothing: no page counts as read
+    assert rec["review"]["reviewed"]["pages_read"] == {}
+    assert [x["source_id"] for x in rec["review"]["not_reviewed"]] == ["src-r1-ptgx"]
+
+
+def test_a_cited_page_in_a_request_the_gate_refused_is_not_read():
+    """NEXT-CALLER-001 / COMPACT-001 (Red Team PR177_8cd269a): read = delivered in a request sent AND answered."""
+    srcs = [{"source_id": "S1", "pages": [{"page_number": 1, "text": "Cited text."},
+                                          {"page_number": 2, "text": "Other."}]}]
+    rows = [{"row_id": "e1", "revision_id": 1, "evidence": [{"source_id": "S1", "page_number": 1, "quote": "Cited"}]}]
+    rec = rv.review_draft(company="X", assignment="a", proposals=rows, sources=srcs, search=lambda q: [],
+                          fetch_capture=lambda u: None, spend_gate=lambda ev: {"admitted": False, "reason": "cap"},
+                          model=F.FakeChat([]))
+    assert rec["status"] == "incomplete" and rec["reviewed"]["pages_read"] == {}
+    assert rec["cited_pages_unread"][0]["source_id"] == "S1" and rec["cited_pages_unread"][0]["page_number"] == 1
+    # a request that was sent but failed reads nothing either; one answered request reads the cited page
+    failed = ChatReply(F.REVIEWER_MODEL, error="boom", may_have_been_billed=True)
+    rec = rv.review_draft(company="X", assignment="a", proposals=rows, sources=srcs, search=lambda q: [],
+                          fetch_capture=lambda u: None, spend_gate=lambda ev: {"t": 1}, model=F.FakeChat([failed]))
+    assert rec["reviewed"]["pages_read"] == {}
+    ok = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"}))])
+    rec = rv.review_draft(company="X", assignment="a", proposals=rows, sources=srcs, search=lambda q: [],
+                          fetch_capture=lambda u: None, spend_gate=lambda ev: {"t": 1}, model=ok)
+    assert rec["reviewed"]["pages_read"] == {"S1": "1"} and rec["cited_pages_unread"] == [] and rec["clean"]
 
 
 def test_reviewer_reply_without_usage_is_unpriced_never_zero(runs_dir):
@@ -334,7 +357,7 @@ def test_review_only_reviews_a_copy_of_a_saved_draft_without_researching(runs_di
     assert before["run"]["status"] == "done"
     assert before["run"]["research"]["review"]["PTGX"]["status"] == "incomplete"
     tools = F.tools({PR1: (200, "text/html", PAGE1), PR2: (200, "text/html", PAGE2)})
-    tools.reviewer = F.FakeChat([F.chat_tools(("finish_review", {"summary": "ok"}))])
+    tools.reviewer = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "ok"}))])
     tools.brave = F.FakeBrave()
     dest, r = research_smoke.review_existing(original, tmp_path / "copies", 1.0, tools)
     # the original folder is byte-for-byte unchanged
@@ -360,7 +383,7 @@ def test_smoke_review_refuses_without_the_go(capsys):
 # ------------------------------------------------------------------ Brave single delivery on the reviewer path
 
 def test_reviewer_brave_titles_and_snippets_reach_the_model_once_and_are_not_stored(runs_dir):
-    reviewer = F.FakeChat([F.chat_tools(("search", {"query": "Protagonist EXPAND topline"})),
+    reviewer = F.FakeChat([F.assess_then(("search", {"query": "Protagonist EXPAND topline"})),
                            F.chat_tools(("fetch", {"url": PR2})),
                            F.chat_tools(("finish_review", {"summary": "done"}))])
     _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer)
@@ -379,8 +402,10 @@ RUN5 = Path("/private/tmp/claude-501/-Users-cva26/2e8cb8e7-5189-4a1c-8b81-498094
 
 
 def _read_script(source_id, turns=30):
-    return ([F.chat_tools(("read_source_pages", {"source_id": source_id, "pages": list(range(5 * i + 1, 5 * i + 6))}))
-             for i in range(turns)] + [F.chat_tools(("finish_review", {"summary": "read 150 pages"}))])
+    reads = [("read_source_pages", {"source_id": source_id, "pages": list(range(5 * i + 1, 5 * i + 6))})
+             for i in range(turns)]
+    return ([F.assess_then(reads[0])] + [F.chat_tools(r) for r in reads[1:]]
+            + [F.chat_tools(("finish_review", {"summary": "read 150 pages"}))])
 
 
 def _sizes(reviewer):
@@ -425,8 +450,8 @@ def test_cited_page_not_available_blocks_clean():
                           proposals=[{"row_id": "e1", "revision_id": 1,
                                       "evidence": [{"source_id": "GONE", "page_number": 3, "quote": "q"}]}],
                           sources=[], search=lambda q: [], fetch_capture=lambda u: None,
-                          spend_gate=lambda ev: {"t": 1}, model=F.FakeChat([F.chat_tools(("finish_review",
-                                                                                         {"summary": "x"}))]))
+                          spend_gate=lambda ev: {"t": 1}, model=F.FakeChat([F.assess_then(), F.chat_tools(
+                              ("finish_review", {"summary": "x"}))]))
     assert rec["status"] == "complete" and rec["clean"] is False
     assert rec["cited_pages_unread"] == [{"source_id": "GONE", "page_number": 3,
                                           "reason": "A page the draft cites was not available to the reviewer."}]
@@ -498,7 +523,11 @@ def test_a_timed_out_rereview_keeps_earlier_findings_on_an_unchanged_basis(runs_
     assert f["review_status"] == "complete" and f["latest_attempt"]["status"] == "incomplete"
     assert f["adjudication"]["outcome"] == rv.UNRESOLVED
     assert row["research"]["review"]["status"] == "incomplete" and row["research"]["review"]["reviewed_revision"] == 1
-    assert row["research"]["label"] == research.LABEL_REVIEWED_FINDINGS       # made by the earlier COMPLETE review
+    # CLAIM-001: the latest attempt did not complete, so the row and the audit copy say "partly reviewed"
+    assert row["research"]["label"] == research.LABEL_PARTIAL_FINDINGS
+    audit_row = next(x for x in r["audit"]["rows"] if x["id"] == row["id"])
+    assert audit_row["scope"]["label"] == research.LABEL_PARTIAL_FINDINGS
+    assert "independently" not in audit_row["scope"]["label"]
     e = r["review"]["PTGX"]
     assert e["attempt"] == 2 and e["status"] == "incomplete" and e["attempts"][0]["status"] == "complete"
     assert [x["kind"] for x in e["unbound_findings"]] == ["omission"]        # the earlier omission is kept too
@@ -535,3 +564,76 @@ def test_an_incomplete_review_with_findings_is_labelled_partly_reviewed(runs_dir
     assert row["research"]["review_findings"][0]["review_status"] == "incomplete"
     for label in (rec["label"], row["research"]["label"], run["run"]["research"]["label"], view["research_label"]):
         assert label == research.LABEL_PARTIAL_FINDINGS and "independently reviewed" not in label
+
+
+# ------------------------------------------------------------------ A-TO-Z-001 for the reviewer: rows first
+
+PR3 = "https://news.example.net/third"
+PAGE3 = F.html("Third source.", "Nothing new about Protagonist here.", title="Third")
+
+
+def test_a_reviewer_that_only_searches_is_refused_and_the_refusal_is_recorded(runs_dir):
+    reviewer = F.FakeChat([F.chat_tools(("search", {"query": "q1"})), F.chat_tools(("search", {"query": "q2"})),
+                           F.chat_tools(("fetch", {"url": PR2})),
+                           F.chat_tools(("finish_review", {"summary": "nothing"})),
+                           F.chat_tools(("finish_review", {"summary": "nothing, again"}))])
+    _, rid, tools = start(runs_dir, F.FakeResponses(happy_script()), reviewer)
+    run = run_json(runs_dir, rid)
+    rec = run["run"]["research"]["review"]["PTGX"]["review"]
+    assert tools.brave.queries == [] and PR2 not in tools.fetcher.asked       # no request, no charge
+    assert [(x["tool"], x["required"], x["assessed"]) for x in rec["order_refusals"]] == \
+        [("search", 1, 0), ("search", 1, 0), ("fetch", 1, 0), ("finish_review", 1, 0), ("finish_review", 1, 0)]
+    assert "assess_rows" in rec["order_refusals"][0]["reason"]
+    fed = json.loads(reviewer.sent[1][-1]["content"])
+    assert fed["status"] == "refused" and fed["code"] == "assess_rows_first"
+    assert run["run"]["research"]["companies"]["PTGX"]["review_usage"]["search_requests"] == 0
+    assert rec["status"] == "incomplete" and "finish twice" in rec["reason"]       # never "complete" unconcluded
+    assert rec["clean"] is False and len(rec["rows_not_assessed"]) == 1
+    assert run["run"]["research"]["review"]["PTGX"]["label"] == research.LABEL
+
+
+def test_one_fetched_source_at_a_time_and_refetch_is_deduplicated(runs_dir):
+    pages = {PR1: (200, "text/html", PAGE1), PR2: (200, "text/html", PAGE2), PR3: (200, "text/html", PAGE3)}
+    reviewer = F.FakeChat([F.assess_then(("fetch", {"url": PR2})),
+                           F.chat_tools(("fetch", {"url": PR3})),                 # refused: src-r2 not settled
+                           F.chat_tools(("fetch", {"url": PR2})),                 # already captured: no request
+                           F.chat_tools(("fetch", {"url": PR1})),                 # a given source: no request
+                           F.chat_tools(("nothing_material", {"source_id": "src-r2-ptgx", "reason": "old news"}),
+                                        ("fetch", {"url": PR3})),
+                           F.chat_tools(("nothing_material", {"source_id": "src-r3-ptgx", "reason": "nothing"})),
+                           F.chat_tools(("finish_review", {"summary": "done"}))])
+    _, rid, tools = start(runs_dir, F.FakeResponses(happy_script()), reviewer, pages=pages)
+    rec = run_json(runs_dir, rid)["run"]["research"]["review"]["PTGX"]["review"]
+    assert tools.fetcher.asked.count(PR2) == 1 and tools.fetcher.asked.count(PR3) == 1
+    assert tools.fetcher.asked.count(PR1) == 1                                  # only research fetched it
+    assert [x["code"] if "code" in x else x["tool"] for x in rec["order_refusals"]] == ["fetch"]
+    assert "not settled" in rec["order_refusals"][0]["reason"]
+    assert [f["status"] for f in rec["fetches"]] == ["captured", "already_captured", "already_captured", "captured"]
+    assert [n["source_id"] for n in rec["nothing_material"]] == ["src-r2-ptgx", "src-r3-ptgx"]
+    assert rec["status"] == "complete" and rec["rows_not_assessed"] == []
+
+
+@pytest.mark.skipif(not (RUN5 / "run.json").is_file(), reason="run 5's saved draft is not on this machine")
+def test_run5_copy_rows_get_verdicts_before_broad_search(tmp_path):
+    from tools import research_smoke
+
+    def batch(start, end, query):
+        def reply(messages):
+            draft = draft_of(messages)["draft_proposals"]
+            return F.chat_tools(("assess_rows", {"assessments": [
+                {"row_id": r["row_id"], "revision_id": r["revision_id"], "verdict": "no_issue"}
+                for r in draft[start:end]]}), ("search", {"query": query}))
+        return reply
+    tools = F.tools({})
+    tools.reviewer = F.FakeChat([F.chat_tools(("search", {"query": "q1"})),       # turn 1: refused, nothing assessed
+                                 batch(0, 10, "q2"), batch(10, 22, "q3"),
+                                 F.chat_tools(("search", {"query": "q4"})),
+                                 F.chat_tools(("finish_review", {"summary": "all rows assessed"}))])
+    tools.brave = F.FakeBrave()
+    _, r = research_smoke.review_existing(RUN5, tmp_path / "copy", 3.0, tools)
+    rec = r["review"]["PTGX"]["review"]
+    assert [x["turn"] for x in rec["order_refusals"]] == [1]
+    assert tools.brave.queries == ["q2", "q3", "q4"]
+    assert len(rec["assessments"]) == 22 and rec["rows_not_assessed"] == []
+    first_search_turn = 2
+    assert sum(1 for a in rec["assessments"] if a["turn"] <= first_search_turn) >= min(22, 2 * rv.ASSESS_ROWS_PER_TURN)

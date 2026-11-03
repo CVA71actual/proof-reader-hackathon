@@ -620,6 +620,15 @@ current findings; "Agent research — partly reviewed (incomplete), findings so 
 did not complete; otherwise "Agent research — not independently reviewed". The run label is the clean one only when
 every company's is; the findings one only when every company's review completed.
 
+Row first (A-TO-Z-001 for the reviewer, after the 2026-11-02 live test gathered 37 searches and 40 fetches with no
+conclusion): `assess_rows` gives draft rows a verdict (`no_issue`, or `finding` after `report_finding`). A search or
+fetch runs only when at least min(all rows, turn x `ASSESS_ROWS_PER_TURN` = 5) rows have a verdict; otherwise it is
+refused with a typed message and recorded in `order_refusals` (no request, no charge). One fetched source at a time: a
+new fetch is refused until the last fetched source has a finding citing it or `nothing_material`. A fetch of an
+already-captured URL (given or fetched) returns the same source_id with no request. Clean also needs every row
+assessed; rows without a verdict are listed in `rows_not_assessed`. `rows[].research.review.verdict` carries the row's
+verdict. These are recorded design defaults about order, not spend limits.
+
 Re-review (Manus 18:33): every attempt is numbered (`attempt`; earlier ones under `attempts`). A complete review
 replaces the rows' findings. An attempt that did not complete keeps every earlier finding: on an unchanged basis (the
 row's revision and whole evidence set, `basis`) it stays `current`; on a changed basis it is `stale: true` with a
