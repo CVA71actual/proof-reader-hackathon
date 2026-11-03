@@ -237,6 +237,8 @@ def _research_lines(meta: dict, run: dict) -> tuple[str | None, list[str]]:
         lim = ((src.get("retrieval") or {}).get("rendered") or {}).get("limitations") or []
         if lim:
             lines.append(f"{src['id']} capture limitations: " + "; ".join(lim) + ".")
+    if (research.get("support_check") or {}).get("label"):
+        lines.append(research["support_check"]["label"] + ".")
     for k in research.get("kill_conditions") or []:
         lines.append(f"Kill condition met: {k.get('detail')}")
     return research.get("label"), lines

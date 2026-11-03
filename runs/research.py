@@ -42,6 +42,7 @@ kill_conditions and the draft audit. Exact requests and responses are kept under
 from __future__ import annotations
 
 import concurrent.futures
+import os
 import copy
 import hashlib
 import json
@@ -119,6 +120,37 @@ def now_utc() -> str:
 # ---------------------------------------------------------------- choices
 
 
+SUPPORT_CHECKS = ("lettucedetect",)
+SUPPORT_UNSUPPORTED = "unsupported_spans"
+
+
+def validate_support_check(raw) -> dict:
+    """{} when off (absent, null, "off"); {"support_check": "lettucedetect"} when a person turns it on."""
+    if raw is None or raw == "off":
+        return {}
+    if raw not in SUPPORT_CHECKS:
+        raise ValueError('support_check must be "lettucedetect" or null (off).')
+    return {"support_check": raw}
+
+
+def support_check_options() -> dict:
+    """What the New Run screen can offer (GET /api/research/options): the choice, its default (off), and whether
+    the pinned local weights are present in this process. Nothing is downloaded or installed."""
+    from capture import support_signal as ss
+    from capture import support_process as sp
+    python, weights = os.environ.get(sp.PYTHON_ENV, ""), os.environ.get(sp.WEIGHTS_ENV, "")
+    have_python = bool(python) and Path(python).is_file()
+    have_weights = bool(weights) and Path(weights).is_dir()
+    reason = (None if have_python and have_weights else
+              f"the LettuceDetect interpreter is not installed ({sp.PYTHON_ENV} is not a file)" if not have_python
+              else f"the pinned weights are not installed ({sp.WEIGHTS_ENV} is not a directory)")
+    return {"support_check": {"choices": list(SUPPORT_CHECKS), "default": None, "available": reason is None,
+                              "unavailable_reason": reason, "model": ss.MODEL, "model_revision": ss.MODEL_REVISION,
+                              "note": "Advisory only: a finding is optional evidence beside the claim; it changes "
+                                      "no check, acceptance, calendar or count. No finding is not 'verified'; could "
+                                      "not run is a recorded limitation. Off by default; bounded, never blocking."}}
+
+
 def validate_limits(raw) -> dict:
     """choices.research_limits: every key present, null = off. Unknown keys and wrong types are refused."""
     raw = {} if raw is None else raw
@@ -178,7 +210,8 @@ class ResearchTools:
     """What the loop reaches outside the process with: a fetcher (get(url) -> research_sources.Fetched), the HTML
     renderer and the ticker -> (cik, company) resolver. Tests pass fakes; the defaults are live."""
 
-    def __init__(self, fetcher=None, render_html=None, resolve=None, brave=None, reviewer=None, adjudicator=None):
+    def __init__(self, fetcher=None, render_html=None, resolve=None, brave=None, reviewer=None, adjudicator=None,
+                 support_detector=None):
         from capture import research_reviewer as rv
         from capture.brave_search import LiveBrave
         self.fetcher = fetcher or rs.LiveFetcher()
@@ -187,6 +220,9 @@ class ResearchTools:
         self.brave = brave if brave is not None else LiveBrave()      # BRAVE-PRIMARY-001: the primary search
         # S2: the independent reviewer (Muse Spark Open) and the adjudicator (Muse Wonder); tests pass fakes
         self.reviewer = reviewer if reviewer is not None else rv.reviewer_model()
+        # LETTUCE-OPTION: the support detector (None: capture/support_signal.py loads the pinned local weights from
+        # LETTUCE_WEIGHTS_PATH, or reports could_not_run); tests pass a fake
+        self.support_detector = support_detector
         self.adjudicator = adjudicator if adjudicator is not None else rv.adjudicator_model()
 
     def _resolve(self, ticker: str) -> tuple[str, str]:
@@ -1110,14 +1146,96 @@ def make_job_class():
                 self.save_ledger()
             self.step(ticker, "limit" if kind not in ("finished",) else "finish", "Code", "runs.research",
                       f"{ticker}: {reason}")
+            support = None
+            if self.choices.get("support_check") in SUPPORT_CHECKS:
+                # LETTUCE-OPTION (quiet contract): advisory only, off the critical path. One bounded worker per
+                # company runs beside the review; the review never waits on it, and the join below is bounded.
+                import threading
+                support = threading.Thread(target=self._support_check_safely, args=(ticker,), daemon=True)
+                support.start()
             try:      # S2: the independent review runs after research ends, for any reason but a person's stop
                 self.review_company(ticker, kind, reason)
             except Exception as e:  # the type only
                 self.step(ticker, "review", "Code", "runs.research",
                           f"The independent review of {ticker} could not be recorded ({type(e).__name__}).",
                           stage=REVIEW_STAGE)
+            if support is not None:
+                support.join(self.support_timeout_s() + 30)     # bounded: the worker itself is killed at its timeout
 
         # ------------------------------------------------------------ one company's loop
+
+        def support_timeout_s(self) -> float:
+            from capture import support_process as sp
+            return float(getattr(self.tools, "support_timeout_s", None) or sp.TIMEOUT_S)
+
+        def _support_check_safely(self, ticker: str) -> None:
+            try:
+                self.support_check_company(ticker)
+            except Exception as e:  # the type only; an advisory check never fails a company
+                self.step(ticker, "check", "Code", "runs.research",
+                          f"The support check of {ticker} could not be recorded ({type(e).__name__}).")
+
+        def support_check_company(self, ticker: str) -> None:
+            """LETTUCE-OPTION, Codex's quiet-workflow contract (OUTCOME-001, IDENTITY-001, CLAIM-001, UNKNOWN-001).
+
+            For every proposal of this company, the displayed proposed claim field (`title`, recorded as the field) is
+            checked against its exact cited passage (every evidence span's quote, as captured, in order; nothing
+            composed, nothing truncated). The output is stored ONLY as optional evidence on row.research.support_check,
+            keyed by a material binding (claim field and text, each span's source id, page, quote, source digest and
+            page artifact hashes, the model and the pinned weights digest); support_view() hides it the moment any of
+            that changes. It changes no check outcome, acceptance, calendar eligibility, export count, mistake count
+            or Keep basis. no_finding is 'no finding', never 'verified'; could_not_run (unavailable, too long, error,
+            timeout, a person's stop) is a recorded limitation, never a pass."""
+            from capture import support_process as sp, support_signal as ss
+            rows = [r for r in self.run["rows"] if (r.get("research") or {}).get("ticker") == ticker]
+            items = [{"id": r["id"], "claim": r.get("title") or "", "passage": support_passage(r)} for r in rows]
+            det = self.tools.support_detector
+            began = time.monotonic()
+            if det is not None:          # an in-process detector (tests and fakes only)
+                results = {i["id"]: ss.support_signal({"claim": i["claim"]}, i["passage"], detector=det)
+                           for i in items}
+                meta = {"status": "ok", "reason": None, "weights_sha256": getattr(det, "weights_sha256", None)}
+            else:
+                results, meta = sp.run_batch(items, timeout_s=self.support_timeout_s(),
+                                             worker=getattr(self.tools, "support_worker", None) or sp.WORKER,
+                                             python=getattr(self.tools, "support_python", None),
+                                             weights=getattr(self.tools, "support_weights", None),
+                                             should_stop=self.stop_requested)
+            seconds = round(time.monotonic() - began, 3)
+            counts = {"no_finding": 0, SUPPORT_UNSUPPORTED: 0, "could_not_run": 0}
+            with jobs.RUN_LOCK:
+                for row, item in zip(rows, items):
+                    out = results.get(row["id"]) or {"result": "could_not_run", "spans": [], "detail": "no result"}
+                    result = out.get("result") if out.get("result") in counts else "could_not_run"
+                    counts[result] += 1
+                    wsha = out.get("weights_sha256") or meta.get("weights_sha256")
+                    row["research"]["support_check"] = {
+                        "engine": "lettucedetect", "result": result, "spans": out.get("spans") or [],
+                        "reason": out.get("detail") or ("No finding (not a statement that the claim is supported)."
+                                                        if result == "no_finding" else
+                                                        "Potentially unsupported wording in the claim."),
+                        "field": "title", "claim": item["claim"], "passage": item["passage"],
+                        "model": out.get("model") or ss.MODEL, "model_revision": ss.MODEL_REVISION,
+                        "weights_sha256": wsha, "checked_at": now_utc(), "advisory": True,
+                        "binding": support_binding(self.run, row, wsha)}
+                    self.research["steps"].append({
+                        "n": len(self.research["steps"]) + 1, "at": now_utc(), "ticker": ticker, "kind": "check",
+                        "tag": "Code", "who": "capture.support_signal",
+                        "text": f"Support check (LettuceDetect, advisory) {row['id']}: "
+                                f"{'no finding' if result == 'no_finding' else result.replace('_', ' ')}"
+                                + (f" ({out.get('detail')})" if result == "could_not_run" else "") + ".",
+                        "refs": {"row_id": row["id"], "result": result}})
+                agg = self.research.setdefault("support_check", {"engine": "lettucedetect", "advisory": True,
+                                                                 "companies": {}})
+                agg["companies"][ticker] = {**counts, "seconds": seconds, "worker": meta}
+                total = {k: sum(c[k] for c in agg["companies"].values()) for k in counts}
+                agg["totals"] = total
+                checked = sum(total.values())
+                agg["label"] = (f"Support check could not run for {total['could_not_run']} of {checked} proposals"
+                                if total["could_not_run"] else
+                                f"Support check (advisory) ran on {checked} proposals: {total[SUPPORT_UNSUPPORTED]} "
+                                f"with potentially unsupported wording")
+                self.save_ledger()
 
         def research_company(self, ticker: str) -> None:
             c = self.company(ticker)
@@ -2257,6 +2375,41 @@ def make_job_class():
             return rc.envelope(cid, "ok" if not issues else "partial", {"finished": True}, issues), True
 
     return ResearchJob
+
+
+def support_passage(row: dict) -> str:
+    """The exact cited passage: every evidence span's quote as captured, in order (nothing composed or truncated)."""
+    return "\n".join(s["quote"] for s in (row.get("research") or {}).get("evidence") or [])
+
+
+def support_binding(run: dict, row: dict, weights_sha256) -> dict:
+    """The material identity a support finding is current for (the canonical span identity of runs/review.py
+    research_basis: source id, page, quote, roles, source/original digests and page artifact hashes) plus the claim
+    field and text and the model/weights. Never part of a Keep basis."""
+    from capture import support_signal as ss
+    from runs.review import research_basis
+    basis = research_basis(run, row)
+    return {"field": "title", "claim": row.get("title"), "revision": basis.get("revision"),
+            "evidence": basis.get("evidence"), "model": ss.MODEL, "model_revision": ss.MODEL_REVISION,
+            "weights_sha256": weights_sha256}
+
+
+def support_view(run: dict, row: dict) -> dict | None:
+    """The finding as it may be shown now (PR159 view_finding's rule over this multi-span binding): the saved record
+    only while its binding still equals the current one; otherwise result 'stale' with no spans. None when no check
+    ran."""
+    saved = (row.get("research") or {}).get("support_check")
+    if not isinstance(saved, dict):
+        return None
+    try:
+        current = support_binding(run, row, saved.get("weights_sha256"))
+        same = saved.get("binding") == current
+    except Exception:
+        same = False
+    if same:
+        return saved
+    return {"engine": saved.get("engine"), "result": "stale", "spans": [], "advisory": True,
+            "reason": "The claim or its cited source changed after this check; the old finding is not shown."}
 
 
 def _nullish(v):

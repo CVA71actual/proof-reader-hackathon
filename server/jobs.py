@@ -119,7 +119,7 @@ TIME_WINDOW_MAX = 120
 # the built-in one (PTGX 8-K exhibit page 3, IONS annual report page 95, and the PTGX page as a scan: no text layer, regions
 # from SAM 3.1). "events" pages go to the event reader (both readers), "table" pages to the table reader.
 CHOICE_FIELDS = ("companies", "event_types", "time_window_months", "spending_limit_usd", "note_for_agent",
-                 "reader_tools", "models", "mode", "research_limits")
+                 "reader_tools", "models", "mode", "research_limits", "support_check")
 MODES = ("pages", "research")
 
 
@@ -315,6 +315,8 @@ def validate_choices(body: dict, index: sources.Index | None = None) -> dict:
         return validate_research_choices(body)
     if body.get("research_limits") is not None:
         raise ValueError("research_limits go with mode research.")
+    if body.get("support_check") is not None:
+        raise ValueError("support_check goes with mode research.")
     index = index or sources.load_index()
     companies, types = body.get("companies"), body.get("event_types", list(read_events.EVENT_TYPES))
     if not isinstance(companies, list) or not companies or not all(isinstance(c, str) for c in companies):
@@ -378,7 +380,10 @@ def validate_research_choices(body: dict) -> dict:
         raise ValueError('A research run uses Muse Spark only (models "one"); the independent reviewer is stage S2.')
     return {"companies": companies, "event_types": list(read_events.EVENT_TYPES), "time_window_months": 6,
             "spending_limit_usd": limit, "note_for_agent": note, "reader_tools": False, "models": "one",
-            "mode": "research", "research_limits": research.validate_limits(body.get("research_limits"))}
+            "mode": "research", "research_limits": research.validate_limits(body.get("research_limits")),
+            # LETTUCE-OPTION: present only when a person turns the support check on, so a run with it off keeps
+            # exactly today's choices (and run.json bytes)
+            **research.validate_support_check(body.get("support_check"))}
 
 
 def label_for(number: int, choices: dict) -> str:

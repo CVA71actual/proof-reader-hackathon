@@ -70,6 +70,7 @@
             "reader_tools": {"type": "boolean", "description": "Whether the first reader could call the checks as tools while it read (capture/reader_tools.py). Absent on a run saved before it existed: false."},
             "models": {"enum": ["one", "all"], "description": "one: Muse Spark only (no second reader, no Muse Wonder escalation, no SAM 3.1); all: the usual set. Absent on a run saved before it existed: all."},
             "mode": {"enum": ["pages", "research"], "description": "pages: read the captured pages of the sources index (the default; absent on a run saved before research existed). research: RESEARCHER-FULL-001, Muse Spark researches each company on the Responses API with web_search and the capture tools (runs/research.py); every source it cites is captured by code."},
+            "support_check": {"enum": ["lettucedetect"], "description": "Optional, research runs only: the LettuceDetect support check runs on each proposal after a company's research (findings only, never blocking). Absent: off."},
             "research_limits": {"type": "object", "additionalProperties": false, "description": "Optional settings of a research run, each null (off) unless a person turned it on; concurrency is a rate-limit safety setting (work queues, none is dropped).",
                                 "properties": {"max_spend_per_company_usd": {"type": ["number", "null"], "exclusiveMinimum": 0},
                                                "max_requests_per_company": {"type": ["integer", "null"], "minimum": 1},

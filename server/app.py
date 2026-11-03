@@ -306,6 +306,12 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
                 "research_instructions_default": research_instructions.DEFAULT,
                 "research_instructions_max_length": research_instructions.MAX_LENGTH}
 
+    @app.get("/api/research/options")
+    def research_options() -> dict:
+        """LETTUCE-OPTION: the optional research settings a New Run screen can offer (support_check, off by default)."""
+        from runs import research
+        return research.support_check_options()
+
     @app.get("/api/companies")
     def get_companies() -> dict:
         """The selectable companies of the sources index a new run will read. The New
@@ -496,7 +502,12 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         job_path = store.run_dir(run_id) / "job.json"
         # Job 51e: how many unpriced calls the person accepted, so the UI's marker reads 'cost unknown' until then
         accepted = jobs.accepted_count(json.loads(job_path.read_text())) if job_path.exists() else 0
-        return {**run, **report_status(store.run_dir(run_id) / "report", run, decisions),
+        support = {}
+        if (run["run"].get("choices") or {}).get("support_check"):
+            from runs.research import support_view       # LETTUCE-OPTION: a finding is shown only while current
+            support = {"support_findings": {r["id"]: support_view(run, r) for r in run.get("rows", [])
+                                            if (r.get("research") or {}).get("support_check")}}
+        return {**run, **report_status(store.run_dir(run_id) / "report", run, decisions), **support,
                 "state": state, "unknown_cost_accepted": accepted, "calendar_partition": partition,
                 "calendar_window": ({"start": window_start, "end": window_end} if window_start else
                                     {"start": None, "end": None, "unresolved": True,
