@@ -169,29 +169,26 @@ def test_accuracy_export_has_no_second_reader_for_a_one_model_run(runs_dir):
 # ---------------------------------------------------------------- the UI
 
 
-def test_new_run_dialog_offers_the_choice_with_the_second_reader_as_default():
+def test_new_run_dialog_hides_the_page_mode_choices():
+    # NR-001: the sheet starts research runs only; the page reader's models
+    # choice stays in the markup, inside the hidden page-mode block
     html = (UI / "index.html").read_text()
     assert '<input type="radio" name="nr-models" id="nr-models-one" value="one"> Muse Spark only</label>' in html
-    assert ('<input type="radio" name="nr-models" id="nr-models-all" value="all" checked> '
-            'Muse Spark, checked by a second reader</label>') in html
-    assert html.index('id="nr-limit"') < html.index('id="nr-models-one"') < html.index('id="nr-note"')
+    block = html[html.index('id="nr-models-one"') - 200:]
+    block = block[block.index("<div hidden>"):block.index("</div>", block.index("id=\"nr-tools\""))]
+    assert "page-reading runs only" in block
+    assert "Reader tools" in block
 
 
-def test_ui_sends_models_on_run_now_and_continue():
+def test_ui_sends_mode_research_on_run_now_and_continue():
+    # NR-001: both start paths start the research agent (mode 'research') and
+    # never send the page-reader-only choices the server rejects in research mode
     js = (UI / "app.js").read_text()
-    assert js.count("models: nrModels() }).then(function (res) {") == 2
     for fn in ("startRunNow", "startRunFromIntake"):
-        assert "models: nrModels()" in _grab_fn(js, fn), fn
-    script = "\n".join((
-        "var picked = false;",
-        "var document = { getElementById: function (id) {"
-        " return id === 'nr-models-one' ? { checked: picked } : null; } };",
-        _grab_fn(js, "nrModels"),
-        "var a = nrModels(); picked = true; var b = nrModels();",
-        "console.log(a + ' ' + b);"))
-    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True)
-    assert got.returncode == 0, got.stderr
-    assert got.stdout.strip() == "all one"
+        body = _grab_fn(js, fn)
+        assert "mode: 'research'" in body, fn
+        for gone in ("models:", "reader_tools:", "event_types:", "time_window_months:"):
+            assert gone not in body, f"{fn} still sends {gone}"
 
 
 def test_ui_run_card_and_counters_do_not_claim_a_second_reader():
