@@ -163,10 +163,14 @@ def draft_audit(run_dir: Path, run: dict, decisions: list) -> dict:
         "model_limitations": {t: ((c.get("finish") or {}).get("limitations") or []) for t, c in companies.items()},
         "limitation_counts": {t: company_limitations(c) for t, c in companies.items()},
         "exports": exports, "problems": problems,
+        "cap_exceeded": research.get("cap_exceeded"), "overages": list(research.get("overages") or []),
         "unfinished_companies": unfinished,
         "complete": not problems and not unfinished,
         "published": False,
         "publish_note": ("A draft. Rows are proposals: " + (research.get("label") or LABEL) + "." +
+                         (f" The spending cap was exceeded by ${research['cap_exceeded']['by_usd']:.2f} "
+                          f"({research['cap_exceeded'].get('reason')})." if isinstance(research.get("cap_exceeded"),
+                                                                                       dict) else "") +
                          (" Partial: research did not finish for " + ", ".join(unfinished) + "." if unfinished else "")),
     }
 

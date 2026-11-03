@@ -666,6 +666,13 @@ recorded in `run.research.reviewer_access` with the provider's message; the refu
 declared fallback (Muse Spark Open) reviews every company with the same-family label and `review[t].multi_family.met:
 false`. A refusal on a first real call (no access check) is handled the same way.
 
+Truthful overage (Red Team PR177_164870a; Manus 07:51: never cap or hide a reported charge): every priced charge is
+booked as reported. A reply whose usage reports more than one billed attempt (none was requested) is recorded in
+`run.research.overages` ("provider billed N attempts for one request"). As soon as booked spend passes the cap,
+`run.research.cap_exceeded` {cap_usd, spent_usd, by_usd, reason} is set, every further admission (research, reviewer,
+adjudicator) is refused with that reason, and the run label and the draft audit say "spending cap exceeded by $X
+(why)". The same applies to Baseten replies whose usage passes their reservation.
+
 Labels are derived, never read back (e2e #180, CLAIM-001 / UNKNOWN-001): `runs/research_labels.py
 derive_review_labels(run)` sets every row, company and run label from the recorded review (its status, the findings
 still current on the rows, the retrieval limits in its limitations, the reviewer that ran). It runs when a review is
