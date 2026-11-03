@@ -53,6 +53,25 @@ PROBE_MAX_TOKENS = 64          # the access check's reply allowance (thinking is
 PRICE_NAME_OF = {"claude-opus-5-5": "Claude Opus 5.5"}
 NO_SDK = ("The anthropic Python SDK is not installed in this environment, so the Claude reviewer cannot run "
           "(installing it is pending CVA's approval).")
+BILLING_REFUSED = "Claude reviewer unavailable: API credit balance too low"
+
+
+def billing_refusal(e) -> bool:
+    """Anthropic's billing refusal: a 400 invalid_request_error whose message says the credit balance is too low.
+    Matched on the error's status, its error type and that message only (no broad catch): it refuses the KEY, so it is
+    handled like a 401/403 (OUTCOME-001)."""
+    if getattr(e, "status_code", None) != 400:
+        return False
+    body = getattr(e, "body", None)
+    err = body.get("error") if isinstance(body, dict) else None
+    etype = err.get("type") if isinstance(err, dict) else None
+    if etype is None and type(e).__name__ == "BadRequestError":
+        etype = "invalid_request_error"
+    msg = " ".join(str(x or "") for x in (getattr(e, "message", ""), err.get("message") if isinstance(err, dict)
+                                          else "")).lower()
+    return etype == "invalid_request_error" and "credit balance" in msg and "too low" in msg
+
+
 STOP_TO_FINISH = {"tool_use": "tool_calls", "end_turn": "stop", "max_tokens": "length", "refusal": "refusal",
                   "stop_sequence": "stop_sequence", "pause_turn": "pause_turn"}
 ERROR_STATUSES = ("error", "refused", "rejected")
@@ -278,10 +297,13 @@ class ClaudeChat:
             status = status if isinstance(status, int) else None
             timed = "timeout" in type(e).__name__.lower()
             text = str(getattr(e, "message", "") or "")[:300]
-            return ChatReply(MODEL, error=f"{NAME} did not answer: {type(e).__name__}"
-                                          + (f" (HTTP {status})" if status else "") + (f": {text}" if text else ""),
-                             http_status=status, timed_out=timed,
-                             may_have_been_billed=status is None or status >= 500)
+            reply = ChatReply(MODEL, error=f"{NAME} did not answer: {type(e).__name__}"
+                                           + (f" (HTTP {status})" if status else "") + (f": {text}" if text else ""),
+                              http_status=status, timed_out=timed,
+                              may_have_been_billed=status is None or status >= 500)
+            if billing_refusal(e):
+                reply.access_reason = BILLING_REFUSED
+            return reply
         try:
             return parse_message(msg, MODEL)
         except Exception as e:

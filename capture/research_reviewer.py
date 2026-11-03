@@ -127,6 +127,7 @@ class ChatReply:
     stop_details: dict | None = None     # a Claude refusal's category and explanation
     served_by: dict | None = None        # which model answered (a server-side fallback may have)
     attempts: list | None = None         # per attempt: price_name, prompt_tokens, completion_tokens
+    access_reason: str | None = None     # set when the provider refused the KEY (not the request), e.g. billing
 
 
 def _int_or_none(v) -> int | None:
@@ -1146,8 +1147,9 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                     reply.error, reply.may_have_been_billed if reply.error else None,
                     None if reply.error else reply.attempts)
         if reply.error:
-            if reply.http_status in REFUSED_STATUSES:
-                state["access_refused"] = {"http_status": reply.http_status, "message": reply.error}
+            if reply.http_status in REFUSED_STATUSES or reply.access_reason:
+                state["access_refused"] = {"http_status": reply.http_status, "message": reply.error,
+                                           "reason": reply.access_reason}
             return result(INCOMPLETE, reply.error)
         if reply.finish_reason == "refusal":
             # classified before any tool runs: a declined reply establishes nothing; its category is recorded

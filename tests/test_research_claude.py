@@ -262,3 +262,82 @@ def test_absent_optional_cache_fields_are_fine():
     reply = rc_claude.parse_message(message([tool_use("finish_review", {"summary": "ok"}, "t")],
                                             usage={"input_tokens": 10, "output_tokens": 3}), rc_claude.MODEL)
     assert reply.prompt_tokens == 10 and reply.completion_tokens == 3 and reply.error is None
+
+
+# ------------------------------------------------------------------ billing refusal (live 06:33 PT): no credit left
+
+class BadRequestError(Exception):
+    """The shape of anthropic.BadRequestError: status_code 400 and the API's error body."""
+    status_code = 400
+
+    def __init__(self, message, etype="invalid_request_error"):
+        super().__init__(message)
+        self.message = message
+        self.body = {"type": "error", "error": {"type": etype, "message": message}}
+
+
+CREDIT = ("Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or "
+          "purchase credits.")
+
+
+def _fallback_run(runs_dir, fake, fallback):
+    from fastapi.testclient import TestClient
+    from server.app import create_app
+    from tests.test_research_review_wire import PAGE1, PAGE2, PR1, PR2
+    tools = F.tools({PR1: (200, "text/html; charset=utf-8", PAGE1), PR2: (200, "text/html; charset=utf-8", PAGE2)})
+    tools.reviewer, tools.reviewer_fallback, tools.brave = rc_claude.ClaudeChat(client=fake), fallback, F.FakeBrave()
+    tools.adjudicator = F.FakeChat([F.verdict({"verdict": "unresolved", "reason": "x"})], model=F.ADJUDICATOR_MODEL)
+    reader = F.FakeResponses(happy_script())
+    app = create_app(runs_dir=runs_dir, reader=reader, background=False, second_reader=None, wonder_reader=None,
+                     sam_reader=None, research_tools=tools, research_reader=reader)
+    rid = TestClient(app).post("/api/runs/new", json={"mode": "research", "companies": ["PTGX"],
+                                                      "as_of": "2026-11-02"}).json()["id"]
+    return run_json(runs_dir, rid)
+
+
+def test_a_credit_balance_refusal_at_the_access_check_falls_back_like_a_403(runs_dir):
+    fake = FakeAnthropic([], probe=BadRequestError(CREDIT))
+    fallback = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"}))], **F.FALLBACK)
+    run = _fallback_run(runs_dir, fake, fallback)
+    r = run["run"]["research"]
+    acc = r["reviewer_access"]
+    assert fake.probes == 1 and fake.requests == [] and acc["refused"] is True
+    assert acc["reason"] == "Claude reviewer unavailable: API credit balance too low"
+    assert "credit balance is too low" in acc["message"]
+    e = r["review"]["PTGX"]
+    assert e["status"] == "complete" and e["reviewer"] == "Muse Spark Open" and e["multi_family"]["met"] is False
+    assert e["reviewer_choice"]["primary_unavailable"].startswith("Claude reviewer unavailable: API credit balance")
+    assert "same model family as the researcher" in e["label"] and "independently" not in e["label"]
+    from tools import research_smoke
+    assert research_smoke.reviewer_line(r) == ("Reviewer: Muse Spark Open (fallback: Claude reviewer unavailable: "
+                                               "API credit balance too low)")
+
+
+def test_a_credit_balance_refusal_mid_review_keeps_the_findings(runs_dir):
+    from tests.test_research_review_wire import CONDITION
+
+    def first(kw):
+        def lost(draft):
+            return tool_use("report_finding", {"kind": "lost_condition", "evidence": [
+                {"source_id": "src-r1-ptgx", "quote": CONDITION}], "text": "dropped", "row_revision_ids": [
+                {"row_id": draft[0]["row_id"], "revision_id": 1}]}, "t-find")
+        return _assess(kw, verdict="finding", before=(lost,))
+    fake = FakeAnthropic([first, BadRequestError(CREDIT)])
+    fallback = F.FakeChat([], **F.FALLBACK)
+    run = _fallback_run(runs_dir, fake, fallback)
+    e = run["run"]["research"]["review"]["PTGX"]
+    row = next(x for x in run["rows"] if x.get("research"))
+    assert fallback.sent == [] and e["status"] == "incomplete" and e["reviewer"] == "Claude Opus 5.5"
+    assert "mid-review (Claude reviewer unavailable: API credit balance too low)" in e["reason"]
+    assert [f["kind"] for f in row["research"]["review_findings"] if f["current"]] == ["lost_condition"]
+    assert run["run"]["research"]["reviewer_access"]["reason"].endswith("credit balance too low")
+
+
+@pytest.mark.parametrize("err,expected", [
+    (BadRequestError(CREDIT), True),
+    (BadRequestError("max_tokens: Field required"), False),                 # an ordinary bad request
+    (BadRequestError(CREDIT, etype="overloaded_error"), False),             # the message alone is not enough
+    (PermissionDeniedError(CREDIT), False),                                 # 403 has its own rule
+])
+def test_only_anthropics_credit_balance_400_is_a_billing_refusal(err, expected):
+    assert rc_claude.billing_refusal(err) is expected

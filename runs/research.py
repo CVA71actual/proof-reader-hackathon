@@ -820,23 +820,25 @@ def make_job_class():
                          and getattr(reply, "attempts", None) else {})})
             if reply is None:
                 return {"checked": False, "reason": "The reviewer model has no access check."}
-            refused = reply.http_status in rv.REFUSED_STATUSES
+            reason = getattr(reply, "access_reason", None)
+            refused = reply.http_status in rv.REFUSED_STATUSES or bool(reason)
             return {"checked": True, "at": now_utc(), "refused": refused, "http_status": reply.http_status,
-                    "message": reply.error if reply.error else None}
+                    "message": reply.error if reply.error else None, **({"reason": reason} if reason else {})}
 
         def refused_reviewer(self, ticker: str, refusal: dict, locked: bool = False) -> tuple:
             """The provider refused the key for the primary reviewer: record it, never retry it, and use the declared
             fallback for the rest of the run (same family: the label says so; MULTI-FAMILY-001 is not met)."""
             from capture import research_reviewer as rv
             primary, fallback = self.tools.reviewer, self.tools.reviewer_fallback
-            why = (f"refused by the provider (HTTP {refusal.get('http_status')}): "
-                   f"{refusal.get('message') or 'access refused'}")
+            why = (refusal.get("reason") or f"refused by the provider (HTTP {refusal.get('http_status')})") + \
+                f": {refusal.get('message') or 'access refused'}"
             choice = {**rv.identity(fallback), "fallback_used": True, "primary": rv.identity(primary)["name"],
                       "primary_unavailable": why, "primary_refused": {k: refusal.get(k) for k in
-                                                                      ("http_status", "message")}}
+                                                                      ("http_status", "message", "reason")}}
             with jobs.RUN_LOCK:
                 self.research.setdefault("reviewer_access", {}).update(
                     {"refused": True, "http_status": refusal.get("http_status"), "message": refusal.get("message"),
+                     **({"reason": refusal["reason"]} if refusal.get("reason") else {}),
                      "fallback": choice["name"]})
             self.step(ticker, "review", "Code", "runs.research",
                       f"{choice['primary']} was {why}. It is not retried; the declared fallback {choice['name']} "
@@ -894,8 +896,9 @@ def make_job_class():
                 if refused and not choice.get("fallback_used") and fallback is not None and not first_call:
                     # OUTCOME-001 (live review d313da2): refused MID-review. That reviewer's validated work is kept and
                     # its review ends incomplete with the reason; the fallback reviews only later companies.
-                    record["reason"] = (f"Incomplete: {choice['name']} was refused by the provider mid-review (HTTP "
-                                        f"{refused.get('http_status')}) after {record.get('turns')} turn(s); its "
+                    record["reason"] = (f"Incomplete: {choice['name']} was refused by the provider mid-review ("
+                                        f"{refused.get('reason') or 'HTTP ' + str(refused.get('http_status'))}) "
+                                        f"after {record.get('turns')} turn(s); its "
                                         f"{len(record.get('findings') or [])} validated finding(s) are kept. "
                                         f"{refused.get('message') or ''}").strip()
                     self.refused_reviewer(ticker, refused)
