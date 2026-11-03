@@ -2166,3 +2166,43 @@ def test_a_finish_with_a_captured_source_never_concluded_is_incomplete(runs_dir)
     meta, c = _company(runs_dir, rid)
     assert c["status"] == "stopped" and c["limitation"]["kind"] == "incomplete"
     assert "src-r1-ptgx was captured and not concluded" in c["status_reason"] and meta["status"] != "done"
+
+
+# ---------------------------------------------------------------- DATES-001 (Manus 05:31): a late dateline in the quote
+
+_DL_QUOTE = "SOUTH SAN FRANCISCO, Calif., November 5, 2026 (GLOBE NEWSWIRE) -- Protagonist announced"
+_DL_URL = "https://ir.example.com/fake-dateline"
+
+
+@pytest.mark.parametrize("late,anchored", [(False, False), (True, False), (True, True)])
+def test_a_dateline_in_the_quote_is_never_the_event_date_wherever_it_sits(runs_dir, late, anchored):
+    """proposal -> state -> report/audit: an unanchored dateline (header or past the first DATELINE_WORDS words) is a
+    typed issue; an explicit anchor ("today") keeps the date with no issue."""
+    from checks import event_checks as ec
+    from report.data import build_view
+    from runs.state import current_state
+    quote = _DL_QUOTE + (" today" if anchored else "")
+    nav = " ".join(f"menu{i}" for i in range(ec.DATELINE_WORDS + 20)) + " " if late else ""
+    ev = F.event("Synthetic pipeline update", quote, date_text="November 5, 2026", date="2026-11-05", conditions=[])
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": _DL_URL, "purpose": "x"}, "f")]),
+        F.body([F.call("propose_events", {"events": [ev]}, "p")]),
+        F.body([F.call("finish_draft", {"dispositions": [
+            {"row_id": "e1", "disposition": "proposal", "related_row_id": None, "reason": "x"}],
+            "limitations": []}, "done")])])
+    _, rid, _ = start(runs_dir, reader, pages={_DL_URL: (200, "text/html", F.html(nav + quote + " its update."))})
+    run = run_json(runs_dir, rid)
+    row = next(r for r in run["rows"] if r.get("research"))
+    if late:
+        assert ec.dateline_date([{"text": t} for t in (nav + quote).split()]) is None    # past the header scan
+    target = current_state(run, [])["targets"][row["id"]]
+    calendar = [r["id"] for r in build_view(run, [], generated_at="2026-11-03T13:40:00+00:00")["calendar"]]
+    codes = [i["code"] for i in row["research"]["issues"]]
+    # On this branch nothing is placed without a person's Keep; automatic inclusion lives on #178, whose state reads
+    # this typed issue (dateline_as_event_date is one of its research support codes). The audit carries it too.
+    assert target["on_calendar"] is False and row["id"] not in calendar
+    audit_row = next(r for r in run["run"]["research"]["audit"]["rows"] if r["id"] == row["id"])
+    if anchored:
+        assert codes == [] and audit_row["scope"]["issues"] == []
+    else:
+        assert codes == ["dateline_as_event_date"] and audit_row["scope"]["issues"] == ["dateline_as_event_date"]
