@@ -368,6 +368,8 @@ def make_job_class():
             import threading
             self._access_lock = threading.Lock()     # the reviewer access check runs once per run
             self._reviewer_pick: tuple | None = None
+            self.cap_exceeded: str | None = None     # set once settled spend crosses the cap: no further admission
+            self._overage_reasons: list[str] = []
 
         # ------------------------------------------------------------ ledger
 
@@ -512,6 +514,7 @@ def make_job_class():
                     c["searches"] += reply.searches
                 over_tokens = isinstance(reply.input_tokens, int) and reply.input_tokens > input_bound
                 over_dollars = cost is not None and worst is not None and cost > worst
+                self.check_cap_crossed(ticker, "research")
                 if over_tokens or over_dollars:      # dollars compared too: searches alone can pass the reservation
                     self.research.setdefault("reservation_exceeded", []).append(
                         {"at": now_utc(), "ticker": ticker, "input_tokens": reply.input_tokens,
@@ -588,6 +591,8 @@ def make_job_class():
             while True:
                 if self.stop_requested():
                     return None, "A person stopped the run."
+                if self.cap_exceeded:
+                    return None, self.cap_exceeded
                 with jobs.RUN_LOCK:
                     self.refresh_spend()
                     if jobs.unknown_unaccepted(self.job):
@@ -603,6 +608,27 @@ def make_job_class():
                                       f"exceed the {jobs.money(limit)} cap "
                                       f"({jobs.money(self.meta['spend_usd'] or 0)} spent).")
                 time.sleep(0.05)      # another call is in flight: queue behind it
+
+        def check_cap_crossed(self, ticker: str | None, stage: str) -> None:
+            """CAP-001 (Red Team PR177_164870a; Manus 07:51: never cap or hide a reported charge). When settled
+            spend passes the cap, every further admission is refused (research and review alike) and the run records
+            by how much and why. Called under RUN_LOCK after a charge is booked."""
+            cap, spent = self.choices.get("spending_limit_usd"), self.meta.get("spend_usd") or 0
+            if cap is None or spent <= cap + 1e-9:
+                return
+            by = round(spent - cap, prices.ROUND_TO)
+            why = "; ".join(dict.fromkeys(self._overage_reasons)) or \
+                "a charge settled above its reserved worst case"
+            rec = self.research.setdefault("cap_exceeded", {"cap_usd": cap, "first_at": now_utc(),
+                                                            "first_stage": stage, "first_ticker": ticker})
+            rec.update({"spent_usd": spent, "by_usd": by, "reason": why})
+            if self.cap_exceeded is None:
+                self.cap_exceeded = (f"Spending cap reached: exceeded by {jobs.money(by)} ({why}); the {jobs.money(cap)} cap was "
+                                     f"passed by charges booked as reported, so nothing more is admitted.")
+                self.cap_reached = self.cap_exceeded        # research stops at its next admission
+                self.research.setdefault("steps", []).append({
+                    "n": len(self.research["steps"]) + 1, "at": now_utc(), "ticker": ticker, "kind": "limit",
+                    "tag": "Code", "who": "runs.research", "text": self.cap_exceeded})
 
         def review_usage(self, ticker: str | None) -> dict:
             holder = self.company(ticker) if ticker is not None else self.research.setdefault("reviewer_access", {})
@@ -685,9 +711,19 @@ def make_job_class():
                             if t.get("name") not in models:
                                 models.append(t.get("name"))
                             u["unpriced_calls"] += 1
-                        else:
+                        else:      # every priced charge is booked as reported, never capped or hidden
                             self.meta["spend_usd"] = round((self.meta["spend_usd"] or 0) + cost, prices.ROUND_TO)
                             u["spend_usd"] = round(u["spend_usd"] + cost, prices.ROUND_TO)
+                        billed = req.get("attempts") or []
+                        if len(billed) > 1:
+                            # no fallback was requested: more than one billed attempt for one request is an overage
+                            why = f"provider billed {len(billed)} attempts for one request"
+                            self.research.setdefault("overages", []).append(
+                                {"at": now_utc(), "ticker": ticker, "stage": t.get("stage"), "attempts": len(billed),
+                                 "reserved_usd": t["worst"], "settled_usd": cost, "reason": why,
+                                 "models": [a.get("model") for a in billed]})
+                            self._overage_reasons.append(why)
+                        self.check_cap_crossed(ticker, t.get("stage") or "review")
                         p = usage.get("prompt_tokens")
                         if (isinstance(p, int) and t.get("input_bound") is not None and p > t["input_bound"]) or \
                                 (cost is not None and cost > t["worst"]):
@@ -1746,6 +1782,7 @@ def make_job_class():
                     c = self.company(ticker)
                     c["spend_usd"] = round(c["spend_usd"] + cost, prices.ROUND_TO)
                     c[what] = c.get(what, 0) + 1
+                    self.check_cap_crossed(ticker, "research")
                     self.save(refresh=False)
             finally:
                 jobs.release_budget(self.dir.name, token)

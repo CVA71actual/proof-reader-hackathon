@@ -1150,3 +1150,31 @@ def test_the_production_chain_is_deepseek_then_claude_with_their_own_keys():
     assert chain[0].key_env == "BASETEN_DEEPSEEK_API_KEY" and rv.identity(chain[0])["provider"] == "baseten"
     assert rv.identity(tools.reviewer_fallback)["name"] == "Muse Spark Open"
     assert tools.reviewer_fallback.key_env == "BASETEN_API_KEY"
+
+
+def test_a_baseten_reply_over_its_reservation_is_booked_and_the_cap_crossing_stops_admission(runs_dir):
+    """The same truthful handling for DeepSeek / Baseten replies: usage above the reservation is booked as reported,
+    and once spend passes the cap nothing more is admitted."""
+    def first(messages):
+        return F.chat_tools(("search", {"query": "q"}), p=600_000, c=12_000)       # far above its reservation
+    deepseek = F.FakeChat([F.assess_then(p=500, c=100), first], probe=True, **DEEPSEEK)
+    run = _chain_run_limit(runs_dir, [deepseek], F.FakeChat([], **F.FALLBACK), 0.6)
+    r = run["run"]["research"]
+    assert run["run"]["spend_usd"] > 0.6 and r["cap_exceeded"]["by_usd"] > 0
+    assert "overages" not in r                                       # one attempt per Baseten request
+    e = r["review"]["PTGX"]
+    assert e["status"] == "incomplete" and "Spending cap reached: exceeded by" in e["reason"]
+    assert "spending cap exceeded by $" in r["label"]
+
+
+def _chain_run_limit(runs_dir, chain, fallback, limit):
+    tools = F.tools({PR1: (200, "text/html; charset=utf-8", PAGE1)})
+    tools.reviewers = chain
+    tools.reviewer, tools.reviewer_fallback, tools.brave = chain[0], fallback, F.FakeBrave({"q": []})
+    tools.adjudicator = F.FakeChat([], model=F.ADJUDICATOR_MODEL)
+    reader = F.FakeResponses(happy_script())
+    app = create_app(runs_dir=runs_dir, reader=reader, background=False, second_reader=None, wonder_reader=None,
+                     sam_reader=None, research_tools=tools, research_reader=reader)
+    rid = TestClient(app).post("/api/runs/new", json={"mode": "research", "companies": ["PTGX"],
+                                                      "as_of": "2026-11-02", "spending_limit_usd": limit}).json()["id"]
+    return run_json(runs_dir, rid)
