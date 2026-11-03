@@ -186,8 +186,9 @@ def parse_chat_response(resp, requested_model: str) -> ChatReply:
                                    "could not be used.")
         calls.append({"id": cid, "name": name, "arguments": args})
     content = get(msg, "content")
+    reason = get(choices[0], "finish_reason")   # kept as given; review_draft and _verdict classify it
     return ChatReply(model, content=content if isinstance(content, str) else None, tool_calls=calls,
-                     finish_reason=get(choices[0], "finish_reason"), prompt_tokens=p, completion_tokens=c)
+                     finish_reason=reason if isinstance(reason, str) else None, prompt_tokens=p, completion_tokens=c)
 
 
 def _chat(model, messages, **kw) -> ChatReply:
@@ -205,6 +206,26 @@ def _chat(model, messages, **kw) -> ChatReply:
 
 
 TRUNCATED = "length"
+# The only finish reasons that establish a finished reply. "length" is truncation; anything else, missing included
+# (content_filter, a provider-specific reason, None), is not a finished reply and is never taken as one.
+FINISHED_REVIEW = frozenset({"stop", "tool_calls"})
+FINISHED_VERDICT = frozenset({"stop"})
+SEARCH_DONE = frozenset({"completed", "complete", "ok"})
+
+
+def _search_outcome(out) -> tuple[list, int | None, str | None]:
+    """(results, searches, failure reason). Well formed: a list (an empty list is a valid search that found nothing),
+    or {"results": list, "searches"?: int, "status"?: completed}. Anything else (None, {}, a null or wrong-typed
+    results container, an unfinished status) is a failed search whose usage is unknown."""
+    if isinstance(out, list):
+        return out, 1, None
+    if isinstance(out, dict) and isinstance(out.get("results"), list):
+        status = out.get("status")
+        n = _int_or_none(out.get("searches"))
+        if status is not None and status not in SEARCH_DONE:
+            return [], n, f"The search did not complete (status {status!r})."
+        return out["results"], n, None
+    return [], None, "The search returned no readable results, so it did not count as a search."
 FINISH_NOT_ALONE = "finish_review ignored: issued alongside other tool calls"
 
 
@@ -514,13 +535,12 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
             searches.append({"query": q, "status": "error", "results": 0})
             retrieval_failed("search", q, f"The search did not succeed ({type(e).__name__}).")
             return {"status": "error", "message": "The search did not succeed."}
-        n = None
-        if isinstance(out, dict):
-            n = _int_or_none(out.get("searches"))
-            out = out.get("results", [])
-        elif isinstance(out, list):
-            n = 1
-        results = out if isinstance(out, list) else []
+        results, n, why = _search_outcome(out)
+        if why:   # malformed or unfinished: a failed retrieval, never a successful empty search
+            gate.settle(ticket, "search", "search", "search", None, None, n, why, True)
+            searches.append({"query": q, "status": "error", "results": 0})
+            retrieval_failed("search", q, why)
+            return {"status": "error", "message": "The search did not succeed."}
         gate.settle(ticket, "search", "search", "search", None, None, n, None, None)
         searches.append({"query": q, "status": "ok", "results": len(results)})
         open_retrieval.pop(("search", q), None)
@@ -618,6 +638,9 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
             # finish_review. Findings recorded in earlier turns are kept.
             return result(INCOMPLETE, "The reviewer's reply was cut off at the output limit, so the review did not "
                                       "finish; nothing in that reply was used.")
+        if reply.finish_reason not in FINISHED_REVIEW:
+            return result(INCOMPLETE, f"The reviewer's reply ended with finish reason {reply.finish_reason!r}, which "
+                                      f"does not establish a finished reply; nothing in it was used.")
         if not reply.tool_calls:
             return result(INCOMPLETE, "The reviewer stopped without calling finish_review, so the review is not "
                                       "complete; its text was not taken as a result.")
@@ -757,7 +780,7 @@ def adjudicate(*, disputes: list[dict], sources: list[dict], spend_gate: Callabl
         gate.settle(ticket, "model", reply.model, ADJUDICATOR_NAME, reply.prompt_tokens, reply.completion_tokens, 0,
                     reply.error, reply.may_have_been_billed if reply.error else None)
         outcomes.append(_verdict(d, reply, srcs, cited, unresolved))
-        if reply.error or reply.finish_reason == TRUNCATED:
+        if reply.error or reply.finish_reason not in FINISHED_VERDICT:
             failed.append(d.get("dispute_id"))
     if failed:
         return done(INCOMPLETE, f"{len(failed)} adjudication request{'s' if len(failed) != 1 else ''} failed or "
@@ -773,6 +796,9 @@ def _verdict(d: dict, reply: ChatReply, srcs: _Sources, cited: list[str], unreso
     if reply.finish_reason == TRUNCATED:   # before parsing: a cut-off verdict is never accepted, however readable
         return unresolved(d, "The verdict was cut off at the output limit, so the dispute stays unresolved.",
                           reply.model, reply.content)
+    if reply.finish_reason not in FINISHED_VERDICT:
+        return unresolved(d, f"The verdict ended with finish reason {reply.finish_reason!r}, which does not establish "
+                             f"a finished reply, so the dispute stays unresolved.", reply.model, reply.content)
     raw = reply.content
     try:
         v = json.loads(raw) if isinstance(raw, str) else None

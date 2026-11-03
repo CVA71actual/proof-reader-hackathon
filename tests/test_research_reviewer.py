@@ -342,7 +342,8 @@ DISPUTE = {"dispute_id": "D1", "row_revision_ids": [{"row_id": "r1", "revision_i
 
 def adj(content, disputes=None, gate=None, **kw):
     model = FakeModel([content if isinstance(content, ChatReply) else
-                       ChatReply("muse-wonder-1.0", content=content, prompt_tokens=50, completion_tokens=20)])
+                       ChatReply("muse-wonder-1.0", content=content, finish_reason="stop", prompt_tokens=50,
+                                 completion_tokens=20)])
     rec = rv.adjudicate(disputes=disputes or [DISPUTE], sources=SOURCES, spend_gate=gate or FakeGate(),
                         model=model, **kw)
     return rec, model
@@ -560,3 +561,66 @@ def test_finish_beside_other_calls_then_stop_is_incomplete():
     rec, _, _ = run([tools(call("search", {"query": "q"}), finish()),
                      ChatReply("m", content="done", finish_reason="stop")])
     assert rec["status"] == "incomplete" and rec["clean"] is False and rec["ignored_finishes"]
+
+
+# ------------------------------------------------------------------ Manus 17:07 PT s.2: classify before completion
+
+@pytest.mark.parametrize("bad", [None, {}, {"results": None}, {"results": "x"}, 7,
+                                 {"results": [], "status": "in_progress"}])
+def test_malformed_search_after_a_timeout_stays_a_limitation_end_to_end(bad):
+    answers = [TimeoutError("slow"), bad]
+
+    def search(q):
+        a = answers.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return a
+    rec, model, gate = run([tools(call("search", {"query": "MIRM omission"})),
+                            tools(call("search", {"query": "MIRM omission"})),
+                            tools(finish("No findings."))], search=search)
+    assert rec["status"] == "complete" and rec["clean"] is False
+    assert rec["limitations"][0]["kind"] == "search" and rec["limitations"][0]["query"] == "MIRM omission"
+    assert [s["status"] for s in rec["searches"]] == ["error", "error"]
+    fed = json.loads(model.sent[2][-1]["content"])           # the model was told the second search failed
+    assert fed["status"] == "error"
+    search_settles = [e for e in gate.settles() if e["kind"] == "search"]
+    assert len(search_settles) == 2 and all(e["error"] and e["may_have_been_billed"] for e in search_settles)
+
+
+@pytest.mark.parametrize("good", [[], {"results": []}, {"results": [{"url": "u"}], "status": "completed", "searches": 1}])
+def test_valid_search_after_a_timeout_clears_the_limitation_end_to_end(good):
+    answers = [TimeoutError("slow"), good]
+
+    def search(q):
+        a = answers.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return a
+    rec, _, _ = run([tools(call("search", {"query": "q"})), tools(call("search", {"query": "q"})),
+                     tools(finish())], search=search)
+    assert rec["limitations"] == [] and rec["clean"] is True and rec["searches"][-1]["status"] == "ok"
+
+
+@pytest.mark.parametrize("reason", [None, "content_filter", "function_call", "weird"])
+def test_unsupported_finish_reason_is_incomplete_and_its_finish_unused(reason):
+    r = tools(finish("No findings."))
+    r.finish_reason = reason
+    rec, model, gate = run([r])
+    assert rec["status"] == "incomplete" and rec["clean"] is False and rec["summary"] is None
+    assert repr(reason) in rec["reason"] and model.replies == []
+    assert [e["phase"] for e in gate.events] == ["reserve", "settle"]
+
+
+@pytest.mark.parametrize("reason", [None, "content_filter", "tool_calls"])
+def test_unsupported_verdict_finish_reason_stays_unresolved(reason):
+    rec, _ = adj(ChatReply("muse-wonder-1.0", finish_reason=reason, prompt_tokens=5, completion_tokens=5,
+                           content=json.dumps({"verdict": "resolved", "reading": 1, "resolution": "potential H1 2027",
+                                               "evidence": [{"source_id": "S2", "quote": "potential H1 2027"}]})))
+    assert rec["outcomes"][0]["outcome"] == "unresolved" and rec["status"] == "incomplete"
+
+
+def test_parse_keeps_finish_reason_as_given_and_drops_non_strings():
+    env = {"model": "m", "choices": [{"message": {"content": "x"}, "finish_reason": "content_filter"}]}
+    assert rv.parse_chat_response(env, "r").finish_reason == "content_filter"
+    env["choices"][0]["finish_reason"] = 5
+    assert rv.parse_chat_response(env, "r").finish_reason is None
