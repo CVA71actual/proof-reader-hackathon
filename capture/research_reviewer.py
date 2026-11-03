@@ -14,7 +14,9 @@ through the run's capture pipeline and returns {source_id, url, text, ...}. Tool
     search(query)            leads only: results and snippets are never evidence
     fetch(url)               capture a source; only then may it be cited
     report_finding(...)      one structured finding, validated by code before it is kept
-    finish_review(...)       the model's statement that it has finished; the only way a review becomes "complete"
+    finish_review(...)       the model's statement that it has finished; the only way a review becomes "complete".
+                             It counts only as the reply's sole tool call; beside other calls it is ignored and
+                             recorded under ignored_finishes
 The model is asked for five specific attacks (FINDING_KINDS): omission, stale_guidance, conflicting_guidance,
 unsupported_claim (unsupported or overstated) and lost_condition. It receives the company, the assignment, the draft
 proposals with their revision ids and the captured sources; never the researcher's reasoning (REASONING_KEYS are
@@ -203,6 +205,7 @@ def _chat(model, messages, **kw) -> ChatReply:
 
 
 TRUNCATED = "length"
+FINISH_NOT_ALONE = "finish_review ignored: issued alongside other tool calls"
 
 
 def reviewer_model() -> OneShotChat:
@@ -414,6 +417,7 @@ class ReviewResult:
     usage: dict
     summary: str | None = None
     limitations: list = field(default_factory=list)
+    ignored_finishes: list = field(default_factory=list)
     settings: dict = field(default_factory=dict)
 
     @property
@@ -427,7 +431,7 @@ class ReviewResult:
                 "findings": self.findings, "rejected": self.rejected,
                 "reviewed": {"sources": self.reviewed_sources, "rows": self.reviewed_rows,
                              "not_reviewed": self.limitations},
-                "limitations": self.limitations,
+                "limitations": self.limitations, "ignored_finishes": self.ignored_finishes,
                 "model": self.model, "requested_model": self.requested_model, "provider": self.provider,
                 "turns": self.turns, "searches": self.searches, "fetches": self.fetches, "usage": self.usage,
                 "summary": self.summary, "settings": self.settings}
@@ -464,6 +468,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
     # Retrieval the reviewer asked for that did not complete, keyed by what was asked. A later successful search of
     # the same query or capture of the same url covers it; otherwise it stays a specific limitation.
     open_retrieval: dict[tuple[str, str], dict] = {}
+    ignored_finishes: list[dict] = []
 
     def retrieval_failed(kind: str, target: str, reason: str) -> None:
         open_retrieval[(kind, target)] = {"kind": kind, ("query" if kind == "search" else "url"): target,
@@ -474,7 +479,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         return ReviewResult(
             status=status, reason=reason, findings=findings, rejected=rejected,
             reviewed_sources={"given": list(srcs.given), "fetched": list(srcs.fetched)},
-            limitations=list(open_retrieval.values()),
+            limitations=list(open_retrieval.values()), ignored_finishes=ignored_finishes,
             reviewed_rows=[{"row_id": r["row_id"], "revision_id": r["revision_id"]} for r in rows.values()],
             model=state["model"], requested_model=getattr(model, "model", None), provider=REVIEWER_PROVIDER,
             turns=state["turns"], searches=searches, fetches=fetches, usage=gate.usage(),
@@ -620,6 +625,9 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                          "tool_calls": [{"id": c["id"], "type": "function",
                                          "function": {"name": c["name"], "arguments": c["arguments"]}}
                                         for c in reply.tool_calls]})
+        # finish_review counts only when it is the reply's ONLY tool call: alongside a search, fetch or finding the
+        # model has not yet seen those results, so its "finished" is ignored and it must finish alone later.
+        finish_alone = len(reply.tool_calls) == 1
         for c in reply.tool_calls:
             try:
                 args = json.loads(c["arguments"]) if isinstance(c["arguments"], str) else c["arguments"]
@@ -636,6 +644,10 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                         out = do_fetch(args)
                     elif c["name"] == "report_finding":
                         out = do_finding(args)
+                    elif c["name"] == "finish_review" and not finish_alone:
+                        ignored_finishes.append({"turn": state["turns"], "reason": FINISH_NOT_ALONE})
+                        out = {"status": "ignored", "message": FINISH_NOT_ALONE + ". Read the other results, then "
+                                                               "call finish_review on its own."}
                     elif c["name"] == "finish_review":
                         finished = True
                         s = args.get("summary")

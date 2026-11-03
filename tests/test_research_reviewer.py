@@ -542,3 +542,21 @@ def test_empty_draft_complete_with_no_findings_is_clean():
 def test_malformed_draft_is_incomplete_before_any_call(bad):
     rec, model, gate = _review(bad, [])
     assert rec["status"] == "incomplete" and rec["clean"] is False and gate.events == [] and model.sent == []
+
+
+# ------------------------------------------------------------------ Red Team PR174_7f943a1: finish must come alone
+
+def test_finish_beside_a_search_is_ignored_until_issued_alone():
+    rec, model, _ = run([tools(call("search", {"query": "MIRM pipeline"}), finish("No findings.")),
+                         tools(finish("Read the search results; nothing material."))])
+    assert len(model.sent) == 2                                   # the search result went back before finishing
+    fed = [json.loads(m["content"]) for m in model.sent[1] if m["role"] == "tool"]
+    assert fed[0]["status"] == "ok" and fed[1]["status"] == "ignored"
+    assert rec["ignored_finishes"] == [{"turn": 1, "reason": rv.FINISH_NOT_ALONE}]
+    assert rec["status"] == "complete" and rec["summary"] == "Read the search results; nothing material."
+
+
+def test_finish_beside_other_calls_then_stop_is_incomplete():
+    rec, _, _ = run([tools(call("search", {"query": "q"}), finish()),
+                     ChatReply("m", content="done", finish_reason="stop")])
+    assert rec["status"] == "incomplete" and rec["clean"] is False and rec["ignored_finishes"]
