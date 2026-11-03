@@ -316,6 +316,31 @@ def footer_line(run: dict) -> str:
     return " · ".join(parts)
 
 
+def _is_research_run(meta: dict) -> bool:
+    return bool(meta.get("research")) or (meta.get("choices") or {}).get("mode") == "research"
+
+
+def _research_review_counter(meta: dict) -> str | None:
+    """PROJECTION-002: a research run's independent reviewer is stage S2, recorded in run.research.review
+    (per company: status, reviewer, the review record with its findings). The export's counter segment comes
+    from that record — never the page-mode "No second reader in this run" sentence. None for page-mode runs."""
+    if not _is_research_run(meta):
+        return None
+    research = meta.get("research") or {}
+    review = research.get("review") or {}
+    # an S1 placeholder ({"stage", "outcome": "not_requested_by_mode"}) holds no per-company entries
+    entries = [e for e in review.values() if isinstance(e, dict) and (e.get("status") or e.get("reviewer"))]
+    if not entries:
+        return "no research review recorded"
+    names = sorted({e["reviewer"] for e in entries if e.get("reviewer")})
+    findings = sum(len((e.get("review") or {}).get("findings") or []) for e in entries)
+    who = " by " + ", ".join(names) if names else ""
+    incomplete = any(e.get("status") != "complete" for e in entries)
+    segment = (f"research review findings {findings}{who}" if findings
+               else f"research review{who}: no findings")
+    return segment + (" (review incomplete)" if incomplete else "")
+
+
 def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
     """Assemble every section the PDF and Word writers share."""
     state = current_state(run, decisions)
@@ -614,13 +639,16 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         "mistakes": mistakes,
         "excluded_total": excluded_n,
         "unresolved": state["unresolved"],
-        # ONE-MODEL-RUN-001: a run with no second reader never shows a second-reader count of 0
-        "models_line": ONE_MODEL_LINE if run_is_one_model(run) else None,
+        # ONE-MODEL-RUN-001: a run with no second reader never shows a second-reader count of 0.
+        # PROJECTION-002: the one-reader sentence is a page-mode sentence — a research run's
+        # independent reviewer is stage S2, named in the counters line from the review record
+        "models_line": ONE_MODEL_LINE if run_is_one_model(run) and not _is_research_run(meta) else None,
         # REVIEW-NOT-A-FLAG-001: rows still under review that carry a real issue (needing review is not one)
         "issues": state["counts"]["issues"],
         "counters_line": (
             f"Mistakes caught by code {mistakes['code']} · "
-            + (NO_SECOND_READER if run_is_one_model(run) else f"by the second reader {mistakes['second_reader']}")
+            + (_research_review_counter(meta)
+               or (NO_SECOND_READER if run_is_one_model(run) else f"by the second reader {mistakes['second_reader']}"))
             + f" · by a person {mistakes['person']} · Excluded {excluded_n}"
         ),
         "no_accepted_rows_text": "No rows accepted by you." if state["counts"]["review"]["accepted"] == 0 else None,
