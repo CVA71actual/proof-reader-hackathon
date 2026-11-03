@@ -249,8 +249,9 @@ def test_failed_brave_search_is_a_limitation_and_blocks_clean(runs_dir):
     rec = run["run"]["research"]["review"]["PTGX"]
     assert rec["status"] == "complete" and rec["clean"] is False
     assert rec["review"]["limitations"][0]["query"] == "Protagonist EXPAND topline"
-    assert rec["label"] == research.LABEL == view["research_label"]
-    assert research_rows(run)[0]["research"]["label"] == research.LABEL
+    limited = research.LABEL_REVIEWED_LIMITED + " — 1 search did not complete"     # never silently complete
+    assert rec["label"] == limited == view["research_label"]
+    assert research_rows(run)[0]["research"]["label"] == limited
     usage = run["run"]["research"]["companies"]["PTGX"]["review_usage"]
     assert usage["search_requests"] == 1 and usage["worst_case_charged_usd"] == prices.request_cost_usd("Brave Search", 1)
     assert any("failed" in s["text"] and (s.get("refs") or {}).get("stage") == "independent_review"
@@ -703,3 +704,92 @@ def test_a_second_finding_on_the_same_rows_and_kind_is_merged_not_new():
     fed = json.loads(model.sent[2][-1]["content"])
     assert fed["status"] == "merged" and fed["finding_id"] == "F1" and "added to it" in fed["message"]
     assert "no new evidence" in json.loads(model.sent[3][-1]["content"])["message"]
+
+
+
+# ------------------------------------------------------------------ Red Team PR177_21e10cd
+
+def test_a_source_the_reviewer_could_not_open_is_named_in_every_label_and_never_clean(runs_dir, tmp_path):
+    missing = "https://news.example.net/gone"
+    def lost(draft):
+        return ("report_finding", {"kind": "lost_condition",
+                                   "row_revision_ids": [{"row_id": draft[0]["row_id"], "revision_id": 1}],
+                                   "evidence": [{"source_id": "src-r1-ptgx", "quote": CONDITION}], "text": "dropped"})
+    reviewer = F.FakeChat([F.assess_then(("fetch", {"url": missing}), verdict="finding", before=(lost,)),
+                           F.chat_tools(("finish_review", {"summary": "one finding"}))])
+    wonder = F.FakeChat([F.verdict({"verdict": "unresolved", "reason": "unclear"})], model=F.ADJUDICATOR_MODEL)
+    _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer, wonder)
+    run, _, view = exported(runs_dir, rid)
+    RUN_SCHEMA.validate(run)
+    r = run["run"]["research"]
+    e = r["review"]["PTGX"]
+    want = research.LABEL_REVIEWED_FINDINGS + " — 1 source could not be opened"
+    assert e["status"] == "complete" and e["clean"] is False and e["limits"]["sources_not_opened"] == 1
+    assert e["review"]["limitations"][0]["url"] == missing
+    row = research_rows(run)[0]
+    audit_row = next(x for x in r["audit"]["rows"] if x["id"] == row["id"])
+    for label in (e["label"], row["research"]["label"], r["label"], view["research_label"], audit_row["scope"]["label"]):
+        assert label == want
+    from report.build import build as build_report
+    out = build_report(rid, out=tmp_path / "rep", run_dir=runs_dir / rid)
+    assert "1 source could not be opened" in " ".join("".join(p.get_text() for p in pymupdf.open(out["pdf"])).split())
+
+
+def _complete_rereview(runs_dir, rid, tmp_path, verdict, extra=(), mutate=None):
+    reviewer = F.FakeChat([F.assess_then(verdict=verdict, before=extra),
+                           F.chat_tools(("finish_review", {"summary": "re-review"}))])
+    return _rereview(runs_dir, rid, tmp_path, reviewer, mutate)
+
+
+def _first_review_finding_only(runs_dir):
+    def lost(draft):
+        return ("report_finding", {"kind": "lost_condition",
+                                   "row_revision_ids": [{"row_id": draft[0]["row_id"], "revision_id": 1}],
+                                   "evidence": [{"source_id": "src-r1-ptgx", "quote": CONDITION}], "text": "dropped"})
+    reviewer = F.FakeChat([F.assess_then(verdict="finding", before=(lost,)),
+                           F.chat_tools(("finish_review", {"summary": "x"}))])
+    wonder = F.FakeChat([F.verdict({"verdict": "unresolved", "reason": "unclear"})], model=F.ADJUDICATOR_MODEL)
+    _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer, wonder)
+    return rid
+
+
+def test_a_complete_rereview_that_does_not_resolve_a_finding_keeps_it_current(runs_dir, tmp_path):
+    rid = _first_review_finding_only(runs_dir)
+    def other(draft):      # the complete re-review finds a DIFFERENT problem on the row; the first is not resolved
+        return ("report_finding", {"kind": "unsupported_claim", "evidence": [], "text": "overstated",
+                                   "row_revision_ids": [{"row_id": draft[0]["row_id"], "revision_id": 1}]})
+    after, r = _complete_rereview(runs_dir, rid, tmp_path, "finding", extra=(other,))
+    fs = {f["kind"]: f for f in research_rows(after)[0]["research"]["review_findings"]}
+    assert fs["lost_condition"]["current"] is True and fs["lost_condition"]["attempt"] == 1
+    assert fs["unsupported_claim"]["current"] is True and fs["unsupported_claim"]["attempt"] == 2
+    assert r["review"]["PTGX"]["status"] == "complete"
+
+
+def test_a_complete_rereview_resolves_a_finding_only_with_no_repeat_and_a_no_issue_verdict(runs_dir, tmp_path):
+    rid = _first_review_finding_only(runs_dir)
+    after, r = _complete_rereview(runs_dir, rid, tmp_path, "no_issue")
+    row = research_rows(after)[0]
+    (f,) = row["research"]["review_findings"]
+    assert f["current"] is False and f["resolved"] is True and f["resolved_by_attempt"] == 2
+    assert row["research"]["label"] == research.LABEL_REVIEWED_CLEAN        # still in history, no longer current
+
+
+def test_a_row_revision_change_still_expires_findings_under_a_complete_rereview(runs_dir, tmp_path):
+    rid = _first_review_finding_only(runs_dir)
+
+    def change_evidence(doc):
+        row = next(x for x in doc["rows"] if x.get("research"))
+        row["research"]["evidence"][0]["quote"] = "Topline data from the Phase 3 ICARUS trial"
+    after, _ = _complete_rereview(runs_dir, rid, tmp_path, "no_issue", mutate=change_evidence)
+    (f,) = research_rows(after)[0]["research"]["review_findings"]
+    assert f["current"] is False and f["stale"] is True and "resolved" not in f
+
+
+def test_a_finished_company_is_recorded_as_finished_not_researching(runs_dir):
+    _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), F.FakeChat([], key=False))
+    r = run_json(runs_dir, rid)["run"]["research"]
+    c = r["companies"]["PTGX"]
+    assert c["status"] == "finished" and c["status_reason"].startswith("The model finished: 1 proposal")
+    finish = [s for s in r["steps"] if s["kind"] == "finish"]
+    assert finish and all("Researching" not in s["text"] for s in finish)
+    assert finish[0]["text"].startswith("The model finished: 1 proposal")

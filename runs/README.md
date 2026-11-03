@@ -635,6 +635,18 @@ stops (incomplete, the reason names the amount kept back) and adjudication runs.
 the pages that hold the cited quotes (`adjudication_messages`), never whole documents. A second finding on the same
 row(s) and kind is merged into the first (its evidence added, `merged` keeps the text), never a new finding.
 
+Retrieval limits in labels (Red Team PR177_21e10cd, OUTCOME-001 / CLAIM-001): a source the reviewer could not open
+(or whose captured text could not be given) and a search that did not complete are counted in `review[t].limits`.
+Such a review is never clean; every label that claims a review carries them in plain words after a dash, e.g.
+"Agent research — independently reviewed with findings — 1 source could not be opened", or for a complete review
+with no findings "Agent research — independently reviewed — 1 source could not be opened". Row, company, run, export
+and audit labels all carry it.
+
+Finding lifetime (Red Team PR177_21e10cd): a finding stays current until a later COMPLETE review addresses its row and
+finds it resolved (no repeat finding of that kind, and the row assessed no_issue on the same revision; then
+`resolved: true`); a repeat in a complete review supersedes it (`superseded: true`); a change of the row's revision or
+evidence makes it `stale` (IDENTITY-001). Nothing is dropped because a new attempt completed.
+
 Re-review (Manus 18:33): every attempt is numbered (`attempt`; earlier ones under `attempts`). A complete review
 replaces the rows' findings. An attempt that did not complete keeps every earlier finding: on an unchanged basis (the
 row's revision and whole evidence set, `basis`) it stays `current`; on a changed basis it is `stale: true` with a
