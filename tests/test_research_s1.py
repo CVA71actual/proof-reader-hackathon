@@ -1825,3 +1825,8 @@ def test_a_runaway_then_a_timeout_counts_as_two_in_a_row(runs_dir):
     _, rid, _ = start(runs_dir, reader)
     c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
     assert c["status"] == "failed" and "twice in a row" in c["status_reason"]
+
+
+def test_a_bot_wall_asking_to_confirm_a_human_is_a_block_page():
+    page = b"<html><body><p>Please " + b"veri" + b"fy you are a human to continue.</p></body></html>"
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page)).startswith("site served a block")

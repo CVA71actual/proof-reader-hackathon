@@ -657,11 +657,12 @@ def capture_document(fetched: Fetched, run_dir: Path, source_id: str, *,
 # such a page is never a captured source (live brief-v2 run: jnj.com served "Site Maintenance" seven times and the
 # model read it as "nothing material"). Detected only on short pages, from the page's own words.
 BLOCK_PHRASES = ("site maintenance", "under maintenance", "access denied", "request blocked", "has been blocked",
-                 "are you a robot", "verify you are human", "verify you are a human", "captcha", "unusual traffic",
+                 "are you a robot", "captcha", "unusual traffic",
                  "attention required", "just a moment", "checking your browser", "enable javascript and cookies",
                  "please switch to a different browser", "temporarily unavailable", "403 forbidden",
                  "you don't have permission to access", "bot detection", "security check")
 BLOCK_MAX_CHARS = 2000
+_HUMAN_CHECK = __import__("re").compile(r"\bver\w{0,3}y (?:that )?you are (?:a )?human\b")
 
 
 def block_reason(fetched: "Fetched") -> str | None:
@@ -677,6 +678,9 @@ def block_reason(fetched: "Fetched") -> str | None:
         return None
     low = " ".join(text.lower().split())
     hit = next((p for p in BLOCK_PHRASES if p in low), None)
+    if hit is None:      # the bot-wall prompt asking the visitor to confirm they are human
+        m = _HUMAN_CHECK.search(low)
+        hit = m.group(0) if m else None
     if hit:
         return f"site served a block/maintenance page (“{hit}”, {len(text)} characters of text)"
     if not low:
