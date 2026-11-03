@@ -221,6 +221,7 @@
                       "items": {"type": "object", "additionalProperties": false, "required": ["id", "concept", "box"],
                                 "properties": {"id": {"type": "string"}, "concept": {"type": "string"},
                                                "box": {"$ref": "#/$defs/box"}}}},
+          "text_capture": {"type": "object", "required": ["reason", "text_sha256"], "description": "Optional, on a research page whose image could not be rendered: its readable text was set on plain pages by code; the citation box is not applicable (a recorded limitation) and reason is the render failure."},
           "research_checks": {"type": "object", "description": "Optional, on a page fetched by the research agent: the capture checks run on it (capture_incomplete; hidden or sub-2pt text) with their results."}
             }
           }

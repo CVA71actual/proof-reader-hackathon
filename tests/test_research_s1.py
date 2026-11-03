@@ -386,7 +386,7 @@ def test_web_html_is_rendered_from_an_isolated_snapshot(tmp_path, monkeypatch):
     assert "onload" not in html and "<iframe" not in html
     assert "Content-Security-Policy" in html and "default-src 'none'" in html
     assert set(rs.ISOLATION_FLAGS) <= set(seen["cmd"])
-    assert "--blink-settings=scriptEnabled=false" in seen["cmd"]
+    assert "--disable-javascript" in seen["cmd"]
     assert seen["folder"] == [".print_page.html", "page.html"]   # an empty folder: relative refs resolve to nothing
     lim = got["rendered"]["limitations"]
     assert any("image(s) not captured" in l for l in lim) and any("script(s) removed" in l for l in lim)
@@ -413,7 +413,7 @@ def test_capture_failure_is_recorded_and_the_loop_goes_on(runs_dir):
     assert c["status"] == "finished" and c["capture_failures"][0]["http_status"] == 404
     assert "HTTP 404" in c["capture_failures"][0]["reason"]
     out = json.loads(reader.requests[1]["input"][-1]["output"])
-    assert out["status"] == "error" and out["issues"][0]["code"] == "capture_failed"
+    assert out["status"] == "error" and out["issues"][0]["code"] == "could_not_access"
     assert run["sources"] == []
     lines = (runs_dir / rid / "research" / "manifest.jsonl").read_text().splitlines()
     assert any(json.loads(l)["kind"] == "capture_failed" for l in lines)
@@ -1044,3 +1044,128 @@ def test_a_date_fix_is_rechecked_against_the_timing_span(runs_dir):
     assert line["recheck"]["result"] == "fail"
     before = {c["name"]: c for c in line["recheck"]["before"]["checks"]}
     assert before["date_match"]["result"] == "pass"       # the old value checked against the same timing span
+
+
+# ---------------------------------------------------------------- live smoke 16:00: render fix, text capture, 403, incomplete
+
+TENQ_URL = "https://www.sec.gov/Archives/edgar/data/1377121/000110465926091123/ptgx-20260630x10q.htm"
+TENQ = (REPO / "tests" / "fixtures" / "ptgx-20260630x10q.htm.gz")
+TENQ_QUOTE = ("We expect research and development expenses to increase significantly in the second half of 2026 "
+              "compared to the first half of 2026.")
+
+
+def _tenq_bytes():
+    import gzip
+    return gzip.decompress(TENQ.read_bytes())
+
+
+def test_isolation_flags_never_include_the_flag_that_blocks_pdf_output():
+    assert not any(f.startswith("--blink-settings") for f in rs.ISOLATION_FLAGS)
+    assert "--disable-javascript" in rs.ISOLATION_FLAGS
+
+
+def test_the_real_reason_of_a_render_failure_is_recorded(tmp_path):
+    def no_pdf(html, pdf):
+        raise rs.CaptureFailed("Chrome exited normally after 0.6s but wrote no PDF (snapshot 10 characters).")
+    fetched = rs.Fetched("https://example.org/a", "https://example.org/a", 200, "text/html",
+                         F.html("Topline data in Q2 2027."), "2026-11-02T18:00:00+00:00")
+    got = rs.capture_document(fetched, tmp_path, "src-r1-x", render_html=no_pdf)
+    assert got["rendered"]["form"] == "text"
+    assert got["rendered"]["render_failure"].startswith("Chrome exited normally after 0.6s but wrote no PDF")
+    assert "(CaptureFailed)" not in json.dumps(got["rendered"])
+
+
+def test_the_ptgx_10q_falls_back_to_a_text_capture_and_research_continues(runs_dir):
+    def broken(html, pdf):
+        raise rs.CaptureFailed("Chrome exited normally after 0.6s but wrote no PDF (snapshot 1703711 characters).")
+    import tempfile
+    from checks import event_checks
+    with tempfile.TemporaryDirectory() as tmp:       # the same deterministic text capture: which page holds the quote
+        probe = rs.capture_document(rs.Fetched(TENQ_URL, TENQ_URL, 200, "text/html", _tenq_bytes()), Path(tmp),
+                                    "probe", render_html=broken)
+    page_no = next(w["page_number"] for _, w in probe["pages"]
+                   if event_checks.quote_match(TENQ_QUOTE, w["words"]).result == "pass")
+    ev = F.event("R&D expense increase H2 2026", TENQ_QUOTE, source="src-r1-ptgx", page=page_no,
+                 date_text="second half of 2026", date="2026-07-01", date_end="2026-12-31", type_hint="financial")
+    reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": TENQ_URL, "purpose": "10-Q"}, "c0")]),
+                              F.body([F.call("propose_events", {"events": [ev]}, "c1")]),
+                              F.body([F.call("finish_draft", {"dispositions": [
+                                  {"row_id": "e1", "disposition": "context", "related_row_id": None,
+                                   "reason": "x"}], "limitations": []}, "c2")])])
+    tools = F.tools({TENQ_URL: (200, "text/html", _tenq_bytes())})
+    tools.render_html = broken
+    app = create_app(runs_dir=runs_dir, reader=reader, background=False, second_reader=None, wonder_reader=None,
+                     sam_reader=None, research_tools=tools, research_reader=reader)
+    rid = TestClient(app).post("/api/runs/new", json={"mode": "research", "companies": ["PTGX"],
+                                                      "as_of": "2026-11-02"}).json()["id"]
+    run = run_json(runs_dir, rid)
+    RUN_SCHEMA.validate(run)
+    src = run["sources"][0]
+    assert src["kind"] == "filing" and src["retrieval"]["rendered"]["form"] == "text"
+    assert "wrote no PDF" in src["retrieval"]["rendered"]["render_failure"]
+    assert len(src["pages"]) > 20 and all(p["text_capture"]["reason"] for p in src["pages"])
+    assert src["retrieval"]["rendered"]["removed"]["hidden_elements_removed"] > 0     # the iXBRL header is not text
+    first = json.loads(reader.requests[1]["input"][-1]["output"])["data"]
+    assert any("QUARTERLY REPORT" in l for l in first["text"][0]["lines"])           # the model reads the text
+    row = next(r for r in run["rows"] if r["id"] == "e1")
+    checks = {c["name"]: c for c in row["checks"]}
+    assert checks["quote_match"]["result"] == "pass" and "captured text" in checks["quote_match"]["reason"]
+    assert checks["selector_match"]["result"] == "could_not_run"
+    assert checks["selector_match"]["reason"].startswith("not_applicable: text capture (page image not rendered). "
+                                                         "Render failure: Chrome exited normally")
+    assert checks["date_match"]["result"] == "pass" and checks["source_rule"]["result"] == "pass"
+    assert row["status"] != "matched"                       # a box that cannot be checked is never a pass
+    from runs.state import current_state
+    assert current_state(run, [])["targets"]["e1"]["checks_stale"] is False
+    line = next(json.loads(l) for l in (runs_dir / rid / "research" / "manifest.jsonl").read_text().splitlines()
+                if json.loads(l)["kind"] == "source")
+    assert line["form"] == "text" and line["text_sha256"] and "wrote no PDF" in line["render_failure"]
+
+
+@pytest.mark.skipif(not any(Path(p).is_file() for p in (
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",)), reason="Google Chrome is not installed")
+def test_the_ptgx_10q_renders_offline_with_real_chrome_to_pages_with_words(tmp_path):
+    fetched = rs.Fetched(TENQ_URL, TENQ_URL, 200, "text/html", _tenq_bytes(), "2026-11-02T18:00:00+00:00")
+    got = rs.capture_document(fetched, tmp_path, "src-r1-ptgx")
+    assert got["rendered"]["form"] == "rendered", got["rendered"].get("render_failure")
+    assert len(got["pages"]) > 20 and sum(len(w["words"]) for _, w in got["pages"]) > 10000
+
+
+def test_a_403_is_could_not_access_and_the_primary_source_path_goes_on(runs_dir):
+    blocked = "https://www.morningstar.com/news/ptgx-approval"
+    primary = "https://www.sec.gov/Archives/edgar/data/1377121/000110465926080001/ex99-1.htm"
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": blocked, "purpose": "news"}, "c0")]),
+        F.body([F.call("fetch_url", {"url": primary, "purpose": "the 8-K EX-99 release"}, "c1")]),
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c2")])])
+    _, rid, tools = start(runs_dir, reader, pages={blocked: (403, "text/html", b""),
+                                                   primary: (200, "text/html", PAGE1)})
+    out = json.loads(reader.requests[1]["input"][-1]["output"])
+    assert out["issues"][0]["code"] == "could_not_access" and "primary origin" in out["issues"][0]["message"]
+    assert out["data"]["http_status"] == 403 and out["data"]["retrieved_at"]
+    run = run_json(runs_dir, rid)
+    c = run["run"]["research"]["companies"]["PTGX"]
+    assert c["capture_failures"][0]["outcome"] == "could_not_access" and c["capture_failures"][0]["url"] == blocked
+    assert c["status"] == "finished" and run["sources"][0]["url"] == primary and run["sources"][0]["kind"] == "filing"
+    assert "never work around a refusal" in rc.CONTROLLER
+    assert tools.fetcher.asked == [blocked, primary]            # one honest request each, no retry or disguise
+
+
+def test_an_incomplete_answer_with_finish_draft_never_finalizes_the_company(runs_dir):
+    ev = F.event("ICARUS", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30")
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")]),
+        F.body([F.call("propose_events", {"events": [ev]}, "c1"),
+                F.call("finish_draft", {"dispositions": [{"row_id": "e1", "disposition": "proposal",
+                                                          "related_row_id": None, "reason": "x"}],
+                                        "limitations": []}, "c2")],
+               status="incomplete", incomplete="max_output_tokens")])
+    _, rid, _ = start(runs_dir, reader)
+    run = run_json(runs_dir, rid)
+    c = run["run"]["research"]["companies"]["PTGX"]
+    assert c["status"] == "stopped" and c["limitation"]["kind"] == "incomplete"
+    assert "max_output_tokens" in c["limitation"]["reason"] and c["finish"] is None
+    assert [r["id"] for r in run["rows"] if r.get("research")] == ["e1"]       # the usable proposal is kept
+    assert any(x["tool"] == "finish_draft" and x["issues"][0]["code"] == "incomplete_answer"
+               for x in run["run"]["research"]["refusals"])
+    assert len(reader.requests) == 2 and run["run"]["status"] == "needs_input"

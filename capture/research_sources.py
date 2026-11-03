@@ -308,6 +308,7 @@ def sanitize_html(html_text: str) -> tuple[str, dict]:
             super().__init__(convert_charrefs=False)
             self.skip = 0
             self.in_style = False
+            self.hidden_tag, self.hidden_depth = None, 0     # an element the page hides (display:none, hidden)
 
         def _attrs(self, tag, attrs):
             kept = []
@@ -336,6 +337,17 @@ def sanitize_html(html_text: str) -> tuple[str, dict]:
 
         def handle_starttag(self, tag, attrs, closed=False):
             tag = tag.lower()
+            if self.hidden_tag is not None:
+                if tag == self.hidden_tag and not closed:
+                    self.hidden_depth += 1
+                return
+            amap = {k.lower(): (v or "") for k, v in attrs}
+            style = amap.get("style", "").replace(" ", "").lower()
+            if not self.skip and not closed and tag not in _DROP_TAG and tag not in ("br", "hr", "img", "input", "meta") \
+                    and ("hidden" in amap or "display:none" in style or "visibility:hidden" in style):
+                bump("hidden_elements_removed")       # text the page does not show is never captured as text
+                self.hidden_tag, self.hidden_depth = tag, 1
+                return
             if self.skip:
                 if tag in _DROP_WITH_CONTENT:
                     self.skip += 1
@@ -371,6 +383,12 @@ def sanitize_html(html_text: str) -> tuple[str, dict]:
 
         def handle_endtag(self, tag):
             tag = tag.lower()
+            if self.hidden_tag is not None:
+                if tag == self.hidden_tag:
+                    self.hidden_depth -= 1
+                    if self.hidden_depth == 0:
+                        self.hidden_tag = None
+                return
             if self.skip:
                 if tag in _DROP_WITH_CONTENT:
                     self.skip -= 1
@@ -382,16 +400,16 @@ def sanitize_html(html_text: str) -> tuple[str, dict]:
             out.append(f"</{tag}>")
 
         def handle_data(self, data):
-            if self.skip:
+            if self.skip or self.hidden_tag is not None:
                 return
             out.append(_clean_css(data, counts) if self.in_style else data)
 
         def handle_entityref(self, name):
-            if not self.skip:
+            if not self.skip and self.hidden_tag is None:
                 out.append(f"&{name};")
 
         def handle_charref(self, name):
-            if not self.skip:
+            if not self.skip and self.hidden_tag is None:
                 out.append(f"&#{name};")
 
         def handle_comment(self, data):
@@ -408,6 +426,26 @@ def sanitize_html(html_text: str) -> tuple[str, dict]:
     return CSP_META + "".join(out), counts
 
 
+_BLOCK = __import__("re").compile(r"(?is)<\s*/?\s*(?:p|div|br|tr|li|h[1-6]|table|section|article|header|footer|"
+                                 r"blockquote|pre|ul|ol|dl|dt|dd|hr|title)\b[^>]*>")
+_CELL = __import__("re").compile(r"(?is)<\s*/\s*t[dh]\s*>")
+_TAG = __import__("re").compile(r"(?s)<[^>]*>")
+_STYLE_BLOCK = __import__("re").compile(r"(?is)<style\b.*?</style>")
+
+
+def readable_text(sanitized: str) -> str:
+    """The readable text of a sanitized snapshot: one line per block, table cells separated by ' | ', entities
+    decoded, whitespace collapsed. Deterministic. Nothing is executed (scripts were removed by sanitize_html)."""
+    import html as _html
+    t = _STYLE_BLOCK.sub(" ", sanitized)
+    t = _CELL.sub(" | ", t)
+    t = _BLOCK.sub("\n", t)
+    t = _TAG.sub(" ", t)
+    t = _html.unescape(t).replace("\xa0", " ")
+    lines = [" ".join(l.split()) for l in t.splitlines()]
+    return "\n".join(l for l in lines if l and l.strip(" |"))
+
+
 def render_limitations(counts: dict) -> list[str]:
     """Plain, specific capture limitations from what sanitize_html removed."""
     words = {"images_not_captured": "image(s) not captured (the rendered page shows a placeholder)",
@@ -416,11 +454,15 @@ def render_limitations(counts: dict) -> list[str]:
              "css_imports_removed": "stylesheet import(s) not applied", "css_urls_removed": "CSS resource URL(s) not loaded",
              "script_removed": "script(s) removed: content the site builds with JavaScript is not captured",
              "iframe_removed": "embedded frame(s) not captured", "frame_removed": "frame(s) not captured",
-             "object_removed": "embedded object(s) not captured", "embed_removed": "embedded object(s) not captured"}
+             "object_removed": "embedded object(s) not captured", "embed_removed": "embedded object(s) not captured",
+             "hidden_elements_removed": "element(s) the page hides (display:none, hidden) not captured"}
     return [f"{n} {words[k]}" for k, n in sorted(counts.items()) if k in words and n]
 
 
-ISOLATION_FLAGS = ("--blink-settings=scriptEnabled=false", "--host-resolver-rules=MAP * ~NOTFOUND",
+# --blink-settings=scriptEnabled=false is NOT used: it stops headless Chrome from writing any PDF (exit 0, no file),
+# which failed every web capture in the first live smoke run. --disable-javascript prints, and scripts are already
+# removed by sanitize_html and refused by the code-owned CSP (script-src 'none').
+ISOLATION_FLAGS = ("--disable-javascript", "--host-resolver-rules=MAP * ~NOTFOUND",
                    "--proxy-server=http://127.0.0.1:9", "--proxy-bypass-list=<-loopback>",
                    "--disable-background-networking", "--disable-component-update", "--disable-sync",
                    "--disable-extensions", "--no-pings", "--disable-domain-reliability")
@@ -446,14 +488,18 @@ def chrome_render(html_path: Path, pdf_path: Path, *, run=None) -> str:
             cmd = [str(chrome), "--headless", f"--user-data-dir={profile}", "--no-first-run",
                    "--no-default-browser-check", "--disable-gpu", "--no-pdf-header-footer", *ISOLATION_FLAGS,
                    f"--print-to-pdf={pdf_path}", printable.resolve().as_uri()]
+            import time as _time
+            started = _time.monotonic()
             try:
                 run(cmd, check=True, capture_output=True, text=True, timeout=300)
             except subprocess.CalledProcessError as e:
-                raise CaptureFailed(f"Chrome could not render the page (exit {e.returncode}).") from None
+                raise CaptureFailed(f"Chrome exited with code {e.returncode} after "
+                                    f"{_time.monotonic() - started:.1f}s and wrote no usable PDF.") from None
             except subprocess.TimeoutExpired:
-                raise CaptureFailed("Chrome timed out rendering the page.") from None
+                raise CaptureFailed("Chrome did not finish rendering within 300s.") from None
     if not pdf_path.is_file() or pdf_path.stat().st_size < 64:
-        raise CaptureFailed("Chrome wrote no PDF for the page.")
+        raise CaptureFailed(f"Chrome exited normally after {_time.monotonic() - started:.1f}s but wrote no PDF "
+                            f"(snapshot {len(snapshot)} characters).")
     (pdf_path.parent / (pdf_path.name + ".limitations.json")).write_text(
         json.dumps({"removed": counts, "limitations": render_limitations(counts)}, sort_keys=True) + "\n")
     return ff.renderer_label(chrome) + " (isolated: sanitized snapshot, no scripts, no network)"
@@ -536,21 +582,47 @@ def capture_document(fetched: Fetched, run_dir: Path, source_id: str, *,
     original.write_bytes(body)
     sha = hashlib.sha256(body).hexdigest()
     html_text = None
+    failure, pre_cut = None, None
     if kind == "pdf":
         pdf_bytes, rendered = body, {"format": "pdf", "renderer": None}
     elif kind == "html":
         html_text = body.decode("utf-8", errors="replace")
+        snapshot, removed = sanitize_html(html_text)
+        text = readable_text(snapshot)
+        (folder / "text.txt").write_text(text, encoding="utf-8")
+        text_sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
         out = folder / "rendered.pdf"
+        failure, pre_cut = None, None
         try:
             renderer = render_html(original, out)
-        except Exception as e:  # the type and its message: a renderer error carries no secret
-            raise CaptureFailed(f"The page could not be rendered ({type(e).__name__}).") from None
-        pdf_bytes, rendered = out.read_bytes(), {"format": "html", "renderer": renderer}
-        lim = out.parent / (out.name + ".limitations.json")
-        if lim.is_file():
-            rendered.update(json.loads(lim.read_text()))
-        else:      # a renderer that does not sanitize records nothing, so say that the snapshot is not established
-            rendered.update({"removed": None, "limitations": ["The renderer did not record what it removed."]})
+            pdf_bytes = out.read_bytes()
+            pre_cut = cut_pdf(pdf_bytes, html_text=html_text)    # the rendered pages must cut into pages with words
+        except CaptureFailed as e:
+            failure = str(e)
+        except Exception as e:  # the renderer's own words: a render error carries no secret
+            failure = f"{type(e).__name__}: {str(e)[:300]}"
+        if failure is None:
+            rendered = {"format": "html", "form": "rendered", "renderer": renderer, "text_sha256": text_sha,
+                        "text_file": str((folder / "text.txt").relative_to(run_dir))}
+            lim = out.parent / (out.name + ".limitations.json")
+            if lim.is_file():
+                rendered.update(json.loads(lim.read_text()))
+            else:  # a renderer that does not sanitize records nothing, so say that the snapshot is not established
+                rendered.update({"removed": None, "limitations": ["The renderer did not record what it removed."]})
+        else:
+            # CVA 2026-11-02: a page the model could read never dead-ends on our render step. Its readable text is
+            # captured instead (set by code on plain pages, so quotes and word ids still work); the citation box is
+            # not applicable and the render failure is a recorded limitation, never a pass.
+            if not text.strip():
+                raise CaptureFailed(f"The page could not be rendered ({failure}) and has no readable text.")
+            pdf_bytes = render_text_pdf(text, title or fetched.final_url)
+            out.write_bytes(pdf_bytes)
+            rendered = {"format": "html", "form": "text", "renderer": "code: capture.research_sources.readable_text + "
+                                                                       "render_text_pdf (text capture)",
+                        "render_failure": failure, "text_sha256": text_sha,
+                        "text_file": str((folder / "text.txt").relative_to(run_dir)), "removed": removed,
+                        "limitations": [f"Text capture: the page image was not rendered ({failure}); the citation "
+                                        f"box cannot be checked."] + render_limitations(removed)}
     elif kind == "json":
         pdf_bytes, renderer = render_json_pdf(body, title or fetched.final_url)
         (folder / "rendered.pdf").write_bytes(pdf_bytes)
@@ -561,7 +633,7 @@ def capture_document(fetched: Fetched, run_dir: Path, source_id: str, *,
         rendered = {"format": "text", "renderer": "code: capture.research_sources.render_text_pdf"}
     else:
         raise CaptureFailed(f"The content type {fetched.content_type or 'unknown'} cannot be captured as pages.")
-    pages = cut_pdf(pdf_bytes, html_text=html_text)
+    pages = pre_cut if kind == "html" and failure is None else cut_pdf(pdf_bytes, html_text=html_text)
     rendered["pdf_sha256"] = hashlib.sha256(pdf_bytes).hexdigest()
     return {"original_file": str(original.relative_to(run_dir)), "original_sha256": sha, "original_bytes": len(body),
             "kind": kind, "rendered": rendered, "pages": pages, "html_sha256": sha if kind == "html" else None,

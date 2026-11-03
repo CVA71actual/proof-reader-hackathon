@@ -356,6 +356,11 @@ def visual_evidence(page: dict, words_doc: dict) -> dict:
     # The words artifact is authoritative too: picture transcriptions can have
     # native-height boxes, but those positions were spread across SAM regions.
     from runs import picture
+    if page.get("text_capture"):
+        # RESEARCHER-FULL-001: a fetched page whose image could not be rendered; its readable text was set on plain
+        # pages by code, so the word positions are not where the site shows them.
+        return {"origin": "approximate", "overlays_supported": False,
+                "reason": "Text capture (page image not rendered): " + str(page["text_capture"].get("reason") or "")}
     picture_artifact = (words_doc.get("kind") == picture.KIND or
                         words_doc.get("words_from") == picture.WORDS_FROM)
     if (picture_artifact or page.get("derived_words") or page.get("scanned") or

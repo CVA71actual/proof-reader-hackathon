@@ -552,6 +552,28 @@ def make_job_class():
                     continue
                 empty_streak = 0
                 calls = reply.function_calls()
+                if reply.status == "incomplete":
+                    # Manus 15:55: an answer the provider marks incomplete never certifies completion. Its usable
+                    # non-terminal work (captures, proposals, coverage) is kept through the same checked tools; a
+                    # finish_draft or a final answer in it is not accepted; the company stops incomplete; no retry.
+                    why = reply.incomplete_reason or "no reason given"
+                    for call in calls:
+                        if call.get("name") == "finish_draft":
+                            with jobs.RUN_LOCK:
+                                self.research["refusals"].append({
+                                    "at": now_utc(), "ticker": ticker, "call_id": call.get("call_id"),
+                                    "tool": "finish_draft", "issues": [rc.issue(
+                                        "incomplete_answer", f"finish_draft came in an answer the provider marked "
+                                                             f"incomplete ({why}); not accepted.")]})
+                            continue
+                        self.dispatch(ticker, call)
+                    self.step(ticker, "error", "Model", "Muse Spark",
+                              f"The answer was marked incomplete by the provider ({why}); its usable work was kept "
+                              f"and no completion was accepted from it.")
+                    self.save_ledger()
+                    raise Stop("incomplete", f"Incomplete: the model's answer was cut off (status incomplete: {why}); "
+                                             f"the proposals recorded so far are kept, the company is not finished. "
+                                             f"It was not retried.")
                 history += list(reply.output)
                 if not calls:
                     text = reply.text()
@@ -709,12 +731,24 @@ def make_job_class():
             return rc.envelope(cid, "ok", self.source_view(ticker, source, [1])), False
 
         def _capture_failed(self, ticker, cid, url, reason, tool, fetched=None):
-            rec = {"at": now_utc(), "url": url, "tool": tool, "reason": reason,
-                   "http_status": getattr(fetched, "status", None),
-                   "retrieved_at": getattr(fetched, "retrieved_at", None)}
+            status = getattr(fetched, "status", None)
+            refused = status in (403, 404, 451)
+            rec = {"at": now_utc(), "url": url, "tool": tool, "reason": reason, "http_status": status,
+                   "retrieved_at": getattr(fetched, "retrieved_at", None),
+                   "outcome": "could_not_access" if refused else "capture_failed"}
             with jobs.RUN_LOCK:
                 self.company(ticker)["capture_failures"].append(rec)
                 self.manifest.append("capture_failed", ticker=ticker, call_id=cid, **rec)
+            if refused:
+                self.step(ticker, "fetch", "Code", "capture.research_sources",
+                          f"Could not access {url}: HTTP {status} at {rec['retrieved_at']}. Recorded; research goes on.",
+                          call_id=cid)
+                return rc.envelope(cid, "error", {"url": url, "http_status": status,
+                                                  "retrieved_at": rec["retrieved_at"]}, [rc.issue(
+                    "could_not_access", f"The site answered HTTP {status}, so nothing from it was captured. Look for "
+                                        f"the same document at its primary origin: the company's SEC filing (an 8-K "
+                                        f"EX-99 press release via fetch_edgar), the company's investor-relations page, "
+                                        f"or the issuer's wire release. Do not try to get around the refusal.")])
             self.step(ticker, "fetch", "Code", "capture.research_sources",
                       f"Capture failed for {url}: {reason} Nothing from it can be cited; recorded as a limitation.",
                       call_id=cid)
@@ -758,6 +792,9 @@ def make_job_class():
                 comp = completeness_fields(words)
                 if comp:
                     page["capture_completeness"] = comp
+                if captured["rendered"].get("form") == "text":
+                    page["text_capture"] = {"reason": captured["rendered"]["render_failure"],
+                                            "text_sha256": captured["rendered"]["text_sha256"]}
                 page["visual_evidence"] = sources.visual_evidence(page, words)
                 page["research_checks"] = rs.page_capture_checks(words)
                 pages.append(page)
@@ -783,6 +820,9 @@ def make_job_class():
             with jobs.RUN_LOCK:
                 line = self.manifest.append("source", ticker=ticker, call_id=cid, source_id=sid,
                                             original_sha256=sha, rendered_pdf_sha256=source["sha256"],
+                                            form=captured["rendered"].get("form"),
+                                            text_sha256=captured["rendered"].get("text_sha256"),
+                                            render_failure=captured["rendered"].get("render_failure"),
                                             url=fetched.final_url, retrieved_at=fetched.retrieved_at,
                                             pages=[{"page_number": p["page_number"], "image_sha256": p["image_sha256"],
                                                     "words_sha256": p["words_sha256"]} for p in pages])
@@ -798,7 +838,10 @@ def make_job_class():
             self.step(ticker, "fetch", "Code", "capture.research_sources",
                       f"Captured {fetched.final_url} as {sid}: {len(pages)} page{'s' if len(pages) != 1 else ''}, "
                       f"SHA-256 {sha[:12]}…, retrieved {fetched.retrieved_at}."
-                      + (" Capture checks: " + "; ".join(flags) + "." if flags else " Capture checks run on every page."),
+                      + (" Capture checks: " + "; ".join(flags) + "." if flags else " Capture checks run on every page.")
+                      + (f" Text capture: the page image was not rendered ({captured['rendered']['render_failure']}); "
+                         f"the model reads the captured text, and the citation box cannot be checked."
+                         if captured["rendered"].get("form") == "text" else ""),
                       call_id=cid, source_id=sid)
             return source
 
