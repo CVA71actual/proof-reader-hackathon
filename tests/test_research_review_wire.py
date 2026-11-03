@@ -13,6 +13,7 @@ call) stops the review as incomplete; the review reserve leaves room for the rev
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pymupdf
 import pytest
@@ -98,12 +99,15 @@ def test_clean_review_after_research_labels_the_row_run_and_export(runs_dir, tmp
     row = research_rows(run)[0]
     assert rec["reviewed_basis"] == [[row["id"], "1"]]
     assert row["research"]["review_findings"] == []
-    assert row["research"]["review"] == {"status": "complete", "reviewed_revision": 1, "at": rec["finished_at"]}
+    assert row["research"]["review"] == {"status": "complete", "reviewed_revision": 1, "attempt": 1,
+                                         "at": rec["finished_at"]}
     assert row["research"]["label"] == research.LABEL_REVIEWED_CLEAN
     # the reviewer saw the draft bound by revision, and the captured source text, never researcher reasoning
     sent = draft_of(reviewer.sent[0])
     assert [(p["row_id"], p["revision_id"]) for p in sent["draft_proposals"]] == [(row["id"], 1)]
-    assert QUOTE in sent["captured_sources"][0]["text"]
+    assert "text" not in sent["captured_sources"][0] and sent["captured_sources"][0]["pages"] >= 1
+    assert [(c["source_id"], c["page_number"]) for c in sent["cited_pages"]] == [("src-r1-ptgx", 1)]
+    assert QUOTE in sent["cited_pages"][0]["text"]
     # its search is Brave (query + URLs in the manifest, never the payload), on the same run gate
     assert tools.brave.queries == ["Protagonist EXPAND topline"]
     manifest = (runs_dir / rid / "research" / "manifest.jsonl").read_text()
@@ -366,3 +370,168 @@ def test_reviewer_brave_titles_and_snippets_reach_the_model_once_and_are_not_sto
     stored = "".join(p.read_text(errors="ignore") for p in (runs_dir / rid).rglob("*")
                      if p.is_file() and p.suffix in (".json", ".jsonl"))
     assert f"SNIPPET-{PR2}" not in stored and f"TITLE-{PR2}" not in stored
+
+
+# ------------------------------------------------------------------ Option A: request size on a real-size draft
+
+RUN5 = Path("/private/tmp/claude-501/-Users-cva26/2e8cb8e7-5189-4a1c-8b81-4980942b650d/scratchpad/smoke-b308d4c/"
+            "runs/run-1")
+
+
+def _read_script(source_id, turns=30):
+    return ([F.chat_tools(("read_source_pages", {"source_id": source_id, "pages": list(range(5 * i + 1, 5 * i + 6))}))
+             for i in range(turns)] + [F.chat_tools(("finish_review", {"summary": "read 150 pages"}))])
+
+
+def _sizes(reviewer):
+    return [rv._bytes([m, rv.REVIEWER_TOOLS]) for m in reviewer.sent]
+
+
+def _assert_bounded(sizes):
+    assert sizes[0] < 150_000, sizes[0]                       # the source LIST + cited pages only
+    later = sizes[1:]
+    assert len(later) == 30 and max(later) < 150_000
+    assert max(later) - min(later) < 25_000, (min(later), max(later))     # flat: bounded replay, retired page text
+
+
+def test_large_draft_first_request_is_small_and_per_turn_input_stays_flat():
+    # 20 sources x 100 pages x ~3,000 characters (about 6 MB of captured text); 20 rows each cite one page
+    page = ("Lorem ipsum dolor sit amet consectetur " * 80)[:3000]
+    sources = [{"source_id": f"S{i}", "title": f"Filing {i}", "url": f"https://example.com/{i}",
+                "pages": [{"page_number": n, "text": f"[S{i} p{n}] " + page} for n in range(1, 101)]}
+               for i in range(20)]
+    proposals = [{"row_id": f"e{i}", "revision_id": 1, "title": f"Event {i}",
+                  "evidence": [{"source_id": f"S{i}", "page_number": 7, "quote": "Lorem ipsum"}]} for i in range(20)]
+    reviewer = F.FakeChat(_read_script("S0"))
+    gate = []
+    rec = rv.review_draft(company="X", assignment="a", proposals=proposals, sources=sources, search=lambda q: [],
+                          fetch_capture=lambda u: None, spend_gate=lambda ev: gate.append(ev) or {"t": len(gate)},
+                          model=reviewer)
+    assert rec["status"] == "complete" and rec["clean"] is True and rec["cited_pages_unread"] == []
+    first = draft_of(reviewer.sent[0])
+    assert len(first["cited_pages"]) == 20 and "text" not in first["captured_sources"][0]
+    _assert_bounded(_sizes(reviewer))
+    # every page read was delivered exactly once, then retired; unopened pages are "not reviewed" per source
+    assert sum(json.dumps(m).count("[S0 p42]") for m in reviewer.sent) == 1
+    nr = {x["source_id"]: x for x in rec["not_reviewed"]}
+    assert rec["reviewed"]["pages_read"]["S0"] == "1-100" and "S0" not in nr
+    assert nr["S1"]["pages_not_read"] == "1-6,8-100"
+    # older turns become a code summary of pages read
+    assert "Review so far (code summary" in json.dumps(reviewer.sent[-1])
+
+
+def test_cited_page_not_available_blocks_clean():
+    rec = rv.review_draft(company="X", assignment="a",
+                          proposals=[{"row_id": "e1", "revision_id": 1,
+                                      "evidence": [{"source_id": "GONE", "page_number": 3, "quote": "q"}]}],
+                          sources=[], search=lambda q: [], fetch_capture=lambda u: None,
+                          spend_gate=lambda ev: {"t": 1}, model=F.FakeChat([F.chat_tools(("finish_review",
+                                                                                         {"summary": "x"}))]))
+    assert rec["status"] == "complete" and rec["clean"] is False
+    assert rec["cited_pages_unread"] == [{"source_id": "GONE", "page_number": 3,
+                                          "reason": "A page the draft cites was not available to the reviewer."}]
+
+
+@pytest.mark.skipif(not (RUN5 / "run.json").is_file(), reason="run 5's saved draft is not on this machine")
+def test_run5_real_draft_copy_first_request_and_flat_turns(tmp_path):
+    from tools import research_smoke
+    tools = F.tools({})
+    tools.reviewer = F.FakeChat(_read_script("src-r8-ptgx"))
+    tools.brave = F.FakeBrave()
+    dest, r = research_smoke.review_existing(RUN5, tmp_path / "copy", 3.0, tools)
+    sizes = _sizes(tools.reviewer)
+    _assert_bounded(sizes)
+    rec = r["review"]["PTGX"]
+    assert rec["status"] == "complete" and rec["review"]["cited_pages_unread"] == []
+    assert len(draft_of(tools.reviewer.sent[0])["draft_proposals"]) == 22
+
+
+# ------------------------------------------------------------------ Manus 18:33
+
+def test_incomplete_research_reply_with_a_valid_fetch_dispatches_nothing(runs_dir):
+    cut = F.body([F.call("fetch_url", {"url": PR1, "purpose": "company release"}, "c1")], status="incomplete",
+                 incomplete="max_output_tokens")
+    reviewer = F.FakeChat([F.chat_tools(("finish_review", {"summary": "empty"}))])
+    _, rid, tools = start(runs_dir, F.FakeResponses([cut]), reviewer)
+    run = run_json(runs_dir, rid)
+    assert tools.fetcher.asked == [] and run["sources"] == []
+    c = run["run"]["research"]["companies"]["PTGX"]
+    assert c["limitation"]["kind"] == "incomplete"
+    assert run["run"]["research"]["review"]["PTGX"]["research_ended"]["kind"] == "incomplete"
+
+
+def _timed_out():
+    return ChatReply(F.REVIEWER_MODEL, error="Muse Spark Open did not answer in time.", timed_out=True,
+                     may_have_been_billed=True)
+
+
+def _rereview(runs_dir, rid, tmp_path, reviewer, mutate=None):
+    from tools import research_smoke
+    src = runs_dir / rid
+    if mutate:
+        doc = run_json(runs_dir, rid)
+        mutate(doc)
+        (src / "run.json").write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n")
+    tools = F.tools({PR1: (200, "text/html", PAGE1), PR2: (200, "text/html", PAGE2)})
+    tools.reviewer, tools.brave = reviewer, F.FakeBrave()
+    tools.adjudicator = F.FakeChat([], model=F.ADJUDICATOR_MODEL)
+    dest, r = research_smoke.review_existing(src, tmp_path / "copy", 1.0, tools)
+    return json.loads((dest / "run.json").read_text()), r
+
+
+def _first_review(runs_dir):
+    wonder = F.FakeChat([F.verdict({"verdict": "unresolved", "reason": "The sources do not settle it."})],
+                        model=F.ADJUDICATOR_MODEL)
+    _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), F.FakeChat(finding_script()), wonder)
+    run = run_json(runs_dir, rid)
+    assert run["run"]["research"]["review"]["PTGX"]["status"] == "complete"
+    return rid
+
+
+def test_a_timed_out_rereview_keeps_earlier_findings_on_an_unchanged_basis(runs_dir, tmp_path):
+    rid = _first_review(runs_dir)
+    after, r = _rereview(runs_dir, rid, tmp_path, F.FakeChat([_timed_out()]))
+    RUN_SCHEMA.validate(after)
+    row = research_rows(after)[0]
+    (f,) = row["research"]["review_findings"]
+    assert f["kind"] == "lost_condition" and f["current"] is True and "stale" not in f
+    assert f["review_status"] == "complete" and f["latest_attempt"]["status"] == "incomplete"
+    assert f["adjudication"]["outcome"] == rv.UNRESOLVED
+    assert row["research"]["review"]["status"] == "incomplete" and row["research"]["review"]["reviewed_revision"] == 1
+    assert row["research"]["label"] == research.LABEL_REVIEWED_FINDINGS       # made by the earlier COMPLETE review
+    e = r["review"]["PTGX"]
+    assert e["attempt"] == 2 and e["status"] == "incomplete" and e["attempts"][0]["status"] == "complete"
+    assert [x["kind"] for x in e["unbound_findings"]] == ["omission"]        # the earlier omission is kept too
+    assert e["label"] == research.LABEL_PARTIAL_FINDINGS == r["label"]
+
+
+def test_a_finding_whose_basis_changed_becomes_stale(runs_dir, tmp_path):
+    rid = _first_review(runs_dir)
+
+    def change_evidence(doc):
+        row = next(x for x in doc["rows"] if x.get("research"))
+        row["research"]["evidence"][0]["quote"] = "Topline data from the Phase 3 ICARUS trial"
+    after, r = _rereview(runs_dir, rid, tmp_path, F.FakeChat([_timed_out()]), change_evidence)
+    row = research_rows(after)[0]
+    (f,) = row["research"]["review_findings"]
+    assert f["current"] is False and f["stale"] is True and "changed" in f["stale_reason"]
+    assert row["research"]["label"] == research.LABEL
+
+
+def test_an_incomplete_review_with_findings_is_labelled_partly_reviewed(runs_dir):
+    def first(messages):
+        rid = draft_of(messages)["draft_proposals"][0]["row_id"]
+        return F.chat_tools(("report_finding", {
+            "kind": "lost_condition", "row_revision_ids": [{"row_id": rid, "revision_id": 1}],
+            "evidence": [{"source_id": "src-r1-ptgx", "quote": CONDITION}], "text": "Condition dropped."}))
+    reviewer = F.FakeChat([first, _timed_out()])
+    wonder = F.FakeChat([F.verdict({"verdict": "unresolved", "reason": "unclear"})], model=F.ADJUDICATOR_MODEL)
+    _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer, wonder)
+    run, _, view = exported(runs_dir, rid)
+    RUN_SCHEMA.validate(run)
+    rec = run["run"]["research"]["review"]["PTGX"]
+    assert rec["status"] == "incomplete"
+    row = research_rows(run)[0]
+    assert row["research"]["review_findings"][0]["review_status"] == "incomplete"
+    for label in (rec["label"], row["research"]["label"], run["run"]["research"]["label"], view["research_label"]):
+        assert label == research.LABEL_PARTIAL_FINDINGS and "independently reviewed" not in label

@@ -590,8 +590,14 @@ URLs are kept. Without a key the tool is not offered and the company's `search_l
 
 Independent review (RESEARCHER-FULL-001 S2 wiring, `runs/research.py` `review_company`): after each company's
 research ends, for any reason except a person's stop (finished, spend cap, a safety stop, a limit, a technical
-failure), `capture/research_reviewer.review_draft` (Muse Spark Open) attacks that company's draft: the rows with their
-row ids and revisions, and the company's captured sources with their text. Its search is Brave Search (query and URLs
+failure), `capture/research_reviewer.review_draft` (Muse Spark Open) attacks that company's draft. Its first message
+is the rows with their row ids and revisions, the LIST of the company's captured sources (id, title, publisher, kind,
+URL, dates, page count, no text) and only the text of the pages the rows cite; it reads any other page with
+`read_source_pages` (at most `PAGES_PER_READ` = 5 per call, a recorded request-size default). Requests replay the last
+`REPLAY_TURNS` = 3 turns; older turns become a code-written summary (findings, pages read, searches), and page text and
+search payloads reach the model once and are then retired to stubs. Scope rule: clean = complete, no findings, no
+rejected attempt, no failed retrieval, and every CITED page read; a page never opened is a per-source `not_reviewed`
+limitation (recorded and shown, not a blocker for clean). Its search is Brave Search (query and URLs
 in the manifest, `stage: independent_review`; the payload is never stored); its fetch is the S1 capture path
 (`register_source`, `retrieval.tool` `review_fetch`, a manifest `source` line), so it can cite only captured text. Every
 reviewer, adjudicator and Brave request is reserved and settled on the run's one gate (strict, exactly once, unknown
@@ -607,11 +613,18 @@ limitations, searches, fetches, usage), `adjudication`, `usage`. Rows get `resea
 bound to that row: `finding_id`, `kind`, `text`, `by`, `row_id`, `revision_id`, `current`, `evidence`
 [{source_id, quote, start, end}], `review_status`, `reviewed_at`, `adjudication` {outcome proposed_resolution |
 unresolved | not_sent, reason, reading, resolution, evidence, model, human_accepted false}) and `research.review`
-{status, reviewed_revision (null unless a complete review covered this revision), at}. Labels (never "verified"):
-"Agent research — independently reviewed (no findings)" only for a complete and clean review; "Agent research —
-independently reviewed with findings" on a row (or company) with findings; otherwise "Agent research — not
-independently reviewed". The run label is the clean one only when every company's is; the findings one only when
-every company's review completed. Steps: kind `review` (start, reserve, adjudication, outcome) and `finding`.
+{status, reviewed_revision (null unless a complete review covered this revision), at}. Labels (never "verified";
+"independently reviewed" only for a COMPLETE review): "Agent research — independently reviewed (no findings)" for a
+complete and clean review; "Agent research — independently reviewed with findings" when a complete review made
+current findings; "Agent research — partly reviewed (incomplete), findings so far" when findings exist but the review
+did not complete; otherwise "Agent research — not independently reviewed". The run label is the clean one only when
+every company's is; the findings one only when every company's review completed.
+
+Re-review (Manus 18:33): every attempt is numbered (`attempt`; earlier ones under `attempts`). A complete review
+replaces the rows' findings. An attempt that did not complete keeps every earlier finding: on an unchanged basis (the
+row's revision and whole evidence set, `basis`) it stays `current`; on a changed basis it is `stale: true` with a
+`stale_reason`; each carries `latest_attempt` {attempt, status, at}. Row-less omissions are kept the same way in
+`unbound_findings`. Steps: kind `review` (start, reserve, adjudication, outcome) and `finding`.
 
 `python -m tools.research_smoke --review RUN_DIR --cap-usd N --i-have-the-operator-go` reviews a COPY of an existing
 run's saved draft without researching (the copy's cap is its spend so far plus N).

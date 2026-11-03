@@ -290,7 +290,9 @@ def test_no_limits_by_default_and_optional_turn_limit():
     replies = [tools(call("search", {"query": f"q{i}"})) for i in range(30)] + [tools(finish())]
     rec, _, _ = run(replies)
     assert rec["status"] == "complete" and rec["turns"] == 31
-    assert rec["settings"] == {"max_turns": None, "max_searches": None, "max_fetches": None}
+    assert {k: rec["settings"][k] for k in ("max_turns", "max_searches", "max_fetches")} == \
+        {"max_turns": None, "max_searches": None, "max_fetches": None}
+    assert rec["settings"]["pages_per_read"] == rv.PAGES_PER_READ and rec["settings"]["replay_turns"] == rv.REPLAY_TURNS
     rec, _, _ = run([tools(call("search", {"query": "q"}))] * 3 + [tools(finish())], max_turns=2)
     assert rec["status"] == "incomplete" and "turn limit" in rec["reason"]
 
@@ -437,7 +439,7 @@ def test_failed_search_then_finish_is_not_clean():
     assert rec["status"] == "complete" and rec["clean"] is False
     assert rec["limitations"] == [{"kind": "search", "query": "MIRM omission search",
                                    "reason": "The search did not succeed (TimeoutError)."}]
-    assert rec["reviewed"]["not_reviewed"] == rec["limitations"] and "not reviewed" in rec["reason"]
+    assert rec["reviewed"]["not_reviewed"] == rec["not_reviewed"] and "not reviewed" in rec["reason"]
 
 
 def test_uncaptured_fetch_then_finish_is_not_clean():

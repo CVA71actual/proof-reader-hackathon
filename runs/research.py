@@ -62,7 +62,8 @@ LABEL = rc.LABEL
 # RESEARCHER-FULL-001 S2 wiring: the three labels a research result can carry. Never "verified".
 LABEL_REVIEWED_CLEAN = "Agent research — independently reviewed (no findings)"
 LABEL_REVIEWED_FINDINGS = "Agent research — independently reviewed with findings"
-LABELS = (LABEL, LABEL_REVIEWED_CLEAN, LABEL_REVIEWED_FINDINGS)
+LABEL_PARTIAL_FINDINGS = "Agent research — partly reviewed (incomplete), findings so far"
+LABELS = (LABEL, LABEL_REVIEWED_CLEAN, LABEL_REVIEWED_FINDINGS, LABEL_PARTIAL_FINDINGS)
 # The review reserve: a code default (not a hidden limit; recorded in run.research.review_reserve and on the Agent
 # trail). Research is admitted only under (1 - fraction) of the run's spending cap, so the independent review always
 # has room to run; the review itself is admitted under the whole cap. No reserve is held when the reviewer cannot run.
@@ -685,11 +686,12 @@ def make_job_class():
             pages = []
             for p in source["pages"]:
                 words, _ = sources.load_page_evidence(self.dir, p)
-                pages.append(f"[page {p['page_number']}] " + " ".join(w["text"] for w in words.get("words", [])))
+                pages.append({"page_number": p["page_number"],
+                              "text": " ".join(w["text"] for w in words.get("words", []))})
             return {"source_id": source["id"], "url": source["url"], "title": source.get("title"),
                     "publisher": source.get("publisher"), "kind": source.get("kind"),
                     "published": source.get("published_date"), "retrieved_at": source.get("captured_at"),
-                    "text": "\n".join(pages)}
+                    "pages": pages, "text": "\n".join(pg["text"] for pg in pages)}
 
         @staticmethod
         def review_proposal(row: dict) -> dict:
@@ -749,25 +751,34 @@ def make_job_class():
             return out
 
         @staticmethod
-        def company_review_label(record: dict) -> str:
-            if record.get("status") == "complete" and record.get("clean") is True:
-                return LABEL_REVIEWED_CLEAN
-            if record.get("findings"):
-                return LABEL_REVIEWED_FINDINGS
-            return LABEL
+        def company_review_label(status: str | None, clean: bool, has_findings: bool) -> str:
+            """'independently reviewed ...' only for a COMPLETE review; findings from a review that did not finish
+            read 'partly reviewed (incomplete), findings so far'; nothing else claims a review."""
+            if status == "complete":
+                if clean:
+                    return LABEL_REVIEWED_CLEAN
+                if has_findings:
+                    return LABEL_REVIEWED_FINDINGS
+                return LABEL
+            return LABEL_PARTIAL_FINDINGS if has_findings else LABEL
 
         def run_review_label(self) -> str:
             """The run's label: reviewed (no findings) only when every company's review is complete and clean; with
-            findings only when every company's review is complete; otherwise not independently reviewed."""
+            findings only when every company's review is complete; partly reviewed when findings exist but some review
+            did not complete; otherwise not independently reviewed."""
             reviews = self.research.get("review") or {}
             entries = [reviews.get(t) for t in self.research["companies"]]
             if not entries or any(not isinstance(e, dict) for e in entries):
-                return LABEL
+                return LABEL_PARTIAL_FINDINGS if any(isinstance(e, dict) and e.get("label") in
+                                                     (LABEL_REVIEWED_FINDINGS, LABEL_PARTIAL_FINDINGS)
+                                                     for e in entries) else LABEL
             if all(e.get("label") == LABEL_REVIEWED_CLEAN for e in entries):
                 return LABEL_REVIEWED_CLEAN
             if all(e.get("status") == "complete" for e in entries) and \
                     any(e.get("label") == LABEL_REVIEWED_FINDINGS for e in entries):
                 return LABEL_REVIEWED_FINDINGS
+            if any(e.get("label") in (LABEL_REVIEWED_FINDINGS, LABEL_PARTIAL_FINDINGS) for e in entries):
+                return LABEL_PARTIAL_FINDINGS
             return LABEL
 
         def review_company(self, ticker: str, ended_kind: str, ended_reason: str) -> dict:
@@ -839,17 +850,44 @@ def make_job_class():
                        "outcomes": [], "skipped": [], "usage": None}
             return self.save_review(ticker, rows, record, adj, ended, started, disputes)
 
+        @staticmethod
+        def finding_basis(row: dict) -> str:
+            """The basis a finding was made against: the row's revision and its whole evidence set."""
+            r = row["research"]
+            spans = [[e.get("source_id"), e.get("page_number"), e.get("quote")] for e in r.get("evidence") or []]
+            return hashlib.sha256(json.dumps([r.get("revision"), spans], sort_keys=True).encode()).hexdigest()
+
         def save_review(self, ticker, rows, record, adj, ended, started, disputes) -> dict:
+            """Persist one review attempt. A COMPLETE review replaces the rows' findings. An attempt that did not
+            complete (incomplete, not run) keeps every earlier finding: one whose row revision and evidence are
+            unchanged stays current; one whose basis changed is marked stale. The attempt's own findings are added."""
             from capture import research_reviewer as rv
             at = now_utc()
             rows_by_id = {r["id"]: r for r in rows}
             outcomes = {o.get("dispute_id"): o for o in adj.get("outcomes") or []}
             reviewed = {(str(x["row_id"]), str(x["revision_id"]))
                         for x in ((record.get("reviewed") or {}).get("rows") or [])}
-            label = self.company_review_label(record)
+            status = record.get("status")
+            prior = (self.research.get("review") or {}).get(ticker)
+            prior = prior if isinstance(prior, dict) and "stage" in prior else None
+            attempt = (prior.get("attempt") or 1) + 1 if prior else 1
             with jobs.RUN_LOCK:
                 for row in rows:
-                    row["research"]["review_findings"] = []
+                    old = row["research"].get("review_findings") or []
+                    kept = []
+                    if status != "complete":
+                        basis = self.finding_basis(row)
+                        for f in old:
+                            f = dict(f)
+                            if f.get("basis") == basis and str(f.get("revision_id")) == str(row["research"]["revision"]):
+                                f["current"] = True
+                            else:
+                                f["current"], f["stale"] = False, True
+                                f["stale_reason"] = ("The row's revision or evidence changed after this finding was "
+                                                     "made.")
+                            f["latest_attempt"] = {"attempt": attempt, "status": status, "at": at}
+                            kept.append(f)
+                    row["research"]["review_findings"] = kept
                 for f in record.get("findings") or []:
                     o = outcomes.get(f"{ticker}-{f['finding_id']}")
                     if o is not None:
@@ -865,24 +903,41 @@ def make_job_class():
                         if row is None:
                             continue
                         row["research"]["review_findings"].append({
-                            "finding_id": f["finding_id"], "kind": f["kind"], "text": f["text"], "by": f.get("by"),
-                            "row_id": row["id"], "revision_id": ref["revision_id"],
+                            "finding_id": f["finding_id"], "attempt": attempt, "kind": f["kind"], "text": f["text"],
+                            "by": f.get("by"), "row_id": row["id"], "revision_id": ref["revision_id"],
                             "current": str(ref["revision_id"]) == str(row["research"]["revision"]),
-                            "evidence": f["evidence"], "review_status": record.get("status"),
+                            "basis": self.finding_basis(row),
+                            "evidence": f["evidence"], "review_status": status,
                             "reviewed_at": at, "adjudication": adjudication})
+                company_has = False
                 for row in rows:
                     rev = row["research"]["revision"]
                     # reviewed_revision: the revision a COMPLETED review covered; null when the review did not finish
-                    reviewed_this = record.get("status") == "complete" and (row["id"], str(rev)) in reviewed
-                    row["research"]["review"] = {"status": record.get("status"), "reviewed_revision":
-                                                 rev if reviewed_this else None, "at": at}
-                    if row["research"]["review_findings"]:
+                    reviewed_this = status == "complete" and (row["id"], str(rev)) in reviewed
+                    prev = row["research"].get("review") or {}
+                    row["research"]["review"] = {
+                        "status": status, "attempt": attempt, "at": at,
+                        "reviewed_revision": rev if reviewed_this else (
+                            prev.get("reviewed_revision") if status != "complete" and
+                            prev.get("reviewed_revision") == rev else None)}
+                    current = [f for f in row["research"]["review_findings"] if f.get("current")]
+                    company_has = company_has or bool(current)
+                    if any(f.get("review_status") == "complete" for f in current):
                         row["research"]["label"] = LABEL_REVIEWED_FINDINGS
-                    elif label == LABEL_REVIEWED_CLEAN and reviewed_this:
+                    elif current:
+                        row["research"]["label"] = LABEL_PARTIAL_FINDINGS
+                    elif status == "complete" and record.get("clean") and reviewed_this:
                         row["research"]["label"] = LABEL_REVIEWED_CLEAN
                     else:
                         row["research"]["label"] = LABEL
-                entry = {"stage": REVIEW_STAGE, "ticker": ticker, "status": record.get("status"),
+                omissions = [f for f in record.get("findings") or [] if not f["row_revision_ids"]]
+                carried_omissions = [] if status == "complete" or not prior else [
+                    o for o in prior.get("unbound_findings") or []]
+                unbound = carried_omissions + [{**f, "attempt": attempt, "review_status": status} for f in omissions]
+                label = self.company_review_label(status, bool(record.get("clean")), company_has or bool(unbound))
+                attempts = (prior.get("attempts") or []) + [{k: prior.get(k) for k in (
+                    "attempt", "status", "reason", "label", "started_at", "finished_at")}] if prior else []
+                entry = {"stage": REVIEW_STAGE, "ticker": ticker, "attempt": attempt, "status": status,
                          "reason": record.get("reason"), "clean": bool(record.get("clean")), "label": label,
                          "reviewer": rv.REVIEWER_NAME, "adjudicator": rv.ADJUDICATOR_NAME, "search": "Brave Search",
                          "research_ended": ended, "started_at": started, "finished_at": at,
@@ -890,7 +945,9 @@ def make_job_class():
                          "disputes": [{"dispute_id": d["dispute_id"], "finding_id": d["finding_id"],
                                        "row_revision_ids": d["row_revision_ids"], "component": d["component"]}
                                       for d in disputes],
-                         "review": record, "adjudication": adj, "usage": dict(self.review_usage(ticker))}
+                         "unbound_findings": unbound,
+                         "review": record, "adjudication": adj, "usage": dict(self.review_usage(ticker)),
+                         "attempts": attempts}
                 self.research.setdefault("review", {})[ticker] = entry
                 self.save_ledger()
             for f in record.get("findings") or []:
