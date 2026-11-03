@@ -141,6 +141,10 @@ def test_every_pre_change_string_is_still_present(name):
     old = json.loads((SNAPSHOTS / f"{name}.strings.json").read_text())
     assert len(old) > 50
     new_docx = _body_strings(build_docx(view))
+    # the build-time line is local time, so the snapshot's wording depends on the machine's time zone: require
+    # that a "Built on" line is present, and compare every other string verbatim
+    assert any(s.startswith("Built on ") for s in new_docx)
+    old = [s for s in old if not s.startswith("Built on ")]
     missing_docx = [s for s in old if s not in new_docx]
     assert not missing_docx, missing_docx
     pdf = _pdf_body(_pdf_pages(view), view["footer"])
