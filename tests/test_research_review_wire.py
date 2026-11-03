@@ -22,7 +22,8 @@ from fastapi.testclient import TestClient
 from capture import research_reviewer as rv
 from capture.research_reviewer import ChatReply
 from report.data import build_view
-from runs import prices, research
+from runs import prices, research, research_audit
+from server import jobs
 from runs.state import current_state
 from server.app import create_app
 from tests import research_fakes as F
@@ -99,8 +100,10 @@ def test_clean_review_after_research_labels_the_row_run_and_export(runs_dir, tmp
     row = research_rows(run)[0]
     assert rec["reviewed_basis"] == [[row["id"], "1"]]
     assert row["research"]["review_findings"] == []
-    assert row["research"]["review"] == {"status": "complete", "reviewed_revision": 1, "attempt": 1,
-                                         "verdict": "no_issue", "at": rec["finished_at"]}
+    review = dict(row["research"]["review"])
+    assert len(review.pop("reviewed_material")) == 64                # bound to the row's material identity
+    assert review == {"status": "complete", "reviewed_revision": 1, "attempt": 1, "verdict": "no_issue",
+                      "at": rec["finished_at"]}
     assert row["research"]["label"] == research.LABEL_REVIEWED_CLEAN
     # the reviewer saw the draft bound by revision, and the captured source text, never researcher reasoning
     sent = draft_of(reviewer.sent[0])
@@ -548,7 +551,7 @@ def test_a_finding_whose_basis_changed_becomes_stale(runs_dir, tmp_path):
     row = research_rows(after)[0]
     (f,) = row["research"]["review_findings"]
     assert f["current"] is False and f["stale"] is True and "changed" in f["stale_reason"]
-    assert row["research"]["label"] == research.LABEL
+    assert row["research"]["label"] == research.LABEL + " — changed since its review"
 
 
 def test_an_incomplete_review_with_findings_is_labelled_partly_reviewed(runs_dir):
@@ -1178,3 +1181,120 @@ def _chain_run_limit(runs_dir, chain, fallback, limit):
     rid = TestClient(app).post("/api/runs/new", json={"mode": "research", "companies": ["PTGX"],
                                                       "as_of": "2026-11-02", "spending_limit_usd": limit}).json()["id"]
     return run_json(runs_dir, rid)
+
+
+# ------------------------------------------------------------------ Manus 08:15: chain, currency, trail wording
+
+def _refused_reply(model=F.REVIEWER_MODEL):
+    return ChatReply(model, error=REFUSED, http_status=403, may_have_been_billed=False)
+
+
+def _two_company_chain(runs_dir, chain, fallback, concurrency=1):
+    reader = F.PerCompany({"PTGX": happy_script(), "ROIV": [F.body([F.call(
+        "finish_draft", {"dispositions": [], "limitations": []}, "f")])]})
+    tools = F.tools({PR1: (200, "text/html; charset=utf-8", PAGE1)})
+    ident = {"PTGX": ("1377121", "Protagonist Therapeutics, Inc."), "ROIV": ("1635088", "Roivant Sciences Ltd.")}
+    tools.resolve = lambda t: ident[t]
+    tools.reviewers, tools.reviewer = chain, chain[0]
+    tools.reviewer_fallback, tools.brave = fallback, F.FakeBrave()
+    tools.adjudicator = F.FakeChat([], model=F.ADJUDICATOR_MODEL)
+    app = create_app(runs_dir=runs_dir, reader=reader, background=False, second_reader=None, wonder_reader=None,
+                     sam_reader=None, research_tools=tools, research_reader=reader)
+    r = TestClient(app).post("/api/runs/new", json={"mode": "research", "companies": ["PTGX", "ROIV"],
+                                                     "as_of": "2026-11-02",
+                                                     "research_limits": {"concurrency": concurrency}})
+    return run_json(runs_dir, r.json()["id"])
+
+
+def test_ow_chain_001_two_first_call_refusals_advance_to_muse_and_never_retry(runs_dir):
+    deepseek = F.FakeChat([_refused_reply()], probe=True, **DEEPSEEK)               # passes the check, refused at call 1
+    claude = F.FakeChat([_billing(F.FakeChat([]))], probe=True)                      # passes the check, billing at call 1
+    muse = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
+                       F.chat_tools(("finish_review", {"summary": "empty"}))], **F.FALLBACK)
+    run = _two_company_chain(runs_dir, [deepseek, claude], muse)
+    r = run["run"]["research"]
+    assert len(deepseek.sent) == 1 and len(claude.sent) == 1              # each refused once, never retried
+    for t in ("PTGX", "ROIV"):
+        assert r["review"][t]["status"] == "complete" and r["review"][t]["reviewer"] == "Muse Spark Open"
+    names = [c["name"] for c in r["reviewer_access"]["candidates"]]
+    assert names.count("DeepSeek V4 Pro") >= 1 and names.count("Claude Opus 5.5") >= 1
+
+
+def test_ow_chain_002_a_late_refusal_of_an_already_skipped_reviewer_does_not_skip_the_current_one(runs_dir):
+    from runs import research as R
+    deepseek = F.FakeChat([], probe=True, **DEEPSEEK)
+    claude = F.FakeChat([], probe=True)
+    muse = F.FakeChat([], **F.FALLBACK)
+    run = jobs.create_run(runs_dir, jobs.validate_choices({"mode": "research", "companies": ["PTGX", "ROIV"],
+                                                           "spending_limit_usd": 30}), as_of="2026-11-02")
+    tools = F.tools({})
+    tools.reviewers, tools.reviewer, tools.reviewer_fallback = [deepseek, claude], deepseek, muse
+    job = R.make_job_class()(runs_dir / run["run"]["id"], F.FakeResponses([]), tools)
+    job.init_ledger()
+    assert job.reviewer_for_run("PTGX")[0] is deepseek                    # both companies hold DeepSeek
+    refusal = {"http_status": 403, "message": REFUSED}
+    assert job.refused_reviewer("PTGX", refusal, refused_model=deepseek)[0] is claude     # A's 403 advances
+    assert job.refused_reviewer("ROIV", refusal, refused_model=deepseek)[0] is claude     # B's late 403: stale
+    assert job.reviewer_for_run("ROIV")[0] is claude and claude.probes == 1
+
+
+def _clean_review_run(runs_dir):
+    reviewer = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "ok"}))], **DEEPSEEK)
+    _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer)
+    return run_json(runs_dir, rid)
+
+
+def test_review_label_currency_changed_bytes_and_new_rows_are_not_covered_by_an_old_review(runs_dir):
+    from runs.research_labels import derive_review_labels
+    import copy as _copy
+    run = _clean_review_run(runs_dir)
+    clean = "Agent research — independently reviewed by DeepSeek V4 Pro (different model family from the researcher)"
+    control = derive_review_labels(_copy.deepcopy(run))                       # unchanged control
+    assert control["run"]["research"]["label"] == clean + " (no findings)"
+    assert next(r for r in control["rows"] if r.get("research"))["research"]["label"] == clean + " (no findings)"
+    # (a) the consumed bytes change: a new derived transcription of the same page (same revision, same spans)
+    changed = _copy.deepcopy(run)
+    sid = next(r for r in changed["rows"] if r.get("research"))["research"]["evidence"][0]["source_id"]
+    page = next(s for s in changed["sources"] if s["id"] == sid)["pages"][0]
+    page["derived_words"] = {"file": "pages/derived.words.json", "sha256": "0" * 64}
+    derive_review_labels(changed)
+    row = next(r for r in changed["rows"] if r.get("research"))
+    assert row["research"]["revision"] == 1 and row["research"]["label"].endswith("changed since its review")
+    assert "(no findings)" not in row["research"]["label"]
+    e = changed["run"]["research"]["review"]["PTGX"]
+    assert e["coverage"] == {"rows": 1, "uncovered": 1} and e["label"].endswith("1 of 1 row changed or new since "
+                                                                                "the review")
+    assert changed["run"]["research"]["label"].endswith("1 of 1 row changed or new since the review")
+    # the export projection carries the qualified label
+    view = build_view(changed, [], generated_at="2026-11-02T20:00:00+00:00")
+    assert view["research_label"].endswith("changed or new since the review")
+    # (b) a new row no review saw
+    added = _copy.deepcopy(run)
+    new = _copy.deepcopy(next(r for r in added["rows"] if r.get("research")))
+    new["id"] = "e9"
+    new["research"].pop("review", None)
+    new["research"]["review_findings"] = []
+    added["rows"].append(new)
+    derive_review_labels(added)
+    assert next(r for r in added["rows"] if r["id"] == "e9")["research"]["label"] == research.LABEL
+    assert added["run"]["research"]["label"].endswith("1 of 2 rows changed or new since the review")
+    audit_scope = research_audit.row_scope(next(r for r in added["rows"] if r["id"] == "e9"), None)["not_checked"]
+    assert "No completed independent review covers this row" in audit_scope
+    assert "did not run (stage S2)" not in audit_scope
+
+
+def test_review_trail_says_same_family_when_muse_ran(runs_dir):
+    primary = F.FakeChat([], refuse=REFUSED)
+    fallback = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
+                           F.chat_tools(("finish_review", {"summary": "empty"}))], **F.FALLBACK)
+    run = _two_company_run(runs_dir, primary, fallback)
+    texts = [s["text"] for s in run["run"]["research"]["steps"] if s["kind"] == "review"
+             and s["ticker"] == "PTGX"]
+    assert any(t.startswith("Review by Muse Spark Open (same model family as the researcher) of PTGX started")
+               for t in texts)
+    assert any(t.startswith("Review by Muse Spark Open (same model family as the researcher) of PTGX: complete")
+               for t in texts)
+    assert not any(t.startswith("Independent review") for t in texts)
+    row = next(r for r in run["rows"] if r.get("research"))
+    scope = research_audit.row_scope(row, None)["not_checked"]
+    assert "Reviewed by Muse Spark Open (same model family as the researcher)" in scope

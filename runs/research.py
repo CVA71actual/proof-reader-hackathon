@@ -63,7 +63,7 @@ LABEL = rc.LABEL
 # The labels (CLAIM-001 / MULTI-FAMILY-001) live in runs/research_labels.py: one derivation from the recorded review,
 # used when a review is saved and on every load (runs/check_load.bind_on_load).
 from runs.research_labels import (PRIMARY_REVIEWER, RESEARCHER_FAMILY, RESEARCHER_PROVIDER,  # noqa: E402
-                                  derive_review_labels, review_label)
+                                  derive_review_labels, material_digest, review_label, review_phrase)
 LABEL_REVIEWED_CLEAN = review_label("clean", PRIMARY_REVIEWER)
 LABEL_REVIEWED_FINDINGS = review_label("findings", PRIMARY_REVIEWER)
 LABEL_PARTIAL_FINDINGS = review_label("partial", PRIMARY_REVIEWER)
@@ -970,14 +970,18 @@ def make_job_class():
             return {"checked": True, "at": now_utc(), "refused": refused, "http_status": reply.http_status,
                     "message": reply.error if reply.error else None, **({"reason": reason} if reason else {})}
 
-        def refused_reviewer(self, ticker: str, refusal: dict, locked: bool = False) -> tuple:
+        def refused_reviewer(self, ticker: str, refusal: dict, locked: bool = False, refused_model=None) -> tuple:
             """The provider refused the key for the reviewer that was running (on a real call): record it, never
-            retry it, and move to the next in the chain (or the declared fallback) for the rest of the run."""
+            retry it, and move to the next in the chain (or the declared fallback) for the rest of the run.
+            OW-CHAIN-002: compare-and-advance under the lock. Only a refusal of the CURRENT shared choice advances
+            it; a late refusal of a reviewer already skipped just reroutes that company to the current choice."""
             from capture import research_reviewer as rv
             with self._access_lock:
                 if self._reviewer_pick is None:
                     self._chain, self._skipped = self.reviewer_chain(), []
                     self._chain_index = 0
+                elif refused_model is not None and self._reviewer_pick[0] is not refused_model:
+                    return self._reviewer_pick
                 i = getattr(self, "_chain_index", 0)
                 cand = self._chain[i] if i < len(self._chain) else None
                 if cand is not None:
@@ -1031,38 +1035,42 @@ def make_job_class():
             company = {"ticker": ticker, "name": st["company"], "cik": st["cik"], "as_of": as_of.isoformat(),
                        "calendar_window": [as_of.isoformat(), jobs.add_months(as_of, 6).isoformat()]}
             self.step(ticker, "review", "Code", "runs.research",
-                      f"Independent review of {ticker} started after its research ended ({ended_kind}): "
+                      f"{review_phrase(choice)} of {ticker} started after its research ended ({ended_kind}): "
                       f"{len(rows)} proposal{'s' if len(rows) != 1 else ''} and {len(given)} captured source"
                       f"{'s' if len(given) != 1 else ''} sent to {choice['name']}; its own search is Brave Search.",
                       stage=REVIEW_STAGE)
             fetched: list[dict] = []
             try:
-                record = rv.review_draft(company=company, assignment=self.choices.get("note_for_agent") or "",
-                                         proposals=[self.review_proposal(r) for r in rows], sources=given,
-                                         search=self.review_search(ticker), fetch_capture=self.review_fetch(ticker, fetched),
-                                         spend_gate=self.review_gate(ticker), model=reviewer)
-                refused = record.get("access_refused")
-                fallback = getattr(self.tools, "reviewer_fallback", None)
-                first_call = (record.get("turns") or 0) <= 1 and not record.get("findings") \
-                    and not record.get("assessments") and not record.get("rejected")
-                if refused and not choice.get("fallback_used") and fallback is not None and not first_call:
-                    # OUTCOME-001 (live review d313da2): refused MID-review. That reviewer's validated work is kept and
-                    # its review ends incomplete with the reason; the fallback reviews only later companies.
-                    record["reason"] = (f"Incomplete: {choice['name']} was refused by the provider mid-review ("
-                                        f"{refused.get('reason') or 'HTTP ' + str(refused.get('http_status'))}) "
-                                        f"after {record.get('turns')} turn(s); its "
-                                        f"{len(record.get('findings') or [])} validated finding(s) are kept. "
-                                        f"{refused.get('message') or ''}").strip()
-                    self.refused_reviewer(ticker, refused)
-                elif refused and not choice.get("fallback_used") and fallback is not None:
-                    # the provider refused the key on the FIRST call (no work done): never retried; the declared
-                    # fallback reviews this company and every later one in the run
-                    reviewer, choice = self.refused_reviewer(ticker, refused)
+                # OW-CHAIN-001: every newly selected reviewer's result is classified the same way. A refusal on its
+                # FIRST call (no work done) advances monotonically through the chain and the company is reviewed by
+                # the next one; a refusal after work keeps that work (incomplete). One gate per physical attempt.
+                while True:
                     record = rv.review_draft(company=company, assignment=self.choices.get("note_for_agent") or "",
                                              proposals=[self.review_proposal(r) for r in rows], sources=given,
                                              search=self.review_search(ticker),
                                              fetch_capture=self.review_fetch(ticker, fetched),
                                              spend_gate=self.review_gate(ticker), model=reviewer)
+                    refused = record.get("access_refused")
+                    if not refused or choice.get("fallback_used"):
+                        break
+                    first_call = (record.get("turns") or 0) <= 1 and not record.get("findings") \
+                        and not record.get("assessments") and not record.get("rejected")
+                    nxt = self.refused_reviewer(ticker, refused, refused_model=reviewer)
+                    if not first_call:
+                        # OUTCOME-001 (live review d313da2): refused MID-review. That reviewer's validated work is kept
+                        # and its review ends incomplete with the reason; the next reviewer starts at the next company.
+                        record["reason"] = (f"Incomplete: {choice['name']} was refused by the provider mid-review ("
+                                            f"{refused.get('reason') or 'HTTP ' + str(refused.get('http_status'))}) "
+                                            f"after {record.get('turns')} turn(s); its "
+                                            f"{len(record.get('findings') or [])} validated finding(s) are kept. "
+                                            f"{refused.get('message') or ''}").strip()
+                        break
+                    if nxt[0] is reviewer:      # nothing further in the chain
+                        break
+                    reviewer, choice = nxt
+                    self.step(ticker, "review", "Code", "runs.research",
+                              f"{review_phrase(choice)} of {ticker} started after the previous reviewer was refused "
+                              f"on its first call.", stage=REVIEW_STAGE)
             except Exception as e:      # the type only: nothing that could carry request details
                 record = {"stage": REVIEW_STAGE, "status": "incomplete", "clean": False, "findings": [],
                           "rejected": [], "limitations": [],
@@ -1130,7 +1138,9 @@ def make_job_class():
                     rev = str(row["research"]["revision"])
                     for f in old:
                         f = dict(f)
-                        if f.get("basis") != basis or str(f.get("revision_id")) != rev:
+                        material = material_digest(self.run, row)
+                        if f.get("basis") != basis or str(f.get("revision_id")) != rev or \
+                                f.get("material") not in (None, material):
                             if f.get("current"):
                                 f["current"], f["stale"] = False, True
                                 f["stale_reason"] = ("The row's revision or evidence changed after this finding was "
@@ -1163,7 +1173,7 @@ def make_job_class():
                             "finding_id": f["finding_id"], "attempt": attempt, "kind": f["kind"], "text": f["text"],
                             "by": f.get("by"), "row_id": row["id"], "revision_id": ref["revision_id"],
                             "current": str(ref["revision_id"]) == str(row["research"]["revision"]),
-                            "basis": self.finding_basis(row),
+                            "basis": self.finding_basis(row), "material": material_digest(self.run, row),
                             "evidence": f["evidence"], "review_status": status,
                             "reviewed_at": at, "adjudication": adjudication})
                 for row in rows:
@@ -1177,7 +1187,15 @@ def make_job_class():
                         "verdict": a["verdict"] if a else None,
                         "reviewed_revision": rev if reviewed_this else (
                             prev.get("reviewed_revision") if status != "complete" and
+                            prev.get("reviewed_revision") == rev else None),
+                        # REVIEW-LABEL-CURRENCY: the exact material the review covered (consumed artifacts,
+                        # publication context, timing, revision); a later change makes the row uncovered
+                        "reviewed_material": material_digest(self.run, row) if reviewed_this else (
+                            prev.get("reviewed_material") if status != "complete" and
                             prev.get("reviewed_revision") == rev else None)}
+                    if prev.get("reviewed_revision") is not None and not reviewed_this and status == "complete":
+                        row["research"]["review"]["previous"] = {k: prev.get(k) for k in (
+                            "reviewed_revision", "reviewed_material", "attempt", "at")}      # kept as history
                 omissions = [f for f in record.get("findings") or [] if not f["row_revision_ids"]]
                 carried_omissions = [o for o in (prior or {}).get("unbound_findings") or []]   # never silently dropped
                 unbound = carried_omissions + [{**f, "attempt": attempt, "review_status": status} for f in omissions]
@@ -1231,7 +1249,7 @@ def make_job_class():
                           stage=REVIEW_STAGE, turn=x.get("turn"))
             lims = record.get("limitations") or []
             self.step(ticker, "review", "Code", "runs.research",
-                      f"Independent review of {ticker}: {record.get('status')}. {record.get('reason')}"
+                      f"{review_phrase(who_ran or choice)} of {ticker}: {record.get('status')}. {record.get('reason')}"
                       + (f" {len(lims)} review limitation{'s' if len(lims) != 1 else ''} recorded." if lims else "")
                       + (f" {len(record.get('rejected') or [])} finding attempt(s) rejected by code."
                          if record.get("rejected") else "")

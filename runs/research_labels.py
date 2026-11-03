@@ -90,49 +90,106 @@ def only_retrieval_limits(record: dict, limits: dict) -> bool:
             and any(limits.values()))
 
 
+def review_phrase(who: dict | None) -> str:
+    """The trail's wording for a review, from the reviewer that ran (REVIEW-TRAIL-FAMILY): a same-family reviewer's
+    review is never called independent."""
+    if not who or not who.get("name"):
+        return "Review"
+    if who.get("family") == RESEARCHER_FAMILY:
+        return f"Review by {who['name']} (same model family as the researcher)"
+    return f"Independent review by {who['name']}"
+
+
+def material_digest(run: dict, row: dict) -> str | None:
+    """REVIEW-LABEL-CURRENCY: the row's canonical material identity, the same one evidence and Keep use
+    (runs.review.research_basis: revision, research fields, every span's source, page, quote, roles, word ids, the
+    consumed artifacts' hashes including derived words, the publication context and the timing snapshot)."""
+    import hashlib
+    import json
+    try:
+        from runs.review import research_basis
+        basis = research_basis(run, row)
+    except Exception:
+        return None
+    return hashlib.sha256(json.dumps(basis, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def row_covered(run: dict, row: dict, entry: dict | None) -> bool:
+    """A current row is covered by a COMPLETE review of exactly its current material (revision and material)."""
+    r = row.get("research") or {}
+    review = r.get("review") or {}
+    if not entry or entry.get("status") != "complete" or review.get("reviewed_revision") != r.get("revision"):
+        return False
+    seen = review.get("reviewed_material")
+    return seen is None or seen == material_digest(run, row)      # None: saved before materials were recorded
+
+
+def finding_current(run: dict, row: dict, f: dict) -> bool:
+    if not f.get("current"):
+        return False
+    seen = f.get("material")
+    return seen is None or seen == material_digest(run, row)
+
+
+def coverage_note(uncovered: int, total: int) -> str:
+    return (f" — {uncovered} of {total} row{'s' if total != 1 else ''} changed or new since the review"
+            if uncovered else "")
+
+
 def derive_review_labels(run: dict) -> dict:
-    """Set every research label in `run` (in place) from the recorded review. Returns run."""
+    """Set every research label in `run` (in place) from the recorded review AND the current rows. Returns run."""
     meta = run.get("run") or {}
     research = meta.get("research")
     if not isinstance(research, dict):
         return run
     reviews = research.get("review") if isinstance(research.get("review"), dict) else {}
     entries = {t: e for t, e in reviews.items() if isinstance(e, dict) and "stage" in e}
+    rows_of: dict[str, list] = {}
     for row in run.get("rows", []):
         r = row.get("research")
         if not isinstance(r, dict):
             continue
-        entry = entries.get(str(r.get("ticker") or row.get("ticker") or "").upper())
+        ticker = str(r.get("ticker") or row.get("ticker") or "").upper()
+        rows_of.setdefault(ticker, []).append(row)
+        entry = entries.get(ticker)
         if entry is None:
             r["label"] = LABEL
             continue
         record = entry.get("review") or {}
         status, who, limits = entry.get("status"), reviewer_of(entry), review_limits(record)
-        current = [f for f in r.get("review_findings") or [] if f.get("current")]
-        review = r.get("review") or {}
-        reviewed_this = status == "complete" and review.get("reviewed_revision") == r.get("revision")
+        current = [f for f in r.get("review_findings") or [] if finding_current(run, row, f)]
+        covered = row_covered(run, row, entry)
+        stale = (r.get("review") or {}).get("reviewed_material") not in (None, material_digest(run, row))
         if status == "complete" and current:
             kind = "findings"
         elif current:
             kind = "partial"
-        elif status == "complete" and record.get("clean") and reviewed_this:
+        elif status == "complete" and record.get("clean") and covered:
             kind = "clean"
-        elif only_retrieval_limits(record, limits) and reviewed_this:
+        elif only_retrieval_limits(record, limits) and covered:
             kind = "limited"
         else:
             kind = "none"
-        r["label"] = with_limits(kind, limits, who)
+        r["label"] = with_limits(kind, limits, who) + (" — changed since its review" if stale and kind == "none"
+                                                         else "")
+    uncovered_total = 0
     for ticker, entry in entries.items():
         record = entry.get("review") or {}
         limits = review_limits(record)
+        rows = rows_of.get(ticker, [])
         has = bool(entry.get("unbound_findings")) or any(
-            f.get("current") for row in run.get("rows", []) if isinstance(row.get("research"), dict)
-            and str(row["research"].get("ticker") or "").upper() == ticker
-            for f in row["research"].get("review_findings") or [])
+            finding_current(run, row, f) for row in rows for f in row["research"].get("review_findings") or [])
         kind = label_kind(entry.get("status"), bool(record.get("clean")), has, only_retrieval_limits(record, limits))
+        uncovered = sum(1 for row in rows if not row_covered(run, row, entry)) if entry.get("status") == "complete" \
+            else 0
+        uncovered_total += uncovered
         entry["label_kind"], entry["limits"] = kind, limits
-        entry["label"] = with_limits(kind, limits, reviewer_of(entry))
-    research["label"] = run_label(research, entries) + cap_note(research)
+        entry["coverage"] = {"rows": len(rows), "uncovered": uncovered}
+        note = coverage_note(uncovered, len(rows)) if kind != "none" else ""
+        entry["label"] = with_limits(kind, limits, reviewer_of(entry)) + note
+    total = sum(len(v) for v in rows_of.values())
+    run_note = coverage_note(uncovered_total, total) if uncovered_total else ""
+    research["label"] = run_label(research, entries) + run_note + cap_note(research)
     return run
 
 
