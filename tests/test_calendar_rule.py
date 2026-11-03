@@ -229,3 +229,19 @@ def test_rows_without_current_support_are_never_placed_automatically():
     found = copy.deepcopy(run)
     found["rows"][0]["found_by"] = "coverage"
     assert target(found)["inclusion"] == "review"
+
+
+def test_placement_reads_the_code_derived_period_bounds_never_the_raw_row_dates():
+    # The raw row has no date/date_end; the passing date check derives early Q1 2027 = January 2027.
+    run = case_run("Cedar Bio will release financial results in early Q1 2027.", "early Q1 2027", None)
+    row = run["rows"][0]
+    assert row["date"] is None and row.get("date_end") is None
+    state = current_state(run, [])
+    t = state["targets"]["e1"]
+    assert (t["values"]["date"], t["values"]["date_end"]) == ("2027-01-01", "2027-01-31")
+    assert t["issues"] == [] and t["placement"] == "calendar" and t["inclusion"] == "included"
+    partition, _, _ = run_interval_partition(run, state)
+    assert [(e["id"], e["date"], e["date_end"]) for e in partition["calendar"]] == [("e1", "2027-01-01", "2027-01-31")]
+    assert partition["undated"] == [] and partition["timing_unresolved"] == []
+    v = view(run)
+    assert [r["id"] for r in v["calendar"]] == ["e1"] and v["undated"] == []
