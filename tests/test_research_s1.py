@@ -1925,3 +1925,44 @@ def test_both_red_team_pages_are_refused_through_fetch_url(runs_dir):
     assert run["sources"] == []
     fails = run["run"]["research"]["companies"]["PTGX"]["capture_failures"]
     assert [f["outcome"] for f in fails] == ["could_not_access", "could_not_access"]
+
+
+# ---------------------------------------------------------------- dry run SEPN: code-recorded limitations count
+
+
+def test_a_company_whose_fetches_all_failed_never_reads_0_limitations(runs_dir):
+    """Ten-company dry run (SEPN): three could_not_access fetches, finish_draft with no stated limitation, and the
+    outcome said "0 limitations". CLAIM-001 / UNKNOWN-001: code-recorded failures are limitations too."""
+    from report.data import _research_lines
+    urls = [f"https://example.com/r{i}" for i in range(3)]
+    reader = F.FakeResponses(
+        [F.body([F.call("fetch_url", {"url": u, "purpose": "release"}, f"c{i}")]) for i, u in enumerate(urls)]
+        + [F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    _, rid, _ = start(runs_dir, reader, pages={u: (403, "text/html", b"<p>Forbidden</p>") for u in urls})
+    run = run_json(runs_dir, rid)
+    research = run["run"]["research"]
+    c = research["companies"]["PTGX"]
+    assert [f["outcome"] for f in c["capture_failures"]] == ["could_not_access"] * 3
+    assert "0 limitations recorded" not in c["status_reason"]
+    assert "0 limitations stated by the model" in c["status_reason"]
+    # this harness has no Brave key, so code also recorded one search limitation (Brave Search not configured)
+    assert c["search_limitations"][0]["engine"] == "Brave Search"
+    assert c["status_reason"].endswith("Limitations in all: 4 (0 stated by the model; recorded by code: 3 fetches "
+                                       "could not be accessed, 1 search failure).")
+    counts = research["audit"]["limitation_counts"]["PTGX"]
+    assert (counts["model"], counts["code"], counts["total"]) == (0, 4, 4)
+    assert research_audit.format_audit(research["audit"]).count("limitations (PTGX): 4 in all, 0 stated by the "
+                                                                "model, 4 recorded by code") == 1
+    _, lines = _research_lines(run["run"], run)
+    assert any(l.startswith("PTGX: finished") and "Limitations in all: 4" in l for l in lines)
+    assert sum(l.startswith("PTGX capture failed:") for l in lines) == 3
+
+
+def test_a_clean_company_counts_its_stated_limitation_only(runs_dir):
+    lim = {"question": "Q3 date", "tool_call_ids": [], "source_ids": [], "reason": "not announced"}
+    reader = F.FakeResponses([F.body([F.call("finish_draft", {"dispositions": [], "limitations": [lim]}, "f")])])
+    _, rid, _ = start(runs_dir, reader)
+    c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
+    assert c["status"] == "finished" and "1 limitation stated by the model." in c["status_reason"]
+    assert c["status_reason"].endswith("Limitations in all: 2 (1 stated by the model; recorded by code: 1 search "
+                                       "failure).")

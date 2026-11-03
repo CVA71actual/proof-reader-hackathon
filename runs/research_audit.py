@@ -28,7 +28,7 @@ from datetime import date
 from pathlib import Path
 
 from runs import sources
-from runs.research_contract import LABEL
+from runs.research_contract import LABEL, company_limitations
 from runs.state import current_state, run_reference_date
 
 NOT_CHECKED = ("Meaning, relevance and the relationship between spans are the model's proposal, not checked by code. "
@@ -161,6 +161,7 @@ def draft_audit(run_dir: Path, run: dict, decisions: list) -> dict:
         "capture_failures": {t: c.get("capture_failures") or [] for t, c in companies.items()},
         "limitations": {t: c.get("limitation") for t, c in companies.items() if c.get("limitation")},
         "model_limitations": {t: ((c.get("finish") or {}).get("limitations") or []) for t, c in companies.items()},
+        "limitation_counts": {t: company_limitations(c) for t, c in companies.items()},
         "exports": exports, "problems": problems,
         "unfinished_companies": unfinished,
         "complete": not problems and not unfinished,
@@ -225,6 +226,9 @@ def format_audit(audit: dict) -> str:
             out.append(f"capture failed ({t}): {f['url']} — {f['reason']}")
     for t, lim in audit["limitations"].items():
         out.append(f"limitation ({t}): {lim['reason']}")
+    for t, n in audit.get("limitation_counts", {}).items():
+        out.append(f"limitations ({t}): {n['total']} in all, {n['model']} stated by the model, {n['code']} recorded "
+                   f"by code" + (f" ({', '.join(n['code_recorded'])})" if n["code_recorded"] else ""))
     for p in audit["problems"]:
         out.append("PROBLEM: " + p)
     return "\n".join(out)

@@ -500,7 +500,8 @@ def make_job_class():
                 kind, reason = "failed", f"Technical failure: an unexpected error ({type(e).__name__})."
             with jobs.RUN_LOCK:
                 c["status"] = {"finished": "finished", "failed": "failed"}.get(kind, "stopped")
-                c["status_reason"] = reason
+                # CLAIM-001 / UNKNOWN-001: the outcome line counts code-recorded access and search failures too
+                c["status_reason"] = f"{reason} {rc.limitation_sentence(c)}"
                 c["finished_at"] = now_utc()
                 if kind != "finished":
                     c["limitation"] = {"kind": kind, "reason": reason, "at": now_utc(),
@@ -1633,7 +1634,7 @@ def make_job_class():
                                "unsettled_sources": self.unsettled(ticker)}
                 c["status_reason"] = (f"The model finished: {len(mine)} proposal{'s' if len(mine) != 1 else ''}, "
                                       f"{len(args['limitations'])} limitation{'s' if len(args['limitations']) != 1 else ''} "
-                                      f"recorded." + (f" {len(missing)} without a disposition." if missing else ""))
+                                      f"stated by the model." + (f" {len(missing)} without a disposition." if missing else ""))
             self.step(ticker, "finish", "Model", "Muse Spark", c["status_reason"], call_id=cid)
             return rc.envelope(cid, "ok" if not issues else "partial", {"finished": True}, issues), True
 
