@@ -537,6 +537,14 @@ def test_a_timed_out_rereview_keeps_earlier_findings_on_an_unchanged_basis(runs_
     assert "independently" not in audit_row["scope"]["label"]
     e = r["review"]["PTGX"]
     assert e["attempt"] == 2 and e["status"] == "incomplete" and e["attempts"][0]["status"] == "complete"
+    prior = run_json(runs_dir, rid)["run"]["research"]["review"]["PTGX"]
+    saved = e["attempts"][0]
+    assert saved["reviewer_ran"] == prior["reviewer_ran"]
+    assert saved["review"]["usage"] == prior["review"]["usage"]
+    assert saved["review"]["usage"]["model_requests"] > 0
+    assert saved["adjudicator"] == prior["adjudicator"]
+    assert saved["adjudication"] == prior["adjudication"]
+
     assert [x["kind"] for x in e["unbound_findings"]] == ["omission"]        # the earlier omission is kept too
     assert e["label"] == research.LABEL_PARTIAL_FINDINGS == r["label"]
 

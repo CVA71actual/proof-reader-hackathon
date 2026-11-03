@@ -350,3 +350,38 @@ def test_runs_without_research_keep_the_standing_footer():
     assert models_used({"run": {}}) is None
     for page in _pdf_pages(view):
         assert FOOTER in page
+
+
+@pytest.mark.parametrize("retry_name", ["DeepSeek V4 Pro", "Different reviewer"])
+def test_refused_retry_keeps_the_actual_earlier_reviewer_and_adjudicator(retry_name):
+    record = _refused_deepseek_record()
+    run = _with_review(record, dict(record["usage"]))
+    entry = run["run"]["research"]["review"]["PTGX"]
+    earlier = copy.deepcopy(entry)
+    earlier["review"]["usage"]["model_requests"] = 2
+    earlier["adjudicator"] = "Earlier adjudicator"
+    earlier["adjudication"] = {"status": "incomplete", "usage": {"model_requests": 1}}
+    entry["attempts"] = [earlier]
+    entry["reviewer"] = retry_name
+    entry["reviewer_ran"] = {**DEEPSEEK, "name": retry_name}
+    assert models_used(run)["reviewers"] == ["DeepSeek V4 Pro"]
+    assert models_used(run)["adjudicators"] == ["Earlier adjudicator"]
+    view = build_view(run, [], generated_at=FIXED_TIME)
+    assert "Review: DeepSeek V4 Pro" in view["footer"]
+    assert "no reviewer calls were made" not in view["counters_line"]
+    assert "(review incomplete)" in view["counters_line"]
+    assert "Different reviewer" not in view["footer"]
+    # The report survives a save/reload and never assigns the retry identity to history.
+    assert models_used(json.loads(json.dumps(run))) == models_used(run)
+
+
+def test_old_attempt_without_identity_or_usage_stays_unknown_after_refused_retry():
+    record = _refused_deepseek_record()
+    run = _with_review(record, dict(record["usage"]))
+    run["run"]["research"]["review"]["PTGX"]["attempts"] = [
+        {"attempt": 1, "status": "incomplete"}]
+    view = build_view(run, [], generated_at=FIXED_TIME)
+    assert "Review: unknown (record incomplete)" in view["footer"]
+    assert "Review: none ran" not in view["footer"]
+    assert "DeepSeek" not in view["footer"]
+    assert "no reviewer calls were made" not in view["counters_line"]

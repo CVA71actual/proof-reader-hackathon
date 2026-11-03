@@ -1199,8 +1199,11 @@ def make_job_class():
                 omissions = [f for f in record.get("findings") or [] if not f["row_revision_ids"]]
                 carried_omissions = [o for o in (prior or {}).get("unbound_findings") or []]   # never silently dropped
                 unbound = carried_omissions + [{**f, "attempt": attempt, "review_status": status} for f in omissions]
-                attempts = (prior.get("attempts") or []) + [{k: prior.get(k) for k in (
-                    "attempt", "status", "reason", "label", "started_at", "finished_at")}] if prior else []
+                attempts = (prior.get("attempts") or []) + [copy.deepcopy({k: prior.get(k) for k in (
+                    "attempt", "status", "reason", "label", "started_at", "finished_at",
+                    "reviewer", "reviewer_ran", "families", "adjudicator", "adjudication")} |
+                    {"review": {"usage": (prior.get("review") or {}).get("usage")},
+                     "usage": dict(prior.get("usage") or {})})] if prior else []
                 entry = {"stage": REVIEW_STAGE, "ticker": ticker, "attempt": attempt, "status": status,
                          "reason": record.get("reason"), "clean": bool(record.get("clean")),
                          "reviewer": (who_ran or {}).get("name"), "reviewer_ran": who_ran, "reviewer_choice": choice,
