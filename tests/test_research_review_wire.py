@@ -1283,6 +1283,150 @@ def test_review_label_currency_changed_bytes_and_new_rows_are_not_covered_by_an_
     assert "did not run (stage S2)" not in audit_scope
 
 
+# ------------------------------------------------------------------ ROW-LABEL-001: each row's label is its own
+
+
+def _row_and_sibling_with_a_finding(runs_dir):
+    """A complete review of two rows of one company: e1 assessed no_issue on its current material, e2 (a sibling with
+    its own program) assessed `finding` with one current finding, as save_review records them. The company record is
+    therefore not clean."""
+    import copy as _copy
+    from runs.research_labels import material_digest
+    run = _clean_review_run(runs_dir)
+    e1 = next(r for r in run["rows"] if r.get("research"))
+    e2 = _copy.deepcopy(e1)
+    e2["id"] = "e2"
+    e2["research"]["proposed"]["program"] = "EXPAND"
+    e2["research"]["proposed"]["title"] = "EXPAND topline data"
+    run["rows"].append(e2)
+    entry = run["run"]["research"]["review"]["PTGX"]
+    rec = entry["review"]
+    finding = {"finding_id": "F1", "kind": "lost_condition", "row_revision_ids": [{"row_id": "e2", "revision_id": 1}],
+               "evidence": [], "text": "The timing is conditional; the draft drops the condition.", "by": "DeepSeek V4 Pro"}
+    rec.update(clean=False, findings=[finding],
+               assessments=[{"row_id": "e1", "revision_id": 1, "verdict": "no_issue", "turn": 1, "finding_ids": []},
+                            {"row_id": "e2", "revision_id": 1, "verdict": "finding", "turn": 1, "finding_ids": ["F1"]}])
+    rec["reviewed"]["rows"] = [{"row_id": "e1", "revision_id": 1}, {"row_id": "e2", "revision_id": 1}]
+    entry["clean"] = False
+    e2["research"]["review"] = dict(e1["research"]["review"], verdict="finding",
+                                    reviewed_material=material_digest(run, e2))
+    e2["research"]["review_findings"] = [{"finding_id": "F1", "attempt": 1, "kind": "lost_condition",
+                                          "text": finding["text"], "by": "DeepSeek V4 Pro", "row_id": "e2",
+                                          "revision_id": 1, "current": True, "material": material_digest(run, e2),
+                                          "review_status": "complete"}]
+    return run
+
+
+REVIEWED = "Agent research — independently reviewed by DeepSeek V4 Pro (different model family from the researcher)"
+
+
+def _label(run, rid):
+    return next(r for r in run["rows"] if r["id"] == rid)["research"]["label"]
+
+
+def test_row_label_001_a_no_issue_row_is_reviewed_clean_while_its_sibling_carries_the_finding(runs_dir):
+    from runs.research_labels import derive_review_labels
+    run = _row_and_sibling_with_a_finding(runs_dir)
+    # the configured choice is never the label's reviewer: only the one recorded as having run
+    run["run"]["research"]["review"]["PTGX"]["reviewer_choice"]["name"] = "Claude Opus 5.5"
+    derive_review_labels(run)
+    assert _label(run, "e1") == REVIEWED + " (no findings)"
+    assert _label(run, "e2") == REVIEWED + " with findings"
+    # company and run aggregates keep the finding
+    assert run["run"]["research"]["review"]["PTGX"]["label"] == REVIEWED + " with findings"
+    assert run["run"]["research"]["label"] == REVIEWED + " with findings"
+    view = build_view(run, [], generated_at="2026-11-02T20:00:00+00:00")
+    assert view["research_label"] == REVIEWED + " with findings"
+
+
+def test_row_label_001_material_changed_after_the_review_is_not_reviewed(runs_dir):
+    from runs.research_labels import derive_review_labels
+    # (1) the row's recorded material no longer matches its current material
+    run = _row_and_sibling_with_a_finding(runs_dir)
+    next(r for r in run["rows"] if r["id"] == "e1")["research"]["review"]["reviewed_material"] = "0" * 64
+    derive_review_labels(run)
+    assert "(no findings)" not in _label(run, "e1") and _label(run, "e1").endswith("changed since its review")
+    assert _label(run, "e1").startswith(research.LABEL)
+    # (2) the consumed bytes change under the same revision
+    run = _row_and_sibling_with_a_finding(runs_dir)
+    sid = next(r for r in run["rows"] if r["id"] == "e1")["research"]["evidence"][0]["source_id"]
+    next(s for s in run["sources"] if s["id"] == sid)["pages"][0]["derived_words"] = {
+        "file": "pages/derived.words.json", "sha256": "0" * 64}
+    derive_review_labels(run)
+    assert "(no findings)" not in _label(run, "e1") and _label(run, "e1").startswith(research.LABEL)
+    # (3) a new revision of the row after the review
+    run = _row_and_sibling_with_a_finding(runs_dir)
+    next(r for r in run["rows"] if r["id"] == "e1")["research"]["revision"] = 2
+    derive_review_labels(run)
+    assert "(no findings)" not in _label(run, "e1") and _label(run, "e1").startswith(research.LABEL)
+
+
+def test_row_label_001_an_incomplete_review_never_gives_a_no_issue_row_complete_wording(runs_dir):
+    from runs.research_labels import derive_review_labels
+    run = _row_and_sibling_with_a_finding(runs_dir)
+    entry = run["run"]["research"]["review"]["PTGX"]
+    entry["status"] = entry["review"]["status"] = "incomplete"
+    for r in research_rows(run):
+        r["research"]["review"]["status"] = "incomplete"
+        for f in r["research"]["review_findings"]:
+            f["review_status"] = "incomplete"
+    derive_review_labels(run)
+    assert _label(run, "e1") == research.LABEL
+    assert "partly reviewed by DeepSeek V4 Pro" in _label(run, "e2") and "(incomplete)" in _label(run, "e2")
+    for text in (_label(run, "e1"), _label(run, "e2"), entry["label"], run["run"]["research"]["label"]):
+        assert "(no findings)" not in text and "independently reviewed by" not in text
+
+
+def test_row_label_001_a_row_without_its_own_no_issue_assessment_is_not_reviewed_clean(runs_dir):
+    from runs.research_labels import derive_review_labels
+    # (1) the reviewer gave e1 no verdict (rows_not_assessed), as save_review records it
+    run = _row_and_sibling_with_a_finding(runs_dir)
+    rec = run["run"]["research"]["review"]["PTGX"]["review"]
+    rec["assessments"] = [a for a in rec["assessments"] if a["row_id"] != "e1"]
+    rec["rows_not_assessed"] = [{"row_id": "e1", "revision_id": 1, "reason": "no verdict"}]
+    next(r for r in run["rows"] if r["id"] == "e1")["research"]["review"]["verdict"] = None
+    derive_review_labels(run)
+    assert _label(run, "e1") == research.LABEL
+    assert _label(run, "e2") == REVIEWED + " with findings"
+    # (2) the row's saved verdict says no_issue but the record has no such assessment: the record wins
+    run = _row_and_sibling_with_a_finding(runs_dir)
+    rec = run["run"]["research"]["review"]["PTGX"]["review"]
+    rec["assessments"] = [a for a in rec["assessments"] if a["row_id"] != "e1"]
+    derive_review_labels(run)
+    assert _label(run, "e1") == research.LABEL
+    # (3) the no_issue is on another revision of the row
+    run = _row_and_sibling_with_a_finding(runs_dir)
+    rec = run["run"]["research"]["review"]["PTGX"]["review"]
+    rec["assessments"][0]["revision_id"] = 7
+    derive_review_labels(run)
+    assert _label(run, "e1") == research.LABEL
+    # (4) a no_issue for e1 never clears e2, which still has its current finding
+    run = _row_and_sibling_with_a_finding(runs_dir)
+    rec = run["run"]["research"]["review"]["PTGX"]["review"]
+    rec["assessments"].append({"row_id": "e2", "revision_id": 1, "verdict": "no_issue", "turn": 2, "finding_ids": []})
+    derive_review_labels(run)
+    assert _label(run, "e2") == REVIEWED + " with findings"
+
+
+def test_row_label_001_review_wide_doubts_still_block_a_no_issue_row(runs_dir):
+    from runs.research_labels import derive_review_labels
+    # a rejected finding attempt may concern any row
+    run = _row_and_sibling_with_a_finding(runs_dir)
+    run["run"]["research"]["review"]["PTGX"]["review"]["rejected"] = [{"arguments": {}, "problems": ["bad quote"]}]
+    derive_review_labels(run)
+    assert _label(run, "e1") == research.LABEL
+    # a cited page the reviewer could not read
+    run = _row_and_sibling_with_a_finding(runs_dir)
+    run["run"]["research"]["review"]["PTGX"]["review"]["cited_pages_unread"] = [{"source_id": "x", "page_number": 1}]
+    derive_review_labels(run)
+    assert _label(run, "e1") == research.LABEL
+    # a source the review could not open: reviewed, never "(no findings)", the limit is named
+    run = _row_and_sibling_with_a_finding(runs_dir)
+    run["run"]["research"]["review"]["PTGX"]["review"]["limitations"] = [{"kind": "fetch", "url": "https://x"}]
+    derive_review_labels(run)
+    assert _label(run, "e1") == REVIEWED + " — 1 source could not be opened"
+
+
 def test_review_trail_says_same_family_when_muse_ran(runs_dir):
     primary = F.FakeChat([], refuse=REFUSED)
     fallback = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),

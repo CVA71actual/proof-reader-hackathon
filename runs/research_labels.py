@@ -10,7 +10,11 @@ the honest label without its file being rewritten.
 Never "verified". "independently reviewed" only for a COMPLETE review by a reviewer of another model family than the
 researcher; a same-family reviewer reads "reviewed by <name> (same model family as the researcher)"; findings from a
 review that did not complete read "partly reviewed ... (incomplete), findings so far"; every source the review could
-not open and every search that did not complete is named after a dash."""
+not open and every search that did not complete is named after a dash.
+
+ROW-LABEL-001: a row's label is its own. A row the complete review assessed no_issue on exactly its current material
+reads reviewed (no findings) even when a sibling row of the same company has a finding; that finding stays on the
+sibling, the company and the run. A no_issue never clears another row, an incomplete review, or a changed row."""
 
 from __future__ import annotations
 
@@ -131,6 +135,35 @@ def finding_current(run: dict, row: dict, f: dict) -> bool:
     return seen is None or seen == material_digest(run, row)
 
 
+def row_no_issue(row: dict, entry: dict) -> bool:
+    """ROW-LABEL-001: the COMPLETE review's own assessment of THIS row, on its current revision, is no_issue. Both the
+    record's assessment and the verdict saved on the row by that same attempt must say so; any disagreement, a missing
+    assessment, or a verdict saved by another attempt is not a no_issue (the less-reviewed label wins)."""
+    r = row.get("research") or {}
+    review = r.get("review") or {}
+    rev = str(r.get("revision"))
+    record = entry.get("review") or {}
+    verdicts = [a.get("verdict") for a in record.get("assessments") or []
+                if isinstance(a, dict) and str(a.get("row_id")) == str(row.get("id")) and str(a.get("revision_id")) == rev]
+    if verdicts != ["no_issue"] or review.get("verdict") != "no_issue" or review.get("status") != "complete":
+        return False
+    attempt = review.get("attempt")
+    return attempt is None or entry.get("attempt") is None or attempt == entry.get("attempt")
+
+
+def row_clean_kind(record: dict, limits: dict) -> str:
+    """The label kind of a covered row the complete review assessed no_issue. Another row's finding does not touch
+    it; what the review as a whole could not do still does: a rejected finding attempt or a cited page the reviewer
+    could not read may concern any row, so the row is not called reviewed; retrieval limits make it 'limited'."""
+    if record.get("rejected") or record.get("cited_pages_unread"):
+        return "none"
+    if record.get("clean"):
+        return "clean"
+    if record.get("limitations") or record.get("sources_not_given"):
+        return "limited" if any(limits.values()) else "none"     # a limitation this label cannot name: not reviewed
+    return "clean"
+
+
 def coverage_note(uncovered: int, total: int) -> str:
     return (f" — {uncovered} of {total} row{'s' if total != 1 else ''} changed or new since the review"
             if uncovered else "")
@@ -164,8 +197,8 @@ def derive_review_labels(run: dict) -> dict:
             kind = "findings"
         elif current:
             kind = "partial"
-        elif status == "complete" and record.get("clean") and covered:
-            kind = "clean"
+        elif status == "complete" and covered and (record.get("clean") or row_no_issue(row, entry)):
+            kind = row_clean_kind(record, limits)
         elif only_retrieval_limits(record, limits) and covered:
             kind = "limited"
         else:
