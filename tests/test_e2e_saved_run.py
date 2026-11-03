@@ -232,13 +232,6 @@ def _unopened(env: dict) -> int:
     return n
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "INTEGRATION DEFECT (UNKNOWN-001 / CLAIM-001): the saved review recorded 2 sources it could not open "
-    "(review.limitations kind fetch), but every label the person sees reads 'Agent research — partly reviewed "
-    "(incomplete), findings so far' with no '— 2 sources could not be opened'. The label is written once by "
-    "runs/research.py save_review and stored; runs.state, report.data and GET /api/runs/{id} pass the stored text "
-    "through and never derive the limit from the recorded limitations, so any run saved before the label fix "
-    "(this one, 21e10cd) silently hides its unopened sources."))
 def test_the_review_label_names_every_source_the_reviewer_could_not_open(reviewed):
     """UNKNOWN-001: a source the reviewer could not open is named in every label that claims a review."""
     n = _unopened(reviewed.env)
