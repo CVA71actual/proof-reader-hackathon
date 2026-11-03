@@ -233,7 +233,8 @@ def _unopened(env: dict) -> int:
 
 
 def test_the_review_label_names_every_source_the_reviewer_could_not_open(reviewed):
-    """UNKNOWN-001: a source the reviewer could not open is named in every label that claims a review."""
+    """UNKNOWN-001: a source the reviewer could not open is named in every label that claims a review. The saved
+    run predates the label fix; labels are now derived at read time (#177 847ca28), so the saved record shows it."""
     n = _unopened(reviewed.env)
     assert n == 2
     want = f"{n} source{'s' if n != 1 else ''} could not be opened"
