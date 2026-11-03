@@ -590,7 +590,12 @@ URLs are kept. Without a key the tool is not offered and the company's `search_l
 
 Independent review (RESEARCHER-FULL-001 S2 wiring, `runs/research.py` `review_company`): after each company's
 research ends, for any reason except a person's stop (finished, spend cap, a safety stop, a limit, a technical
-failure), `capture/research_reviewer.review_draft` attacks that company's draft. The reviewer is Claude Opus 5.5
+failure), `capture/research_reviewer.review_draft` attacks that company's draft. The reviewer is chosen once per run from an ordered chain (CVA 2026-11-03): DeepSeek V4 Pro
+(`deepseek-ai/DeepSeek-V4-Pro-0813`, Baseten, its own key BASETEN_DEEPSEEK_API_KEY, Chat Completions function tools;
+its separate `reasoning_content` is never taken as the answer or a tool call), then Claude Opus 5.5, then the declared
+same-family fallback Muse Spark Open. Each one skipped (no key, not available, a 401/403 or a billing refusal at the
+one-token access check or on its first call) is recorded with its reason in `run.research.reviewer_access.candidates`
+and `review[t].reviewer_choice.skipped`. Claude Opus 5.5 is
 (`claude-opus-5-5`, Anthropic, family Claude; MULTI-FAMILY-001, CVA 2026-11-03 "Claude for reviewer for now") through
 `capture/research_claude.py` (the anthropic SDK, imported lazily; `client.beta.messages.stream` + `get_final_message`,
 adaptive thinking with `block_binding: drop_block`, effort high, max_tokens 16384, tool_choice auto; NO server-side

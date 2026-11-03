@@ -294,11 +294,16 @@ def reviewer_model():
     return ClaudeChat()
 
 
+DEEPSEEK_KEY_ENV = "BASETEN_DEEPSEEK_API_KEY"
+
+
 def deepseek_reviewer_model() -> OneShotChat:
-    """DeepSeek V4 Pro on Baseten (Chat Completions with function tools; the same key and base URL as Muse Spark
-    Open). A configured option, not the default."""
+    """DeepSeek V4 Pro on Baseten: Chat Completions with function tools, its own key (BASETEN_DEEPSEEK_API_KEY; the
+    BASETEN_API_KEY is Muse-only). The first reviewer in the chain (CVA 2026-11-03). Its reply may carry a separate
+    reasoning_content field: parse_chat_response reads only message.content and message.tool_calls, so reasoning text
+    is never taken as the answer or as a tool call."""
     from capture import second_reader
-    return OneShotChat(DEEPSEEK_NAME, second_reader.BASETEN_BASE_URL, DEEPSEEK_MODEL_ID, "BASETEN_API_KEY",
+    return OneShotChat(DEEPSEEK_NAME, second_reader.BASETEN_BASE_URL, DEEPSEEK_MODEL_ID, DEEPSEEK_KEY_ENV,
                        "baseten", DEEPSEEK_FAMILY)
 
 

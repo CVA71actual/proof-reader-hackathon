@@ -1047,3 +1047,106 @@ def test_the_production_fallback_factory_records_its_own_provider():
                    "family": "Muse Spark (Meta)"}
     primary = rv.reviewer_model()
     assert rv.identity(primary)["provider"] == "anthropic" and rv.identity(primary)["family"] == "Claude"
+
+
+# ------------------------------------------------------------------ the reviewer chain (CVA 2026-11-03)
+
+DEEPSEEK = {"model": "deepseek-ai/DeepSeek-V4-Pro-0813", "name": "DeepSeek V4 Pro", "family": "DeepSeek",
+            "provider": "baseten"}
+
+
+def _chain_run(runs_dir, chain, fallback):
+    tools = F.tools({PR1: (200, "text/html; charset=utf-8", PAGE1)})
+    tools.reviewers = chain
+    tools.reviewer, tools.reviewer_fallback, tools.brave = chain[0], fallback, F.FakeBrave()
+    tools.adjudicator = F.FakeChat([], model=F.ADJUDICATOR_MODEL)
+    reader = F.FakeResponses(happy_script())
+    app = create_app(runs_dir=runs_dir, reader=reader, background=False, second_reader=None, wonder_reader=None,
+                     sam_reader=None, research_tools=tools, research_reader=reader)
+    rid = TestClient(app).post("/api/runs/new", json={"mode": "research", "companies": ["PTGX"],
+                                                      "as_of": "2026-11-02"}).json()["id"]
+    return run_json(runs_dir, rid)
+
+
+def _reviews():
+    return [F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"}))]
+
+
+def test_the_chain_picks_deepseek_first(runs_dir):
+    deepseek = F.FakeChat(_reviews(), probe=True, **DEEPSEEK)
+    claude = F.FakeChat([], probe=True)
+    run = _chain_run(runs_dir, [deepseek, claude], F.FakeChat([], **F.FALLBACK))
+    RUN_SCHEMA.validate(run)
+    r = run["run"]["research"]
+    e = r["review"]["PTGX"]
+    assert deepseek.probes == 1 and claude.probes == 0 and claude.sent == []
+    assert e["reviewer"] == "DeepSeek V4 Pro" and e["families"]["reviewer"]["provider"] == "baseten"
+    assert e["multi_family"]["met"] is True and r["reviewer_access"]["chosen"] == "DeepSeek V4 Pro"
+    assert e["label"] == ("Agent research — independently reviewed by DeepSeek V4 Pro (different model family from "
+                          "the researcher) (no findings)")
+
+
+def test_deepseek_refused_then_claude_reviews_and_the_skip_is_recorded(runs_dir):
+    deepseek = F.FakeChat([], refuse=REFUSED, **DEEPSEEK)
+    claude = F.FakeChat(_reviews(), probe=True)
+    run = _chain_run(runs_dir, [deepseek, claude], F.FakeChat([], **F.FALLBACK))
+    r = run["run"]["research"]
+    e = r["review"]["PTGX"]
+    assert deepseek.sent == [] and e["reviewer"] == "Claude Opus 5.5" and e["multi_family"]["met"] is True
+    skipped = e["reviewer_choice"]["skipped"]
+    assert [x["name"] for x in skipped] == ["DeepSeek V4 Pro"] and skipped[0]["http_status"] == 403
+    cands = r["reviewer_access"]["candidates"]
+    assert [(c["name"], c["skipped"]) for c in cands] == [("DeepSeek V4 Pro", True), ("Claude Opus 5.5", False)]
+    assert "independently reviewed by Claude Opus 5.5" in e["label"]
+    assert any("Reviewer skipped: DeepSeek V4 Pro" in s["text"] for s in r["steps"])
+
+
+def test_both_refused_then_muse_reviews_labelled_same_family(runs_dir):
+    from capture.research_claude import BILLING_REFUSED
+    deepseek = F.FakeChat([], refuse=REFUSED, **DEEPSEEK)
+    claude = F.FakeChat([], refuse="Your credit balance is too low to access the Anthropic API.")
+    claude._refusal = lambda: _billing(claude)
+    muse = F.FakeChat(_reviews(), **F.FALLBACK)
+    run = _chain_run(runs_dir, [deepseek, claude], muse)
+    r = run["run"]["research"]
+    e = r["review"]["PTGX"]
+    assert deepseek.sent == [] and claude.sent == [] and len(muse.sent) == 2
+    assert e["reviewer"] == "Muse Spark Open" and e["multi_family"]["met"] is False
+    assert [x["name"] for x in e["reviewer_choice"]["skipped"]] == ["DeepSeek V4 Pro", "Claude Opus 5.5"]
+    assert e["reviewer_choice"]["skipped"][1]["access_reason"] == BILLING_REFUSED
+    assert "reviewed by Muse Spark Open (same model family as the researcher)" in e["label"]
+    from tools import research_smoke
+    assert research_smoke.reviewer_line(r) == ("Reviewer: Muse Spark Open (fallback: DeepSeek V4 Pro refused 403; "
+                                               f"Claude Opus 5.5 {BILLING_REFUSED})")
+
+
+def _billing(fake):
+    from capture.research_claude import BILLING_REFUSED
+    reply = ChatReply(fake.model, error="Claude Opus 5.5 did not answer: BadRequestError (HTTP 400): credit balance "
+                                        "is too low", http_status=400, may_have_been_billed=False)
+    reply.access_reason = BILLING_REFUSED
+    return reply
+
+
+def test_a_reasoning_content_only_reply_is_not_an_answer():
+    """DeepSeek's separate reasoning_content is never taken as the answer or as a tool call."""
+    resp = {"model": "deepseek-ai/DeepSeek-V4-Pro-0813", "usage": {"prompt_tokens": 50, "completion_tokens": 40},
+            "choices": [{"finish_reason": "stop", "message": {
+                "role": "assistant", "content": None,
+                "reasoning_content": 'I should call finish_review: {"name": "finish_review", "arguments": {}}'}}]}
+    reply = rv.parse_chat_response(resp, "deepseek-ai/DeepSeek-V4-Pro-0813")
+    assert reply.content is None and reply.tool_calls == [] and reply.error is None
+    rec = rv.review_draft(company="X", assignment="a", proposals=[], sources=[], search=lambda q: [],
+                          fetch_capture=lambda u: None, spend_gate=lambda ev: {"t": 1}, model=F.FakeChat([reply]))
+    assert rec["status"] == "incomplete" and "without calling finish_review" in rec["reason"]
+
+
+def test_the_production_chain_is_deepseek_then_claude_with_their_own_keys():
+    from runs import research as R
+    tools = R.ResearchTools(fetcher=object(), render_html=lambda *a: None, resolve=lambda t: ("1", "x"),
+                            brave=F.FakeBrave(key=False))
+    chain = tools.reviewer_chain()
+    assert [rv.identity(m)["name"] for m in chain] == ["DeepSeek V4 Pro", "Claude Opus 5.5"]
+    assert chain[0].key_env == "BASETEN_DEEPSEEK_API_KEY" and rv.identity(chain[0])["provider"] == "baseten"
+    assert rv.identity(tools.reviewer_fallback)["name"] == "Muse Spark Open"
+    assert tools.reviewer_fallback.key_env == "BASETEN_API_KEY"
