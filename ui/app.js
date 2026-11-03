@@ -3924,12 +3924,28 @@
         pendEl.remove();
         if (!res.ok) {
           showDialogError((res.body && res.body.detail) || ('HTTP ' + res.status));
-          // DIALOGS-001 contract: a refused fix on changed material refreshes
-          // so the dialog re-binds to the current row
-          if (res.status === 409) refresh();
+          // UI-BASIS-OWN-SAVE / DIALOGS-001: a 409 means the row's material
+          // changed outside this dialog — the red line discloses it, then the
+          // refresh adopts the current basis so the person's NEXT save is
+          // judged against what is on screen; never an auto-submit
+          if (res.status === 409) {
+            refresh().then(function () {
+              if (dialogMount && dialogMount.key === currentRunId() + '/' + row.id + '/fix') {
+                dialogMount.basis = basisOf(row.id);
+              }
+            });
+          }
           return;
         }
         var st = res.body.state;
+        // UI-BASIS-OWN-SAVE: this dialog's OWN accepted save changed the
+        // proposal, so the basis it mounted is stale — adopt the returned
+        // current review_basis before the next edit, or every further save
+        // 409s forever against a basis the box outgrew
+        if (dialogMount && dialogMount.key === currentRunId() + '/' + row.id + '/fix' &&
+            res.body.state && res.body.state.review_basis) {
+          dialogMount.basis = res.body.state.review_basis;
+        }
         saves += 1;
         var fx = (st.fixes || []).slice(-1)[0];
         var rcRes = st.recheck && st.recheck.result;
@@ -5630,11 +5646,13 @@
       var list = both[0], dflt = both[1] && both[1].default_run;
       applyResearchSettings(both[1]);
       runs = list;
-      if (!runs.length) {
+      // an explicit #/<id> route resolves even when the runs list is empty
+      // (allowlist or fresh folder) — the empty message is only for no route
+      var start = route && route.runId;
+      if (!start && !runs.length) {
         document.getElementById('audit-rows').append(el('div', 'empty', 'No runs found under runs/.'));
         return;
       }
-      var start = route && route.runId;
       if (!start && dflt && runs.some(function (r) { return r.id === dflt; })) start = dflt;
       if (!start) start = (runs.filter(function (r) { return r.sample; })[0] || runs[0]).id;
       return A.run(start).then(function (body) {
