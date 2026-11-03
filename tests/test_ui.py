@@ -444,9 +444,10 @@ def _judgment_screen(row_id):
     js = (UI / "app.js").read_text()
     names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket", "rowBadge", "checkDot", "checkResultWord",
              "projected", "reviewClass", "fixStillOpen", "needsAttention", "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
-             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
-             "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith",
+             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds", "restoreFolds",
+             "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith", "captureFolds", "restoreFolds",
              "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText", "shownField", "projectionComplete", "partialProjection")
+    current_run_id_stub = 'function currentRunId() { return "run"; }\n'
     rows = [
         {"id": "r-cnr", "title": "ROW-COULD-NOT-RUN", "ticker": "ACME", "proposed_by": "Muse Spark",
          "checks": [], "date_text": "Q3 2027"},
@@ -488,7 +489,7 @@ function closeDialog() {}
 function openDialog() {}
 function seeTheCheck() { return { textContent: '', children: [] }; }
 """
-    script = prelude + "\n".join(_grab_fn(js, n) for n in names) + f"""
+    script = prelude + "var qnoteDraft = null;\n" + current_run_id_stub + "\n".join(_grab_fn(js, n) for n in names) + f"""
 var detail = {json.dumps(detail)};
 route.rowId = {json.dumps(row_id)};
 function textOf(node, out) {{
@@ -1475,11 +1476,12 @@ def test_your_call_note_survives_background_polling():
              "rowBadge", "checkDot", "checkResultWord", "projected", "projectionComplete", "partialProjection",
              "reviewClass", "fixStillOpen", "needsAttention",
              "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows", "mistakeFor",
-             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "judgmentDecidedPane",
+             "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds", "restoreFolds", "judgmentDecidedPane",
              "sayControls", "cancelSay", "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck", "listReasonLine",
              "shownDateText", "shownField", "whySection", "keptCurrent", "codeExclusionHistory", "detailsPane",
              "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "disagreementSection",
-             "postDecision", "checkFnFor", "reportUrl", "reportRefusalReason", "dayInWords", "eventWord")
+             "postDecision", "checkFnFor", "reportUrl", "reportRefusalReason", "dayInWords", "eventWord",
+             "renderJudgment")
     fns = "\n".join(_grab_fn(js, n) for n in names)
     script = "\n".join([
         "var STATUS_WORDS = { matched: 'matched', proposed: 'proposed', failed: 'failed', unreadable: 'unreadable', undecided: 'undecided' };",
@@ -1504,8 +1506,6 @@ def test_your_call_note_survives_background_polling():
         "function mistakeTypeWord(t) { return t; }",
         "var detail = { id: 'run1', run: { rows: [], mistakes: [], sources: [], tables: [], run: { label: 'probe' } },",
         "  state: { targets: {}, exclusions: [], mistake_list: [] } };",
-        "function rowTarget() { return {}; }",
-        "function rowOf() { return null; }",
         "function nearMissCheck() { return null; }",
         "function make() { return { tag: 'div', className: '', textContent: '', children: [], style: {}, hidden: false, value: '',",
         "  checked: false, dataset: {}, open: false, scrollTop: 0,",
@@ -1517,7 +1517,8 @@ def test_your_call_note_survives_background_polling():
         "    return hit; },",
         "  remove: function () {}, focus: function () { this.focused = true; },",
         "  setSelectionRange: function (a, b) { this.selectionStart = a; this.selectionEnd = b; } }; }",
-        "var nodes = {}; var sayRec = null; var qnoteOwner = null;",
+        "var nodes = {}; var sayRec = null; var qnoteDraft = null;",
+        "var route = { screen: 'judgment', rowId: null, dialog: null }; var judgmentSel = null;",
         "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
         "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; },",
         "  activeElement: null };",
@@ -1539,6 +1540,7 @@ def test_your_call_note_survives_background_polling():
         "if (!note1) { console.error('no qnote'); process.exit(2); }",
         "note1.value = 'mid-word draft here';",
         "note1.selectionStart = 7; note1.selectionEnd = 7;",
+        "if (note1.oninput) note1.oninput();",
         "judgmentPendingPane(host, row, t);   // background refresh, same row",
         "judgmentPendingPane(host, row, t);   // second interval",
         "var still = null;",
@@ -1551,6 +1553,24 @@ def test_your_call_note_survives_background_polling():
         "var fresh = null;",
         "(function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'textarea') fresh = fresh || c; walk(c); }); })(host);",
         "if (fresh === note1 || fresh.value !== '') { console.error('draft followed the row change'); process.exit(5); }",
+        # the reviewer's repro: drive renderJudgment itself — it CLEARS the
+        # pane before the pending pane runs, and the draft must still survive
+        "detail.run.rows = [row, row2];",
+        "detail.state.targets = { 'e1': t, 'e2': t };",
+        "qnoteDraft = null; route.screen = 'judgment'; route.rowId = 'e1'; judgmentSel = null;",
+        "renderJudgment();",
+        "var rj1 = null;",
+        "(function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'textarea') rj1 = rj1 || c; walk(c); }); })(nodes['judgment-det']);",
+        "if (!rj1) { console.error('renderJudgment built no note'); process.exit(6); }",
+        "rj1.value = 'Because the date is wrong';",
+        "rj1.selectionStart = 4; rj1.selectionEnd = 4;",
+        "if (rj1.oninput) rj1.oninput();",
+        "renderJudgment();   // a poll tick: the host is cleared, then rebuilt",
+        "renderJudgment();   // a second tick",
+        "var rj2 = null;",
+        "(function walk(n) { (n.children || []).forEach(function (c) { if (c.tag === 'textarea') rj2 = rj2 || c; walk(c); }); })(nodes['judgment-det']);",
+        "if (!rj2 || rj2.value !== 'Because the date is wrong' || rj2.selectionStart !== 4)",
+        "  { console.error('renderJudgment wiped the note: ' + (rj2 && rj2.value)); process.exit(7); }",
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
@@ -1564,7 +1584,8 @@ def test_source_view_check_and_scroll_survive_background_polling():
     import subprocess
 
     js = (UI / "app.js").read_text()
-    fns = "\n".join(_grab_fn(js, n) for n in ("el", "esc", "clear", "seeTheCheck", "captureSrcView", "restoreSrcView", "srcViewRouteKey"))
+    fns = "\n".join(_grab_fn(js, n) for n in ("el", "esc", "clear", "seeTheCheck", "captureFolds", "restoreFolds",
+                                               "captureSrcView", "restoreSrcView", "srcViewRouteKey"))
     script = "\n".join([
         "var CHECK_WORDS = { pass: 'passed', fail: 'failed', could_not_run: 'could not run', not_needed: 'not needed', unresolved: 'unresolved' };",
         "function currentRunId() { return 'run1'; }",
@@ -1584,7 +1605,13 @@ def test_source_view_check_and_scroll_survive_background_polling():
         "        if (wantChk && (!c.dataset || c.dataset.check !== wantChk[1])) return;",
         "        hit = c; }",
         "      walk(c); }); })(this);",
-        "    return hit; } }; }",
+        "    return hit; },",
+        "  querySelectorAll: function (sel) { var out = [];",
+        "    (function walk(n) { (n.children || []).forEach(function (c) {",
+        "      if (c.tag === 'details' && sel === 'details.fold[data-check]') out.push(c);",
+        "      if (c.tag === 'details' && sel === 'details.fold[data-check][open]' && c.open) out.push(c);",
+        "      walk(c); }); })(this);",
+        "    return out; } }; }",
         "var nodes = {};",
         "var route = { srcId: 's1', page: 'p1', valueId: 'v1' };",
         "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
@@ -3960,8 +3987,8 @@ def test_cleared_date_text_regression_addendum3():
     names = ("el", "esc", "clear", "btn", "statusBadge", "decidedBadge", "decidedWord", "reviewBucket",
              "rowBadge", "checkDot", "checkResultWord", "projected", "reviewClass", "fixStillOpen",
              "needsAttention", "effectiveChecks", "rowTarget", "rowOf", "unresolvedRows", "decidedRows",
-             "mistakeFor", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane",
-             "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith",
+             "mistakeFor", "judgmentRow", "correctedSection", "checksSection", "judgmentPendingPane", "captureFolds", "restoreFolds",
+             "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay", "sayBusyWith", "captureFolds", "restoreFolds",
              "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText", "shownField",
              "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane",
              "disagreementSection", "whySection", "checksSection", "keptCurrent", "codeExclusionHistory", "projectionComplete", "partialProjection", "projectionComplete", "partialProjection")
@@ -3975,6 +4002,7 @@ def test_cleared_date_text_regression_addendum3():
         "var EVENT_WORDS = { filing: 'Filing' };",
         "var judgmentSel = null; var route = { screen: 'judgment', rowId: null, dialog: null };",
         "var posts = [];",
+        "function currentRunId() { return 'run1'; }",
         "function navigate() {}",
         "function postDecision(id, body) { posts.push({ id: id, body: body }); }",
         "function exclusionFor() { return null; }",
@@ -3989,7 +4017,7 @@ def test_cleared_date_text_regression_addendum3():
         "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
         "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
         "  querySelector: function () { return null; } }; }",
-        "var nodes = {}; var sayRec = null;",
+        "var nodes = {}; var sayRec = null; var qnoteDraft = null;",
         "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
         "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
         fns,
@@ -4870,7 +4898,7 @@ def test_m1_undo_click_posts_the_undo(tmp_path):
              "reviewClass", "fixStillOpen", "needsAttention", "effectiveChecks", "rowTarget", "rowOf",
              "unresolvedRows", "decidedRows", "mistakeFor", "judgmentRow", "correctedSection", "checksSection",
              "judgmentPendingPane", "judgmentDecidedPane", "renderJudgment", "sayControls", "cancelSay",
-             "sayBusyWith", "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText",
+             "sayBusyWith", "captureFolds", "restoreFolds", "revealRow", "sourceOf", "nearMissCheck", "listReasonLine", "shownDateText",
              "shownField", "typeCategoryValue", "typePresentationPairs", "plainTypeValue", "detailsPane",
              "disagreementSection", "whySection", "keptCurrent", "codeExclusionHistory", "projectionComplete", "partialProjection", "projectionComplete", "partialProjection")
     fns = "\n".join(_grab_fn(js, n) for n in names)
@@ -4883,6 +4911,7 @@ def test_m1_undo_click_posts_the_undo(tmp_path):
         "var EVENT_WORDS = { filing: 'Filing' };",
         "var judgmentSel = null; var route = { screen: 'judgment', rowId: null, dialog: null };",
         "var posts = [];",
+        "function currentRunId() { return 'run1'; }",
         "function navigate() {}",
         "function postDecision(id, body) { posts.push({ id: id, body: body }); }",
         "function exclusionFor() { return null; }",
@@ -4897,7 +4926,7 @@ def test_m1_undo_click_posts_the_undo(tmp_path):
         "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
         "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
         "  querySelector: function () { return null; } }; }",
-        "var nodes = {}; var sayRec = null;",
+        "var nodes = {}; var sayRec = null; var qnoteDraft = null;",
         "global.document = { createElement: function (t) { var n = make(); n.tag = t; return n; },",
         "  getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
         fns,
