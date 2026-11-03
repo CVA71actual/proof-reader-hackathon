@@ -113,6 +113,20 @@ class RunStore:
             return []
         return sorted(p.parent.name for p in self.runs_dir.glob("*/run.json") if _SAFE_ID.match(p.parent.name))
 
+    def listed_ids(self) -> list[str] | None:
+        """The ids runs/LISTED.json says the Saved runs list shows ({"listed": [...]}); None when the file is
+        missing (then every run is listed). A run that is not listed stays openable by its id and its API."""
+        f = self.runs_dir / "LISTED.json"
+        if not f.is_file():
+            return None
+        try:
+            listed = json.loads(f.read_text()).get("listed")
+        except (ValueError, AttributeError):
+            raise HTTPException(500, "runs/LISTED.json is not an object with a \"listed\" list.") from None
+        if not isinstance(listed, list) or not all(isinstance(x, str) for x in listed):
+            raise HTTPException(500, "runs/LISTED.json is not an object with a \"listed\" list.")
+        return listed
+
     def run(self, run_id: str) -> dict:
         """run.json, after every page file it names has been checked against its recorded hash."""
         d = self.run_dir(run_id)
@@ -267,6 +281,7 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
     voice_locks: dict[str, asyncio.Lock] = {}   # one lock per run_id: voice calls on a run go one at a time
     store = RunStore(runs_dir)
     list_cache: dict[str, tuple[str, dict]] = {}
+    created_here: set[str] = set()   # runs New run made in this server's lifetime: listed whatever LISTED.json says
     # A production second reader carries mutable routing flags and the current
     # job's fallback callback. Never share it across independently started jobs.
     default_second_for_job = second_reader == "default" and reader is None
@@ -329,8 +344,12 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
 
     @app.get("/api/runs")
     def list_runs() -> list[dict]:
+        """Every run, or only those runs/LISTED.json names plus the ones New run made since this server started."""
         out = []
+        listed = store.listed_ids()
         for run_id in store.ids():
+            if listed is not None and run_id not in listed and run_id not in created_here:
+                continue
             try:
                 stamp = store.list_stamp(run_id)
                 cached = list_cache.get(run_id)
@@ -413,6 +432,7 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
                 return intake_refusal(e)
             run_index = intake_mod.snapshot_into_run(store.runs_dir / run_id, store.runs_dir, rec,
                                                      choices["companies"], left_out)
+        created_here.add(run_id)
         start_job(run_id, run_index)
         return jobs_view(store, run_id)
 

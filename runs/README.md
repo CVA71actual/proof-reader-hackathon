@@ -21,6 +21,12 @@ For offline UI work the committed files still stand on their own: `runs/sample/r
 Schemas (JSON Schema 2020-12): `schema/run.schema.json` and `schema/decision.schema.json`.
 Every path inside `run.json` (page images, words files) is relative to the run's folder.
 
+## Which runs the Saved runs list shows
+
+`runs/LISTED.json` (`{"listed": ["sample", ...]}`) names the runs `GET /api/runs` lists, plus any run New run
+made since this server started. A run that is not listed is not deleted: `/#/<id>` and `/api/runs/<id>` still serve
+it, so tests and links that use the older runs keep working. No file: every run is listed.
+
 ## Two runs to build against
 
 - **`runs/demo/`**: label "Saved demo run". Real data only: one source (Ionis annual report, page 95), one table
