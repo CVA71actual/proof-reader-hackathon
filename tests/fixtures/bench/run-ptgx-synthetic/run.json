@@ -1,0 +1,3858 @@
+{
+ "schema_version": 1,
+ "run": {
+  "id": "run-ptgx-synthetic",
+  "number": 1,
+  "label": "PTGX \u00b7 bench scorer fixture (synthetic)",
+  "sample": true,
+  "started_at": "2026-11-03T09:00:00+00:00",
+  "finished_at": "2026-11-03T09:00:00+00:00",
+  "as_of": "2026-11-03",
+  "choices": {
+   "companies": [
+    "PTGX"
+   ],
+   "event_types": [],
+   "time_window_months": 6,
+   "spending_limit_usd": null,
+   "note_for_agent": null
+  },
+  "spend_usd": 0.0,
+  "status": "done",
+  "pages_read": 1,
+  "pages_total": 1
+ },
+ "sources": [
+  {
+   "id": "src-bench-ptgx",
+   "publisher": "Sample source (made up for the sample run)",
+   "kind": "company_release",
+   "title": "Bench fixture page (made-up PTGX update)",
+   "url": null,
+   "published_date": "2026-11-02",
+   "captured_at": "2026-10-27T15:01:00+00:00",
+   "sha256": "b1c303a69a3f92d9834af06420ea1ddaf4c011a3041907abc85737fc85f0d7f6",
+   "pages": [
+    {
+     "page_number": 1,
+     "image": "pages/src-bench-ptgx-p1.png",
+     "width_pt": 612.0,
+     "height_pt": 792.0,
+     "words": "pages/src-bench-ptgx-p1.words.json",
+     "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+     "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+     "visual_evidence": {
+      "origin": "text_layer",
+      "overlays_supported": true,
+      "reason": null
+     }
+    }
+   ]
+  }
+ ],
+ "tables": [],
+ "rows": [
+  {
+   "id": "e1",
+   "ticker": "PTGX",
+   "company": "Protagonist Therapeutics, Inc.",
+   "event_type": "unknown",
+   "type_hint": "trial initiation",
+   "relevance": "Wholly-owned oral IL-17 antagonist advancing into Phase 2b.",
+   "conditions": [],
+   "subject_company": "Protagonist Therapeutics, Inc.",
+   "relation": "wholly-owned",
+   "title": "PN-881 Phase 2b psoriasis program initiation",
+   "date_text": "early Q1 2027",
+   "date": null,
+   "date_end": null,
+   "quote": "PN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.",
+   "program": "PN-881",
+   "indication": "psoriasis",
+   "source_id": "src-bench-ptgx",
+   "page_number": 1,
+   "box": [
+    53.5,
+    97.68,
+    454.35,
+    113.79
+   ],
+   "proposed_by": "bench fixture (no model)",
+   "sample": true,
+   "research": {
+    "label": "Bench fixture \u2014 made-up row",
+    "revision": 1,
+    "call_id": "bench",
+    "ticker": "PTGX",
+    "action": "initiate Phase 2b",
+    "modality": null,
+    "relevance_kind": "interpretation",
+    "placement_proposal": "upcoming",
+    "prior_row_ids": [],
+    "evidence": [],
+    "primary_span_index": 0,
+    "near_duplicates": [],
+    "revisions": []
+   },
+   "status": "matched",
+   "group": "unverified",
+   "reason": "Bench fixture row; checks recorded.",
+   "checks": [
+    {
+     "name": "quote_match",
+     "label": "Quote found on page",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote is printed on the page, word for word.",
+     "compared": {
+      "looked_for": "PN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.",
+      "found": "PN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.",
+      "word_ids": [
+       "w7",
+       "w8",
+       "w9",
+       "w10",
+       "w11",
+       "w12",
+       "w13",
+       "w14",
+       "w15",
+       "w16",
+       "w17",
+       "w18",
+       "w19",
+       "w20"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "quote_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "PN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.",
+       "box": [
+        53.5,
+        97.68,
+        454.35,
+        113.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The quote is printed on the page, word for word.",
+       "compared": {
+        "looked_for": "PN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.",
+        "found": "PN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.",
+        "word_ids": [
+         "w7",
+         "w8",
+         "w9",
+         "w10",
+         "w11",
+         "w12",
+         "w13",
+         "w14",
+         "w15",
+         "w16",
+         "w17",
+         "w18",
+         "w19",
+         "w20"
+        ]
+       }
+      },
+      "input_sha256": "d5d8d05226b289662a300ee5eba815b453ab111e513479b902c0cb85e3b68b14",
+      "assessment_sha256": "01462cda8e10cb075c90e086399d524fe98f13a8e9cad567b74d434b8599ecde"
+     }
+    },
+    {
+     "name": "selector_match",
+     "label": "Citation located",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+     "compared": {
+      "looked_for": "PN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.",
+      "found": "PN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.",
+      "box": [
+       53.5,
+       97.68,
+       454.35,
+       113.79
+      ],
+      "word_ids": [
+       "w7",
+       "w8",
+       "w9",
+       "w10",
+       "w11",
+       "w12",
+       "w13",
+       "w14",
+       "w15",
+       "w16",
+       "w17",
+       "w18",
+       "w19",
+       "w20"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/selector_match.py",
+      "function": "selector_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "PN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.",
+       "box": [
+        53.5,
+        97.68,
+        454.35,
+        113.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+       "compared": {
+        "looked_for": "PN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.",
+        "found": "PN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.",
+        "box": [
+         53.5,
+         97.68,
+         454.35,
+         113.79
+        ],
+        "word_ids": [
+         "w7",
+         "w8",
+         "w9",
+         "w10",
+         "w11",
+         "w12",
+         "w13",
+         "w14",
+         "w15",
+         "w16",
+         "w17",
+         "w18",
+         "w19",
+         "w20"
+        ]
+       }
+      },
+      "input_sha256": "d5d8d05226b289662a300ee5eba815b453ab111e513479b902c0cb85e3b68b14",
+      "assessment_sha256": "7be1aef1dd1bfa6e6afc6342fb1c563a077a3b61ae86c9baa6575bbcbc08b0ed"
+     }
+    },
+    {
+     "name": "date_match",
+     "label": "Date period found in quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote names a period, not a day; the period words are printed in it. Quote: \u201cPN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.\u201d. Parsed date/period: 2027-01-01 to 2027-01-31. This compares date bounds only; whether the date belongs to this event needs your review.",
+     "compared": {
+      "looked_for": "early Q1 2027",
+      "found": "2027-01-01 to 2027-01-31",
+      "timing": {
+       "wording": "early Q1 2027",
+       "start": "2027-01-01",
+       "end": "2027-01-31",
+       "precision": "period"
+      }
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "date_match"
+     },
+     "assessment": {
+      "inputs": {
+       "date_text": "early Q1 2027",
+       "quote": "PN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.",
+       "source_published_date": "2026-11-02"
+      },
+      "evaluation_mode": {
+       "date_person_selected": false
+      },
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The quote names a period, not a day; the period words are printed in it. Quote: \u201cPN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027.\u201d. Parsed date/period: 2027-01-01 to 2027-01-31. This compares date bounds only; whether the date belongs to this event needs your review.",
+       "compared": {
+        "looked_for": "early Q1 2027",
+        "found": "2027-01-01 to 2027-01-31",
+        "timing": {
+         "wording": "early Q1 2027",
+         "start": "2027-01-01",
+         "end": "2027-01-31",
+         "precision": "period"
+        }
+       }
+      },
+      "input_sha256": "3df231c17d20f740398f05b3f7a3bc6d9160132f4a645ee5523a22a2707e799b",
+      "assessment_sha256": "65824b018d336661903e4fe6387fc814378ba03c2808a180cfadc1870d5cdbd5"
+     }
+    },
+    {
+     "name": "source_rule",
+     "label": "Source is more than a calendar",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The source is not a third-party calendar.",
+     "compared": {
+      "looked_for": "company_release",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "source_rule"
+     },
+     "assessment": {
+      "inputs": {
+       "source_kind": "company_release"
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The source is not a third-party calendar.",
+       "compared": {
+        "looked_for": "company_release",
+        "found": null
+       }
+      },
+      "input_sha256": "cc9fc2bd3afe36fa904cc61d4b82cae0b15eeddcca11754726f412ca0433c621",
+      "assessment_sha256": "bb28ca98d63529823eb8136320cee1a88df370de8f8c691d62ba14ada3526de1"
+     }
+    },
+    {
+     "name": "type_match",
+     "label": "Event meaning needs review",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+     "compared": {
+      "looked_for": "unknown",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     },
+     "assessment": {
+      "inputs": {
+       "event_type": "unknown",
+       "quote": "PN-881: initiation of the Phase 2b psoriasis program is expected in early Q1 2027."
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "not_needed",
+       "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+       "compared": {
+        "looked_for": "unknown",
+        "found": null
+       }
+      },
+      "input_sha256": "e07f1daeb7f2e93e001f6a84e24486dfe7314fb8e0103a8bb877d2efc18b61a6",
+      "assessment_sha256": "b4d3dc9d1f3d67fa1c32db25a96f81a4ed2e7f6cb9de61a7e59d58a92b182297"
+     }
+    }
+   ],
+   "trail": []
+  },
+  {
+   "id": "e2",
+   "ticker": "PTGX",
+   "company": "Protagonist Therapeutics, Inc.",
+   "event_type": "unknown",
+   "type_hint": "trial initiation",
+   "relevance": "Hepcidin mimetic entering the clinic.",
+   "conditions": [],
+   "subject_company": "Protagonist Therapeutics, Inc.",
+   "relation": "wholly-owned",
+   "title": "PN-8047 Phase 1 initiation",
+   "date_text": "Q1 2027",
+   "date": "2027-01-01",
+   "date_end": "2027-03-31",
+   "quote": "PN-8047: Phase 1 initiation is anticipated in Q1 2027.",
+   "program": "PN-8047",
+   "indication": null,
+   "source_id": "src-bench-ptgx",
+   "page_number": 1,
+   "box": [
+    53.5,
+    125.68,
+    314.97,
+    141.79
+   ],
+   "proposed_by": "bench fixture (no model)",
+   "sample": true,
+   "research": {
+    "label": "Bench fixture \u2014 made-up row",
+    "revision": 1,
+    "call_id": "bench",
+    "ticker": "PTGX",
+    "action": "initiate Phase 1",
+    "modality": null,
+    "relevance_kind": "interpretation",
+    "placement_proposal": "upcoming",
+    "prior_row_ids": [],
+    "evidence": [],
+    "primary_span_index": 0,
+    "near_duplicates": [],
+    "revisions": []
+   },
+   "status": "matched",
+   "group": "unverified",
+   "reason": "Bench fixture row; checks recorded.",
+   "checks": [
+    {
+     "name": "quote_match",
+     "label": "Quote found on page",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote is printed on the page, word for word.",
+     "compared": {
+      "looked_for": "PN-8047: Phase 1 initiation is anticipated in Q1 2027.",
+      "found": "PN-8047: Phase 1 initiation is anticipated in Q1 2027.",
+      "word_ids": [
+       "w21",
+       "w22",
+       "w23",
+       "w24",
+       "w25",
+       "w26",
+       "w27",
+       "w28",
+       "w29"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "quote_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "PN-8047: Phase 1 initiation is anticipated in Q1 2027.",
+       "box": [
+        53.5,
+        125.68,
+        314.97,
+        141.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The quote is printed on the page, word for word.",
+       "compared": {
+        "looked_for": "PN-8047: Phase 1 initiation is anticipated in Q1 2027.",
+        "found": "PN-8047: Phase 1 initiation is anticipated in Q1 2027.",
+        "word_ids": [
+         "w21",
+         "w22",
+         "w23",
+         "w24",
+         "w25",
+         "w26",
+         "w27",
+         "w28",
+         "w29"
+        ]
+       }
+      },
+      "input_sha256": "6728cf6974c7fb1cdacae0c7e962b6e29eeebbcf8554b9d2b11a9799cf1987ff",
+      "assessment_sha256": "7402d68db22584909e740abf03293a8f844567aa61801a762bd67418a5ccdfc9"
+     }
+    },
+    {
+     "name": "selector_match",
+     "label": "Citation located",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+     "compared": {
+      "looked_for": "PN-8047: Phase 1 initiation is anticipated in Q1 2027.",
+      "found": "PN-8047: Phase 1 initiation is anticipated in Q1 2027.",
+      "box": [
+       53.5,
+       125.68,
+       314.97,
+       141.79
+      ],
+      "word_ids": [
+       "w21",
+       "w22",
+       "w23",
+       "w24",
+       "w25",
+       "w26",
+       "w27",
+       "w28",
+       "w29"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/selector_match.py",
+      "function": "selector_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "PN-8047: Phase 1 initiation is anticipated in Q1 2027.",
+       "box": [
+        53.5,
+        125.68,
+        314.97,
+        141.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+       "compared": {
+        "looked_for": "PN-8047: Phase 1 initiation is anticipated in Q1 2027.",
+        "found": "PN-8047: Phase 1 initiation is anticipated in Q1 2027.",
+        "box": [
+         53.5,
+         125.68,
+         314.97,
+         141.79
+        ],
+        "word_ids": [
+         "w21",
+         "w22",
+         "w23",
+         "w24",
+         "w25",
+         "w26",
+         "w27",
+         "w28",
+         "w29"
+        ]
+       }
+      },
+      "input_sha256": "6728cf6974c7fb1cdacae0c7e962b6e29eeebbcf8554b9d2b11a9799cf1987ff",
+      "assessment_sha256": "255524ae5a582bcab4197a6108984069e5985d7cf92f68431363a1e458082989"
+     }
+    },
+    {
+     "name": "date_match",
+     "label": "Date period found in quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The period in the row is the period printed in the quote. Quote: \u201cPN-8047: Phase 1 initiation is anticipated in Q1 2027.\u201d. Parsed date/period: 2027-01-01 to 2027-03-31. This compares date bounds only; whether the date belongs to this event needs your review.",
+     "compared": {
+      "looked_for": "2027-01-01 to 2027-03-31",
+      "found": "2027-01-01 to 2027-03-31",
+      "timing": {
+       "wording": "Q1 2027",
+       "start": "2027-01-01",
+       "end": "2027-03-31",
+       "precision": "period"
+      }
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "date_match"
+     },
+     "assessment": {
+      "inputs": {
+       "date_text": "Q1 2027",
+       "quote": "PN-8047: Phase 1 initiation is anticipated in Q1 2027.",
+       "source_published_date": "2026-11-02"
+      },
+      "evaluation_mode": {
+       "date_person_selected": false
+      },
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The period in the row is the period printed in the quote. Quote: \u201cPN-8047: Phase 1 initiation is anticipated in Q1 2027.\u201d. Parsed date/period: 2027-01-01 to 2027-03-31. This compares date bounds only; whether the date belongs to this event needs your review.",
+       "compared": {
+        "looked_for": "2027-01-01 to 2027-03-31",
+        "found": "2027-01-01 to 2027-03-31",
+        "timing": {
+         "wording": "Q1 2027",
+         "start": "2027-01-01",
+         "end": "2027-03-31",
+         "precision": "period"
+        }
+       }
+      },
+      "input_sha256": "92e7fcbef60170239e8179dca2b3f12d0957e41aa49fdb068b38df75342ca4d8",
+      "assessment_sha256": "3ace79e85bf3c990db9037905da263ec48728bc8392b7071c95e08668285dce3"
+     }
+    },
+    {
+     "name": "source_rule",
+     "label": "Source is more than a calendar",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The source is not a third-party calendar.",
+     "compared": {
+      "looked_for": "company_release",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "source_rule"
+     },
+     "assessment": {
+      "inputs": {
+       "source_kind": "company_release"
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The source is not a third-party calendar.",
+       "compared": {
+        "looked_for": "company_release",
+        "found": null
+       }
+      },
+      "input_sha256": "cc9fc2bd3afe36fa904cc61d4b82cae0b15eeddcca11754726f412ca0433c621",
+      "assessment_sha256": "bb28ca98d63529823eb8136320cee1a88df370de8f8c691d62ba14ada3526de1"
+     }
+    },
+    {
+     "name": "type_match",
+     "label": "Event meaning needs review",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+     "compared": {
+      "looked_for": "unknown",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     },
+     "assessment": {
+      "inputs": {
+       "event_type": "unknown",
+       "quote": "PN-8047: Phase 1 initiation is anticipated in Q1 2027."
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "not_needed",
+       "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+       "compared": {
+        "looked_for": "unknown",
+        "found": null
+       }
+      },
+      "input_sha256": "8100b265de9a970b9729ce8e2e95565204897d994fbd34f549b8436276b2e757",
+      "assessment_sha256": "c9e1e8deebd70c8c74724a3aba175f8da7411368b2725a0f60dc8d473da4bd02"
+     }
+    }
+   ],
+   "trail": []
+  },
+  {
+   "id": "e3",
+   "ticker": "PTGX",
+   "company": "Protagonist Therapeutics, Inc.",
+   "event_type": "unknown",
+   "type_hint": "partner event",
+   "relevance": "Partner Takeda may discuss rusfertide.",
+   "conditions": [],
+   "subject_company": "Protagonist Therapeutics, Inc.",
+   "relation": "wholly-owned",
+   "title": "Takeda Capital Markets Day",
+   "date_text": "December 11, 2026",
+   "date": "2026-12-11",
+   "date_end": null,
+   "quote": "Takeda will host its Capital Markets Day on December 11, 2026.",
+   "program": null,
+   "indication": null,
+   "source_id": "src-bench-ptgx",
+   "page_number": 1,
+   "box": [
+    53.5,
+    153.68,
+    367.5,
+    169.79
+   ],
+   "proposed_by": "bench fixture (no model)",
+   "sample": true,
+   "research": {
+    "label": "Bench fixture \u2014 made-up row",
+    "revision": 1,
+    "call_id": "bench",
+    "ticker": "PTGX",
+    "action": "host capital markets day",
+    "modality": null,
+    "relevance_kind": "interpretation",
+    "placement_proposal": "context",
+    "prior_row_ids": [],
+    "evidence": [],
+    "primary_span_index": 0,
+    "near_duplicates": [],
+    "revisions": []
+   },
+   "status": "matched",
+   "group": "unverified",
+   "reason": "Bench fixture row; checks recorded.",
+   "checks": [
+    {
+     "name": "quote_match",
+     "label": "Quote found on page",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote is printed on the page, word for word.",
+     "compared": {
+      "looked_for": "Takeda will host its Capital Markets Day on December 11, 2026.",
+      "found": "Takeda will host its Capital Markets Day on December 11, 2026.",
+      "word_ids": [
+       "w30",
+       "w31",
+       "w32",
+       "w33",
+       "w34",
+       "w35",
+       "w36",
+       "w37",
+       "w38",
+       "w39",
+       "w40"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "quote_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "Takeda will host its Capital Markets Day on December 11, 2026.",
+       "box": [
+        53.5,
+        153.68,
+        367.5,
+        169.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The quote is printed on the page, word for word.",
+       "compared": {
+        "looked_for": "Takeda will host its Capital Markets Day on December 11, 2026.",
+        "found": "Takeda will host its Capital Markets Day on December 11, 2026.",
+        "word_ids": [
+         "w30",
+         "w31",
+         "w32",
+         "w33",
+         "w34",
+         "w35",
+         "w36",
+         "w37",
+         "w38",
+         "w39",
+         "w40"
+        ]
+       }
+      },
+      "input_sha256": "d28b52d440e10d756d5340df0cd1d1fa1ebddf5ade9df1bc763caf13ee679a7d",
+      "assessment_sha256": "ce053186f4da1c1a7a1d212492e1cc005d087d060ba6b7e03cfc9965b72955e1"
+     }
+    },
+    {
+     "name": "selector_match",
+     "label": "Citation located",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+     "compared": {
+      "looked_for": "Takeda will host its Capital Markets Day on December 11, 2026.",
+      "found": "Takeda will host its Capital Markets Day on December 11, 2026.",
+      "box": [
+       53.5,
+       153.68,
+       367.5,
+       169.79
+      ],
+      "word_ids": [
+       "w30",
+       "w31",
+       "w32",
+       "w33",
+       "w34",
+       "w35",
+       "w36",
+       "w37",
+       "w38",
+       "w39",
+       "w40"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/selector_match.py",
+      "function": "selector_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "Takeda will host its Capital Markets Day on December 11, 2026.",
+       "box": [
+        53.5,
+        153.68,
+        367.5,
+        169.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+       "compared": {
+        "looked_for": "Takeda will host its Capital Markets Day on December 11, 2026.",
+        "found": "Takeda will host its Capital Markets Day on December 11, 2026.",
+        "box": [
+         53.5,
+         153.68,
+         367.5,
+         169.79
+        ],
+        "word_ids": [
+         "w30",
+         "w31",
+         "w32",
+         "w33",
+         "w34",
+         "w35",
+         "w36",
+         "w37",
+         "w38",
+         "w39",
+         "w40"
+        ]
+       }
+      },
+      "input_sha256": "d28b52d440e10d756d5340df0cd1d1fa1ebddf5ade9df1bc763caf13ee679a7d",
+      "assessment_sha256": "eb6139018aaca2fcee4d073d483fc46575e511f3929dadb8cc71e696634d1c42"
+     }
+    },
+    {
+     "name": "date_match",
+     "label": "Date period found in quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The day in the row is the day printed in the quote. Quote: \u201cTakeda will host its Capital Markets Day on December 11, 2026.\u201d. Parsed date/period: 2026-12-11. This compares date bounds only; whether the date belongs to this event needs your review.",
+     "compared": {
+      "looked_for": "2026-12-11",
+      "found": "2026-12-11",
+      "timing": {
+       "wording": "December 11, 2026",
+       "start": "2026-12-11",
+       "end": "2026-12-11",
+       "precision": "day"
+      }
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "date_match"
+     },
+     "assessment": {
+      "inputs": {
+       "date_text": "December 11, 2026",
+       "quote": "Takeda will host its Capital Markets Day on December 11, 2026.",
+       "source_published_date": "2026-11-02"
+      },
+      "evaluation_mode": {
+       "date_person_selected": false
+      },
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The day in the row is the day printed in the quote. Quote: \u201cTakeda will host its Capital Markets Day on December 11, 2026.\u201d. Parsed date/period: 2026-12-11. This compares date bounds only; whether the date belongs to this event needs your review.",
+       "compared": {
+        "looked_for": "2026-12-11",
+        "found": "2026-12-11",
+        "timing": {
+         "wording": "December 11, 2026",
+         "start": "2026-12-11",
+         "end": "2026-12-11",
+         "precision": "day"
+        }
+       }
+      },
+      "input_sha256": "43ca80c0fa01619f1e062e24283d7773e40d57326b6f3e4ea613218c84c029e4",
+      "assessment_sha256": "9364aa883936e43efac3c4aaf4cdddaee34256f5730351fb165f265e16e38a2e"
+     }
+    },
+    {
+     "name": "source_rule",
+     "label": "Source is more than a calendar",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The source is not a third-party calendar.",
+     "compared": {
+      "looked_for": "company_release",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "source_rule"
+     },
+     "assessment": {
+      "inputs": {
+       "source_kind": "company_release"
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The source is not a third-party calendar.",
+       "compared": {
+        "looked_for": "company_release",
+        "found": null
+       }
+      },
+      "input_sha256": "cc9fc2bd3afe36fa904cc61d4b82cae0b15eeddcca11754726f412ca0433c621",
+      "assessment_sha256": "bb28ca98d63529823eb8136320cee1a88df370de8f8c691d62ba14ada3526de1"
+     }
+    },
+    {
+     "name": "type_match",
+     "label": "Event meaning needs review",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+     "compared": {
+      "looked_for": "unknown",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     },
+     "assessment": {
+      "inputs": {
+       "event_type": "unknown",
+       "quote": "Takeda will host its Capital Markets Day on December 11, 2026."
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "not_needed",
+       "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+       "compared": {
+        "looked_for": "unknown",
+        "found": null
+       }
+      },
+      "input_sha256": "d70122aa04e95430541891ebd0aa1b17bde19560108ba75378331f69888f5499",
+      "assessment_sha256": "a32c011be4d67617fd32514b2049dfc27f58b75b38e4c44475016f2084b1a45e"
+     }
+    }
+   ],
+   "trail": []
+  },
+  {
+   "id": "e4",
+   "ticker": "PTGX",
+   "company": "Protagonist Therapeutics, Inc.",
+   "event_type": "unknown",
+   "type_hint": "trial initiation",
+   "relevance": "Oral obesity candidate.",
+   "conditions": [],
+   "subject_company": "Protagonist Therapeutics, Inc.",
+   "relation": "wholly-owned",
+   "title": "PN-477o Phase 1 initiation",
+   "date_text": "the second half of 2027",
+   "date": "2027-07-01",
+   "date_end": "2027-12-31",
+   "quote": "PN-477o: Phase 1 initiation is planned for the second half of 2027.",
+   "program": "PN-477o",
+   "indication": null,
+   "source_id": "src-bench-ptgx",
+   "page_number": 1,
+   "box": [
+    53.5,
+    181.68,
+    377.35,
+    197.79
+   ],
+   "proposed_by": "bench fixture (no model)",
+   "sample": true,
+   "research": {
+    "label": "Bench fixture \u2014 made-up row",
+    "revision": 1,
+    "call_id": "bench",
+    "ticker": "PTGX",
+    "action": "initiate Phase 1",
+    "modality": null,
+    "relevance_kind": "interpretation",
+    "placement_proposal": "upcoming",
+    "prior_row_ids": [],
+    "evidence": [],
+    "primary_span_index": 0,
+    "near_duplicates": [],
+    "revisions": []
+   },
+   "status": "matched",
+   "group": "unverified",
+   "reason": "Bench fixture row; checks recorded.",
+   "checks": [
+    {
+     "name": "quote_match",
+     "label": "Quote found on page",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote is printed on the page, word for word.",
+     "compared": {
+      "looked_for": "PN-477o: Phase 1 initiation is planned for the second half of 2027.",
+      "found": "PN-477o: Phase 1 initiation is planned for the second half of 2027.",
+      "word_ids": [
+       "w41",
+       "w42",
+       "w43",
+       "w44",
+       "w45",
+       "w46",
+       "w47",
+       "w48",
+       "w49",
+       "w50",
+       "w51",
+       "w52"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "quote_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "PN-477o: Phase 1 initiation is planned for the second half of 2027.",
+       "box": [
+        53.5,
+        181.68,
+        377.35,
+        197.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The quote is printed on the page, word for word.",
+       "compared": {
+        "looked_for": "PN-477o: Phase 1 initiation is planned for the second half of 2027.",
+        "found": "PN-477o: Phase 1 initiation is planned for the second half of 2027.",
+        "word_ids": [
+         "w41",
+         "w42",
+         "w43",
+         "w44",
+         "w45",
+         "w46",
+         "w47",
+         "w48",
+         "w49",
+         "w50",
+         "w51",
+         "w52"
+        ]
+       }
+      },
+      "input_sha256": "7cde87754be245dbe524f13fd3800f1456b13499d7e2e5f0f94ff8454a788fbe",
+      "assessment_sha256": "a210797485432b53b6f1f0d8016f7c5e73eb2b7bf520d99aaac60364ee1c1239"
+     }
+    },
+    {
+     "name": "selector_match",
+     "label": "Citation located",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+     "compared": {
+      "looked_for": "PN-477o: Phase 1 initiation is planned for the second half of 2027.",
+      "found": "PN-477o: Phase 1 initiation is planned for the second half of 2027.",
+      "box": [
+       53.5,
+       181.68,
+       377.35,
+       197.79
+      ],
+      "word_ids": [
+       "w41",
+       "w42",
+       "w43",
+       "w44",
+       "w45",
+       "w46",
+       "w47",
+       "w48",
+       "w49",
+       "w50",
+       "w51",
+       "w52"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/selector_match.py",
+      "function": "selector_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "PN-477o: Phase 1 initiation is planned for the second half of 2027.",
+       "box": [
+        53.5,
+        181.68,
+        377.35,
+        197.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+       "compared": {
+        "looked_for": "PN-477o: Phase 1 initiation is planned for the second half of 2027.",
+        "found": "PN-477o: Phase 1 initiation is planned for the second half of 2027.",
+        "box": [
+         53.5,
+         181.68,
+         377.35,
+         197.79
+        ],
+        "word_ids": [
+         "w41",
+         "w42",
+         "w43",
+         "w44",
+         "w45",
+         "w46",
+         "w47",
+         "w48",
+         "w49",
+         "w50",
+         "w51",
+         "w52"
+        ]
+       }
+      },
+      "input_sha256": "7cde87754be245dbe524f13fd3800f1456b13499d7e2e5f0f94ff8454a788fbe",
+      "assessment_sha256": "21f1bf38d0a9723a8bcbd63820c1fa5a4c7628a67b55e9fea5c9fe711b4e59a5"
+     }
+    },
+    {
+     "name": "date_match",
+     "label": "Date period found in quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The period in the row is the period printed in the quote. Quote: \u201cPN-477o: Phase 1 initiation is planned for the second half of 2027.\u201d. Parsed date/period: 2027-07-01 to 2027-12-31. This compares date bounds only; whether the date belongs to this event needs your review.",
+     "compared": {
+      "looked_for": "2027-07-01 to 2027-12-31",
+      "found": "2027-07-01 to 2027-12-31",
+      "timing": {
+       "wording": "the second half of 2027",
+       "start": "2027-07-01",
+       "end": "2027-12-31",
+       "precision": "period"
+      }
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "date_match"
+     },
+     "assessment": {
+      "inputs": {
+       "date_text": "the second half of 2027",
+       "quote": "PN-477o: Phase 1 initiation is planned for the second half of 2027.",
+       "source_published_date": "2026-11-02"
+      },
+      "evaluation_mode": {
+       "date_person_selected": false
+      },
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The period in the row is the period printed in the quote. Quote: \u201cPN-477o: Phase 1 initiation is planned for the second half of 2027.\u201d. Parsed date/period: 2027-07-01 to 2027-12-31. This compares date bounds only; whether the date belongs to this event needs your review.",
+       "compared": {
+        "looked_for": "2027-07-01 to 2027-12-31",
+        "found": "2027-07-01 to 2027-12-31",
+        "timing": {
+         "wording": "the second half of 2027",
+         "start": "2027-07-01",
+         "end": "2027-12-31",
+         "precision": "period"
+        }
+       }
+      },
+      "input_sha256": "230340dccea4bfb82d9555d4fac5107be874137d1880ff4ee3e1c9e1c50adb30",
+      "assessment_sha256": "00caacef0240c2818f2df5fa70dd4562cb5fe677bae3cc8dd1fd7ce87e594c7b"
+     }
+    },
+    {
+     "name": "source_rule",
+     "label": "Source is more than a calendar",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The source is not a third-party calendar.",
+     "compared": {
+      "looked_for": "company_release",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "source_rule"
+     },
+     "assessment": {
+      "inputs": {
+       "source_kind": "company_release"
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The source is not a third-party calendar.",
+       "compared": {
+        "looked_for": "company_release",
+        "found": null
+       }
+      },
+      "input_sha256": "cc9fc2bd3afe36fa904cc61d4b82cae0b15eeddcca11754726f412ca0433c621",
+      "assessment_sha256": "bb28ca98d63529823eb8136320cee1a88df370de8f8c691d62ba14ada3526de1"
+     }
+    },
+    {
+     "name": "type_match",
+     "label": "Event meaning needs review",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+     "compared": {
+      "looked_for": "unknown",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     },
+     "assessment": {
+      "inputs": {
+       "event_type": "unknown",
+       "quote": "PN-477o: Phase 1 initiation is planned for the second half of 2027."
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "not_needed",
+       "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+       "compared": {
+        "looked_for": "unknown",
+        "found": null
+       }
+      },
+      "input_sha256": "be0406fcf756e23656e4fbe751ae86acede58bb8461ec0af7c2dc6cfdbb2f0af",
+      "assessment_sha256": "08228aa4e7f0385ae6b33dd9475f8f1069e6b5c16337a406512f5604f4a593e2"
+     }
+    }
+   ],
+   "trail": []
+  },
+  {
+   "id": "e5",
+   "ticker": "PTGX",
+   "company": "Protagonist Therapeutics, Inc.",
+   "event_type": "unknown",
+   "type_hint": "partner event",
+   "relevance": "Partner J&J may update on icotrokinra.",
+   "conditions": [],
+   "subject_company": "Protagonist Therapeutics, Inc.",
+   "relation": "wholly-owned",
+   "title": "J&J Enterprise Business Review",
+   "date_text": "December 8, 2026",
+   "date": "2026-12-08",
+   "date_end": null,
+   "quote": "J&J will hold its Enterprise Business Review on December 8, 2026.",
+   "program": null,
+   "indication": null,
+   "source_id": "src-bench-ptgx",
+   "page_number": 1,
+   "box": [
+    53.5,
+    209.68,
+    380.95,
+    225.79
+   ],
+   "proposed_by": "bench fixture (no model)",
+   "sample": true,
+   "research": {
+    "label": "Bench fixture \u2014 made-up row",
+    "revision": 1,
+    "call_id": "bench",
+    "ticker": "PTGX",
+    "action": "host business review",
+    "modality": null,
+    "relevance_kind": "interpretation",
+    "placement_proposal": "upcoming",
+    "prior_row_ids": [],
+    "evidence": [],
+    "primary_span_index": 0,
+    "near_duplicates": [],
+    "revisions": []
+   },
+   "status": "matched",
+   "group": "unverified",
+   "reason": "Bench fixture row; checks recorded.",
+   "checks": [
+    {
+     "name": "quote_match",
+     "label": "Quote found on page",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote is printed on the page, word for word.",
+     "compared": {
+      "looked_for": "J&J will hold its Enterprise Business Review on December 8, 2026.",
+      "found": "J&J will hold its Enterprise Business Review on December 8, 2026.",
+      "word_ids": [
+       "w53",
+       "w54",
+       "w55",
+       "w56",
+       "w57",
+       "w58",
+       "w59",
+       "w60",
+       "w61",
+       "w62",
+       "w63"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "quote_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "J&J will hold its Enterprise Business Review on December 8, 2026.",
+       "box": [
+        53.5,
+        209.68,
+        380.95,
+        225.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The quote is printed on the page, word for word.",
+       "compared": {
+        "looked_for": "J&J will hold its Enterprise Business Review on December 8, 2026.",
+        "found": "J&J will hold its Enterprise Business Review on December 8, 2026.",
+        "word_ids": [
+         "w53",
+         "w54",
+         "w55",
+         "w56",
+         "w57",
+         "w58",
+         "w59",
+         "w60",
+         "w61",
+         "w62",
+         "w63"
+        ]
+       }
+      },
+      "input_sha256": "d0f417caa30729dcf6600a9d4194a8da68e3606a72ce160f63d8967e0ff7354d",
+      "assessment_sha256": "0de2156270705190c7af80fcbf33e10cdfaaca6ee35dbdb905ccff3a538fa2bf"
+     }
+    },
+    {
+     "name": "selector_match",
+     "label": "Citation located",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+     "compared": {
+      "looked_for": "J&J will hold its Enterprise Business Review on December 8, 2026.",
+      "found": "J&J will hold its Enterprise Business Review on December 8, 2026.",
+      "box": [
+       53.5,
+       209.68,
+       380.95,
+       225.79
+      ],
+      "word_ids": [
+       "w53",
+       "w54",
+       "w55",
+       "w56",
+       "w57",
+       "w58",
+       "w59",
+       "w60",
+       "w61",
+       "w62",
+       "w63"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/selector_match.py",
+      "function": "selector_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "J&J will hold its Enterprise Business Review on December 8, 2026.",
+       "box": [
+        53.5,
+        209.68,
+        380.95,
+        225.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+       "compared": {
+        "looked_for": "J&J will hold its Enterprise Business Review on December 8, 2026.",
+        "found": "J&J will hold its Enterprise Business Review on December 8, 2026.",
+        "box": [
+         53.5,
+         209.68,
+         380.95,
+         225.79
+        ],
+        "word_ids": [
+         "w53",
+         "w54",
+         "w55",
+         "w56",
+         "w57",
+         "w58",
+         "w59",
+         "w60",
+         "w61",
+         "w62",
+         "w63"
+        ]
+       }
+      },
+      "input_sha256": "d0f417caa30729dcf6600a9d4194a8da68e3606a72ce160f63d8967e0ff7354d",
+      "assessment_sha256": "544388c393901292579c9cf83f6621e87643b923daee90c21d6d5709208af250"
+     }
+    },
+    {
+     "name": "date_match",
+     "label": "Date period found in quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The day in the row is the day printed in the quote. Quote: \u201cJ&J will hold its Enterprise Business Review on December 8, 2026.\u201d. Parsed date/period: 2026-12-08. This compares date bounds only; whether the date belongs to this event needs your review.",
+     "compared": {
+      "looked_for": "2026-12-08",
+      "found": "2026-12-08",
+      "timing": {
+       "wording": "December 8, 2026",
+       "start": "2026-12-08",
+       "end": "2026-12-08",
+       "precision": "day"
+      }
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "date_match"
+     },
+     "assessment": {
+      "inputs": {
+       "date_text": "December 8, 2026",
+       "quote": "J&J will hold its Enterprise Business Review on December 8, 2026.",
+       "source_published_date": "2026-11-02"
+      },
+      "evaluation_mode": {
+       "date_person_selected": false
+      },
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The day in the row is the day printed in the quote. Quote: \u201cJ&J will hold its Enterprise Business Review on December 8, 2026.\u201d. Parsed date/period: 2026-12-08. This compares date bounds only; whether the date belongs to this event needs your review.",
+       "compared": {
+        "looked_for": "2026-12-08",
+        "found": "2026-12-08",
+        "timing": {
+         "wording": "December 8, 2026",
+         "start": "2026-12-08",
+         "end": "2026-12-08",
+         "precision": "day"
+        }
+       }
+      },
+      "input_sha256": "222012d2cd76d245ad37c0a4054007eb6e3a117acf6645aae10bab7ba692caa9",
+      "assessment_sha256": "c98f6e1b49cf63f9ba87b4740255c5ce3f0d28b4863f346d58e3a6265e9b452f"
+     }
+    },
+    {
+     "name": "source_rule",
+     "label": "Source is more than a calendar",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The source is not a third-party calendar.",
+     "compared": {
+      "looked_for": "company_release",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "source_rule"
+     },
+     "assessment": {
+      "inputs": {
+       "source_kind": "company_release"
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The source is not a third-party calendar.",
+       "compared": {
+        "looked_for": "company_release",
+        "found": null
+       }
+      },
+      "input_sha256": "cc9fc2bd3afe36fa904cc61d4b82cae0b15eeddcca11754726f412ca0433c621",
+      "assessment_sha256": "bb28ca98d63529823eb8136320cee1a88df370de8f8c691d62ba14ada3526de1"
+     }
+    },
+    {
+     "name": "type_match",
+     "label": "Event meaning needs review",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+     "compared": {
+      "looked_for": "unknown",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     },
+     "assessment": {
+      "inputs": {
+       "event_type": "unknown",
+       "quote": "J&J will hold its Enterprise Business Review on December 8, 2026."
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "not_needed",
+       "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+       "compared": {
+        "looked_for": "unknown",
+        "found": null
+       }
+      },
+      "input_sha256": "de25dd00b58063251f249cbab7d7834262c8b4a3cd46d046c6896562210ede75",
+      "assessment_sha256": "f1956aad48f68feb4b775d09808b883206106a8a4e46ad0deca0a34b3b5d9c38"
+     }
+    }
+   ],
+   "trail": []
+  },
+  {
+   "id": "e6",
+   "ticker": "PTGX",
+   "company": "Protagonist Therapeutics, Inc.",
+   "event_type": "unknown",
+   "type_hint": "partner event",
+   "relevance": "Partner J&J webcast.",
+   "conditions": [],
+   "subject_company": "Protagonist Therapeutics, Inc.",
+   "relation": "wholly-owned",
+   "title": "Johnson & Johnson business review webcast",
+   "date_text": "December 8, 2026",
+   "date": "2026-12-08",
+   "date_end": null,
+   "quote": "Johnson & Johnson business review webcast is scheduled for December 8, 2026.",
+   "program": null,
+   "indication": null,
+   "source_id": "src-bench-ptgx",
+   "page_number": 1,
+   "box": [
+    53.5,
+    237.68,
+    452.51,
+    253.79
+   ],
+   "proposed_by": "bench fixture (no model)",
+   "sample": true,
+   "research": {
+    "label": "Bench fixture \u2014 made-up row",
+    "revision": 1,
+    "call_id": "bench",
+    "ticker": "PTGX",
+    "action": "host business review",
+    "modality": null,
+    "relevance_kind": "interpretation",
+    "placement_proposal": "upcoming",
+    "prior_row_ids": [],
+    "evidence": [],
+    "primary_span_index": 0,
+    "near_duplicates": [],
+    "revisions": []
+   },
+   "status": "matched",
+   "group": "unverified",
+   "reason": "Bench fixture row; checks recorded.",
+   "checks": [
+    {
+     "name": "quote_match",
+     "label": "Quote found on page",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote is printed on the page, word for word.",
+     "compared": {
+      "looked_for": "Johnson & Johnson business review webcast is scheduled for December 8, 2026.",
+      "found": "Johnson & Johnson business review webcast is scheduled for December 8, 2026.",
+      "word_ids": [
+       "w64",
+       "w65",
+       "w66",
+       "w67",
+       "w68",
+       "w69",
+       "w70",
+       "w71",
+       "w72",
+       "w73",
+       "w74",
+       "w75"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "quote_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "Johnson & Johnson business review webcast is scheduled for December 8, 2026.",
+       "box": [
+        53.5,
+        237.68,
+        452.51,
+        253.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The quote is printed on the page, word for word.",
+       "compared": {
+        "looked_for": "Johnson & Johnson business review webcast is scheduled for December 8, 2026.",
+        "found": "Johnson & Johnson business review webcast is scheduled for December 8, 2026.",
+        "word_ids": [
+         "w64",
+         "w65",
+         "w66",
+         "w67",
+         "w68",
+         "w69",
+         "w70",
+         "w71",
+         "w72",
+         "w73",
+         "w74",
+         "w75"
+        ]
+       }
+      },
+      "input_sha256": "061734d9ee5e419645c84482c506d3fb45ce97ea2ac914dd3635631b47f46d04",
+      "assessment_sha256": "cf711efbe326eb514a2c4f4ef0fac84bbfdcff76fbee1ca542105f51ad23ca0d"
+     }
+    },
+    {
+     "name": "selector_match",
+     "label": "Citation located",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+     "compared": {
+      "looked_for": "Johnson & Johnson business review webcast is scheduled for December 8, 2026.",
+      "found": "Johnson & Johnson business review webcast is scheduled for December 8, 2026.",
+      "box": [
+       53.5,
+       237.68,
+       452.51,
+       253.79
+      ],
+      "word_ids": [
+       "w64",
+       "w65",
+       "w66",
+       "w67",
+       "w68",
+       "w69",
+       "w70",
+       "w71",
+       "w72",
+       "w73",
+       "w74",
+       "w75"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/selector_match.py",
+      "function": "selector_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "Johnson & Johnson business review webcast is scheduled for December 8, 2026.",
+       "box": [
+        53.5,
+        237.68,
+        452.51,
+        253.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+       "compared": {
+        "looked_for": "Johnson & Johnson business review webcast is scheduled for December 8, 2026.",
+        "found": "Johnson & Johnson business review webcast is scheduled for December 8, 2026.",
+        "box": [
+         53.5,
+         237.68,
+         452.51,
+         253.79
+        ],
+        "word_ids": [
+         "w64",
+         "w65",
+         "w66",
+         "w67",
+         "w68",
+         "w69",
+         "w70",
+         "w71",
+         "w72",
+         "w73",
+         "w74",
+         "w75"
+        ]
+       }
+      },
+      "input_sha256": "061734d9ee5e419645c84482c506d3fb45ce97ea2ac914dd3635631b47f46d04",
+      "assessment_sha256": "caf062a671c0434632b74981bf0a32bcf28ab2f135a5c7e8a584cdb121d3be01"
+     }
+    },
+    {
+     "name": "date_match",
+     "label": "Date period found in quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The day in the row is the day printed in the quote. Quote: \u201cJohnson & Johnson business review webcast is scheduled for December 8, 2026.\u201d. Parsed date/period: 2026-12-08. This compares date bounds only; whether the date belongs to this event needs your review.",
+     "compared": {
+      "looked_for": "2026-12-08",
+      "found": "2026-12-08",
+      "timing": {
+       "wording": "December 8, 2026",
+       "start": "2026-12-08",
+       "end": "2026-12-08",
+       "precision": "day"
+      }
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "date_match"
+     },
+     "assessment": {
+      "inputs": {
+       "date_text": "December 8, 2026",
+       "quote": "Johnson & Johnson business review webcast is scheduled for December 8, 2026.",
+       "source_published_date": "2026-11-02"
+      },
+      "evaluation_mode": {
+       "date_person_selected": false
+      },
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The day in the row is the day printed in the quote. Quote: \u201cJohnson & Johnson business review webcast is scheduled for December 8, 2026.\u201d. Parsed date/period: 2026-12-08. This compares date bounds only; whether the date belongs to this event needs your review.",
+       "compared": {
+        "looked_for": "2026-12-08",
+        "found": "2026-12-08",
+        "timing": {
+         "wording": "December 8, 2026",
+         "start": "2026-12-08",
+         "end": "2026-12-08",
+         "precision": "day"
+        }
+       }
+      },
+      "input_sha256": "e148ac1caf9c996e1269bf58a1da27a578aac9ab7ed57e0d68c7c13abaaece8d",
+      "assessment_sha256": "7d983b5d342566f43004d858d819fd07a835b49448cbb30d473853f1ee940b40"
+     }
+    },
+    {
+     "name": "source_rule",
+     "label": "Source is more than a calendar",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The source is not a third-party calendar.",
+     "compared": {
+      "looked_for": "company_release",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "source_rule"
+     },
+     "assessment": {
+      "inputs": {
+       "source_kind": "company_release"
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The source is not a third-party calendar.",
+       "compared": {
+        "looked_for": "company_release",
+        "found": null
+       }
+      },
+      "input_sha256": "cc9fc2bd3afe36fa904cc61d4b82cae0b15eeddcca11754726f412ca0433c621",
+      "assessment_sha256": "bb28ca98d63529823eb8136320cee1a88df370de8f8c691d62ba14ada3526de1"
+     }
+    },
+    {
+     "name": "type_match",
+     "label": "Event meaning needs review",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+     "compared": {
+      "looked_for": "unknown",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     },
+     "assessment": {
+      "inputs": {
+       "event_type": "unknown",
+       "quote": "Johnson & Johnson business review webcast is scheduled for December 8, 2026."
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "not_needed",
+       "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+       "compared": {
+        "looked_for": "unknown",
+        "found": null
+       }
+      },
+      "input_sha256": "1256e2197a2b7bc0647be81ec3b47ce92602dafdfa4f916c110717758dd2b61f",
+      "assessment_sha256": "ec2a9698b8bb1842e954b0d5e04e7e51b99efb06607a3c1c0c096851bbf9506c"
+     }
+    }
+   ],
+   "trail": []
+  },
+  {
+   "id": "e7",
+   "ticker": "PTGX",
+   "company": "Protagonist Therapeutics, Inc.",
+   "event_type": "unknown",
+   "type_hint": "launch",
+   "relevance": "First commercial product.",
+   "conditions": [],
+   "subject_company": "Protagonist Therapeutics, Inc.",
+   "relation": "wholly-owned",
+   "title": "Rusfertide commercial launch",
+   "date_text": "Q4 2026",
+   "date": "2026-10-01",
+   "date_end": "2026-12-31",
+   "quote": "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026.",
+   "program": "rusfertide",
+   "indication": null,
+   "source_id": "src-bench-ptgx",
+   "page_number": 1,
+   "box": [
+    53.5,
+    265.67,
+    476.97,
+    281.79
+   ],
+   "proposed_by": "bench fixture (no model)",
+   "sample": true,
+   "research": {
+    "label": "Bench fixture \u2014 made-up row",
+    "revision": 1,
+    "call_id": "bench",
+    "ticker": "PTGX",
+    "action": "commercial launch",
+    "modality": null,
+    "relevance_kind": "interpretation",
+    "placement_proposal": "upcoming",
+    "prior_row_ids": [],
+    "evidence": [],
+    "primary_span_index": 0,
+    "near_duplicates": [],
+    "revisions": []
+   },
+   "status": "matched",
+   "group": "unverified",
+   "reason": "Bench fixture row; checks recorded.",
+   "checks": [
+    {
+     "name": "quote_match",
+     "label": "Quote found on page",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote is printed on the page, word for word.",
+     "compared": {
+      "looked_for": "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026.",
+      "found": "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026.",
+      "word_ids": [
+       "w76",
+       "w77",
+       "w78",
+       "w79",
+       "w80",
+       "w81",
+       "w82",
+       "w83",
+       "w84",
+       "w85",
+       "w86"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "quote_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026.",
+       "box": [
+        53.5,
+        265.67,
+        476.97,
+        281.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The quote is printed on the page, word for word.",
+       "compared": {
+        "looked_for": "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026.",
+        "found": "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026.",
+        "word_ids": [
+         "w76",
+         "w77",
+         "w78",
+         "w79",
+         "w80",
+         "w81",
+         "w82",
+         "w83",
+         "w84",
+         "w85",
+         "w86"
+        ]
+       }
+      },
+      "input_sha256": "5a5c39e76e23772dcb948ba89ee761e50504d96bb24cbfe126b43ab0bc055b6b",
+      "assessment_sha256": "1cb5e0539e577c8f998302545b9c2d80d1dd4b7c70c947e6d94d211811866aa6"
+     }
+    },
+    {
+     "name": "selector_match",
+     "label": "Citation located",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+     "compared": {
+      "looked_for": "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026.",
+      "found": "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026.",
+      "box": [
+       53.5,
+       265.67,
+       476.97,
+       281.79
+      ],
+      "word_ids": [
+       "w76",
+       "w77",
+       "w78",
+       "w79",
+       "w80",
+       "w81",
+       "w82",
+       "w83",
+       "w84",
+       "w85",
+       "w86"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/selector_match.py",
+      "function": "selector_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026.",
+       "box": [
+        53.5,
+        265.67,
+        476.97,
+        281.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+       "compared": {
+        "looked_for": "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026.",
+        "found": "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026.",
+        "box": [
+         53.5,
+         265.67,
+         476.97,
+         281.79
+        ],
+        "word_ids": [
+         "w76",
+         "w77",
+         "w78",
+         "w79",
+         "w80",
+         "w81",
+         "w82",
+         "w83",
+         "w84",
+         "w85",
+         "w86"
+        ]
+       }
+      },
+      "input_sha256": "5a5c39e76e23772dcb948ba89ee761e50504d96bb24cbfe126b43ab0bc055b6b",
+      "assessment_sha256": "99b0e30c708de1ac00ab77dcb901ca4a5fee66a63294370b034083a78f75e0b1"
+     }
+    },
+    {
+     "name": "date_match",
+     "label": "Date period found in quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The period in the row is the period printed in the quote. Quote: \u201cRusfertide commercial launch preparations continue, with launch expected in Q4 2026.\u201d. Parsed date/period: 2026-10-01 to 2026-12-31. This compares date bounds only; whether the date belongs to this event needs your review.",
+     "compared": {
+      "looked_for": "2026-10-01 to 2026-12-31",
+      "found": "2026-10-01 to 2026-12-31",
+      "timing": {
+       "wording": "Q4 2026",
+       "start": "2026-10-01",
+       "end": "2026-12-31",
+       "precision": "period"
+      }
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "date_match"
+     },
+     "assessment": {
+      "inputs": {
+       "date_text": "Q4 2026",
+       "quote": "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026.",
+       "source_published_date": "2026-11-02"
+      },
+      "evaluation_mode": {
+       "date_person_selected": false
+      },
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The period in the row is the period printed in the quote. Quote: \u201cRusfertide commercial launch preparations continue, with launch expected in Q4 2026.\u201d. Parsed date/period: 2026-10-01 to 2026-12-31. This compares date bounds only; whether the date belongs to this event needs your review.",
+       "compared": {
+        "looked_for": "2026-10-01 to 2026-12-31",
+        "found": "2026-10-01 to 2026-12-31",
+        "timing": {
+         "wording": "Q4 2026",
+         "start": "2026-10-01",
+         "end": "2026-12-31",
+         "precision": "period"
+        }
+       }
+      },
+      "input_sha256": "43b02eb8a2792efd2c64c909805765d080f91e342a5ff5cf171678cc5ca790bd",
+      "assessment_sha256": "f64978e251f6da54e51cbb62780deb8cf61879200cdca70243dfce3b70b9d4e3"
+     }
+    },
+    {
+     "name": "source_rule",
+     "label": "Source is more than a calendar",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The source is not a third-party calendar.",
+     "compared": {
+      "looked_for": "company_release",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "source_rule"
+     },
+     "assessment": {
+      "inputs": {
+       "source_kind": "company_release"
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The source is not a third-party calendar.",
+       "compared": {
+        "looked_for": "company_release",
+        "found": null
+       }
+      },
+      "input_sha256": "cc9fc2bd3afe36fa904cc61d4b82cae0b15eeddcca11754726f412ca0433c621",
+      "assessment_sha256": "bb28ca98d63529823eb8136320cee1a88df370de8f8c691d62ba14ada3526de1"
+     }
+    },
+    {
+     "name": "type_match",
+     "label": "Event meaning needs review",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+     "compared": {
+      "looked_for": "unknown",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     },
+     "assessment": {
+      "inputs": {
+       "event_type": "unknown",
+       "quote": "Rusfertide commercial launch preparations continue, with launch expected in Q4 2026."
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "not_needed",
+       "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+       "compared": {
+        "looked_for": "unknown",
+        "found": null
+       }
+      },
+      "input_sha256": "3e0ddf509dd9458f2cbbc261c56601968ffb6f79fe8336b9580fda05ed07f089",
+      "assessment_sha256": "ea65ee3311d024fe715b18c0afa21cca1eb205ecd0bf4e5966d6d95196cea970"
+     }
+    }
+   ],
+   "trail": []
+  },
+  {
+   "id": "e8",
+   "ticker": "PTGX",
+   "company": "Protagonist Therapeutics, Inc.",
+   "event_type": "unknown",
+   "type_hint": "launch",
+   "relevance": "Launch timing restated.",
+   "conditions": [],
+   "subject_company": "Protagonist Therapeutics, Inc.",
+   "relation": "wholly-owned",
+   "title": "Rusfertide launch",
+   "date_text": "the fourth quarter of 2026",
+   "date": "2026-10-01",
+   "date_end": "2026-12-31",
+   "quote": "The rusfertide launch is expected in the fourth quarter of 2026.",
+   "program": "rusfertide",
+   "indication": null,
+   "source_id": "src-bench-ptgx",
+   "page_number": 1,
+   "box": [
+    53.5,
+    293.67,
+    358.39,
+    309.79
+   ],
+   "proposed_by": "bench fixture (no model)",
+   "sample": true,
+   "research": {
+    "label": "Bench fixture \u2014 made-up row",
+    "revision": 1,
+    "call_id": "bench",
+    "ticker": "PTGX",
+    "action": "commercial launch",
+    "modality": null,
+    "relevance_kind": "interpretation",
+    "placement_proposal": "upcoming",
+    "prior_row_ids": [],
+    "evidence": [],
+    "primary_span_index": 0,
+    "near_duplicates": [],
+    "revisions": []
+   },
+   "status": "matched",
+   "group": "unverified",
+   "reason": "Bench fixture row; checks recorded.",
+   "checks": [
+    {
+     "name": "quote_match",
+     "label": "Quote found on page",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote is printed on the page, word for word.",
+     "compared": {
+      "looked_for": "The rusfertide launch is expected in the fourth quarter of 2026.",
+      "found": "The rusfertide launch is expected in the fourth quarter of 2026.",
+      "word_ids": [
+       "w87",
+       "w88",
+       "w89",
+       "w90",
+       "w91",
+       "w92",
+       "w93",
+       "w94",
+       "w95",
+       "w96",
+       "w97"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "quote_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "The rusfertide launch is expected in the fourth quarter of 2026.",
+       "box": [
+        53.5,
+        293.67,
+        358.39,
+        309.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The quote is printed on the page, word for word.",
+       "compared": {
+        "looked_for": "The rusfertide launch is expected in the fourth quarter of 2026.",
+        "found": "The rusfertide launch is expected in the fourth quarter of 2026.",
+        "word_ids": [
+         "w87",
+         "w88",
+         "w89",
+         "w90",
+         "w91",
+         "w92",
+         "w93",
+         "w94",
+         "w95",
+         "w96",
+         "w97"
+        ]
+       }
+      },
+      "input_sha256": "47ed8b097e6b4068db288c92956e3447370e39acbac9de7bdc4a21d9f01215b2",
+      "assessment_sha256": "353407b08090956c79032264ae9a43fe780412a31fc5fd7fa005d8af7f309f5a"
+     }
+    },
+    {
+     "name": "selector_match",
+     "label": "Citation located",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+     "compared": {
+      "looked_for": "The rusfertide launch is expected in the fourth quarter of 2026.",
+      "found": "The rusfertide launch is expected in the fourth quarter of 2026.",
+      "box": [
+       53.5,
+       293.67,
+       358.39,
+       309.79
+      ],
+      "word_ids": [
+       "w87",
+       "w88",
+       "w89",
+       "w90",
+       "w91",
+       "w92",
+       "w93",
+       "w94",
+       "w95",
+       "w96",
+       "w97"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/selector_match.py",
+      "function": "selector_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "The rusfertide launch is expected in the fourth quarter of 2026.",
+       "box": [
+        53.5,
+        293.67,
+        358.39,
+        309.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+       "compared": {
+        "looked_for": "The rusfertide launch is expected in the fourth quarter of 2026.",
+        "found": "The rusfertide launch is expected in the fourth quarter of 2026.",
+        "box": [
+         53.5,
+         293.67,
+         358.39,
+         309.79
+        ],
+        "word_ids": [
+         "w87",
+         "w88",
+         "w89",
+         "w90",
+         "w91",
+         "w92",
+         "w93",
+         "w94",
+         "w95",
+         "w96",
+         "w97"
+        ]
+       }
+      },
+      "input_sha256": "47ed8b097e6b4068db288c92956e3447370e39acbac9de7bdc4a21d9f01215b2",
+      "assessment_sha256": "7605e03eba3dd211a4963ea6a55a85b9e1b0eeacbe98164a42a3aa58ee5803d0"
+     }
+    },
+    {
+     "name": "date_match",
+     "label": "Date period found in quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The period in the row is the period printed in the quote. Quote: \u201cThe rusfertide launch is expected in the fourth quarter of 2026.\u201d. Parsed date/period: 2026-10-01 to 2026-12-31. This compares date bounds only; whether the date belongs to this event needs your review.",
+     "compared": {
+      "looked_for": "2026-10-01 to 2026-12-31",
+      "found": "2026-10-01 to 2026-12-31",
+      "timing": {
+       "wording": "the fourth quarter of 2026",
+       "start": "2026-10-01",
+       "end": "2026-12-31",
+       "precision": "period"
+      }
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "date_match"
+     },
+     "assessment": {
+      "inputs": {
+       "date_text": "the fourth quarter of 2026",
+       "quote": "The rusfertide launch is expected in the fourth quarter of 2026.",
+       "source_published_date": "2026-11-02"
+      },
+      "evaluation_mode": {
+       "date_person_selected": false
+      },
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The period in the row is the period printed in the quote. Quote: \u201cThe rusfertide launch is expected in the fourth quarter of 2026.\u201d. Parsed date/period: 2026-10-01 to 2026-12-31. This compares date bounds only; whether the date belongs to this event needs your review.",
+       "compared": {
+        "looked_for": "2026-10-01 to 2026-12-31",
+        "found": "2026-10-01 to 2026-12-31",
+        "timing": {
+         "wording": "the fourth quarter of 2026",
+         "start": "2026-10-01",
+         "end": "2026-12-31",
+         "precision": "period"
+        }
+       }
+      },
+      "input_sha256": "85f89f469a26f1cfa2c21ea40ea3ce0f1b6407ad3d15404c85541e3194c5302a",
+      "assessment_sha256": "052df9b4e8638123c591ad656e7bb6257c23a8a1b6935aeb0cf7e2790405cd2f"
+     }
+    },
+    {
+     "name": "source_rule",
+     "label": "Source is more than a calendar",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The source is not a third-party calendar.",
+     "compared": {
+      "looked_for": "company_release",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "source_rule"
+     },
+     "assessment": {
+      "inputs": {
+       "source_kind": "company_release"
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The source is not a third-party calendar.",
+       "compared": {
+        "looked_for": "company_release",
+        "found": null
+       }
+      },
+      "input_sha256": "cc9fc2bd3afe36fa904cc61d4b82cae0b15eeddcca11754726f412ca0433c621",
+      "assessment_sha256": "bb28ca98d63529823eb8136320cee1a88df370de8f8c691d62ba14ada3526de1"
+     }
+    },
+    {
+     "name": "type_match",
+     "label": "Event meaning needs review",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+     "compared": {
+      "looked_for": "unknown",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     },
+     "assessment": {
+      "inputs": {
+       "event_type": "unknown",
+       "quote": "The rusfertide launch is expected in the fourth quarter of 2026."
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "not_needed",
+       "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+       "compared": {
+        "looked_for": "unknown",
+        "found": null
+       }
+      },
+      "input_sha256": "59acbcbaf1bbf8269c7e9b608bdd5173ec425e6eff163af621a333dbb46d1de5",
+      "assessment_sha256": "20d34af70875d2fb49b6000dafcde67007fc7ebca13eea587f40ecc93c5e3a0d"
+     }
+    }
+   ],
+   "trail": []
+  },
+  {
+   "id": "e9",
+   "ticker": "PTGX",
+   "company": "Protagonist Therapeutics, Inc.",
+   "event_type": "unknown",
+   "type_hint": "earnings",
+   "relevance": "Routine quarterly call.",
+   "conditions": [],
+   "subject_company": "Protagonist Therapeutics, Inc.",
+   "relation": "wholly-owned",
+   "title": "Third quarter earnings call",
+   "date_text": "November 5, 2026",
+   "date": "2026-11-05",
+   "date_end": null,
+   "quote": "The company will host its third quarter earnings call on November 5, 2026.",
+   "program": null,
+   "indication": null,
+   "source_id": "src-bench-ptgx",
+   "page_number": 1,
+   "box": [
+    53.5,
+    321.67,
+    416.42,
+    337.79
+   ],
+   "proposed_by": "bench fixture (no model)",
+   "sample": true,
+   "research": {
+    "label": "Bench fixture \u2014 made-up row",
+    "revision": 1,
+    "call_id": "bench",
+    "ticker": "PTGX",
+    "action": "host earnings call",
+    "modality": null,
+    "relevance_kind": "interpretation",
+    "placement_proposal": "upcoming",
+    "prior_row_ids": [],
+    "evidence": [],
+    "primary_span_index": 0,
+    "near_duplicates": [],
+    "revisions": []
+   },
+   "status": "matched",
+   "group": "unverified",
+   "reason": "Bench fixture row; checks recorded.",
+   "checks": [
+    {
+     "name": "quote_match",
+     "label": "Quote found on page",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The quote is printed on the page, word for word.",
+     "compared": {
+      "looked_for": "The company will host its third quarter earnings call on November 5, 2026.",
+      "found": "The company will host its third quarter earnings call on November 5, 2026.",
+      "word_ids": [
+       "w98",
+       "w99",
+       "w100",
+       "w101",
+       "w102",
+       "w103",
+       "w104",
+       "w105",
+       "w106",
+       "w107",
+       "w108",
+       "w109",
+       "w110"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "quote_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "The company will host its third quarter earnings call on November 5, 2026.",
+       "box": [
+        53.5,
+        321.67,
+        416.42,
+        337.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The quote is printed on the page, word for word.",
+       "compared": {
+        "looked_for": "The company will host its third quarter earnings call on November 5, 2026.",
+        "found": "The company will host its third quarter earnings call on November 5, 2026.",
+        "word_ids": [
+         "w98",
+         "w99",
+         "w100",
+         "w101",
+         "w102",
+         "w103",
+         "w104",
+         "w105",
+         "w106",
+         "w107",
+         "w108",
+         "w109",
+         "w110"
+        ]
+       }
+      },
+      "input_sha256": "98b12abe5e560210b086f01d76b05d27df49ef95fef4ff55c4803067f02a4cdb",
+      "assessment_sha256": "63be613f963eabfc0be3e92ba920859dca1f6e98093d7c68a37a4902322c9ede"
+     }
+    },
+    {
+     "name": "selector_match",
+     "label": "Citation located",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+     "compared": {
+      "looked_for": "The company will host its third quarter earnings call on November 5, 2026.",
+      "found": "The company will host its third quarter earnings call on November 5, 2026.",
+      "box": [
+       53.5,
+       321.67,
+       416.42,
+       337.79
+      ],
+      "word_ids": [
+       "w98",
+       "w99",
+       "w100",
+       "w101",
+       "w102",
+       "w103",
+       "w104",
+       "w105",
+       "w106",
+       "w107",
+       "w108",
+       "w109",
+       "w110"
+      ]
+     },
+     "code_ref": {
+      "file": "checks/selector_match.py",
+      "function": "selector_match"
+     },
+     "assessment": {
+      "inputs": {
+       "quote": "The company will host its third quarter earnings call on November 5, 2026.",
+       "box": [
+        53.5,
+        321.67,
+        416.42,
+        337.79
+       ],
+       "page_capability": {
+        "visual_origin": "text_layer",
+        "derived_words_present": false
+       }
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "Every word of the quote is inside the box, and the box stays on the quote's lines.",
+       "compared": {
+        "looked_for": "The company will host its third quarter earnings call on November 5, 2026.",
+        "found": "The company will host its third quarter earnings call on November 5, 2026.",
+        "box": [
+         53.5,
+         321.67,
+         416.42,
+         337.79
+        ],
+        "word_ids": [
+         "w98",
+         "w99",
+         "w100",
+         "w101",
+         "w102",
+         "w103",
+         "w104",
+         "w105",
+         "w106",
+         "w107",
+         "w108",
+         "w109",
+         "w110"
+        ]
+       }
+      },
+      "input_sha256": "98b12abe5e560210b086f01d76b05d27df49ef95fef4ff55c4803067f02a4cdb",
+      "assessment_sha256": "966b3bbf5984596368ef552fe2aaa4d58b30b11a001185418987955f020db8ed"
+     }
+    },
+    {
+     "name": "date_match",
+     "label": "Date period found in quote",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The day in the row is the day printed in the quote. Quote: \u201cThe company will host its third quarter earnings call on November 5, 2026.\u201d. Parsed date/period: 2026-11-05. This compares date bounds only; whether the date belongs to this event needs your review.",
+     "compared": {
+      "looked_for": "2026-11-05",
+      "found": "2026-11-05",
+      "timing": {
+       "wording": "November 5, 2026",
+       "start": "2026-11-05",
+       "end": "2026-11-05",
+       "precision": "day"
+      }
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "date_match"
+     },
+     "assessment": {
+      "inputs": {
+       "date_text": "November 5, 2026",
+       "quote": "The company will host its third quarter earnings call on November 5, 2026.",
+       "source_published_date": "2026-11-02"
+      },
+      "evaluation_mode": {
+       "date_person_selected": false
+      },
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The day in the row is the day printed in the quote. Quote: \u201cThe company will host its third quarter earnings call on November 5, 2026.\u201d. Parsed date/period: 2026-11-05. This compares date bounds only; whether the date belongs to this event needs your review.",
+       "compared": {
+        "looked_for": "2026-11-05",
+        "found": "2026-11-05",
+        "timing": {
+         "wording": "November 5, 2026",
+         "start": "2026-11-05",
+         "end": "2026-11-05",
+         "precision": "day"
+        }
+       }
+      },
+      "input_sha256": "546148298c26cceb8f3af71cc8d9bdad0dbe921f8278d8c2ad0f296244b39827",
+      "assessment_sha256": "16ee43f2d2f848f1d047681ab34276effffb28f1487871c189cf581b62053d36"
+     }
+    },
+    {
+     "name": "source_rule",
+     "label": "Source is more than a calendar",
+     "kind": "Code",
+     "result": "pass",
+     "reason": "The source is not a third-party calendar.",
+     "compared": {
+      "looked_for": "company_release",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "source_rule"
+     },
+     "assessment": {
+      "inputs": {
+       "source_kind": "company_release"
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "pass",
+       "reason": "The source is not a third-party calendar.",
+       "compared": {
+        "looked_for": "company_release",
+        "found": null
+       }
+      },
+      "input_sha256": "cc9fc2bd3afe36fa904cc61d4b82cae0b15eeddcca11754726f412ca0433c621",
+      "assessment_sha256": "bb28ca98d63529823eb8136320cee1a88df370de8f8c691d62ba14ada3526de1"
+     }
+    },
+    {
+     "name": "type_match",
+     "label": "Event meaning needs review",
+     "kind": "Code",
+     "result": "not_needed",
+     "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+     "compared": {
+      "looked_for": "unknown",
+      "found": null
+     },
+     "code_ref": {
+      "file": "checks/event_checks.py",
+      "function": "type_match"
+     },
+     "assessment": {
+      "inputs": {
+       "event_type": "unknown",
+       "quote": "The company will host its third quarter earnings call on November 5, 2026."
+      },
+      "evaluation_mode": null,
+      "evidence": {
+       "source_id": "src-bench-ptgx",
+       "page_number": 1,
+       "image_sha256": "ed1f005d782b8ef56090984aee3c72b7ebf5f242b27acb94c9b1b2ce82d7422b",
+       "words_sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+       "words_used": {
+        "file": "pages/src-bench-ptgx-p1.words.json",
+        "sha256": "89d3ae0c2ec168b89d94c71c45454d2907c88174c317d615f1a0603960432d6d",
+        "kind": "captured"
+       },
+       "derived_words": null,
+       "visual_evidence": {
+        "origin": "text_layer",
+        "overlays_supported": true,
+        "reason": null
+       },
+       "capture_completeness": null,
+       "scanned": null,
+       "regions": null,
+       "width_pt": 612.0,
+       "height_pt": 792.0
+      },
+      "checker_version": "11d40f30cdc16302357fb5843a81dc8b5dc09dbd47b7d7a5a9727e489f2255f0",
+      "output": {
+       "result": "not_needed",
+       "reason": "Code does not check event meaning. The reader's interpretation needs your review.",
+       "compared": {
+        "looked_for": "unknown",
+        "found": null
+       }
+      },
+      "input_sha256": "b7827331208982193c555a5b50207db7e2b545d4ba66c60ec24ee0b4ba367078",
+      "assessment_sha256": "72e75cfcaa37895ef8d4db7657370d170e815d1ce183c61f588a1b533263d072"
+     }
+    }
+   ],
+   "trail": []
+  }
+ ],
+ "mistakes": [],
+ "exclusions": []
+}
