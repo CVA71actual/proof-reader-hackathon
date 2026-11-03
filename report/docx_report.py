@@ -237,6 +237,8 @@ def build_docx(view: dict) -> bytes:
                 f"renderer: {s['renderer']}",
                 size=8,
             )
+        for lim in s.get("render_limitations") or []:
+            _line(doc, f"Render limitation: {lim}", size=8)
 
     buf = BytesIO()
     doc.save(buf)

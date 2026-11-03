@@ -313,6 +313,8 @@ def build_pdf(view: dict) -> bytes:
                 f"renderer: {s['renderer']}",
                 styles["small"],
             ))
+        for lim in s.get("render_limitations") or []:
+            block.append(_p(f"Render limitation: {lim}", styles["small"]))
         story.append(KeepTogether(block))
 
     doc.build(story)

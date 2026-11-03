@@ -103,6 +103,8 @@ def _normalize(raw: dict, base: Path | None, where: str) -> dict:
     # resolve it the same way as page_file for callers that need the HTML on disk.
     if r.get("local_path"):
         r["local_file"] = str(_resolve(str(r["local_path"]), r["ticker"], base))
+    if r.get("render_record"):
+        r["render_record_path"] = str(_resolve(str(r["render_record"]), r["ticker"], base))
     return r
 
 
@@ -247,6 +249,68 @@ def pinned_words(ticker: str) -> dict:
     return pinned_source_snapshot(record)[2]
 
 
+# Codex 5a / EVIDENCE-001 / NEXT-CALLER-001: an exhibit rendered by capture.exhibit_render has a render record beside
+# its PDF (<pdf>.render.json) naming what was inlined (asset name + SHA-256) and what was omitted, with reasons. The
+# loader carries a verified subset of it onto the run source, so the reader and the report can say which images the
+# page does not show. The record is read only when its bytes match the SHA-256 the capture index recorded; a missing,
+# changed or unreadable record becomes an explicit limitation, never silent current metadata.
+ISOLATED_RENDERER_MARK = "captured raster images inlined"
+MAX_OMISSIONS_LISTED = 20
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def render_record_metadata(record: dict) -> dict | None:
+    """{render_record: {file, sha256, status, assets_consumed, assets_omitted}, limitations: [...]} for a page whose
+    exhibit was rendered in isolation, or None when the page names no render record and was not rendered that way."""
+    if not record.get("render_record") and ISOLATED_RENDERER_MARK not in str(record.get("renderer") or ""):
+        return None
+    want = record.get("render_record_sha256")
+    name = Path(str(record.get("render_record") or "")).name or None
+    known = "which images the rendered page does not show is not known."
+
+    def unavailable(status: str, why: str) -> dict:
+        return {"render_record": {"file": name, "sha256": want if isinstance(want, str) else None, "status": status,
+                                  "assets_consumed": [], "assets_omitted": []},
+                "limitations": [why + " " + known[0].upper() + known[1:]]}
+
+    path = record.get("render_record_path")
+    if not path or not isinstance(want, str) or not _HEX64.match(want):
+        return unavailable("unavailable", "Render record unavailable: the capture index names no render record with "
+                                          "a hash.")
+    try:
+        raw = Path(path).read_bytes()
+    except OSError:
+        return unavailable("unavailable", f"Render record unavailable: {name} is not where the capture index says.")
+    if hashlib.sha256(raw).hexdigest() != want:
+        return unavailable("changed", f"Render record changed since capture: {name} does not match the SHA-256 the "
+                                      f"capture index recorded, so its details are not used.")
+    try:
+        doc = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        doc = None
+    if not isinstance(doc, dict):
+        return unavailable("unavailable", f"Render record unavailable: {name} is not a readable record.")
+    if record.get("source_sha256") and doc.get("html_sha256") != record["source_sha256"]:
+        return unavailable("changed", f"Render record changed since capture: {name} describes different HTML than "
+                                      f"the captured exhibit, so its details are not used.")
+    consumed = [{"name": str(c.get("name") or "image inline in the exhibit HTML"), "sha256": c["sha256"],
+                 "bytes": c.get("bytes") if isinstance(c.get("bytes"), int) else None,
+                 "media_type": str(c.get("media_type") or "")}
+                for c in doc.get("assets_consumed") or []
+                if isinstance(c, dict) and isinstance(c.get("sha256"), str) and _HEX64.match(c["sha256"])]
+    omitted = [{"ref": str(o.get("ref") or "")[:200], "reason": str(o.get("reason") or "reason not recorded")[:300]}
+               for o in doc.get("assets_omitted") or [] if isinstance(o, dict)]
+    limitations = [str(x) for x in doc.get("limitations") or [] if isinstance(x, str) and x.strip()]
+    for o in omitted[:MAX_OMISSIONS_LISTED]:
+        limitations.append(f"Image not shown on the rendered page: {o['ref'] or '(no source)'} ({o['reason']}).")
+    if len(omitted) > MAX_OMISSIONS_LISTED:
+        limitations.append(f"{len(omitted) - MAX_OMISSIONS_LISTED} more image reference(s) not shown; see the render "
+                           f"record.")
+    return {"render_record": {"file": name, "sha256": want, "status": "verified", "assets_consumed": consumed,
+                              "assets_omitted": omitted},
+            "limitations": limitations}
+
+
 def capture_page_evidence(record: dict, run_dir: Path) -> tuple[dict, dict, dict]:
     """Capture and return the exact consumed words identity with the parsed snapshot."""
     pdf_bytes, words_bytes, words_doc, source_identity = pinned_source_snapshot(record)
@@ -284,6 +348,9 @@ def capture_page_evidence(record: dict, run_dir: Path) -> tuple[dict, dict, dict
     if record.get("source_format") == "html" and record.get("source_sha256"):
         source["rendered_from"] = {"format": "html", "sha256": record["source_sha256"],
                                    "renderer": record.get("renderer") or "unknown renderer"}
+        render = render_record_metadata(record)
+        if render:
+            source["rendered_from"].update(render)
     return source, words_doc, {**source_identity, "file": words_rel}
 
 

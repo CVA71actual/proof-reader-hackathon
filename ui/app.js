@@ -1207,6 +1207,10 @@
       s.append(el('b', null, 'Page rendered by code from the filed HTML '),
         '· SHA-256 ' + source.rendered_from.sha256.slice(0, 16) + '…');
       meta.append(s);
+      // Codex 5a: what the isolated renderer did not show (from the hash-checked render record), as plain caveats
+      (source.rendered_from.limitations || []).forEach(function (lim) {
+        meta.append(el('span', 'rend', esc(lim)));
+      });
     }
     return meta;
   }
@@ -1348,6 +1352,9 @@
         sec2.append(el('div', 'rendnote',
           'Page rendered by code from the filed HTML · SHA-256 ' +
           String(src.rendered_from.sha256 || '').slice(0, 16) + '…'));
+        (src.rendered_from.limitations || []).forEach(function (lim) {
+          sec2.append(el('div', 'rendnote', esc(lim)));
+        });
       }
     }
     host.append(sec2);

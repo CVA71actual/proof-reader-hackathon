@@ -174,7 +174,20 @@
           "properties": {
             "format": {"const": "html"},
             "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256 of the filed HTML, as fetched from url."},
-            "renderer": {"type": "string", "minLength": 1}
+            "renderer": {"type": "string", "minLength": 1},
+            "limitations": {"type": "array", "items": {"type": "string"}, "description": "Optional. What the isolated renderer (capture/exhibit_render.py) did not show or apply, from the verified render record, or why that record could not be used. Shown with the source in the reader and the report."},
+            "render_record": {
+              "type": "object", "additionalProperties": false,
+              "required": ["file", "sha256", "status", "assets_consumed", "assets_omitted"],
+              "description": "Optional. The verified subset of the exhibit's render record (<pdf>.render.json), read only when its bytes match the SHA-256 the capture index recorded.",
+              "properties": {
+                "file": {"type": ["string", "null"]},
+                "sha256": {"type": ["string", "null"]},
+                "status": {"enum": ["verified", "unavailable", "changed"]},
+                "assets_consumed": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "sha256"], "properties": {"name": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "bytes": {"type": ["integer", "null"]}, "media_type": {"type": "string"}}}},
+                "assets_omitted": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["ref", "reason"], "properties": {"ref": {"type": "string"}, "reason": {"type": "string"}}}}
+              }
+            }
           }
         },
         "retrieval": {"type": "object", "required": ["tool", "requested_url", "final_url", "retrieved_at", "content_type", "original_sha256", "original_bytes", "manifest_seq"],

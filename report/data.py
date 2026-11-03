@@ -468,6 +468,8 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
                 "page rendered by code from the filed HTML"
                 if rf else None
             ),
+            # Codex 5a: what the isolated renderer did not show, from the verified render record (runs/sources.py)
+            "render_limitations": list((rf or {}).get("limitations") or []),
             "retrieved_at": (src.get("retrieval") or {}).get("retrieved_at"),
             "original_sha256": (src.get("retrieval") or {}).get("original_sha256"),
         })
