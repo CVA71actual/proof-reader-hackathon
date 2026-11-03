@@ -354,20 +354,12 @@ def _image_pixel_size(path: Path) -> tuple[int, int] | None:
         pix = None
 
 
-def paper_size_for_html(html_path: Path) -> tuple[float, float]:
-    """Paper width/height in inches that fits the exhibit: at least Letter; wider when a local image needs it."""
-    html_dir = html_path.parent
-    text = html_path.read_text(encoding="utf-8", errors="replace")
+def paper_size_for_pixels(sizes) -> tuple[float, float]:
+    """Paper width/height in inches that fits images of these (width, height) pixel sizes: at least Letter; wider
+    when an image needs it. The one wide-slide sizing rule (render_html_to_pdf and capture.exhibit_render)."""
     max_w_in = LETTER_WIDTH_IN
     max_h_in = LETTER_HEIGHT_IN
-    for m in IMG_REF.finditer(text):
-        ref = m.group(1).strip().split("?", 1)[0]
-        if ref.startswith(("http://", "https://", "data:", "#")):
-            continue
-        img_path = html_dir / Path(ref).name
-        if not img_path.is_file():
-            continue
-        size = _image_pixel_size(img_path)
+    for size in sizes:
         if not size:
             continue
         w_in = size[0] / CSS_PX_PER_IN + 2 * PRINT_MARGIN_IN
@@ -377,6 +369,21 @@ def paper_size_for_html(html_path: Path) -> tuple[float, float]:
         max_h_in = max(max_h_in, min(h_in, LETTER_HEIGHT_IN * 2))
     # Cap absurd sizes (broken metadata) so Chrome still prints.
     return min(max_w_in, 36.0), min(max_h_in, 36.0)
+
+
+def paper_size_for_html(html_path: Path) -> tuple[float, float]:
+    """Paper width/height in inches that fits the exhibit: at least Letter; wider when a local image needs it."""
+    html_dir = html_path.parent
+    text = html_path.read_text(encoding="utf-8", errors="replace")
+    sizes = []
+    for m in IMG_REF.finditer(text):
+        ref = m.group(1).strip().split("?", 1)[0]
+        if ref.startswith(("http://", "https://", "data:", "#")):
+            continue
+        img_path = html_dir / Path(ref).name
+        if img_path.is_file():
+            sizes.append(_image_pixel_size(img_path))
+    return paper_size_for_pixels(sizes)
 
 
 def _print_html_with_page_size(html_path: Path, width_in: float, height_in: float) -> Path:
@@ -475,24 +482,68 @@ def save_exhibit_assets(
     dest_dir: Path,
     index_names: list[str],
 ) -> None:
-    """Write the HTML and any local image/css sidecars next to it under dest_dir."""
+    """Write the HTML and any local image/css sidecars next to it under dest_dir, and record them in the folder's
+    asset ledger (ASSET_LEDGER): which files this capture wrote, with their SHA-256, and which it could not fetch."""
     dest_dir.mkdir(parents=True, exist_ok=True)
     (dest_dir / html_name).write_bytes(html_bytes)
+    ledger = read_asset_ledger(dest_dir)
     wanted = set(_sidecar_names(html_name, index_names))
     wanted.update(Path(r).name for r in _local_refs(html_bytes))
+    captured, missing = [], []
     for name in sorted(wanted):
         if name == html_name or "/" in name or "\\" in name:
             # only same-directory relative names
             if "/" in name or "\\" in name:
                 name = Path(name).name
+        if not name or name in (html_name, ASSET_LEDGER) or name.startswith("."):
+            continue
         target = dest_dir / name
         if target.exists():
+            # written by an earlier exhibit of this filing: it is a captured asset only if the ledger says so
+            known = ledger["assets"].get(name)
+            if known and target.is_file() and not target.is_symlink() and sha256_file(target) == known["sha256"]:
+                captured.append(name)
+            else:
+                missing.append({"name": name, "reason": "a file of this name was already in the folder and was "
+                                                        "not written by this capture"})
             continue
+        url = urljoin(base_url, name)
         try:
-            target.write_bytes(fetcher.get(urljoin(base_url, name)))
-        except FetchError:
+            body = fetcher.get(url)
+        except FetchError as e:
             # Missing sidecar: still render; content pages usually survive without logos.
+            missing.append({"name": name, "reason": f"not fetched: {e}"})
             continue
+        target.write_bytes(body)
+        ledger["assets"][name] = {"sha256": hashlib.sha256(body).hexdigest(), "bytes": len(body), "source_url": url}
+        captured.append(name)
+    ledger["exhibits"][html_name] = {"html_sha256": hashlib.sha256(html_bytes).hexdigest(),
+                                     "captured": sorted(set(captured)), "missing": missing}
+    write_asset_ledger(dest_dir, ledger)
+
+
+# The asset ledger of one capture folder (one filing): every sidecar this capture wrote, by name, with its SHA-256 and
+# source URL, and per exhibit the sidecars it captured and the ones it could not. capture.exhibit_render resolves an
+# exhibit's images against this list only: a file in the folder that the ledger does not list is never shown.
+ASSET_LEDGER = "captured_assets.json"
+
+
+def read_asset_ledger(dest_dir: Path) -> dict:
+    p = Path(dest_dir) / ASSET_LEDGER
+    try:
+        doc = json.loads(p.read_text()) if p.is_file() and not p.is_symlink() else {}
+    except (OSError, json.JSONDecodeError):
+        doc = {}
+    assets = doc.get("assets") if isinstance(doc.get("assets"), dict) else {}
+    exhibits = doc.get("exhibits") if isinstance(doc.get("exhibits"), dict) else {}
+    return {"assets": assets, "exhibits": exhibits}
+
+
+def write_asset_ledger(dest_dir: Path, ledger: dict) -> None:
+    p = Path(dest_dir) / ASSET_LEDGER
+    tmp = p.with_name(p.name + ".tmp")
+    tmp.write_text(json.dumps(ledger, indent=1, sort_keys=True) + "\n")
+    os.replace(tmp, p)
 
 
 def cut_pages(full_pdf: Path, dest_dir: Path, stem: str, *, html_text: str | None = None) -> list[dict]:
@@ -552,12 +603,19 @@ def capture_exhibit(
     else:
         dest_dir.mkdir(parents=True, exist_ok=True)
         (dest_dir / html_name).write_bytes(html_bytes)
+        ledger = read_asset_ledger(dest_dir)       # nothing fetched: the exhibit has no captured assets
+        ledger["exhibits"][html_name] = {"html_sha256": hashlib.sha256(html_bytes).hexdigest(), "captured": [],
+                                         "missing": []}
+        write_asset_ledger(dest_dir, ledger)
 
     source_sha = hashlib.sha256(html_bytes).hexdigest()
     stem = Path(html_name).stem
     full_pdf = dest_dir / f"{stem}.pdf"
+    render_record = full_pdf.with_name(full_pdf.name + ".render.json")
+    render_record.unlink(missing_ok=True)       # never carry an earlier render's record onto this one
     renderer = render(dest_dir / html_name, full_pdf, chrome)
     rendered_sha = sha256_file(full_pdf)
+    render_record_sha = sha256_file(render_record) if render_record.is_file() else None
     html_text = html_bytes.decode("utf-8", errors="replace")
     page_bits = cut_pages(full_pdf, dest_dir, stem, html_text=html_text)
     exhibit = exhibit or exhibit_number(html_name)
@@ -608,6 +666,10 @@ def capture_exhibit(
         }
         if exhibit_title:
             entry["exhibit_title"] = exhibit_title
+        if render_record.is_file():
+            # what the isolated renderer inlined (asset name + SHA-256) and omitted, beside the rendered PDF
+            entry["render_record"] = rel_prefix + render_record.name
+            entry["render_record_sha256"] = render_record_sha
         # Carry the words-doc completeness record onto the exhibit entry (do not drop or recompute).
         entry.update(completeness_fields(p))
         out.append(entry)
