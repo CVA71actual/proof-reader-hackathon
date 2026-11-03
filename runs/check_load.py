@@ -43,6 +43,7 @@ def bind_on_load(run: dict, run_dir: Path, *, refuse_invalid_artifact: bool = Fa
         results = row_checks(row, source, words, chosen=False, consumed_artifact=consumed)
         row["check_history"] = [*(row.get("check_history") or []), *existing]
         row["checks"] = [to_contract_check(result.to_dict()) for result in results]
+    _bind_research_spans(run, Path(run_dir), by_source, refuse_invalid_artifact)
     for table in run.get("tables", []):
         source = by_source.get(table.get("source_id"))
         page = next((p for p in (source or {}).get("pages", [])
@@ -75,6 +76,49 @@ def bind_on_load(run: dict, run_dir: Path, *, refuse_invalid_artifact: bool = Fa
                                                       consumed_artifact=consumed)
                 cell["status"] = checked["status"]
     return run
+
+
+SPAN_RESULT_FIELDS = ("quote_match", "quote_match_reason", "printed_quote_match", "unknown_word_ids",
+                      "capture_incomplete", "hidden_text")
+
+
+def _bind_research_spans(run: dict, run_dir: Path, by_source: dict, refuse_invalid_artifact: bool) -> None:
+    """CALENDAR-RULE-001 (Manus CALENDAR-NEW-001): a research row's recorded span checks describe the words they
+    were run on. Re-run each span's check on the exact page words it consumes NOW (sources.load_page_evidence: the
+    captured words, or a verified derived transcription) and, where a result differs, replace it in memory and keep
+    the recorded one as that span's check_history: per span, like the row checks above. The state rule then reads
+    current span support. A span whose page cannot be loaded is marked could_not_run (never a pass)."""
+    from runs import sources
+    from runs.research_contract import span_check
+
+    for row in run.get("rows", []):
+        research = row.get("research")
+        if not isinstance(research, dict) or not isinstance(research.get("evidence"), list):
+            continue
+        for span in research["evidence"]:
+            if not isinstance(span, dict) or not span.get("quote"):
+                continue
+            source = by_source.get(span.get("source_id")) or {}
+            page = next((p for p in source.get("pages", []) if p.get("page_number") == span.get("page_number")), None)
+            recorded = {k: span.get(k) for k in SPAN_RESULT_FIELDS}
+            try:
+                if page is None:
+                    raise sources.SourcesError(f"{span.get('source_id')} has no page {span.get('page_number')}")
+                words, consumed = sources.load_page_evidence(run_dir, page)
+                current = {k: v for k, v in span_check({**span, "roles": span.get("roles") or []}, words, page).items()
+                           if k in SPAN_RESULT_FIELDS}
+            except sources.SourcesError as e:
+                if refuse_invalid_artifact and page is not None:
+                    raise
+                consumed = None
+                current = {**recorded, "quote_match": "could_not_run", "printed_quote_match": "could_not_run",
+                           "quote_match_reason": f"The cited page could not be loaded: {e}"}
+            if current != recorded:
+                span["check_history"] = [*(span.get("check_history") or []), recorded]
+                span.update(current)
+                span["rechecked_on_load"] = {
+                    "reason": "The words this span cites changed after it was checked; its check was run again on "
+                              "the page as now captured.", "consumed": consumed}
 
 
 def list_input_stamp(run_bytes: bytes, run: dict, decisions_bytes: bytes) -> str:
