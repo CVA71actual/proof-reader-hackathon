@@ -505,8 +505,10 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         support = {}
         if (run["run"].get("choices") or {}).get("support_check"):
             from runs.research import support_view       # LETTUCE-OPTION: a finding is shown only while current
-            support = {"support_findings": {r["id"]: support_view(run, r) for r in run.get("rows", [])
-                                            if (r.get("research") or {}).get("support_check")}}
+            # IDENTITY-001: bound to the effective proposal (a person's current fixes included), as the checks are
+            support = {"support_findings": {
+                r["id"]: support_view(run, r, (state["targets"].get(r["id"]) or {}).get("values"))
+                for r in run.get("rows", []) if (r.get("research") or {}).get("support_check")}}
         return {**run, **report_status(store.run_dir(run_id) / "report", run, decisions), **support,
                 "state": state, "unknown_cost_accepted": accepted, "calendar_partition": partition,
                 "calendar_window": ({"start": window_start, "end": window_end} if window_start else

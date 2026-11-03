@@ -275,3 +275,34 @@ def test_the_options_endpoint_offers_it_off_by_default(runs_dir, monkeypatch):
     opt = TestClient(app).get("/api/research/options").json()["support_check"]
     assert opt["choices"] == ["lettucedetect"] and opt["default"] is None and opt["available"] is False
     assert "Advisory only" in opt["note"]
+
+
+# ---------------------------------------------------------------- IDENTITY-001: a person's Fix makes the finding stale
+
+
+@pytest.mark.parametrize("field", ["title", "quote"])
+def test_a_persons_fix_to_the_claim_or_quote_makes_the_served_finding_stale(runs_dir, field):
+    client, rid = _run(runs_dir, FakeDetector([{"start": 0, "end": 6}]), support_check="lettucedetect")
+    assert client.get(f"/api/runs/{rid}").json()["support_findings"]["e1"]["result"] == "unsupported_spans"
+    row = next(r for r in run_json(runs_dir, rid)["rows"] if r["id"] == "e1")
+    new = row[field] + " (edited)" if field == "title" else row[field].replace("expected", "anticipated")
+    r = client.post(f"/api/runs/{rid}/decisions", json={"target": "e1", "action": "fix", "note": None,
+                                                        "fix": {"field": field, "from": row[field], "to": new}})
+    assert r.status_code == 200, r.text
+    lines = [json.loads(l) for l in (runs_dir / rid / "decisions.jsonl").read_text().splitlines()]
+    assert any(l["action"] == "fix" and l["fix"]["field"] == field for l in lines)        # a real decisions line
+    served = client.get(f"/api/runs/{rid}").json()["support_findings"]["e1"]
+    assert served["result"] == "stale" and served["spans"] == []
+    # Undo the fix: the effective proposal is the checked one again, so the finding is current again
+    assert client.post(f"/api/runs/{rid}/decisions", json={"target": "e1", "action": "undo", "note": None,
+                                                           "fix": None}).status_code == 200
+    assert client.get(f"/api/runs/{rid}").json()["support_findings"]["e1"]["result"] == "unsupported_spans"
+
+
+def test_an_unrelated_fix_keeps_the_finding_current(runs_dir):
+    client, rid = _run(runs_dir, FakeDetector([{"start": 0, "end": 6}]), support_check="lettucedetect")
+    row = next(r for r in run_json(runs_dir, rid)["rows"] if r["id"] == "e1")
+    assert client.post(f"/api/runs/{rid}/decisions", json={"target": "e1", "action": "fix", "note": None,
+                                                           "fix": {"field": "program", "from": row["program"],
+                                                                   "to": "PN-X"}}).status_code == 200
+    assert client.get(f"/api/runs/{rid}").json()["support_findings"]["e1"]["result"] == "unsupported_spans"
