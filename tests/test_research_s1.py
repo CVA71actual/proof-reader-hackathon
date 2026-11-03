@@ -1866,3 +1866,105 @@ def test_a_period_row_with_code_derived_bounds_is_placed_not_undated(runs_dir):
     undated = F.event("A plan", quote, date_text=None)
     assert research_audit.window_test(undated, __import__("datetime").date(2026, 11, 2),
                                       __import__("datetime").date(2027, 5, 2))["result"] == "undated"
+
+
+# ---------------------------------------------------------------- OUTCOME-001 (Red Team #175 at 72a8404): block pages
+
+
+_NAV = "".join(f"<li><a href='/s{i}'>Section {i} of our corporate site</a></li>" for i in range(80))
+_FOOTER = ("<footer><p>This site is governed solely by applicable U.S. laws and governmental regulations.</p>"
+           "<p>© 2026 Example Holdings. All rights reserved.</p></footer>")
+LONG_MAINTENANCE = (f"<html><head><title>Site Maintenance</title></head><body><ul>{_NAV}</ul>"
+                    "<h1>We'll be back soon!</h1><p>Sorry for the inconvenience. We're performing some maintenance at "
+                    f"the moment.</p>{_FOOTER}</body></html>").encode()
+SHORT_DOWN = (b"<html><body><p>Our apologies: the site is down for scheduled maintenance. "
+              b"Please check back later.</p></body></html>")
+_BODY = " ".join(["Acme Therapeutics reported that patients on maintenance therapy maintained responses through week "
+                  "52, and the maintenance dosing regimen was well tolerated."] * 20)
+LONG_RELEASE = (f"<html><head><title>Acme reports Phase 3 maintenance data</title></head><body><ul>{_NAV}</ul>"
+                "<h1>Acme Reports Positive Phase 3 Maintenance Therapy Results</h1>"
+                "<p>SOUTH SAN FRANCISCO, Calif., August 5, 2026 (GLOBE NEWSWIRE) -- Acme Therapeutics today "
+                f"announced results.</p><p>{_BODY}</p>{_FOOTER}</body></html>").encode()
+
+
+def test_a_long_site_maintenance_page_is_a_block_page():
+    assert len(rs.readable_text(rs.sanitize_html(LONG_MAINTENANCE.decode())[0])) > rs.BLOCK_MAX_CHARS
+    reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", LONG_MAINTENANCE))
+    assert reason and reason.startswith("site served a block/maintenance page") and "title" in reason
+
+
+def test_a_short_down_for_scheduled_maintenance_page_is_a_block_page():
+    reason = rs.block_reason(rs.Fetched("u", "u", 200, "text/html", SHORT_DOWN))
+    assert reason and "down for scheduled maintenance" in reason
+
+
+def test_block_wording_dominating_a_long_page_without_a_headline_is_a_block_page():
+    page = (f"<html><body><ul>{_NAV}</ul><p>The site is temporarily unavailable while we upgrade our systems, and "
+            "every page of this site is temporarily unavailable until the work is finished later today.</p>"
+            "</body></html>").encode()
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", page)).startswith("site served a block")
+
+
+def test_a_long_release_that_mentions_maintenance_is_still_a_document():
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", LONG_RELEASE)) is None
+    # a release whose body mentions an outage once is a document too (its dateline is document content)
+    noted = LONG_RELEASE.replace(b"announced results.", b"announced results. The webcast is temporarily unavailable.")
+    assert rs.block_reason(rs.Fetched("u", "u", 200, "text/html", noted)) is None
+
+
+def test_both_red_team_pages_are_refused_through_fetch_url(runs_dir):
+    down, long_page = "https://example.com/down", "https://example.com/long"
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": down, "purpose": "release"}, "c0")]),
+        F.body([F.call("fetch_url", {"url": long_page, "purpose": "release"}, "c1")]),
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c2")])])
+    _, rid, _ = start(runs_dir, reader, pages={down: (200, "text/html", SHORT_DOWN),
+                                               long_page: (200, "text/html", LONG_MAINTENANCE)})
+    for k in (1, 2):
+        out = json.loads(reader.requests[k]["input"][-1]["output"])
+        assert out["status"] == "error" and out["issues"][0]["code"] == "could_not_access"
+    run = run_json(runs_dir, rid)
+    assert run["sources"] == []
+    fails = run["run"]["research"]["companies"]["PTGX"]["capture_failures"]
+    assert [f["outcome"] for f in fails] == ["could_not_access", "could_not_access"]
+
+
+# ---------------------------------------------------------------- dry run SEPN: code-recorded limitations count
+
+
+def test_a_company_whose_fetches_all_failed_never_reads_0_limitations(runs_dir):
+    """Ten-company dry run (SEPN): three could_not_access fetches, finish_draft with no stated limitation, and the
+    outcome said "0 limitations". CLAIM-001 / UNKNOWN-001: code-recorded failures are limitations too."""
+    from report.data import _research_lines
+    urls = [f"https://example.com/r{i}" for i in range(3)]
+    reader = F.FakeResponses(
+        [F.body([F.call("fetch_url", {"url": u, "purpose": "release"}, f"c{i}")]) for i, u in enumerate(urls)]
+        + [F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
+    _, rid, _ = start(runs_dir, reader, pages={u: (403, "text/html", b"<p>Forbidden</p>") for u in urls})
+    run = run_json(runs_dir, rid)
+    research = run["run"]["research"]
+    c = research["companies"]["PTGX"]
+    assert [f["outcome"] for f in c["capture_failures"]] == ["could_not_access"] * 3
+    assert "0 limitations recorded" not in c["status_reason"]
+    assert "0 limitations stated by the model" in c["status_reason"]
+    # this harness has no Brave key, so code also recorded one search limitation (Brave Search not configured)
+    assert c["search_limitations"][0]["engine"] == "Brave Search"
+    assert c["status_reason"].endswith("Limitations in all: 4 (0 stated by the model; recorded by code: 3 fetches "
+                                       "could not be accessed, 1 search failure).")
+    counts = research["audit"]["limitation_counts"]["PTGX"]
+    assert (counts["model"], counts["code"], counts["total"]) == (0, 4, 4)
+    assert research_audit.format_audit(research["audit"]).count("limitations (PTGX): 4 in all, 0 stated by the "
+                                                                "model, 4 recorded by code") == 1
+    _, lines = _research_lines(run["run"], run)
+    assert any(l.startswith("PTGX: finished") and "Limitations in all: 4" in l for l in lines)
+    assert sum(l.startswith("PTGX capture failed:") for l in lines) == 3
+
+
+def test_a_clean_company_counts_its_stated_limitation_only(runs_dir):
+    lim = {"question": "Q3 date", "tool_call_ids": [], "source_ids": [], "reason": "not announced"}
+    reader = F.FakeResponses([F.body([F.call("finish_draft", {"dispositions": [], "limitations": [lim]}, "f")])])
+    _, rid, _ = start(runs_dir, reader)
+    c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
+    assert c["status"] == "finished" and "1 limitation stated by the model." in c["status_reason"]
+    assert c["status_reason"].endswith("Limitations in all: 2 (1 stated by the model; recorded by code: 1 search "
+                                       "failure).")

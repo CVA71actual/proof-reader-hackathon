@@ -212,6 +212,35 @@ def function_tools(brave: bool = True) -> list[dict]:
             for name, schema in ARGUMENTS.items() if brave or name != "brave_search"]
 
 
+def company_limitations(c: dict) -> dict:
+    """CLAIM-001 / UNKNOWN-001: every limitation of one company's research, the model's stated ones and the ones code
+    recorded (a fetch that could not access or capture its page, a search engine failure). A company whose fetches
+    all failed never reads "0 limitations" because the model declared none.
+    {"model": n, "code": n, "total": n, "code_recorded": [plain lines]}."""
+    model = len(((c.get("finish") or {}).get("limitations")) or [])
+    fails = c.get("capture_failures") or []
+    searches = c.get("search_limitations") or []
+    lines = []
+    for outcome, words in (("could_not_access", "could not be accessed"), ("capture_failed", "could not be captured")):
+        n = sum(1 for f in fails if f.get("outcome") == outcome)
+        if n:
+            lines.append(f"{n} fetch{'es' if n != 1 else ''} {words}")
+    other = sum(1 for f in fails if f.get("outcome") not in ("could_not_access", "capture_failed"))
+    if other:
+        lines.append(f"{other} fetch{'es' if other != 1 else ''} failed")
+    if searches:
+        lines.append(f"{len(searches)} search failure{'s' if len(searches) != 1 else ''}")
+    code = len(fails) + len(searches)
+    return {"model": model, "code": code, "total": model + code, "code_recorded": lines}
+
+
+def limitation_sentence(c: dict) -> str:
+    """'Limitations in all: 3 (0 stated by the model; recorded by code: 3 fetches could not be accessed).'"""
+    lim = company_limitations(c)
+    code = "; recorded by code: " + ", ".join(lim["code_recorded"]) if lim["code_recorded"] else ""
+    return f"Limitations in all: {lim['total']} ({lim['model']} stated by the model{code})."
+
+
 def envelope(call_id: str, status: str, data=None, issues: list | None = None) -> dict:
     return {"call_id": call_id, "status": status, "data": data, "issues": issues or []}
 

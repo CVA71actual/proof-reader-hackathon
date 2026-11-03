@@ -214,7 +214,7 @@ class FakeChat:
     no key, so the stage does not run. Running out of script is a test failure."""
 
     def __init__(self, script, key=True, model=REVIEWER_MODEL, name=None, family=None, provider=None,
-                 unavailable=None):
+                 unavailable=None, refuse=None, probe=False):
         self.script, self.key, self.model, self.sent = list(script), key, model, []
         # identity like capture.research_reviewer.OneShotChat; defaults: DeepSeek V4 Pro (the reviewer) or Muse Wonder
         wonder = model == ADJUDICATOR_MODEL
@@ -223,6 +223,7 @@ class FakeChat:
         self.family = family or ("Muse Wonder (Meta)" if wonder else "DeepSeek")
         self.provider = provider or ("meta" if wonder else "baseten")
         self.unavailable = unavailable
+        self.refuse, self.probe_on, self.probes = refuse, probe, 0      # refuse: an HTTP 403 message for this key
 
     def ready(self):
         return None if self.key else f"No key was found for {self.model}, so this stage did not run."
@@ -230,8 +231,23 @@ class FakeChat:
     def available(self):
         return self.ready() or self.unavailable
 
-    def chat(self, messages, tools=None, json_mode=False):
+    def _refusal(self):
+        from capture.research_reviewer import ChatReply
+        return ChatReply(self.model, error=self.refuse, http_status=403, may_have_been_billed=False)
+
+    def probe(self):
+        """The one-token access check: None (no check) unless this fake was built with probe=True or refuse=..."""
+        from capture.research_reviewer import ChatReply
+        if not (self.probe_on or self.refuse):
+            return None
+        self.probes += 1
+        return self._refusal() if self.refuse else ChatReply(self.model, content="ok", finish_reason="stop",
+                                                             prompt_tokens=5, completion_tokens=1)
+
+    def chat(self, messages, tools=None, json_mode=False, max_tokens=None):
         self.sent.append(copy.deepcopy(messages))
+        if self.refuse:
+            return self._refusal()
         if not self.script:
             raise AssertionError("The reviewer made more calls than the test scripted.")
         item = self.script.pop(0)

@@ -321,6 +321,9 @@ def make_job_class():
             self.state: dict[str, dict] = {}        # per company, in memory: sources, keys, call ids, history
             self.cap_reached: str | None = None     # set once the run's spend cap stops every company
             self.first_attempts: list[bool] = []    # empty? for the first five generation attempts of the run
+            import threading
+            self._access_lock = threading.Lock()     # the reviewer access check runs once per run
+            self._reviewer_pick: tuple | None = None
 
         # ------------------------------------------------------------ ledger
 
@@ -557,8 +560,9 @@ def make_job_class():
                                       f"({jobs.money(self.meta['spend_usd'] or 0)} spent).")
                 time.sleep(0.05)      # another call is in flight: queue behind it
 
-        def review_usage(self, ticker: str) -> dict:
-            return self.company(ticker).setdefault("review_usage", {
+        def review_usage(self, ticker: str | None) -> dict:
+            holder = self.company(ticker) if ticker is not None else self.research.setdefault("reviewer_access", {})
+            return holder.setdefault("review_usage", {
                 "model_requests": 0, "search_requests": 0, "fetches": 0, "spend_usd": 0.0, "unpriced_calls": 0,
                 "worst_case_charged_usd": 0.0})
 
@@ -759,6 +763,81 @@ def make_job_class():
             return rv.disputes_from_findings(record.get("findings") or [],
                                              [self.review_proposal(r) for r in rows_by_id.values()], ticker)
 
+        def reviewer_for_run(self, ticker: str) -> tuple:
+            """The reviewer for this run, decided ONCE: the primary unless it is not in the provider's model list or
+            the provider refuses the key for it (a 401/403 on a one-token access check); then the declared fallback.
+            The model list does not reflect key permissions, so the access check is a request."""
+            from capture import research_reviewer as rv
+            with self._access_lock:
+                if self._reviewer_pick is not None:
+                    return self._reviewer_pick
+                primary, fallback = self.tools.reviewer, getattr(self.tools, "reviewer_fallback", None)
+                model, choice = rv.choose_reviewer(primary, fallback)
+                access = {"checked": False, "reason": "No access check was made."}
+                if not choice["fallback_used"] and callable(getattr(primary, "probe", None)):
+                    access = self.probe_reviewer(primary)
+                with jobs.RUN_LOCK:
+                    self.research.setdefault("reviewer_access", {}).update(
+                        {"model": getattr(primary, "model", None), "name": rv.identity(primary)["name"], **access})
+                if access.get("refused") and fallback is not None:
+                    self._reviewer_pick = self.refused_reviewer(ticker, access, locked=True)
+                    return self._reviewer_pick
+                if choice.get("fallback_used"):
+                    self.step(ticker, "review", "Code", "runs.research",
+                              f"{choice['primary']} is unavailable ({choice['primary_unavailable']}); the declared "
+                              f"fallback {choice['name']} reviews instead. It is the researcher's own model family, so "
+                              f"the review is not called independent.", stage=REVIEW_STAGE)
+                self._reviewer_pick = (model, choice)
+                return self._reviewer_pick
+
+        def probe_reviewer(self, primary) -> dict:
+            """One request with a one-token reply, through the run's gate; records whether the key may use the
+            model. Not a retry and not part of a review."""
+            from capture import research_reviewer as rv
+            gate = self.review_gate(None)
+            ticket = gate({"phase": "reserve", "stage": "reviewer_access", "kind": "model",
+                           "model": getattr(primary, "model", None),
+                           "price_name": getattr(primary, "price_name", None) or rv.identity(primary)["name"],
+                           "request_bytes": 200, "max_output_tokens": rv.PROBE_MAX_TOKENS, "searches": 0})
+            if not ticket or ticket.get("admitted") is False:
+                return {"checked": False, "reason": f"The access check was not admitted: "
+                                                    f"{(ticket or {}).get('reason')}"}
+            reply = None
+            try:
+                reply = primary.probe()
+            finally:
+                gate({"phase": "settle", "ticket": ticket, "stage": "reviewer_access", "kind": "model",
+                      "usage": {"prompt_tokens": getattr(reply, "prompt_tokens", None),
+                                "completion_tokens": getattr(reply, "completion_tokens", None), "searches": 0},
+                      "error": getattr(reply, "error", None) if reply is not None else "No access check reply.",
+                      "may_have_been_billed": bool(getattr(reply, "may_have_been_billed", False))})
+            if reply is None:
+                return {"checked": False, "reason": "The reviewer model has no access check."}
+            refused = reply.http_status in rv.REFUSED_STATUSES
+            return {"checked": True, "at": now_utc(), "refused": refused, "http_status": reply.http_status,
+                    "message": reply.error if reply.error else None}
+
+        def refused_reviewer(self, ticker: str, refusal: dict, locked: bool = False) -> tuple:
+            """The provider refused the key for the primary reviewer: record it, never retry it, and use the declared
+            fallback for the rest of the run (same family: the label says so; MULTI-FAMILY-001 is not met)."""
+            from capture import research_reviewer as rv
+            primary, fallback = self.tools.reviewer, self.tools.reviewer_fallback
+            why = (f"refused by the provider (HTTP {refusal.get('http_status')}): "
+                   f"{refusal.get('message') or 'access refused'}")
+            choice = {**rv.identity(fallback), "fallback_used": True, "primary": rv.identity(primary)["name"],
+                      "primary_unavailable": why, "primary_refused": {k: refusal.get(k) for k in
+                                                                      ("http_status", "message")}}
+            with jobs.RUN_LOCK:
+                self.research.setdefault("reviewer_access", {}).update(
+                    {"refused": True, "http_status": refusal.get("http_status"), "message": refusal.get("message"),
+                     "fallback": choice["name"]})
+            self.step(ticker, "review", "Code", "runs.research",
+                      f"{choice['primary']} was {why}. It is not retried; the declared fallback {choice['name']} "
+                      f"reviews instead. It is the researcher's own model family, so the review is not called "
+                      f"independent (MULTI-FAMILY-001 not met for this run).", stage=REVIEW_STAGE)
+            self._reviewer_pick = (fallback, choice)
+            return self._reviewer_pick
+
         def review_company(self, ticker: str, ended_kind: str, ended_reason: str) -> dict:
             """After a company's research ends (for any reason but a person's stop), the independent reviewer attacks
             its draft; disputed findings go to Muse Wonder (fail-closed); the record, the findings on their rows, the
@@ -778,12 +857,7 @@ def make_job_class():
             with jobs.RUN_LOCK:      # DRYRUN-3: a finished company is not "done" while its review runs
                 self.company(ticker)["review_status"] = "reviewing"
                 self.save_ledger()
-            reviewer, choice = rv.choose_reviewer(self.tools.reviewer, getattr(self.tools, "reviewer_fallback", None))
-            if choice.get("fallback_used"):
-                self.step(ticker, "review", "Code", "runs.research",
-                          f"{choice['primary']} is unavailable ({choice['primary_unavailable']}); the declared fallback "
-                          f"{choice['name']} reviews instead. It is the researcher's own model family, so the review is "
-                          f"not called independent.", stage=REVIEW_STAGE)
+            reviewer, choice = self.reviewer_for_run(ticker)
             st = self.ensure_state(ticker)
             given, not_given = [], []
             for s in st["sources"].values():
@@ -806,6 +880,17 @@ def make_job_class():
                                          proposals=[self.review_proposal(r) for r in rows], sources=given,
                                          search=self.review_search(ticker), fetch_capture=self.review_fetch(ticker, fetched),
                                          spend_gate=self.review_gate(ticker), model=reviewer)
+                refused = record.get("access_refused")
+                fallback = getattr(self.tools, "reviewer_fallback", None)
+                if refused and not choice.get("fallback_used") and fallback is not None:
+                    # the provider refused the key for this model on a real call: never retried; the declared fallback
+                    # reviews this company and every later one in the run
+                    reviewer, choice = self.refused_reviewer(ticker, refused)
+                    record = rv.review_draft(company=company, assignment=self.choices.get("note_for_agent") or "",
+                                             proposals=[self.review_proposal(r) for r in rows], sources=given,
+                                             search=self.review_search(ticker),
+                                             fetch_capture=self.review_fetch(ticker, fetched),
+                                             spend_gate=self.review_gate(ticker), model=reviewer)
             except Exception as e:      # the type only: nothing that could carry request details
                 record = {"stage": REVIEW_STAGE, "status": "incomplete", "clean": False, "findings": [],
                           "rejected": [], "limitations": [],
@@ -940,6 +1025,9 @@ def make_job_class():
                              "adjudicator": {"name": rv.ADJUDICATOR_NAME, "provider": rv.ADJUDICATOR_PROVIDER,
                                              "family": rv.ADJUDICATOR_FAMILY},
                              "same_family": (who_ran or {}).get("family") == RESEARCHER_FAMILY},
+                         "multi_family": {"met": bool(who_ran) and (who_ran or {}).get("family") != RESEARCHER_FAMILY,
+                                          "reason": ((choice or {}).get("primary_unavailable")
+                                                     if (who_ran or {}).get("family") == RESEARCHER_FAMILY else None)},
                          "research_ended": ended, "started_at": started, "finished_at": at,
                          "reviewed_basis": sorted([list(k) for k in reviewed]),
                          "disputes": [{"dispute_id": d["dispute_id"], "finding_id": d["finding_id"],
@@ -1058,7 +1146,8 @@ def make_job_class():
                 kind, reason = "failed", f"Technical failure: an unexpected error ({type(e).__name__})."
             with jobs.RUN_LOCK:
                 c["status"] = {"finished": "finished", "failed": "failed"}.get(kind, "stopped")
-                c["status_reason"] = reason
+                # CLAIM-001 / UNKNOWN-001: the outcome line counts code-recorded access and search failures too
+                c["status_reason"] = f"{reason} {rc.limitation_sentence(c)}"
                 c["finished_at"] = now_utc()
                 if kind != "finished":
                     c["limitation"] = {"kind": kind, "reason": reason, "at": now_utc(),
@@ -1760,7 +1849,7 @@ def make_job_class():
 
         def sec_filing_lead(self, ticker: str, cid: str, url: str) -> dict | None:
             """An SEC archive document captured by its URL (an exhibit, say) takes its filing date from the filer's
-            submissions list, matched by accession: without it 'by year-end' or a yearless day has no year to count
+            submissions list, matched by accession: without it 'by year-end' has no year to count
             from (live run 3). One SEC metadata request per filer, cached; recorded in the manifest."""
             m = re.search(r"/Archives/edgar/data/(\d+)/(\d{18})/", url or "")
             if not m:
@@ -2144,7 +2233,7 @@ def make_job_class():
             from runs.claim_assessment import timing_snapshot
             tpage = next(p for p in tsrc["pages"] if p["page_number"] == span["page_number"])
             _, t_consumed = sources.load_page_evidence(self.dir, tpage)
-            today = event_checks.release_day(words, tsrc.get("published_date"))
+            today = event_checks.release_day(words, tsrc.get("published_date"), anchor=span["quote"])
             row["research"] = {"timing": timing_snapshot(tsrc, tpage, span["quote"], t_consumed),
                                "timing_release_day": today[0].isoformat() if today else None}
             results = recheck.row_checks(row, one_page, words_by_span[k], consumed_artifact=consumed)
@@ -2260,7 +2349,7 @@ def make_job_class():
                 if not open_:
                     c["status_reason"] = (f"The model finished: {len(mine)} proposal{'s' if len(mine) != 1 else ''}, "
                                           f"{len(args['limitations'])} limitation"
-                                          f"{'s' if len(args['limitations']) != 1 else ''} recorded."
+                                          f"{'s' if len(args['limitations']) != 1 else ''} stated by the model."
                                           + (f" {len(missing)} without a disposition." if missing else ""))
             if open_:
                 self.step(ticker, "check", "Code", "runs.research_contract",

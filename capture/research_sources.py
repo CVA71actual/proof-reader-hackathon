@@ -655,36 +655,78 @@ def capture_document(fetched: Fetched, run_dir: Path, source_id: str, *,
 
 # A site that serves its maintenance page, a bot wall or an access-denied page to our fetcher has given us nothing:
 # such a page is never a captured source (live brief-v2 run: jnj.com served "Site Maintenance" seven times and the
-# model read it as "nothing material"). Detected only on short pages, from the page's own words.
+# model read it as "nothing material"). Detected from the page's own words: see block_reason.
 BLOCK_PHRASES = ("site maintenance", "under maintenance", "access denied", "request blocked", "has been blocked",
                  "are you a robot", "captcha", "unusual traffic",
                  "attention required", "just a moment", "checking your browser", "enable javascript and cookies",
                  "please switch to a different browser", "temporarily unavailable", "403 forbidden",
                  "you don't have permission to access", "bot detection", "security check")
-BLOCK_MAX_CHARS = 2000
+BLOCK_MAX_CHARS = 2000      # a page this short with block wording anywhere is an interstitial (unchanged)
 _HUMAN_CHECK = __import__("re").compile(r"\bver\w{0,3}y (?:that )?you are (?:a )?human\b")
+# Maintenance wording a block phrase list cannot enumerate: "down for scheduled maintenance", "offline for planned
+# maintenance", "undergoing maintenance", "we'll be back soon". Never the bare word: "maintenance therapy" or
+# "maintenance dosing" in a release is the document, not a block.
+_MAINTENANCE = __import__("re").compile(
+    r"\b(?:(?:down|offline|closed|unavailable) for (?:\w+ ){0,2}maintenance|(?:scheduled|planned|routine|system) "
+    r"maintenance (?:is|in progress|window)|undergoing (?:\w+ ){0,2}maintenance|performing (?:\w+ ){0,2}maintenance|"
+    r"we(?:'|’)?ll be back (?:soon|shortly|online))\b")
+_HEADLINE = __import__("re").compile(r"(?is)<(title|h1)\b[^>]*>(.*?)</\1\s*>")
+# Document content: a release dateline ("CITY, Month D, YYYY") or an SEC filing cover. Either one means the page is
+# an article, release or filing body, whatever it also says about maintenance.
+_FILING_COVER = __import__("re").compile(r"(?i)securities and exchange commission|\bform (?:8-k|10-k|10-q|6-k|20-f)\b")
+_SENTENCE_END = (".", "!", "?", "…")
+
+
+def _block_hit(low: str) -> str | None:
+    hit = next((p for p in BLOCK_PHRASES if p in low), None)
+    if hit is None:
+        m = _HUMAN_CHECK.search(low) or _MAINTENANCE.search(low)
+        hit = m.group(0) if m else None
+    return hit
+
+
+def _document_content(text: str) -> bool:
+    from checks.event_checks import _DATELINE
+    return bool(_DATELINE.search(text) or _FILING_COVER.search(text))
 
 
 def block_reason(fetched: "Fetched") -> str | None:
-    """'site served a block/maintenance page (...)' when the answer is an interstitial rather than the document."""
+    """'site served a block/maintenance page (...)' when the answer is an interstitial rather than the document.
+
+    OUTCOME-001 (Red Team, #175 at 72a8404): the page is judged by what it is, not by a length limit alone. It is a
+    block page when (a) it is short and block wording appears anywhere (as before), or (b) its title or headline is
+    block wording, or (c) block wording dominates its text (the lines that carry it are most of the page's sentence
+    text); (b) and (c) only when the page has no document content (no release dateline, no filing cover). A long
+    release that mentions "maintenance therapy" is a document and is captured."""
     if fetched.status is not None and not 200 <= fetched.status < 300:
         return None        # an error status is reported as itself (403/404/451 could_not_access, others failed)
     if fetched.status is not None and fetched.status not in (200, 203):
         return f"site served a block/maintenance page (unusual status HTTP {fetched.status})"
     if kind_of(fetched.content_type, fetched.body, fetched.final_url) != "html":
         return None
-    text = readable_text(sanitize_html(fetched.body.decode("utf-8", errors="replace"))[0])
-    if len(text) > BLOCK_MAX_CHARS:
-        return None
+    import html as _html
+    sanitized = sanitize_html(fetched.body.decode("utf-8", errors="replace"))[0]
+    text = readable_text(sanitized)
     low = " ".join(text.lower().split())
-    hit = next((p for p in BLOCK_PHRASES if p in low), None)
-    if hit is None:      # the bot-wall prompt asking the visitor to confirm they are human
-        m = _HUMAN_CHECK.search(low)
-        hit = m.group(0) if m else None
-    if hit:
-        return f"site served a block/maintenance page (“{hit}”, {len(text)} characters of text)"
     if not low:
         return "site served a block/maintenance page (no readable text)"
+    if len(text) <= BLOCK_MAX_CHARS:
+        hit = _block_hit(low)
+        return f"site served a block/maintenance page (“{hit}”, {len(text)} characters of text)" if hit else None
+    if _document_content(text):
+        return None
+    for tag, inner in _HEADLINE.findall(sanitized):
+        words = " ".join(_html.unescape(_TAG.sub(" ", inner)).lower().split())
+        hit = _block_hit(words)
+        if hit:
+            where = "title" if tag.lower() == "title" else "headline"
+            return f"site served a block/maintenance page (“{hit}” in the {where}, {len(text)} characters of text)"
+    lines = [" ".join(l.lower().split()) for l in text.splitlines()]
+    prose = [l for l in lines if l.endswith(_SENTENCE_END)]
+    hits = [l for l in prose if _block_hit(l)]
+    if hits and 2 * sum(map(len, hits)) > sum(map(len, prose)):
+        return (f"site served a block/maintenance page (“{_block_hit(hits[0])}” is most of the page's text, "
+                f"{len(text)} characters of text)")
     return None
 
 

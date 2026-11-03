@@ -289,12 +289,12 @@ def _canon(text: str | None) -> str:
 
 # A date as a slide or press release prints it: with a weekday ("Thursday, August 6, 2026"), a time of day ("Friday,
 # Sept. 4 at 10:00 a.m. ET"), "calendar year 2028", or no year at all ("Sept. 4"). clean_date_text takes off what is not
-# part of the date; yearless_day counts the year from the filing date: the first such day on or after it.
+# part of the date; is_yearless_day marks a day with no year, which code never dates (DATE-001).
 _DAYS = (r"(?:today|tomorrow|yesterday|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?"
          r"|sat(?:urday)?|sun(?:day)?)")
 _WEEKDAY = re.compile(rf"^{_DAYS}\.?,?\s+", re.I)
-_CLOCK = r"\d{1,2}(?::\d{2})?\s*[ap]\.?m\.?"
-_TIME = re.compile(rf",?\s*(?:at\s+)?{_CLOCK}(?:\s*[-–]\s*{_CLOCK})?(?:\s*(?:[A-Za-z]{{2,3}}|(?:eastern|pacific|central|mountain)(?: (?:standard |daylight )?time)?))?\.?$",
+_CLOCK = r"(?:\d{1,2}(?::\d{2})?\s*[ap]\.?m\.?|(?:[01]?\d|2[0-3]):[0-5]\d)"
+_TIME = re.compile(rf",?\s*(?:at\s+)?(?<![\w:]){_CLOCK}(?:\s*[-–]\s*{_CLOCK})?(?:\s*(?:[A-Za-z]{{2,3}}|(?:eastern|pacific|central|mountain)(?: (?:standard |daylight )?time)?))?\.?$",
                    re.I)
 _MONTH_WORDS = "|".join(sorted(_MONTHS, key=len, reverse=True))
 _DAY_ONLY = re.compile(r"^([A-Za-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?$")
@@ -329,28 +329,21 @@ def parse_day_range(text: str | None) -> tuple[date, date] | None:
     return (first, last) if first <= last else None
 
 
-def yearless_day(text: str | None, filed: date | str | None) -> date | None:
-    """'Friday, Sept. 4 at 10:00 a.m. ET' filed 2026-08-05 -> 2026-09-04: a month and a day with no year take the first
-    such day on or after the filing date ('December 12' filed 2026-12-20 -> 2027-12-12). None for anything else, or when
-    there is no filing date."""
-    if isinstance(filed, str):
-        try:
-            filed = date.fromisoformat(filed[:10])
-        except ValueError:
-            return None
-    if filed is None:
-        return None
+def is_yearless_day(text: str | None) -> bool:
+    """'Friday, Sept. 4 at 10:00 a.m. ET', 'March 18': a month and a day with no year printed.
+
+    DATE-001 / UNKNOWN-001 (Codex 5b, 2026-11-02): such a day is never given a year by code. The filing or
+    publication date does not supply one (the old rule took the first such day on or after the filing date, so
+    'March 18' under a November 2026 filing silently became 2027-03-18). With no captured span that prints the year,
+    the timing stays unresolved: no ISO bounds, and not a failed claim."""
     m = _DAY_ONLY.match(clean_date_text(text).rstrip("."))
     if not m or m[1].lower() not in _MONTHS:
-        return None
-    for year in range(filed.year, filed.year + 5):          # five years reach any 29 February
-        try:
-            d = date(year, _MONTHS[m[1].lower()], int(m[2]))
-        except ValueError:
-            continue
-        if d >= filed:
-            return d
-    return None
+        return False
+    try:
+        date(2028, _MONTHS[m[1].lower()], int(m[2]))       # a leap year: 29 February is a real day
+    except ValueError:
+        return False
+    return True
 
 
 # "today", "announced today", "this morning", "earlier today" in a release mean the day the release is dated: the
@@ -372,24 +365,45 @@ def is_today_word(text: str | None) -> bool:
     return bool(_TODAY.match(_TIME.sub("", _canon(text)).strip()))
 
 
-def dateline_date(words: list[dict] | None) -> date | None:
-    """The date of the 'CITY, Month D, YYYY' line near the top of the words, or None when none is printed."""
-    head = " ".join(w["text"] for w in (words or [])[:DATELINE_WORDS])
-    for m in _DATELINE.finditer(head):
+def _datelines(text: str):
+    for m in _DATELINE.finditer(text):
         if m[1].split(" ")[-1].lower() in _WEEKDAY_NAMES:       # "Thursday, August 6, 2026" is a day, not a dateline
             continue
         try:
-            return date(int(m[4]), _MONTHS[m[2].lower()], int(m[3]))
+            yield date(int(m[4]), _MONTHS[m[2].lower()], int(m[3]))
         except ValueError:
             continue
-    return None
 
 
-def release_day(words: list[dict] | None, published: date | str | None) -> tuple[date, str] | None:
-    """(the day 'today' means, 'release dateline' or 'filing date'), or None when there is neither."""
+def dateline_date(words: list[dict] | None, *, whole_page: bool = False) -> date | None:
+    """The date of the 'CITY, Month D, YYYY' line near the top of the words (the first DATELINE_WORDS words), or None
+    when none is printed there. `whole_page` looks at every word: used only to tell that a page prints a dateline the
+    header scan did not reach, never to pick that date."""
+    ws = words or []
+    head = " ".join(w["text"] for w in (ws if whole_page else ws[:DATELINE_WORDS]))
+    return next(_datelines(head), None)
+
+
+def release_day(words: list[dict] | None, published: date | str | None,
+                anchor: str | None = None) -> tuple[date, str] | None:
+    """(the day 'today' means, how it was found), or None when no reliable anchor exists.
+
+    1. `anchor`: the captured evidence quote the date is compared against (the row's quote, or its timing span's).
+       When it prints a dateline, that dateline is the release day wherever it sits on the page: an explicit anchor
+       bound as evidence (Codex 5b), not a longer header scan.
+    2. The dateline in the first DATELINE_WORDS words.
+    3. A page that prints a dateline only past the header scan has an ambiguous release date: the filing date is NOT
+       substituted for it (an SEC filing date can differ from the release date). None: relative timing unresolved.
+    4. A page with no dateline at all: the source's published (filing) date, named as such."""
+    if anchor:
+        d = next(_datelines(normalize(anchor)), None)
+        if d is not None:
+            return d, "captured dateline"
     d = dateline_date(words)
     if d is not None:
         return d, "release dateline"
+    if dateline_date(words, whole_page=True) is not None:
+        return None
     if isinstance(published, str):
         try:
             published = date.fromisoformat(published[:10])
@@ -465,8 +479,9 @@ def date_phrase_flag(text: str | None) -> str | None:
 def parse_date_phrase(text: str | None, filing_date: date | str | None = None) -> tuple[str, date | None, date | None]:
     """Any date wording -> (kind, start, end). 'Q4 2026' -> ('quarter', 2026-10-01, 2026-12-31); 'second half of calendar
     year 2026' -> ('half', 2026-07-01, 2026-12-31); 'by year-end' filed 2026-10-21 -> ('year', 2026-09-01,
-    2026-12-31); 'at week 105' -> ('none', None, None). A wording that needs the filing date (relative words, a day
-    with no year) gives (kind, None, None) when none is passed. Vague 'early / mid / late YYYY' read as the same rough
+    2026-12-31); 'at week 105' -> ('none', None, None). A wording that needs the filing date (relative words)
+    gives (kind, None, None) when none is passed; a day with no year is always ('day', None, None):
+    code never supplies its year (DATE-001). Vague 'early / mid / late YYYY' read as the same rough
     windows as vague_period_window (kind relative); year-end wordings are kind year."""
     filed = _as_date(filing_date)
     raw = normalize(text)
@@ -486,9 +501,8 @@ def parse_date_phrase(text: str | None, filing_date: date | str | None = None) -
     d = parse_exact_date(clean)
     if d:
         return ("day", d, d)
-    d = yearless_day(raw, filed)
-    if d:
-        return ("day", d, d)
+    if is_yearless_day(raw):
+        return ("day", None, None)          # DATE-001: no year printed, no year invented
     s = _canon(clean)
     m = _MONTH_END.match(s)
     if m and m[1].lower() in _MONTHS:
@@ -829,8 +843,10 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
     date belongs to are interpretations left to the separate human-review state.
     event_type/title/program/chosen remain accepted for caller compatibility;
     they do not change this literal comparison.
-    A period with no year ('Q3') fails. A day with no year ('Friday, Sept. 4') is the first such day on or after
-    `filed` (yearless_day); a weekday or time of day around a date is not part of it (clean_date_text).
+    A period with no year ('Q3') fails. A day with no year ('Friday, Sept. 4', 'March 18') is never given a year
+    (DATE-001): its timing stays unresolved, with no start or end, and it is not a fail. A row with no date for it:
+    not_needed; a row that gives a day for it: could_not_run (the year cannot be compared). A weekday or time of day
+    around a date is not part of it (clean_date_text).
     A relative period ('by year-end', 'this year', 'next quarter') takes its
     year from `filed`, the source's filing date (relative_period): the row's dates must lie inside that window.
     'today' / 'announced today' / 'this morning' / 'earlier today' is the day in `today` (the release dateline, or the
@@ -851,8 +867,11 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
         except ValueError:
             return None
 
-    timing_start = phrase_start or stored_day(date_iso)
-    timing_end = phrase_end or stored_day(date_end) or timing_start
+    yearless = is_yearless_day(dt)
+    # DATE-001 / UNKNOWN-001: a day with no printed year has no bounds; the row's own stored date is not
+    # evidence of the year, so it is not copied into the check's timing either.
+    timing_start = None if yearless else phrase_start or stored_day(date_iso)
+    timing_end = None if yearless else phrase_end or stored_day(date_end) or timing_start
     timing_start_text = timing_start.isoformat() if timing_start else None
     timing_end_text = timing_end.isoformat() if timing_end else None
     timing_precision = ("period" if timing_start and timing_end and timing_start != timing_end else
@@ -887,7 +906,12 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
                       found=today.isoformat())
     rel = relative_period(dt, filed)
     if rel is not None:
-        if dt not in _norm_quote(quote):
+        # The catalogue already normalizes printed year-end spacing. Apply
+        # that same normalization to both sides before the literal comparison.
+        # Keep the original quote and date wording in the saved evidence.
+        literal_dt = fix_wording(expand_short_year(dt))
+        literal_quote = fix_wording(expand_short_year(_norm_quote(quote)))
+        if literal_dt not in literal_quote:
             return result(FAIL, "The date text is not part of the quote.", found=None)
         start, end = rel
         found = f"{start.isoformat()} to {end.isoformat()}"
@@ -913,7 +937,6 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
         return result(COULD_NOT_RUN, f"“{dt}” looks like OCR noise (letters joined to a year), so it cannot be "
                                      f"compared with the row's date.", found=dt)
     dt, q = fix_wording(expand_short_year(dt)), fix_wording(expand_short_year(q))
-    day = yearless_day(dt, filed)
     dt = clean_date_text(dt)                                 # no weekday or time of day; still printed in the quote
     q = _CAL_YEAR.sub("", fix_commas(q))
     # Adjacent date phrases joined as a range cannot be checked by accepting
@@ -935,17 +958,15 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
         if (days[0].isoformat(), days[1].isoformat()) == (date_iso, date_end):
             return result(PASS, "The days in the row are the days printed in the quote.", found=found)
         return result(FAIL, "The days in the row differ from the days printed in the quote.", found=found)
-    if day is not None:
-        found = day.isoformat()
-        how = "the year counted from the filing date"
+    if yearless:
+        # Codex 5b (DATE-001): never roll a printed month and day into a year the source does not print.
         if date_end is not None:
-            return result(FAIL, "The quote names one day but the row gives a period.", found=found)
+            return result(FAIL, "The quote names one day but the row gives a period.", found=dt)
         if date_iso is None:
-            return result(FAIL, "The quote names a day but the row gives none.", found=found)
-        if date_iso == found:
-            return result(PASS, f"The day in the row is the day printed in the quote, with {how}.", found=found)
-        return result(FAIL, f"The day in the row differs from the day printed in the quote ({how}: {found}).",
-                      found=found)
+            return result(NOT_NEEDED, f"“{dt}” prints no year, so its timing stays unresolved: no year is "
+                                      f"counted from the filing date.", found=dt)
+        return result(COULD_NOT_RUN, f"“{dt}” prints no year, so the year of the row's date ({date_iso}) cannot be "
+                                     f"compared; its timing stays unresolved.", found=dt)
     if _NAMED.fullmatch(_canon(dt)):
         named = named_dates(q)
         same = [m for m in named if _canon(m[0]) == _canon(dt)]

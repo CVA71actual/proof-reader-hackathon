@@ -77,6 +77,8 @@ from capture import http
 # researcher (Muse Spark, Meta). Muse Spark Open stays a DECLARED fallback, used only when DeepSeek is unavailable; it is
 # the open-weights member of the researcher's own family, and the record and labels say so when it ran.
 REVIEWER_NAME = "DeepSeek V4 Pro"
+PROBE_MAX_TOKENS = 1
+REFUSED_STATUSES = (401, 403)
 REVIEWER_MODEL_ID = "deepseek-ai/DeepSeek-V4-Pro-0813"
 REVIEWER_PROVIDER = "baseten"
 REVIEWER_FAMILY = "DeepSeek"
@@ -155,10 +157,16 @@ class OneShotChat:
     def ready(self) -> str | None:
         return None if self._key() else f"No {self.name} key was found ({self.key_env}), so this stage did not run."
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None, json_mode: bool = False) -> ChatReply:
+    def probe(self) -> ChatReply:
+        """The access check (once per run): one request with a one-token reply. Shows whether the key may use this
+        model (a 401/403 refusal); the model list does not reflect key permissions."""
+        return self.chat([{"role": "user", "content": "Reply with: ok"}], max_tokens=PROBE_MAX_TOKENS)
+
+    def chat(self, messages: list[dict], tools: list[dict] | None = None, json_mode: bool = False,
+             max_tokens: int | None = None) -> ChatReply:
         from capture import read_table
         kwargs: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0,
-                                  "max_tokens": http.MAX_COMPLETION_TOKENS}
+                                  "max_tokens": max_tokens or http.MAX_COMPLETION_TOKENS}
         if tools:
             kwargs["tools"] = tools
         if json_mode:
@@ -675,6 +683,7 @@ class ReviewResult:
     settings: dict = field(default_factory=dict)
     family: str | None = None
     reviewer_name: str | None = None
+    access_refused: dict | None = None
     not_reviewed: list = field(default_factory=list)
     cited_unread: list = field(default_factory=list)
     pages_read: dict = field(default_factory=dict)
@@ -702,7 +711,7 @@ class ReviewResult:
                 "order_refusals": self.order_refusals, "nothing_material": self.nothing_material,
                 "limitations": self.limitations, "ignored_finishes": self.ignored_finishes,
                 "model": self.model, "requested_model": self.requested_model, "provider": self.provider,
-                "family": self.family, "reviewer": self.reviewer_name,
+                "family": self.family, "reviewer": self.reviewer_name, "access_refused": self.access_refused,
                 "turns": self.turns, "searches": self.searches, "fetches": self.fetches, "usage": self.usage,
                 "summary": self.summary, "settings": self.settings}
 
@@ -785,7 +794,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
             limitations=list(open_retrieval.values()), ignored_finishes=ignored_finishes,
             reviewed_rows=[{"row_id": r["row_id"], "revision_id": r["revision_id"]} for r in rows.values()],
             model=state["model"], requested_model=getattr(model, "model", None), provider=who["provider"],
-            family=who["family"], reviewer_name=who["name"],
+            family=who["family"], reviewer_name=who["name"], access_refused=state.get("access_refused"),
             turns=state["turns"], searches=searches, fetches=fetches, usage=gate.usage(),
             summary=state["summary"], settings=settings,
             assessments=list(assessed.values()), order_refusals=order_refusals, nothing_material=nothing_material,
@@ -1112,6 +1121,8 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         gate.settle(ticket, "model", reply.model, who["price_name"], reply.prompt_tokens, reply.completion_tokens, 0,
                     reply.error, reply.may_have_been_billed if reply.error else None)
         if reply.error:
+            if reply.http_status in REFUSED_STATUSES:
+                state["access_refused"] = {"http_status": reply.http_status, "message": reply.error}
             return result(INCOMPLETE, reply.error)
         if reply.finish_reason == TRUNCATED:
             # Classified before any tool in it runs: a cut-off reply establishes nothing, even a parseable

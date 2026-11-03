@@ -251,14 +251,17 @@ def build_row(i: int, event: dict, reading: dict, source: dict, words_doc: dict,
         trail.append({"step": "Year inferred from the filing date", "tag": "Code", "who": BUILDER,
                       "text": f"“{row['date_text']}” names no year. Counted from the filing date "
                               f"({source['published_date']}) it is {row['date']} to {row['date_end']}.", "at": at})
-    day = event_checks.yearless_day(row["date_text"], source.get("published_date"))
-    if day is not None:
-        row["date"] = row["date"] or day.isoformat()
-        trail.append({"step": "Year inferred from the filing date", "tag": "Code", "who": BUILDER,
-                      "text": f"“{row['date_text']}” names no year. Counted from the filing date "
-                              f"({source['published_date']}) it is {day.isoformat()}.", "at": at})
+    if event_checks.is_yearless_day(row["date_text"]):
+        # DATE-001 / UNKNOWN-001 (Codex 5b): a day with no printed year is never dated by code, and a proposed day
+        # for it is a guess at the year, not evidence: the row keeps the printed words, its timing stays unresolved.
+        guessed = [v for v in (row["date"], row["date_end"]) if v]
+        row["date"] = row["date_end"] = None
+        trail.append({"step": "Year not printed", "tag": "Code", "who": BUILDER,
+                      "text": f"“{row['date_text']}” names no year, and no year is counted from the filing date"
+                              + (f"; the {reader}'s date {' to '.join(guessed)} was not kept" if guessed else "")
+                              + ". The timing stays unresolved.", "at": at})
     if event_checks.is_today_word(row["date_text"]) and not row["date"] and not row["date_end"]:
-        found = event_checks.release_day(words, source.get("published_date"))
+        found = event_checks.release_day(words, source.get("published_date"), anchor=quote)
         if found is not None:
             row["date"] = found[0].isoformat()
             trail.append({"step": f"Date taken from the {found[1]}", "tag": "Code", "who": BUILDER,

@@ -647,6 +647,12 @@ Such a review is never clean; every label that claims a review carries them in p
 with no findings "Agent research — independently reviewed — 1 source could not be opened". Row, company, run, export
 and audit labels all carry it.
 
+Reviewer access (live test 5d028a8): the model list does not reflect key permissions, so once per run a one-token
+access check (`OneShotChat.probe`, through the gate) asks whether the key may use the reviewer. A 401/403 refusal is
+recorded in `run.research.reviewer_access` with the provider's message; the refused model is never retried, and the
+declared fallback (Muse Spark Open) reviews every company with the same-family label and `review[t].multi_family.met:
+false`. A refusal on a first real call (no access check) is handled the same way.
+
 Labels are derived, never read back (e2e #180, CLAIM-001 / UNKNOWN-001): `runs/research_labels.py
 derive_review_labels(run)` sets every row, company and run label from the recorded review (its status, the findings
 still current on the rows, the retrieval limits in its limitations, the reviewer that ran). It runs when a review is

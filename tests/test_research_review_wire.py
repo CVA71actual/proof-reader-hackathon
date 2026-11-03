@@ -922,3 +922,70 @@ def test_dryrun_3_each_company_carries_its_review_status(runs_dir):
     _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer)
     c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
     assert seen == ["reviewing"] and c["status"] == "finished" and c["review_status"] == "done"
+
+
+# ------------------------------------------------------------------ live test 5d028a8: the key may not use DeepSeek
+
+REFUSED = "Error code: 403 - please check the api-key you provided"
+
+
+def _two_company_run(runs_dir, primary, fallback):
+    reader = F.PerCompany({"PTGX": happy_script(), "ROIV": [F.body([F.call(
+        "finish_draft", {"dispositions": [], "limitations": []}, "f")])]})
+    tools = F.tools({PR1: (200, "text/html; charset=utf-8", PAGE1)})
+    ident = {"PTGX": ("1377121", "Protagonist Therapeutics, Inc."), "ROIV": ("1635088", "Roivant Sciences Ltd.")}
+    tools.resolve = lambda t: ident[t]
+    tools.reviewer, tools.reviewer_fallback, tools.brave = primary, fallback, F.FakeBrave()
+    tools.adjudicator = F.FakeChat([], model=F.ADJUDICATOR_MODEL)
+    app = create_app(runs_dir=runs_dir, reader=reader, background=False, second_reader=None, wonder_reader=None,
+                     sam_reader=None, research_tools=tools, research_reader=reader)
+    r = TestClient(app).post("/api/runs/new", json={"mode": "research", "companies": ["PTGX", "ROIV"],
+                                                     "as_of": "2026-11-02", "research_limits": {"concurrency": 1}})
+    assert r.status_code == 202, r.text
+    return run_json(runs_dir, r.json()["id"])
+
+
+def test_a_403_on_the_access_check_falls_back_once_per_run_and_says_same_family(runs_dir):
+    primary = F.FakeChat([], refuse=REFUSED)
+    fallback = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
+                           F.chat_tools(("finish_review", {"summary": "empty"}))], **F.FALLBACK)
+    run = _two_company_run(runs_dir, primary, fallback)
+    RUN_SCHEMA.validate(run)
+    r = run["run"]["research"]
+    assert primary.probes == 1 and primary.sent == []                # checked once per run, never retried
+    acc = r["reviewer_access"]
+    assert acc["refused"] is True and acc["http_status"] == 403 and "check the api-key" in acc["message"]
+    assert acc["fallback"] == "Muse Spark Open"
+    for t in ("PTGX", "ROIV"):
+        e = r["review"][t]
+        assert e["reviewer_choice"]["fallback_used"] is True and e["reviewer"] == "Muse Spark Open"
+        assert "HTTP 403" in e["reviewer_choice"]["primary_unavailable"]
+        assert e["families"]["same_family"] is True and e["multi_family"]["met"] is False
+        assert e["label"].startswith("Agent research — reviewed by Muse Spark Open (same model family as the "
+                                     "researcher)") and "independently" not in e["label"]
+    assert r["companies"]["PTGX"]["review_status"] == "done"
+    assert any("not retried" in s["text"] and "MULTI-FAMILY-001 not met" in s["text"] for s in r["steps"])
+
+
+def test_a_403_on_the_first_review_call_switches_to_the_fallback_without_retrying(runs_dir):
+    primary = F.FakeChat([], refuse=REFUSED)
+    primary.probe = lambda: None                                      # no access check: the first call is refused
+    fallback = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
+                           F.chat_tools(("finish_review", {"summary": "empty"}))], **F.FALLBACK)
+    run = _two_company_run(runs_dir, primary, fallback)
+    r = run["run"]["research"]
+    assert len(primary.sent) == 1                                     # one refused call in the whole run
+    assert r["review"]["PTGX"]["status"] == "complete" and r["review"]["ROIV"]["status"] == "complete"
+    assert all(r["review"][t]["reviewer"] == "Muse Spark Open" for t in ("PTGX", "ROIV"))
+    assert r["reviewer_access"]["refused"] is True and r["review"]["PTGX"]["multi_family"]["met"] is False
+    assert r["review"]["PTGX"]["usage"]["spend_usd"] >= 0
+
+
+def test_a_passing_access_check_keeps_deepseek_and_records_it(runs_dir):
+    primary = F.FakeChat([F.assess_then(), F.chat_tools(("finish_review", {"summary": "x"})),
+                          F.chat_tools(("finish_review", {"summary": "empty"}))], probe=True)
+    run = _two_company_run(runs_dir, primary, F.FakeChat([], **F.FALLBACK))
+    r = run["run"]["research"]
+    assert primary.probes == 1 and r["reviewer_access"]["checked"] is True and r["reviewer_access"]["refused"] is False
+    assert all(r["review"][t]["reviewer"] == "DeepSeek V4 Pro" and r["review"][t]["multi_family"]["met"]
+               for t in ("PTGX", "ROIV"))
