@@ -1376,12 +1376,13 @@
 
   // details pane (shared by audit + judgment)
   function detailsPane(host, row, opts) {
+    opts = opts || {};
+    clear(host);
+    // the research label and Context section lead the pane — after the clear
     var rsLabel = researchLabelLine(row);
     if (rsLabel) host.append(rsLabel);
     var rsCtx = researchContextSection(row);
     if (rsCtx) host.append(rsCtx);
-    opts = opts || {};
-    clear(host);
     var t = rowTarget(row);
     var src = sourceOf(row);
 
@@ -4693,8 +4694,6 @@
       var cw = costPerKeptRowWords();
       if (cw) bits.push(cw);
       host.append(el('div', 'jb-sub', bits.join(' · ')));
-      var rsc = researchCompanyBlock(runResearch() && runResearch().companies);
-      if (rsc) host.append(rsc);
       host.hidden = false;
       return;
     }
@@ -4776,6 +4775,9 @@
       }), err);
       host.append(ctl);
     }
+    // per-company research progress rides every state — queued, running, done
+    var rsc = researchCompanyBlock(runResearch() && runResearch().companies);
+    if (rsc) host.append(rsc);
     host.hidden = false;
   }
   // the money rule: under a cent reads in words, a cent or more in cents

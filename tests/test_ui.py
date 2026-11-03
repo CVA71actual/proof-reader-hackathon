@@ -1537,6 +1537,28 @@ def test_research_s1_surfaces_read_the_real_get_envelope(tmp_path):
         "if (!ll || ll.textContent !== 'Agent research — not independently reviewed') { console.error('label'); process.exit(8); }",
         "const ctx = H.ev('researchContextSection')(row);",
         "if (!ctx) { console.error('no Context section'); process.exit(9); }",
+        # FIX-ON-FIND 17:07 — the real render functions to final DOM
+        "H.ev(\"route = { screen: 'trail', runId: '" + rid + "', rowId: null, dialog: null }\");",
+        "H.ev('renderTrail')();",
+        "var trailText = textOf(nodes['trail-mid']).join(' ');",
+        "if (trailText.indexOf('Agent research — not independently reviewed') === -1 || trailText.indexOf('Search') === -1)",
+        "  { console.error('trail DOM: ' + trailText.slice(0, 160)); process.exit(10); }",
+        "H.ev(\"audit.filter = 'ALL'; audit.selected = null; route = { screen: 'audit', runId: '" + rid + "', rowId: null, dialog: null }\");",
+        "H.ev('renderAuditRows')();",
+        "var auditText = textOf(nodes['audit-rows']).join(' ');",
+        "if (auditText.indexOf('Searched, not found') === -1 || auditText.indexOf('PDUFA') === -1)",
+        "  { console.error('audit DOM: ' + auditText.slice(0, 160)); process.exit(11); }",
+        "H.ev('updateRunCardJob')();",
+        "var cardText = textOf(nodes['runcard-job']).join(' ');",
+        "if (cardText.indexOf('PTGX') === -1 || cardText.indexOf('Finished') === -1)",
+        "  { console.error('card DOM: ' + cardText.slice(0, 160)); process.exit(12); }",
+        "var paneHost = make('div');",
+        "H.ev('detailsPane')(paneHost, row, { actions: true, back: 'audit' });",
+        "var paneText = textOf(paneHost).join(' ');",
+        "if (paneText.indexOf('Agent research — not independently reviewed') === -1)",
+        "  { console.error('pane DOM label missing'); process.exit(13); }",
+        "if (paneText.indexOf('Context') === -1)",
+        "  { console.error('pane DOM Context missing'); process.exit(14); }",
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=90)
@@ -5330,7 +5352,7 @@ def _render_card_and_summary(meta: dict, accepted: int = 0) -> dict:
     consts = "\n".join(_grab_var(js, n) for n in ("GROUP_NAMES", "GROUP_ORDER", "JOB_STATUS_WORDS", "JOB_ACTIVE",
                                                    "JOB_PAUSABLE", "JOB_LIMIT_STOP"))
     fns = "\n".join(_grab_fn(js, n) for n in ("money", "cents", "costPerKeptRowWords", "unpricedMark", "jobReason",
-                                               "updateRunCardJob", "oneModelRun", "reviewAxis", "renderExport", "reviewAcceptedCount", "projectionComplete", "partialProjection"))
+                                               "updateRunCardJob", "oneModelRun", "reviewAxis", "renderExport", "reviewAcceptedCount", "projectionComplete", "partialProjection", "researchCompanyBlock", "runResearch"))
     script = f"""
 function make() {{
   return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, hidden: false, value: '',
