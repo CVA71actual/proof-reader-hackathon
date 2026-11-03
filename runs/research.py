@@ -16,8 +16,10 @@ Limits (CVA ruling 2026-11-02: "I don't want any limits on anything without my a
     There is no page cap on a fetched source.
 With the optional limits off, a company's loop ends only when: the model says it is done (finish_draft, or a final
 answer in prose after one reminder to use the tools), the spend cap is reached (a recorded limitation), a person
-stops the run (request_stop), or a technical failure (an error answer, a service that did not answer, two empty answers
-in a row, an unexpected error). A limit or a stop never publishes anything: rows stay proposals, the run is not
+stops the run (request_stop), or a technical failure (an error answer, a service that did not answer, an unexpected
+error). Two recorded safety stops were APPROVED by CVA (LIMITS-002, 2026-11-02): two empty replies in a row stop that
+company; a prose-only reply after one reminder counts as done. A third rule (stop after the same action with the same
+result three times) is a PROPOSAL only and is not applied: repeats are recorded, nothing more. A limit or a stop never publishes anything: rows stay proposals, the run is not
 "done", and the draft audit says the draft is partial. One company's failure is recorded and the others go on.
 
 An identical action repeated with an identical result (same tool, same arguments, same answer) is recorded under
@@ -76,6 +78,12 @@ EDGAR_PAGE = 40
 # cited by a proposal and not marked nothing_material), capturing another is refused with a typed issue and recorded
 # as a coverage gap. A design default, not a spend limit.
 UNSETTLED_SOURCES_MAX = 1
+# Bounded replay (live run 3: input regrew to 297,910 bytes by turn 45 through encrypted reasoning, proposal arguments,
+# search results and stubs). The request replays only the last REPLAY_TURNS turns; reasoning items only from the
+# latest turn (the one whose calls are being answered); search result lists only from the latest turn. Older turns
+# are dropped as whole call/output pairs (the API's pairing stays valid) and replaced by one code-written summary of
+# the research so far, built from the run's own ledger. Nothing is lost: every step, source and proposal is recorded.
+REPLAY_TURNS = 3
 LINE_WORDS_MAX = 40
 STOP_FILE = "STOP_REQUESTED.json"
 TICKER = re.compile(r"^[A-Z0-9.-]{1,10}$")
@@ -505,7 +513,7 @@ def make_job_class():
             st = self.state[ticker] = {"cik": str(int(cik)), "company": company, "sources": {}, "keys": {},
                                        "calls": {}, "actions": {}, "leads": {}, "history_bytes": 0,
                                        "fetch_by_url": {}, "finish_attempts": 0, "as_of": as_of,
-                                       "delivered": {}, "settled": {}, "compacted": set(),
+                                       "delivered": {}, "settled": {}, "compacted": set(), "turn_starts": [],
                                        "window_end": window_end, "started": time.monotonic()}
             assignment = self.choices.get("note_for_agent") or ""
             card = {"ticker": ticker, "company": company, "cik": st["cik"], "as_of": as_of.isoformat(),
@@ -521,7 +529,8 @@ def make_job_class():
             while True:
                 self.check_company_limits(ticker)
                 searches_left = self.searches_left(ticker)
-                items = pending if (continuation == rr.CONTINUE_PREVIOUS and prev_id) else history
+                items = (pending if (continuation == rr.CONTINUE_PREVIOUS and prev_id)
+                         else self.replay_input(ticker, history, len(first)))
                 body = rr.build_request(instructions=rc.CONTROLLER, input_items=items, functions=functions,
                                         searches_left=searches_left, continuation=continuation,
                                         previous_response_id=prev_id)
@@ -567,6 +576,7 @@ def make_job_class():
                         raise Stop("failed", "Technical failure: two empty answers in a row "
                                              f"(the last: {why}).")
                     nudge = {"role": "user", "content": NUDGE_EMPTY}
+                    st["turn_starts"].append(len(history))
                     history += list(reply.output) + [nudge]
                     pending, prev_id = [nudge], reply.response_id
                     continue
@@ -594,6 +604,7 @@ def make_job_class():
                     raise Stop("incomplete", f"Incomplete: the model's answer was cut off (status incomplete: {why}); "
                                              f"the proposals recorded so far are kept, the company is not finished. "
                                              f"It was not retried.")
+                st["turn_starts"].append(len(history))
                 history += list(reply.output)
                 if not calls:
                     text = reply.text()
@@ -608,7 +619,7 @@ def make_job_class():
                             c["finish"] = {"by": "prose", "at": now_utc(), "text": text[:2000]}
                         return
                     prose_nudged = True
-                    nudge = {"role": "user", "content": NUDGE_TOOLS}
+                    nudge = {"role": "user", "content": NUDGE_TOOLS}     # LIMITS-002: prose after this = done
                     history.append(nudge)
                     pending, prev_id = [nudge], reply.response_id
                     continue
@@ -725,7 +736,7 @@ def make_job_class():
             handler = {"fetch_url": self.t_fetch_url, "fetch_edgar": self.t_fetch_edgar,
                        "fetch_ctgov": self.t_fetch_ctgov, "read_source_pages": self.t_read_pages,
                        "propose_events": self.t_propose, "record_coverage": self.t_coverage,
-                       "nothing_material": self.t_nothing_material,
+                       "nothing_material": self.t_nothing_material, "revise_event": self.t_revise,
                        "finish_draft": self.t_finish}[name]
             return handler(ticker, cid, args)
 
@@ -734,6 +745,58 @@ def make_job_class():
             if cap is not None and self.company(ticker)["fetches"] >= cap:
                 return f"Per-company fetch limit reached ({cap}), a setting a person turned on."
             return None
+
+        def replay_input(self, ticker: str, history: list, first_n: int) -> list:
+            """The bounded input of the next request (REPLAY_TURNS). Never mutates the history."""
+            st = self.state[ticker]
+            starts = st["turn_starts"]
+            if len(starts) <= REPLAY_TURNS:
+                keep_from, dropped = (starts[0] if starts else len(history)), 0
+            else:
+                keep_from, dropped = starts[-REPLAY_TURNS], len(starts) - REPLAY_TURNS
+            last_start = starts[-1] if starts else len(history)
+            out = list(history[:first_n])
+            if dropped:
+                out.append({"role": "user", "content": self.summary_text(ticker, dropped)})
+            for i in range(keep_from, len(history)):
+                item = history[i]
+                latest = i >= last_start
+                if item.get("type") == "reasoning" and not latest:
+                    continue                                   # reasoning replays only with its own turn's calls
+                if item.get("type") == "web_search_call" and not latest and "results" in item:
+                    item = {k: v for k, v in item.items() if k != "results"}    # leads are in the manifest
+                out.append(item)
+            return out
+
+        def summary_text(self, ticker: str, dropped: int) -> str:
+            """A code-written summary of the research so far, from the run's ledger (no model text)."""
+            st = self.state[ticker]
+            lines = [f"Research so far (code summary; {dropped} earlier turns are not replayed, every step is "
+                     f"recorded):"]
+            for sid, src in st["sources"].items():
+                by = st["settled"].get(sid)
+                lines.append(f"- source {sid}: {src['title'][:100]} ({len(src['pages'])} pages) — "
+                             + (f"settled by {', '.join(by)}" if by else "NOT SETTLED: propose from it or "
+                                                                          "nothing_material"))
+            for r in self.run["rows"]:
+                if (r.get("research") or {}).get("ticker") == ticker:
+                    codes = ",".join(i["code"] for i in r["research"]["issues"]) or "no issue"
+                    lines.append(f"- proposal {r['id']} rev {r['research']['revision']}: {r['title'][:80]} "
+                                 f"[{r['date_text'] or 'undated'}] {r['status']}; {codes}")
+            for c in self.research["coverage"]:
+                if c["ticker"] == ticker and not c.get("a_to_z_gap"):
+                    lines.append(f"- coverage {c['category']} {c['status']}: {c['question'][:90]}")
+            fetched = {s["url"] for s in st["sources"].values()} | {s["retrieval"]["requested_url"]
+                                                                    for s in st["sources"].values()}
+            leads = [(u, l.get("title")) for u, l in st["leads"].items() if u not in fetched][:30]
+            if leads:
+                lines.append("- SEC filings listed and not yet captured (leads): "
+                             + "; ".join(f"{t} {u}" for u, t in leads))
+            failures = self.company(ticker)["capture_failures"]
+            if failures:
+                lines.append("- could not capture: " + "; ".join(f"{f['url']} ({f.get('http_status') or f['reason'][:40]})"
+                                                                 for f in failures[-10:]))
+            return "\n".join(lines)
 
         def unsettled(self, ticker: str) -> list[str]:
             st = self.state[ticker]
@@ -857,7 +920,8 @@ def make_job_class():
                 self.job["research_next_source"] = n + 1
             sid = f"src-r{n}-{ticker.lower()}"
             captured = rs.capture_document(fetched, self.dir, sid, render_html=self.tools.render_html, title=title)
-            lead = st["leads"].get(fetched.requested_url) or st["leads"].get(fetched.final_url) or {}
+            lead = (st["leads"].get(fetched.requested_url) or st["leads"].get(fetched.final_url)
+                    or self.sec_filing_lead(ticker, cid, fetched.final_url) or {})
             pages = []
             for raw, words in captured["pages"]:
                 n_page = words["page_number"]
@@ -926,6 +990,38 @@ def make_job_class():
                          if captured["rendered"].get("form") == "text" else ""),
                       call_id=cid, source_id=sid)
             return source
+
+        def sec_filing_lead(self, ticker: str, cid: str, url: str) -> dict | None:
+            """An SEC archive document captured by its URL (an exhibit, say) takes its filing date from the filer's
+            submissions list, matched by accession: without it 'by year-end' or a yearless day has no year to count
+            from (live run 3). One SEC metadata request per filer, cached; recorded in the manifest."""
+            m = re.search(r"/Archives/edgar/data/(\d+)/(\d{18})/", url or "")
+            if not m:
+                return None
+            cik, acc = str(int(m[1])), m[2]
+            st = self.state[ticker]
+            dates = st.setdefault("filing_dates", {})
+            if cik not in dates:
+                dates[cik] = {}
+                listing_url = rs.SUBMISSIONS_URL.format(cik=cik)
+                try:
+                    got = self.tools.fetcher.get(listing_url)
+                    recent = (json.loads(got.body.decode("utf-8")).get("filings") or {}).get("recent") or {}
+                    for a, d, f in zip(recent.get("accessionNumber") or [], recent.get("filingDate") or [],
+                                       recent.get("form") or []):
+                        dates[cik][a.replace("-", "")] = (d, f)
+                    with jobs.RUN_LOCK:
+                        self.manifest.append("listing", ticker=ticker, call_id=cid, url=listing_url,
+                                             sha256=hashlib.sha256(got.body).hexdigest(),
+                                             retrieved_at=got.retrieved_at, filings=len(dates[cik]),
+                                             purpose="filing date of a captured SEC document")
+                except Exception:      # the filing date stays unknown (null), never guessed
+                    return None
+            hit = dates[cik].get(acc)
+            if not hit:
+                return None
+            return {"filing_date": hit[0], "title": f"{ticker if cik == st['cik'] else 'CIK ' + cik} {hit[1]} document, "
+                                                    f"filed {hit[0]} ({url.rsplit('/', 1)[-1]})"}
 
         def source_view(self, ticker: str, source: dict, pages: list[int]) -> dict:
             inventory = [{"page_number": p["page_number"],
@@ -1054,7 +1150,12 @@ def make_job_class():
             self.save_ledger()
             return rc.envelope(cid, status, {"events": results}), False
 
-        def intake(self, ticker: str, cid: str, n: int, ev: dict) -> dict:
+        def t_revise(self, ticker, cid, args):
+            result = self.intake(ticker, cid, 0, args["event"], (args["id"], args["expected_revision"]))
+            self.save_ledger()
+            return rc.envelope(cid, "ok" if result["status"] == "checked" else "partial", {"events": [result]}), False
+
+        def intake(self, ticker: str, cid: str, n: int, ev: dict, revision: tuple | None = None) -> dict:
             st = self.state[ticker]
             at = now_utc()
             if ev["ticker"].strip().upper() != ticker:
@@ -1063,19 +1164,19 @@ def make_job_class():
             else:
                 problems = rc.event_runtime_issues(ev, n, st["sources"])
             existing = None
-            if not problems and ev["id"] is not None:
-                existing = next((r for r in self.run["rows"] if r["id"] == ev["id"] and r.get("research")
+            if not problems and revision is not None:
+                rid, rev = revision
+                existing = next((r for r in self.run["rows"] if r["id"] == rid and r.get("research")
                                  and r["ticker"].upper() == ticker), None)
                 if existing is None:
-                    problems = [rc.issue("stale_revision", f"There is no proposal {ev['id']} for {ticker}.",
-                                         ev["id"])]
-                elif existing["research"]["revision"] != ev["expected_revision"]:
-                    problems = [rc.issue("stale_revision", f"{ev['id']} is at revision "
-                                                           f"{existing['research']['revision']}, not "
-                                                           f"{ev['expected_revision']}.", ev["id"])]
+                    problems = [rc.issue("stale_revision", f"revise_event id: there is no proposal {rid} for {ticker}.",
+                                         rid)]
+                elif existing["research"]["revision"] != rev:
+                    problems = [rc.issue("stale_revision", f"revise_event expected_revision: {rid} is at revision "
+                                                           f"{existing['research']['revision']}, not {rev}.", rid)]
                 elif not existing["research"]["feedback"]["repair_open"]:
-                    problems = [rc.issue("repair_not_offered", f"{ev['id']} already had its one repair; it stays "
-                                                               f"recorded for a person.", ev["id"])]
+                    problems = [rc.issue("repair_not_offered", f"{rid} already had its one repair; it stays "
+                                                               f"recorded for a person.", rid)]
             if problems:
                 with jobs.RUN_LOCK:
                     self.research["refusals"].append({"at": at, "ticker": ticker, "call_id": cid, "index": n,
@@ -1122,8 +1223,8 @@ def make_job_class():
                    "issues": issues}
             if issues and fb["repair_open"]:
                 out["status"] = "needs_repair"
-                out["repair"] = (f"Typed feedback (once): revise with propose_events, id {row['id']} and "
-                                 f"expected_revision {row['research']['revision']}; or leave it for a person.")
+                out["repair"] = (f"Typed feedback (once): call revise_event with id {row['id']}, expected_revision "
+                                 f"{row['research']['revision']} and the whole revised event; or leave it for a person.")
             elif issues:
                 out["note"] = "Recorded with its issues for a person; no further repair is offered."
             if row["research"]["near_duplicates"]:

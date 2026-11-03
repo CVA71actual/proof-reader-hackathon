@@ -183,7 +183,7 @@ def test_requests_replay_full_output_before_tool_results_with_auto_tool_choice(r
     assert {t["name"] for t in first["tools"][1:]} == set(rc.ARGUMENTS)
     assert all("function" not in t for t in first["tools"][1:])       # flat Responses form
     # the instructions are the compact controller; the assignment is its own input item, exactly
-    assert first["instructions"] == rc.CONTROLLER and len(rc.CONTROLLER) < 2000
+    assert first["instructions"] == rc.CONTROLLER and len(rc.CONTROLLER) < 3000       # compact, not the 3,996 brief
     assert first["input"][0]["content"].endswith(run_choices_note())
     kinds = [i.get("type") for i in second["input"][2:]]
     assert kinds == ["reasoning", "web_search_call", "function_call", "function_call_output"]
@@ -509,7 +509,8 @@ def test_manifest_is_append_only_with_verifiable_checkpoints(runs_dir):
 
 def _propose_run(runs_dir, events_batches, pages=None, finish=True):
     script = [F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")])]
-    script += [F.body([F.call("propose_events", {"events": b}, f"p{i}")]) for i, b in enumerate(events_batches)]
+    script += [F.body([F.call("revise_event", b, f"p{i}") if isinstance(b, dict) else
+                       F.call("propose_events", {"events": b}, f"p{i}")]) for i, b in enumerate(events_batches)]
     if finish:
         script.append(lambda req: F.body([F.call("finish_draft", {"dispositions": [
             {"row_id": r, "disposition": "proposal", "related_row_id": None, "reason": "x"} for r in _row_ids(req)],
@@ -529,7 +530,7 @@ def test_a_failed_check_goes_back_once_as_typed_feedback_and_one_revision_is_acc
     fixed = F.event("ICARUS readout", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30",
                     rid="e1", rev=1)
     again = {**fixed, "expected_revision": 2}
-    reader, rid, run = _propose_run(runs_dir, [[bad], [fixed], [again]])
+    reader, rid, run = _propose_run(runs_dir, [[bad], fixed, again])
     first = _answer(reader, 2)["data"]["events"][0]
     assert first["status"] == "needs_repair" and first["issues"][0]["code"] == "quote_not_found"
     assert "once" in first["repair"]
@@ -1153,7 +1154,8 @@ def test_a_403_is_could_not_access_and_the_primary_source_path_goes_on(runs_dir)
     assert c["capture_failures"][0]["outcome"] == "could_not_access" and c["capture_failures"][0]["url"] == blocked
     assert c["status"] == "finished" and run["sources"][0]["url"] == primary and run["sources"][0]["kind"] == "filing"
     assert "never work around a refusal" in rc.CONTROLLER
-    assert tools.fetcher.asked == [blocked, primary]            # one honest request each, no retry or disguise
+    # one honest request each, no retry or disguise (plus the SEC submissions list for the document's filing date)
+    assert tools.fetcher.asked == [blocked, primary, rs.SUBMISSIONS_URL.format(cik="1377121")]
 
 
 def test_an_incomplete_answer_with_finish_draft_never_finalizes_the_company(runs_dir):
@@ -1252,7 +1254,9 @@ def test_compaction_stubs_settled_page_text_and_keeps_every_call_paired(runs_dir
     last = reader.requests[-1]["input"]
     calls = [i["call_id"] for i in last if i.get("type") == "function_call"]
     outs = [i["call_id"] for i in last if i.get("type") == "function_call_output"]
-    assert calls == outs and len(calls) == 6                      # every call keeps its output, in order
+    assert calls == outs and len(calls) == research.REPLAY_TURNS   # every replayed call keeps its output, in order
+    summary = next(i for i in last if i.get("role") == "user" and i["content"].startswith("Research so far"))
+    assert "source src-r1-ptgx" in summary["content"] and "proposal e1" in summary["content"]
     for i, item in enumerate(last):
         if item.get("type") == "function_call_output":
             assert last[i - 1].get("type") == "function_call" and last[i - 1]["call_id"] == item["call_id"]
@@ -1276,3 +1280,102 @@ def test_bytes_per_turn_stay_bounded_after_compaction(runs_dir):
     usage = [s for s in run_json(runs_dir, rid)["run"]["research"]["steps"] if s["kind"] == "usage"]
     assert len(usage) == len(reader.requests)
     assert [u["refs"]["input_bytes"] for u in usage] == sizes and usage[0]["refs"]["input_tokens"] == 1000
+
+
+
+# ---------------------------------------------------------------- live run 3: ids are code's bookkeeping, not the model's
+
+
+def test_a_new_proposal_carries_no_id_fields_and_is_accepted(runs_dir):
+    ev = F.event("ICARUS", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30")
+    assert "id" not in ev and "expected_revision" not in ev
+    assert "id" not in rc.EVENT["properties"] and "expected_revision" not in rc.EVENT["properties"]
+    reader, _, run = _propose_run(runs_dir, [[ev]])
+    assert _answer(reader, 2)["data"]["events"][0]["id"] == "e1"
+
+
+def test_ids_on_a_new_proposal_are_refused_naming_the_exact_fields(runs_dir):
+    ev = {**F.event("ICARUS", QUOTE, date_text="Q2 2027", date="2027-04-01", date_end="2027-06-30"),
+          "id": None, "expected_revision": None}
+    reader, _, run = _propose_run(runs_dir, [[ev]])
+    msg = _answer(reader, 2)["issues"][0]["message"]
+    assert "'expected_revision', 'id'" in msg and "events/0" in msg and "revise_event" in msg
+
+
+def test_a_revision_without_its_ids_is_refused_with_a_precise_message():
+    args, problems = rc.parse_arguments("revise_event", json.dumps({"event": F.event("x", QUOTE)}))
+    assert args is None
+    msgs = [p["message"] for p in problems]
+    assert any("required field 'id' is missing (the row id code assigned" in m for m in msgs)
+    assert any("required field 'expected_revision' is missing" in m for m in msgs)
+
+
+def test_limits_002_values():
+    assert rr.MAX_OUTPUT_TOKENS == 32768 and rs.FETCH_TIMEOUT_S == 180
+    assert rs.MAX_BYTES == 25 * 1024 * 1024 and rs.MAX_REDIRECTS == 5 and research.MAX_COMPANIES == 10
+
+
+
+def test_an_sec_document_captured_by_url_takes_its_filing_date_so_year_end_has_a_year(runs_dir):
+    """Live run 3, e6: 'by year-end' on an EX-99 fetched by URL failed because its published date was unknown."""
+    url = "https://www.sec.gov/Archives/edgar/data/1377121/000110465926091099/tm2622272d1_ex99-2.htm"
+    subs = {"filings": {"recent": {"form": ["8-K"], "filingDate": ["2026-09-08"],
+                                   "accessionNumber": ["0001104659-26-091099"], "primaryDocument": ["x.htm"]}}}
+    quote = "Potential share buyback program announcement by year-end."
+    ev = F.event("Buyback announcement", quote, date_text="by year-end", type_hint="corporate")
+    reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": url, "purpose": "deck"}, "c0")]),
+                              F.body([F.call("propose_events", {"events": [ev]}, "c1")]),
+                              F.body([F.call("finish_draft", {"dispositions": [
+                                  {"row_id": "e1", "disposition": "proposal", "related_row_id": None,
+                                   "reason": "x"}], "limitations": []}, "c2")])])
+    _, rid, _ = start(runs_dir, reader, pages={url: (200, "text/html", F.html(quote)),
+                                               rs.SUBMISSIONS_URL.format(cik="1377121"):
+                                                   (200, "application/json", json.dumps(subs).encode())})
+    run = run_json(runs_dir, rid)
+    assert run["sources"][0]["published_date"] == "2026-09-08" and "filed 2026-09-08" in run["sources"][0]["title"]
+    row = next(r for r in run["rows"] if r["id"] == "e1")
+    assert {c["name"]: c["result"] for c in row["checks"]}["date_match"] == "pass"
+
+
+def test_guidance_says_code_derives_period_bounds_and_quotes_are_whole():
+    assert "set date and date_end to null: code derives the bounds" in rc.CONTROLLER
+    assert "Quote whole sentences exactly as printed, including the date words" in rc.CONTROLLER
+    from checks import event_checks as e
+    q = "into a comprehensive Phase 2 psoriasis program, with initiation expected in early Q1 2027."
+    assert e.date_match("early Q1 2027", None, q, date_end=None).result == "pass"       # null bounds: derived
+    assert e.date_match("early Q1 2027", "2027-01-01", q, date_end="2027-03-31").result == "fail"   # check unchanged
+
+
+
+def test_a_40_turn_run_keeps_input_bytes_under_a_ceiling(runs_dir):
+    """Live run 3: input regrew to 297,910 bytes by turn 45. With bounded replay, 40 turns of fetch/propose with
+    encrypted reasoning, search results and large proposals stay under a flat ceiling."""
+    k = 20
+    script = []
+    for n in range(1, k + 1):
+        url = f"https://ir.example.com/s{n}"
+        quote = f"Source {n}: Topline data for program P{n} are expected in Q2 2027."
+        reasoning = {"type": "reasoning", "id": f"rs{n}", "summary": [], "encrypted_content": "E" * 4000}
+        script.append(F.body([reasoning, F.search(f"query {n}", [f"https://lead{n}-{j}.example.com" for j in range(10)],
+                                                  sid=f"ws{n}"),
+                              F.call("fetch_url", {"url": url, "purpose": "x"}, f"f{n}")]))
+        ev = F.event(f"P{n} topline " + "detail " * 60, quote, source=f"src-r{n}-ptgx", date_text="Q2 2027",
+                     program=f"P{n}")
+        script.append(F.body([dict(reasoning, id=f"rp{n}"), F.call("propose_events", {"events": [ev]}, f"p{n}")]))
+    script.append(lambda req: F.body([F.call("finish_draft", {"dispositions": [
+        {"row_id": f"e{n}", "disposition": "proposal", "related_row_id": None, "reason": "x"}
+        for n in range(1, k + 1)], "limitations": []}, "fin")]))
+    pages = {f"https://ir.example.com/s{n}": (200, "text/html", _big_page(n)) for n in range(1, k + 1)}
+    reader = F.FakeResponses(script)
+    _, rid, _ = start(runs_dir, reader, pages=pages)
+    assert run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]["status"] == "finished"
+    sizes = [rr.request_size(r) for r in reader.requests]
+    assert len(sizes) == 2 * k + 1
+    ceiling = 80_000
+    assert max(sizes) < ceiling, max(sizes)
+    late, early = sizes[-10:], sizes[6:16]
+    assert max(late) < 1.6 * max(early)              # near flat: the summary grows by a line per source/proposal
+    for req in reader.requests[1:]:                  # the API pairing holds in every request
+        calls = [i["call_id"] for i in req["input"] if i.get("type") == "function_call"]
+        outs = [i["call_id"] for i in req["input"] if i.get("type") == "function_call_output"]
+        assert calls == outs

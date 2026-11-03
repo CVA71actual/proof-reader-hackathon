@@ -41,7 +41,7 @@ from checks.selector_match import MIN_WORD_HEIGHT_PT
 
 HIDDEN_WORD_HEIGHT_PT = MIN_WORD_HEIGHT_PT     # 2.0 pt: a word shorter than this is not printed where it seems
 MAX_BYTES = 25 * 1024 * 1024
-FETCH_TIMEOUT_S = 60
+FETCH_TIMEOUT_S = 180       # LIMITS-002 (CVA 2026-11-02); the SEC 10-Q took 62s in the free live proof
 MAX_REDIRECTS = 5
 WEB_USER_AGENT = "ProofReader-research/1.0 (+public-source capture; contact in SEC_USER_AGENT)"
 CTGOV_STUDY = "https://clinicaltrials.gov/api/v2/studies/{nct}"

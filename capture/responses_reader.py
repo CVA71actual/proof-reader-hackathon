@@ -42,8 +42,13 @@ NAME = "Muse Spark"
 CONTINUE_REPLAY = "replay"
 CONTINUE_PREVIOUS = "previous_response_id"
 INCLUDE = ["web_search_call.results", "reasoning.encrypted_content"]
-# A research turn's own output budget. Muse Spark reasons before it answers; reasoning tokens count against this.
-MAX_OUTPUT_TOKENS = 8192
+# A research turn's own output budget (LIMITS-002, CVA 2026-11-02: the model's documented maximum). Muse Spark reasons
+# before it answers; reasoning tokens count against this. No maximum output is documented for muse-spark-1.3: checked
+# https://dev.meta.ai/docs/models (context window 1,048,576 tokens, no output maximum stated),
+# https://dev.meta.ai/docs/api-reference/responses/create-response and https://dev.meta.ai/docs/pricing-rate-limits
+# (rate limits only) on 2026-11-02. So 32,768, as CVA directed when none is documented. The strict reservation scales
+# with it; the run's spending cap still governs.
+MAX_OUTPUT_TOKENS = 32768
 REASONING = {"effort": "medium"}
 
 NO_KEY = ("No model key was found, so nothing was researched. Add MODEL_API_KEY to ~/.config/proof-reader/env "

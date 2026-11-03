@@ -171,8 +171,9 @@ def event(title, quote, *, source="src-r1-ptgx", page=1, date_text=None, date=No
           conditions=None, spans=None, rid=None, rev=None, ticker="PTGX", type_hint="clinical_readout"):
     evidence = spans or [{"source_id": source, "page_number": page, "quote": quote, "word_ids": None,
                           "roles": ["action", "timing"]}]
-    return {"id": rid, "expected_revision": rev, "ticker": ticker, "subject_company": None, "program": program,
+    ev = {"ticker": ticker, "subject_company": None, "program": program,
             "indication": None, "title": title, "type_hint": type_hint, "action": "topline data", "modality": None,
             "date_text": date_text, "date": date, "date_end": date_end, "conditions": conditions, "relation": None,
             "relevance": None, "relevance_kind": "none", "placement_proposal": "upcoming", "primary_span_index": 0,
             "evidence": evidence, "prior_row_ids": []}
+    return ev if rid is None else {"id": rid, "expected_revision": rev, "event": ev}

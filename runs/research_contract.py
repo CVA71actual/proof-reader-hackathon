@@ -54,8 +54,13 @@ CONTROLLER = (
     "different sentences; give each span its roles.\n"
     "- Never use a publication dateline as the event date unless the text anchors to it (\"today\").\n"
     "- conditions: null if not established, [] if the support states none, else the conditions verbatim.\n"
-    "- Keep timing as printed (date_text) and give ISO bounds (date, date_end for a period) or null.\n"
-    "- Code checks every proposal and may send typed feedback once; revise with id and expected_revision.\n"
+    "- Keep timing as printed (date_text). Give date (ISO) only for an exact printed day. For a period (a quarter, a "
+    "half, a month, 'early Q1 2027', 'by year-end') set date and date_end to null: code derives the bounds from the "
+    "printed words.\n"
+    "- Quote whole sentences exactly as printed, including the date words. If the quote prints no year, add a span "
+    "that prints it, or leave date null.\n"
+    "- Code assigns every proposal's id. Code checks every proposal and may send typed feedback once; then fix it "
+    "with revise_event (its id and revision).\n"
     "- A-TO-Z-001: one source at a time. After you read a captured source, propose_events citing it, or call "
     "nothing_material with the reason, BEFORE you capture the next source. Searches and listings may be batched.\n"
     "- Record what you searched and did not find with record_coverage. When you are done, call finish_draft with "
@@ -66,7 +71,8 @@ CONTROLLER = (
 )
 
 _NULL_STR = {"type": ["string", "null"]}
-_DATE = {"type": ["string", "null"], "description": "ISO date YYYY-MM-DD, or null"}
+_DATE = {"type": ["string", "null"], "description": "ISO date YYYY-MM-DD for an exact printed day; null for a period "
+                                                  "(code derives its bounds) or no date"}
 
 SPAN = {
     "type": "object", "additionalProperties": False,
@@ -84,12 +90,10 @@ SPAN = {
 
 EVENT = {
     "type": "object", "additionalProperties": False,
-    "required": ["id", "expected_revision", "ticker", "subject_company", "program", "indication", "title", "type_hint",
+    "required": ["ticker", "subject_company", "program", "indication", "title", "type_hint",
                  "action", "modality", "date_text", "date", "date_end", "conditions", "relation", "relevance",
                  "relevance_kind", "placement_proposal", "primary_span_index", "evidence", "prior_row_ids"],
     "properties": {
-        "id": {**_NULL_STR, "description": "null for a new event; the row id to revise an earlier proposal."},
-        "expected_revision": {"type": ["integer", "null"], "minimum": 1},
         "ticker": {"type": "string"},
         "subject_company": _NULL_STR, "program": _NULL_STR, "indication": _NULL_STR,
         "title": {"type": "string", "minLength": 1},
@@ -128,6 +132,13 @@ ARGUMENTS = {
     "propose_events": {
         "type": "object", "additionalProperties": False, "required": ["events"],
         "properties": {"events": {"type": "array", "items": EVENT, "minItems": 1, "maxItems": 12}}},
+    "revise_event": {
+        "type": "object", "additionalProperties": False, "required": ["id", "expected_revision", "event"],
+        "properties": {"id": {"type": "string", "pattern": "^e[0-9]+$",
+                              "description": "The row id code assigned to the proposal (for example e3)."},
+                       "expected_revision": {"type": "integer", "minimum": 1,
+                                             "description": "The revision code reported for it (for example 1)."},
+                       "event": EVENT}},
     "record_coverage": {
         "type": "object", "additionalProperties": False,
         "required": ["ticker", "category", "question", "status", "tool_call_ids", "source_ids", "programs", "finding"],
@@ -173,8 +184,10 @@ DESCRIPTIONS = {
     "fetch_ctgov": "ClinicalTrials.gov. nct_id: capture that study record as a citable source. query: search the "
                    "registry for leads (not evidence). Exactly one of nct_id and query.",
     "read_source_pages": "Read pages of a captured source: each line with its word ids.",
-    "propose_events": "Propose catalyst events, each citing captured evidence spans. Code runs the checks and answers "
-                      "with the row id, revision and every check result.",
+    "propose_events": "Propose NEW catalyst events, each citing captured evidence spans. Do not send ids: code assigns "
+                      "each one and answers with its row id, revision and every check result.",
+    "revise_event": "Revise one earlier proposal after code's typed feedback: its row id, the revision code reported, "
+                    "and the whole revised event.",
     "record_coverage": "Record what you checked for a question, including searched-but-not-found, with the tool call "
                        "ids and sources it rests on.",
     "nothing_material": "Settle a captured source you read that holds nothing material for the calendar, with the "
@@ -209,10 +222,25 @@ def parse_arguments(name: str, raw) -> tuple[dict | None, list[dict]]:
         return None, [issue("malformed_argument", "The arguments are not valid JSON.")]
     errors = sorted(VALIDATORS[name].iter_errors(args), key=lambda e: list(e.absolute_path))
     if errors:
-        return None, [issue("malformed_argument",
-                            f"{'/'.join(str(p) for p in e.absolute_path) or 'arguments'}: {e.message}")
-                      for e in errors[:8]]
+        return None, [issue("malformed_argument", _plain_schema_error(name, e)) for e in errors[:8]]
     return args, []
+
+
+def _plain_schema_error(tool: str, e) -> str:
+    """The schema error, naming the exact field the model sent wrong (and what to do for the bookkeeping fields)."""
+    where = "/".join(str(p) for p in e.absolute_path) or "arguments"
+    if e.validator == "additionalProperties":
+        extra = sorted(set(e.instance) - set(e.schema.get("properties", {}))) if isinstance(e.instance, dict) else []
+        if tool == "propose_events" and set(extra) & {"id", "expected_revision"}:
+            return (f"{tool} {where}: field(s) {', '.join(repr(x) for x in extra)} must not be sent. A new proposal has "
+                    f"no id or revision: code assigns them. To change an earlier proposal, call revise_event.")
+        return f"{tool} {where}: unexpected field(s) {', '.join(repr(x) for x in extra)}."
+    if e.validator == "required":
+        missing = e.message.split("'")[1] if "'" in e.message else e.message
+        hint = {"id": " (the row id code assigned, for example e3)",
+                "expected_revision": " (the revision code reported, for example 1)"}.get(missing, "")
+        return f"{tool} {where}: required field {missing!r} is missing{hint}."
+    return f"{tool} {where}: {e.message}"
 
 
 def _iso(v) -> bool:
@@ -238,9 +266,6 @@ def event_runtime_issues(ev: dict, n: int, sources: dict) -> list[dict]:
     if ev.get("date") and ev.get("date_end") and _iso(ev["date"]) and _iso(ev["date_end"]) \
             and ev["date_end"] < ev["date"]:
         out.append(issue("malformed_argument", "date_end is before date.", sid))
-    if (ev["id"] is None) != (ev["expected_revision"] is None):
-        out.append(issue("malformed_argument", "A new event has id and expected_revision both null; a revision "
-                                               "gives both.", sid))
     for k, span in enumerate(ev["evidence"]):
         src = sources.get(span["source_id"])
         if src is None:
