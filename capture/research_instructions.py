@@ -17,12 +17,6 @@ WHERE_TO_LOOK = (__import__("pathlib").Path(__file__).with_name("brief_v2_where_
 RESEARCH_DEFAULT = DEFAULT + "\n\n" + WHERE_TO_LOOK
 
 
-def where_to_look_points() -> list:
-    """The six Where-to-look points as a list (the block the server appends to every research assignment,
-    served to the New Run screen so it can show the full instruction set verbatim)."""
-    return [line[2:].strip() for line in WHERE_TO_LOOK.splitlines() if line.startswith("- ")]
-
-
 def research_assignment(note: str | None) -> str:
     """The research loop's assignment: brief v2 by default; a person's own note first, with the where-to-look block."""
     if note is None or not note.strip() or note == DEFAULT:
