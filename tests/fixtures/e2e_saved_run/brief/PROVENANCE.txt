@@ -1,0 +1,1 @@
+Cut by make_fixture.py from /private/tmp/claude-501/-Users-cva26/2e8cb8e7-5189-4a1c-8b81-4980942b650d/scratchpad/smoke-brief/runs/run-1/run.json (run run-1, started 2026-11-03T03:04:19+00:00). Rows: e1, e3, e4, e5. Sources: src-r1-ptgx p[2, 3]. Dropped run.research keys: steps, audit, refusals.
