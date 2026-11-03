@@ -263,7 +263,8 @@ def render_json_pdf(body: bytes, title: str) -> tuple[bytes, str]:
 # heads the snapshot, and Chrome runs with JavaScript off, all hostnames unresolvable and every request sent to a dead
 # proxy (loopback included), in an empty temporary folder. Nothing the page names can be loaded while it renders.
 # What was removed is recorded as a specific capture limitation (images not captured, stylesheets not applied, ...).
-# The SEC exhibit path (capture.fetch_filings.render_html_to_pdf) is unchanged.
+# SEC exhibits (server/intake.py's default renderer) go through the same sanitizer and launch: capture.exhibit_render
+# (Codex 5a) inlines only the exhibit's own captured raster images before the snapshot is written.
 
 CSP = ("default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; script-src 'none'; "
        "frame-src 'none'; object-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'")
@@ -300,8 +301,13 @@ def _clean_css(css: str, counts: dict) -> str:
     return css
 
 
-def sanitize_html(html_text: str) -> tuple[str, dict]:
-    """(controlled snapshot, counts of what was removed). Text content is kept; nothing active or remote survives."""
+def sanitize_html(html_text: str, image_resolver: Callable[[str], str | None] | None = None) -> tuple[str, dict]:
+    """(controlled snapshot, counts of what was removed). Text content is kept; nothing active or remote survives.
+
+    image_resolver (the SEC exhibit path, capture.exhibit_render): called with the src of every <img> the snapshot
+    would show (never for one inside a dropped or hidden element). It returns a validated inline raster data: URI to
+    show, or None to omit the image with the usual placeholder. Without a resolver, an <img> keeps only an inline
+    data: src, exactly as before."""
     import html as _html
     from html.parser import HTMLParser
 
@@ -370,6 +376,13 @@ def sanitize_html(html_text: str) -> tuple[str, dict]:
                 return
             if tag in ("img", "image", "picture", "video", "audio", "input") and tag != "picture":
                 src = dict((k.lower(), v or "") for k, v in attrs).get("src", "")
+                if tag == "img" and image_resolver is not None:
+                    uri = image_resolver(src)
+                    if uri is not None:
+                        attrs = [(k, v) for k, v in attrs if k.lower() not in ("src", "srcset")] + [("src", uri)]
+                        src = uri
+                    else:
+                        src = ""          # omitted: falls through to the placeholder below
                 if tag == "img" and src.strip().lower().startswith("data:"):
                     pass
                 elif tag in ("img", "image", "video", "audio") or (tag == "input" and
@@ -476,27 +489,29 @@ ISOLATION_FLAGS = ("--disable-javascript", "--host-resolver-rules=MAP * ~NOTFOUN
                    "--disable-extensions", "--no-pings", "--disable-domain-reliability")
 
 
-def chrome_render(html_path: Path, pdf_path: Path, *, run=None) -> str:
-    """Render a fetched web page offline: sanitize it into an empty temporary folder, then print it with headless
-    Chrome under ISOLATION_FLAGS. `run`: subprocess.run (tests intercept it). Returns the renderer label; the
-    sanitized snapshot's limitations are written beside the PDF as <pdf>.limitations.json."""
+def isolated_print(snapshot: str, pdf_path: Path, *, width_in: float, height_in: float, chrome: Path | None = None,
+                   run=None) -> Path:
+    """Print a sanitized snapshot to pdf_path with headless Chrome under ISOLATION_FLAGS, from an empty temporary
+    folder (relative references resolve to nothing), on paper width_in x height_in. The one isolated browser launch
+    for every renderer of untrusted HTML (fetched web pages and SEC exhibits). Returns the Chrome binary used.
+    CaptureFailed when Chrome fails, times out or writes no PDF. `run`: subprocess.run (tests intercept it)."""
     import subprocess
+    import time as _time
     from capture import fetch_filings as ff
 
     run = run or subprocess.run
-    raw = html_path.read_text(encoding="utf-8", errors="replace")
-    snapshot, counts = sanitize_html(raw)
-    chrome = ff.find_chrome()
+    chrome = ff.find_chrome(chrome)
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    if pdf_path.exists():
+        pdf_path.unlink()
     with tempfile.TemporaryDirectory(prefix="pr-research-render-") as tmp:
         page = Path(tmp) / "page.html"
-        page.write_text(snapshot, encoding="utf-8")
-        printable = ff._print_html_with_page_size(page, ff.LETTER_WIDTH_IN, ff.LETTER_HEIGHT_IN)
+        page.write_text('<meta charset="utf-8">' + snapshot, encoding="utf-8")    # code-owned: the bytes are UTF-8
+        printable = ff._print_html_with_page_size(page, width_in, height_in)
         with tempfile.TemporaryDirectory(prefix="pr-research-chrome-", ignore_cleanup_errors=True) as profile:
             cmd = [str(chrome), "--headless", f"--user-data-dir={profile}", "--no-first-run",
                    "--no-default-browser-check", "--disable-gpu", "--no-pdf-header-footer", *ISOLATION_FLAGS,
                    f"--print-to-pdf={pdf_path}", printable.resolve().as_uri()]
-            import time as _time
             started = _time.monotonic()
             try:
                 run(cmd, check=True, capture_output=True, text=True, timeout=300)
@@ -508,9 +523,23 @@ def chrome_render(html_path: Path, pdf_path: Path, *, run=None) -> str:
     if not pdf_path.is_file() or pdf_path.stat().st_size < 64:
         raise CaptureFailed(f"Chrome exited normally after {_time.monotonic() - started:.1f}s but wrote no PDF "
                             f"(snapshot {len(snapshot)} characters).")
+    return chrome
+
+
+ISOLATED_LABEL = " (isolated: sanitized snapshot, no scripts, no network)"
+
+
+def chrome_render(html_path: Path, pdf_path: Path, *, run=None) -> str:
+    """Render a fetched web page offline: sanitize it, then print it with isolated_print on Letter paper. Returns the
+    renderer label; the sanitized snapshot's limitations are written beside the PDF as <pdf>.limitations.json."""
+    from capture import fetch_filings as ff
+
+    raw = html_path.read_text(encoding="utf-8", errors="replace")
+    snapshot, counts = sanitize_html(raw)
+    chrome = isolated_print(snapshot, pdf_path, width_in=ff.LETTER_WIDTH_IN, height_in=ff.LETTER_HEIGHT_IN, run=run)
     (pdf_path.parent / (pdf_path.name + ".limitations.json")).write_text(
         json.dumps({"removed": counts, "limitations": render_limitations(counts)}, sort_keys=True) + "\n")
-    return ff.renderer_label(chrome) + " (isolated: sanitized snapshot, no scripts, no network)"
+    return ff.renderer_label(chrome) + ISOLATED_LABEL
 
 
 # ---------------------------------------------------------------- per-page capture checks

@@ -54,6 +54,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Callable
 
+from capture import exhibit_render
 from capture import fetch_filings as ff
 from runs import sources
 from server import jobs
@@ -114,13 +115,16 @@ def normalise(raw) -> list[str]:
 
 class Preparer:
     """What an intake uses to reach the SEC. Tests give a fake fetcher, a stub renderer, a temp filings root and a
-    fixed day; the server's default is the live SEC fetcher (SEC_USER_AGENT), headless Chrome and today."""
+    fixed day; the server's default is the live SEC fetcher (SEC_USER_AGENT), the isolated exhibit renderer
+    (capture.exhibit_render: sanitized snapshot, no scripts, no network, captured raster images inlined) and today."""
 
     def __init__(self, fetcher=None, render: Callable | None = None, filings_root: Path | None = None,
                  today: Callable[[], date] | None = None, tickers_cache: Path | None = None,
                  background: bool = True):
         self._fetcher = fetcher
-        self.render = render or ff.render_html_to_pdf
+        # Codex 5a / ISOLATE-001: the exhibit HTML is untrusted; it is rendered as a sanitized snapshot under the
+        # isolated Chrome launch, with only its own captured raster images inlined (capture/exhibit_render.py).
+        self.render = render or exhibit_render.render_captured_exhibit
         self.filings_root = Path(filings_root) if filings_root else ff.DOCS / "intake"
         self.today = today or date.today
         self.tickers_cache = Path(tickers_cache) if tickers_cache else ff.COMPANY_TICKERS_CACHE
@@ -371,6 +375,8 @@ def prepare(d: Path, prep: Preparer) -> None:
                     tick = filings_root / p["ticker"]
                     p["page_file"] = str((tick / p["page_file"]).resolve())
                     p["words_file"] = str((tick / p["words_file"]).resolve())
+                    if p.get("render_record"):
+                        p["render_record"] = str((tick / p["render_record"]).resolve())
             path = d / INDEX_FILE
             path.write_text(json.dumps(doc, indent=1) + "\n")
             os.chmod(path, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
