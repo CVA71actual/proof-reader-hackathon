@@ -8,6 +8,8 @@ import reportlab.rl_config
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
+from reportlab.lib.utils import simpleSplit
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
@@ -71,8 +73,12 @@ def _footer_canvas(view):
         canvas.saveState()
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.HexColor("#444444"))
-        canvas.drawString(0.75 * inch, 0.45 * inch, footer)
-        canvas.drawRightString(letter[0] - 0.75 * inch, 0.45 * inch, f"page {doc.page}")
+        page = f"page {doc.page}"
+        # a long footer (several reviewers plus the adjudicator) wraps short of the page number, never over it
+        room = letter[0] - 1.5 * inch - stringWidth(page, "Helvetica", 7) - 12
+        for i, line in enumerate(simpleSplit(footer, "Helvetica", 7, room)):
+            canvas.drawString(0.75 * inch, 0.45 * inch - i * 9, line)
+        canvas.drawRightString(letter[0] - 0.75 * inch, 0.45 * inch, page)
         canvas.restoreState()
 
     return _draw

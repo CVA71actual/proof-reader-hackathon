@@ -267,10 +267,35 @@ def _research_lines(meta: dict, run: dict) -> tuple[str | None, list[str]]:
     return research.get("label"), lines
 
 
+def _known_calls(usage) -> int | None:
+    """model_requests from a saved usage block: an int when recorded, None when the block or count is missing."""
+    if not isinstance(usage, dict):
+        return None
+    n = usage.get("model_requests")
+    return n if isinstance(n, int) and not isinstance(n, bool) else None
+
+
+def review_calls(entry: dict) -> int | None:
+    """FOOTER-ATTRIBUTION (Codex PR183 item 3): how many reviewer model calls the entry's review made, from the
+    review record's own usage (that stage only), else the entry's usage. None when neither is recorded (a legacy
+    entry): unknown, never zero."""
+    n = _known_calls((entry.get("review") or {}).get("usage") if isinstance(entry.get("review"), dict) else None)
+    return n if n is not None else _known_calls(entry.get("usage"))
+
+
+def review_made_calls(entry: dict) -> bool:
+    """A reviewer is named as having run only when its calls are recorded (> 0) or unknown (legacy). A selected
+    reviewer whose first call was refused (known zero) did not run."""
+    n = review_calls(entry)
+    return n is None or n > 0
+
+
 def models_used(run: dict) -> dict | None:
     """The models a research run actually used, from its saved record: the researcher, the reviewer that RAN (the
     review entries' reviewer_ran / reviewer, else run.research.reviewer_access.chosen; never the configured chain),
-    and the adjudicator when at least one dispute reached it. None when the run has no research."""
+    and the adjudicator when at least one dispute reached it. A review entry with a recorded zero model calls names
+    no reviewer (selection is not execution); a legacy entry with no usage recorded keeps its recorded name.
+    None when the run has no research."""
     research = (run.get("run") or {}).get("research")
     if not isinstance(research, dict):
         return None
@@ -284,20 +309,22 @@ def models_used(run: dict) -> dict | None:
             break
     from runs.research_labels import reviewer_of
     reviewers = []
-    for e in entries:
+    ran = [e for e in entries if review_made_calls(e)]
+    for e in ran:
         who = reviewer_of(e)
         if who and who.get("name") and who["name"] not in reviewers:
             reviewers.append(who["name"])
     access = research.get("reviewer_access") if isinstance(research.get("reviewer_access"), dict) else {}
-    if not reviewers and access.get("chosen") and any(e.get("status") not in (None, "not_run") for e in entries):
+    if not reviewers and access.get("chosen") and any(e.get("status") not in (None, "not_run") for e in ran):
         reviewers.append(access["chosen"])
     adjudicators = []
     for e in entries:
         adj = e.get("adjudication") or {}
-        ran = adj.get("status") == "complete" or any(o.get("model") for o in adj.get("outcomes") or []) \
-            or bool((adj.get("usage") or {}).get("model_requests"))
+        calls = _known_calls(adj.get("usage"))
+        adj_ran = calls > 0 if calls is not None else (
+            adj.get("status") == "complete" or any(o.get("model") for o in adj.get("outcomes") or []))
         name = e.get("adjudicator") or ((e.get("families") or {}).get("adjudicator") or {}).get("name")
-        if ran and name and name not in adjudicators:
+        if adj_ran and name and name not in adjudicators:
             adjudicators.append(name)
     return {"researcher": researcher, "reviewers": reviewers, "adjudicators": adjudicators}
 
@@ -332,10 +359,14 @@ def _research_review_counter(meta: dict) -> str | None:
     entries = [e for e in review.values() if isinstance(e, dict) and (e.get("status") or e.get("reviewer"))]
     if not entries:
         return "no research review recorded"
-    names = sorted({e["reviewer"] for e in entries if e.get("reviewer")})
+    # a review entry with a recorded zero reviewer calls was selected, not run: it is never "by" anyone
+    ran = [e for e in entries if review_made_calls(e)]
+    incomplete = any(e.get("status") != "complete" for e in entries)
+    if not ran:
+        return "research review not started: no reviewer calls were made"
+    names = sorted({e["reviewer"] for e in ran if e.get("reviewer")})
     findings = sum(len((e.get("review") or {}).get("findings") or []) for e in entries)
     who = " by " + ", ".join(names) if names else ""
-    incomplete = any(e.get("status") != "complete" for e in entries)
     segment = (f"research review findings {findings}{who}" if findings
                else f"research review{who}: no findings")
     return segment + (" (review incomplete)" if incomplete else "")
