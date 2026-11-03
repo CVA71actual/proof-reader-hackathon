@@ -1370,7 +1370,7 @@ def test_research_s1_ui_surfaces():
     import subprocess
 
     js = (UI / "app.js").read_text()
-    names = ("el", "esc", "clear", "hm", "num", "money",
+    names = ("el", "esc", "clear", "hm", "num", "money", "usdCents",
              "researchTrailBlock", "researchCompanyBlock", "researchNotFoundBlock",
              "researchLabelLine", "researchContextSection", "srcmetaBar")
     fns = "\n".join(_grab_fn(js, n) for n in names)
@@ -1552,6 +1552,27 @@ def test_research_s1_surfaces_read_the_real_get_envelope(tmp_path):
         "var cardText = textOf(nodes['runcard-job']).join(' ');",
         "if (cardText.indexOf('PTGX') === -1 || cardText.indexOf('Finished') === -1)",
         "  { console.error('card DOM: ' + cardText.slice(0, 160)); process.exit(12); }",
+        # fix-on-find (Claude re-review): company progress on EVERY status,
+        # the status-less saved run included (its branch returns early), and
+        # the money in cents
+        "var runRec = H.ev('detail').run.run; var keepSt = runRec.status;",
+        "[null, 'queued', 'running', 'done', 'needs_input'].forEach(function (st) {",
+        "  if (st === null) delete runRec.status; else runRec.status = st;",
+        "  nodes['runcard-job'].children = []; nodes['runcard-job'].textContent = '';",
+        "  H.ev('updateRunCardJob')();",
+        "  var ct = textOf(nodes['runcard-job']).join(' ');",
+        "  if ((ct.indexOf('saved run') === 0) !== (st === null)) { console.error('status ' + st + ' not rendered: ' + ct.slice(0, 80)); process.exit(18); }",
+        "  if (ct.indexOf('PTGX') === -1) { console.error('no company progress at status ' + st + ': ' + ct.slice(0, 120)); process.exit(15); }",
+        "  if (/\\$\\d+\\.\\d{3,}/.test(ct)) { console.error('money not in cents: ' + ct); process.exit(16); }",
+        "});",
+        "runRec.status = keepSt;",
+        # a research run with no proposal yet still shows its not-found notes
+        "var keepRows = H.ev('detail').run.rows; H.ev('detail').run.rows = [];",
+        "nodes['audit-rows'].children = []; nodes['audit-rows'].textContent = '';",
+        "H.ev('renderAuditRows')();",
+        "var zeroText = textOf(nodes['audit-rows']).join(' ');",
+        "if (zeroText.indexOf('Searched, not found') === -1) { console.error('zero-row notes: ' + zeroText.slice(0, 120)); process.exit(17); }",
+        "H.ev('detail').run.rows = keepRows;",
         "var paneHost = make('div');",
         "H.ev('detailsPane')(paneHost, row, { actions: true, back: 'audit' });",
         "var paneText = textOf(paneHost).join(' ');",

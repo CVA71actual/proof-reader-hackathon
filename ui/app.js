@@ -1082,7 +1082,8 @@
       if (c.searches !== null && c.searches !== undefined) bits.push(num(c.searches) + ' searches');
       if (c.fetches !== null && c.fetches !== undefined) bits.push(num(c.fetches) + ' fetches');
       if (c.pages_delivered !== null && c.pages_delivered !== undefined) bits.push(num(c.pages_delivered) + ' pages delivered');
-      if (c.spend_usd !== null && c.spend_usd !== undefined) bits.push(money(c.spend_usd));
+      // G6-3/G6-7: money in cents, one way ($2.65, never $2.651162)
+      if (c.spend_usd !== null && c.spend_usd !== undefined) bits.push(usdCents(c.spend_usd));
       if (bits.length) line.append(el('span', 'rscounts', bits.join(' · ')));
       var why = c.status_reason || (c.limitation && c.limitation.reason) || '';
       if (why) line.append(el('span', 'rswhy', why));
@@ -1130,9 +1131,13 @@
     var host = clear(document.getElementById('audit-rows'));
     var vis = visibleAuditRows();
     syncAuditSelection(vis);
+    // fix-on-find (Manus 17:07 sibling risk): the research 'Searched, not
+    // found' notes show even before the first proposal
+    var nf = researchNotFoundBlock(runResearch() && runResearch().coverage);
     if (!vis.length) {
       host.append(el('div', 'empty', audit.filter === 'ATTN'
         ? 'Nothing needs attention. Every row has a home.' : 'No rows in this group.'));
+      if (nf) host.append(nf);
       return;
     }
     var grouped = audit.filter === 'ALL' || audit.filter === 'ATTN' ||
@@ -1160,7 +1165,6 @@
     });
     var on = host.querySelector('.row.on');
     if (on) revealRow(on);
-    var nf = researchNotFoundBlock(runResearch() && runResearch().coverage);
     if (nf) host.append(nf);
   }
 
@@ -4694,6 +4698,10 @@
       var cw = costPerKeptRowWords();
       if (cw) bits.push(cw);
       host.append(el('div', 'jb-sub', bits.join(' · ')));
+      // fix-on-find: the status-less path returns early, so it carries the
+      // per-company research progress itself (7c0c3b4 dropped it here)
+      var rsc0 = researchCompanyBlock(runResearch() && runResearch().companies);
+      if (rsc0) host.append(rsc0);
       host.hidden = false;
       return;
     }
