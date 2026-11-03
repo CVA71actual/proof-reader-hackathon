@@ -207,6 +207,142 @@ def test_footer_names_deepseek_and_the_adjudicator_from_the_run_record():
     assert "DeepSeek" not in footer_line(run)
 
 
+def _refused_deepseek_record() -> dict:
+    """The real reviewer producer with DeepSeek ready and the spend gate refusing the first call (Codex PR183 item 3,
+    from Manus's producer probe): status incomplete, zero model requests, zero chat calls."""
+    from capture import research_reviewer as rv
+
+    class FakeDeepSeek:
+        model, name, provider, family, price_name = ("deepseek-ai/DeepSeek-V4-Pro", "DeepSeek V4 Pro", "baseten",
+                                                     "DeepSeek", "DeepSeek V4 Pro")
+        called = 0
+
+        def ready(self):
+            return None
+
+        def chat(self, **kwargs):
+            self.called += 1
+            raise AssertionError("no call should be admitted")
+
+    def no_network(_):
+        raise AssertionError("no search or capture")
+
+    model = FakeDeepSeek()
+    record = rv.review_draft(company={"ticker": "PTGX", "name": "Synthetic company", "as_of": "2026-11-03"},
+                             assignment="Synthetic omission review", proposals=[], sources=[], search=no_network,
+                             fetch_capture=no_network, spend_gate=lambda req: None, model=model)
+    assert model.called == 0 and record["status"] == "incomplete" and record["usage"]["model_requests"] == 0
+    return record
+
+
+DEEPSEEK = {"name": "DeepSeek V4 Pro", "model": "deepseek-ai/DeepSeek-V4-Pro", "provider": "baseten",
+            "family": "DeepSeek"}
+
+
+def _with_review(record: dict | None, usage) -> dict:
+    """The reviewed fixture with its PTGX entry replaced the way runs/research.py save_review persists one: the
+    selected identity as reviewer_ran, the review record, and the company's review usage (absent = legacy)."""
+    run, _ = load_run_dir(RUNS["e2e_reviewed"])
+    run = copy.deepcopy(run)
+    entry = run["run"]["research"]["review"]["PTGX"]
+    entry.update({"status": (record or {}).get("status", entry["status"]), "reviewer": DEEPSEEK["name"],
+                  "reviewer_ran": dict(DEEPSEEK), "reviewer_choice": dict(DEEPSEEK),
+                  "adjudication": {"stage": "adjudication", "status": "not_needed", "outcomes": [], "usage": None}})
+    if record is not None:
+        entry["review"] = record
+    if usage is None:
+        entry.pop("usage", None)
+        entry["review"] = {k: v for k, v in entry["review"].items() if k != "usage"}
+    else:
+        entry["usage"] = usage
+    run["run"]["research"]["reviewer_access"] = {"name": "DeepSeek V4 Pro", "chosen": "DeepSeek V4 Pro"}
+    return run
+
+
+def test_footer_does_not_name_a_selected_reviewer_that_made_zero_calls():
+    """Selection is not execution: DeepSeek selected, first call refused by the spend gate, model_requests 0. The
+    footer, models_used and the counters line name no reviewer; the access record still shows the choice."""
+    record = _refused_deepseek_record()
+    run = _with_review(record, dict(record["usage"]))
+    assert footer_line(run) == "Research: Muse Spark · Review: none ran · Built by code from the saved results"
+    assert models_used(run)["reviewers"] == []
+    view = build_view(run, [], generated_at=FIXED_TIME)
+    assert "DeepSeek" not in view["footer"]
+    assert "by DeepSeek" not in view["counters_line"]
+    assert "research review not started: no reviewer calls were made" in view["counters_line"]
+    assert run["run"]["research"]["reviewer_access"]["chosen"] == "DeepSeek V4 Pro"      # access history kept
+    for page in _pdf_pages(view):
+        assert "Review: none ran" in page and "DeepSeek V4 Pro ·" not in page
+
+
+def test_footer_names_an_incomplete_review_that_made_calls():
+    """An attempted-but-incomplete review still names the model that made the calls."""
+    record = _refused_deepseek_record()
+    record = {**record, "usage": {**record["usage"], "model_requests": 3}}
+    run = _with_review(record, {"model_requests": 3, "search_requests": 0})
+    assert run["run"]["research"]["review"]["PTGX"]["status"] == "incomplete"
+    assert footer_line(run) == "Research: Muse Spark · Review: DeepSeek V4 Pro · Built by code from the saved results"
+    view = build_view(run, [], generated_at=FIXED_TIME)
+    assert "by DeepSeek V4 Pro" in view["counters_line"] and "(review incomplete)" in view["counters_line"]
+
+
+def test_footer_keeps_the_recorded_name_when_legacy_usage_is_missing():
+    """A legacy entry with no usage recorded anywhere is unknown, not zero: the recorded reviewer stays named."""
+    run = _with_review(None, None)
+    entry = run["run"]["research"]["review"]["PTGX"]
+    assert "usage" not in entry and "usage" not in entry["review"]
+    assert footer_line(run) == "Research: Muse Spark · Review: DeepSeek V4 Pro · Built by code from the saved results"
+
+
+def test_adjudicator_named_only_when_it_made_calls():
+    run, _ = load_run_dir(RUNS["e2e_reviewed"])
+    run = copy.deepcopy(run)
+    entry = run["run"]["research"]["review"]["PTGX"]
+    entry["adjudication"] = {"stage": "adjudication", "status": "complete", "outcomes": [], "usage": {
+        "model_requests": 0}}
+    assert "Adjudication" not in footer_line(run)
+    entry["adjudication"]["usage"]["model_requests"] = 2
+    assert "Adjudication: Muse Wonder" in footer_line(run)
+
+
+def test_long_multi_reviewer_footer_wraps_clear_of_the_page_number():
+    """Manus layout item: three reviewers plus the adjudicator wrap in the PDF instead of running under 'page N'."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from reportlab.lib.utils import simpleSplit
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+
+    run, decisions = load_run_dir(RUNS["e2e_reviewed"])
+    wide = copy.deepcopy(run)
+    reviews = wide["run"]["research"]["review"]
+    seed = copy.deepcopy(reviews["PTGX"])
+    for t, name, family in [("PTGX", "DeepSeek V4 Pro", "DeepSeek"), ("ROIV", "Claude Opus 5.5", "Claude"),
+                            ("IMVT", "Muse Spark Open", "Muse Spark (Meta)")]:
+        e = copy.deepcopy(seed)
+        e["reviewer"] = name
+        e["reviewer_ran"] = {"name": name, "family": family, "provider": "synthetic"}
+        e["adjudication"] = {"stage": "adjudication", "status": "complete", "outcomes": [{"model": "muse-wonder"}],
+                             "usage": {"model_requests": 1}}
+        reviews[t] = e
+    view = build_view(wide, decisions, generated_at=FIXED_TIME)
+    footer = view["footer"]
+    assert "Review: DeepSeek V4 Pro and Claude Opus 5.5 and Muse Spark Open" in footer
+    assert 0.75 * inch + stringWidth(footer, "Helvetica", 7) > letter[0] - 0.75 * inch - stringWidth("page 1",
+                                                                                                     "Helvetica", 7)
+    room = letter[0] - 1.5 * inch - stringWidth("page 99", "Helvetica", 7) - 12
+    lines = simpleSplit(footer, "Helvetica", 7, room)
+    assert len(lines) >= 2
+    import pymupdf
+    pdf = pymupdf.open(stream=build_pdf(view), filetype="pdf")
+    for page in pdf:
+        number = next(b for b in page.get_text("words") if b[4] == "page")
+        footer_words = [w for w in page.get_text("words") if w[1] > number[1] - 1 and w[4] != "page"
+                        and not w[4].isdigit()]
+        assert footer_words, "footer missing"
+        assert max(w[2] for w in footer_words if abs(w[1] - number[1]) < 2) < number[0], "footer runs under page N"
+        assert " ".join(w[4] for w in footer_words) == " ".join(footer.split())
+
+
 def test_runs_without_research_keep_the_standing_footer():
     view = _view("sample")
     assert view["footer"] == FOOTER == "Built with Meta Muse models · built by code from the saved results"

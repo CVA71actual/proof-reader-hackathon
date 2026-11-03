@@ -6,10 +6,10 @@ scripted Claude Opus 5.5 reviewer, a scripted Muse Wonder adjudicator, a fake Br
 offline renderer) and the offline SEC intake preparer of tests/test_ticker_intake.py. No model, network or paid
 call is made anywhere.
 
-The journey (CVA, 2026-11-03), in order; a step the product blocks is marked xfail(strict=True) with the reason:
+The journey (CVA, 2026-11-03), in order (a step the product blocks would be marked xfail(strict=True); none today):
   1. New Run: enter PTGX, prepare it, start a research run through the real Run button (NR-001: the screen sends
      mode "research"; the request is read off the browser, never intercepted or rewritten).
-  2. Watch the run card until done, including the review stage (2b, xfail: no stage label for the review).
+  2. Watch the run card until done, including the review stage (2b: the PTGX line's "review: reviewing").
   3. Open a calendar row: the quote, the check reasons and the review label are visible.
   4. One clean automatic placement ("Included — not reviewed by you") and one row in review with its reason.
   5. Remove then Undo on the included row; Fix (Keep anyway on the undemonstrated re-check) then Keep on the review row.
@@ -18,7 +18,7 @@ The journey (CVA, 2026-11-03), in order; a step the product blocks is marked xfa
      (the PDF's table parsed by column, the Word table by cell) carries exactly the current title, the effective
      timing, the inclusion label and the person's decision label, never "Kept by you" on an automatic row. Two
      mutation negatives (7a, 7b) feed the real renderers a wrong view and show the per-row check fails on it.
-     7c (xfail): the calendar screen's row still shows the pre-Fix title.
+     7c: the calendar screen's row shows the current (post-Fix) title.
 Honesty rules are asserted on every screen text captured and on both exports: never "Kept by you" for automatic
 inclusion, never "verified", and an incomplete review is never shown as "independently reviewed".
 
@@ -303,38 +303,36 @@ def test_2a_the_run_card_shows_the_company_researching(j):
     assert_honest(text, where="run card while researching")
 
 
-REVIEW_IN_PROGRESS = re.compile(r"^(reviewing|review in progress|under review|independent review running|"
-                                r"independent review in progress)$", re.IGNORECASE)
+REVIEW_PROGRESS = re.compile(r"^review: (reviewing|review in progress|under review|in progress|running)"
+                             r"( \([^()]+\))?$", re.IGNORECASE)
 
 
-def review_in_progress_label(stage: str) -> bool:
-    """True only for a current-stage label that says the independent review is running now. The whole label is
-    matched: 'Not independently reviewed' (a row's research label) and 'Review completed' are not in progress."""
-    return bool(REVIEW_IN_PROGRESS.match(" ".join(stage.split())))
+def review_progress_element(text: str) -> bool:
+    """True only for the run card's review-progress element saying the review is running now (ui/app.js
+    researchCompanyBlock: "review: <review_status>", with "(<reviewer>)" once the entry names one). The whole text is
+    matched: 'Not independently reviewed' (a row's research label), 'Review completed', 'review: done' and the
+    research stage word ('Finished') are not review progress."""
+    return bool(REVIEW_PROGRESS.match(" ".join(text.split())))
 
 
-def test_2b_contrast_the_stage_predicate_rejects_finished_and_unreviewed_wordings():
-    assert review_in_progress_label("Reviewing") and review_in_progress_label("REVIEWING")
+def test_2b_contrast_the_review_predicate_rejects_finished_and_unreviewed_wordings():
+    for ok in ("review: reviewing", "REVIEW: reviewing", "review: reviewing (Claude Opus 5.5)"):
+        assert review_progress_element(ok), ok
     for control in ("not independently reviewed", "Not independently reviewed", "review completed",
-                    "Review completed", "Agent research — not independently reviewed", "reviewed", "Researching"):
-        assert not review_in_progress_label(control), control
+                    "Review completed", "review: done", "review: complete", "review: incomplete",
+                    "Agent research — not independently reviewed", "reviewed", "Reviewing", "Finished",
+                    "Researching", "review: reviewing completed"):
+        assert not review_progress_element(control), control
 
 
-def ptgx_stage_label(j: Journey) -> str:
-    """The current-stage label of PTGX's own line on the run card (ui/app.js researchCompanyBlock: one .rscline per
-    company, the ticker in <b>, the stage word in .rsst)."""
+def ptgx_stage_labels(j: Journey) -> list[str]:
+    """Every stage element of PTGX's own line on the run card (ui/app.js researchCompanyBlock: one .rscline per
+    company, the ticker in <b>, the research stage word then the review progress, each in .rsst)."""
     line = j.page.locator("#runcard .rscline", has=j.page.locator("b", has_text=re.compile(r"^PTGX$"))).first
     assert line.count() == 1, f"no run-card line for PTGX:\n{j.text('#runcard')}"
-    return line.locator(".rsst").first.inner_text()
+    return [line.locator(".rsst").nth(i).inner_text() for i in range(line.locator(".rsst").count())]
 
 
-@pytest.mark.xfail(strict=True, reason="The run card never shows the review stage: ui/app.js researchCompanyBlock "
-                                       "renders companies[ticker].status through RESEARCH_STATUS_WORDS (Queued / "
-                                       "Researching / Finished / Stopped / Failed) and never review_status "
-                                       "('reviewing' / 'done'). Observed: while the API says review_status: "
-                                       "reviewing, the PTGX line's stage label reads 'Finished' (its research "
-                                       "stage) and the card's run line reads 'Researching.'; nothing on the card "
-                                       "says the independent review is running.")
 def test_2b_the_run_card_shows_the_review_stage(j):
     j.gates["research"].set()
     j.wait_api(lambda b: (b["run"].get("research") or {}).get("companies", {}).get("PTGX", {})
@@ -345,9 +343,12 @@ def test_2b_the_run_card_shows_the_review_stage(j):
     assert_honest(text, where="run card while reviewing")
     company = j.run()["run"]["research"]["companies"]["PTGX"]
     assert company["review_status"] == "reviewing", company
-    stage = ptgx_stage_label(j)
-    assert review_in_progress_label(stage), \
-        f"API review_status is 'reviewing' but the PTGX line's stage label reads {stage!r}:\n{text}"
+    stages = ptgx_stage_labels(j)
+    progress = [s for s in stages if s.strip().lower().startswith("review")]
+    assert len(progress) == 1, f"expected one review-progress element on the PTGX line, got {stages!r}:\n{text}"
+    assert review_progress_element(progress[0]), \
+        f"API review_status is 'reviewing' but the PTGX line's review element reads {progress[0]!r}:\n{text}"
+    assert not re.search(r"not independently reviewed|review completed", text, re.IGNORECASE), text
 
 
 def test_2c_the_run_card_reaches_done_after_the_review(j):
@@ -398,12 +399,6 @@ def test_3_a_calendar_row_shows_quote_checks_and_the_review_label(j):
     assert_honest(audit, where="audit log")
 
 
-@pytest.mark.xfail(strict=True, reason="runs/research_labels.py derive_review_labels labels a row 'clean' only when "
-                                       "the company's whole review is clean (record.clean). In a completed review "
-                                       "that found something on another row, a row the reviewer assessed no_issue "
-                                       "on its current revision is labelled 'Agent research — not independently "
-                                       "reviewed', which contradicts its own review record (status complete, "
-                                       "verdict no_issue). Owners: runs/research_labels.py.")
 def test_3a_a_reviewed_clean_row_carries_the_reviewed_label(j):
     from runs import research
     clean_row = next(r for r in j.run()["rows"] if r["id"] == j.rows["clean"])
@@ -427,18 +422,17 @@ def test_4_the_review_row_shows_its_reason(j):
     assert has(pane, flagged["research"]["label"]), pane
     target = j.run()["state"]["targets"][j.rows["flagged"]]
     assert target["needs_attention"] and target["issues"], target
-    assert "a person must decide" in target["reason"]
-    # the state's reason line rides under the row in the queue (its first 72 characters)
-    assert has(listing, target["reason"][:40]), (target["reason"], listing)
+    # the queue's sub-line is the current reviewer issue (ui/app.js listReasonLine: issues[0], first 72
+    # characters), not the state's generic mechanical reason
+    issue = target["issues"][0]
+    assert issue.startswith("The reviewer found") and FINDING_TEXT in issue, target["issues"]
+    assert has(listing, issue[:60]), (issue, listing)
+    assert has(listing, "The reviewer found") and has(pane, FINDING_TEXT), (listing, pane)
     assert has(pane, "Keep") and has(pane, "Fix…") and has(pane, "Remove…"), pane
     assert_honest(pane, where="judgment pane of the review row")
     assert_honest(listing, where="judgment queue")
 
 
-@pytest.mark.xfail(strict=True, reason="The independent reviewer's finding text (state.targets[row].issues, "
-                                       "'The reviewer found …') is not rendered anywhere in ui/app.js: the "
-                                       "judgment pane shows the research label 'with findings' and the generic "
-                                       "reason, never what the reviewer found.")
 def test_4a_the_review_row_shows_what_the_reviewer_found(j):
     j.goto(f"judgment/{j.rows['flagged']}")
     pane = j.wait_text("#judgment-det", "Your call")
@@ -713,11 +707,6 @@ def test_7_the_pdf_and_word_exports_match_the_screen(j):
     assert re.search(r"checked and kept\s*\n1\b", summary, re.IGNORECASE), summary
 
 
-@pytest.mark.xfail(strict=True, reason="The calendar screen's row shows the row's original title, not the "
-                                       "person's fix: ui/app.js calRow renders row.title, never "
-                                       "state.targets[row].values.title, so after the Fix the EXPAND row still "
-                                       "reads 'EXPAND topline data' while the exports (report/data.py _event_label) "
-                                       "read 'EXPAND Phase 3 topline data (subject to FDA feedback)'.")
 def test_7c_the_calendar_screen_row_shows_the_current_title(j):
     expected = expected_calendar_rows(j)
     fixed_title = "EXPAND Phase 3 topline data (subject to FDA feedback)"
