@@ -54,7 +54,12 @@ ROUND_TO = 6  # cost figures are kept to a millionth of a dollar
 def _count(n) -> bool:
     """A count a cost may be computed from: a whole number from 0. Booleans, negatives, floats and None are not
     counts (the call is then unpriced, never a negative or zero spend)."""
-    return type(n) is int and n >= 0
+    return type(n) is int and 0 <= n <= MAX_COUNT
+
+
+# A count beyond this is not a real usage report (10**15 tokens is ~a billion dollars at these prices): it is treated as
+# unpriced, never converted to a float that overflows (Manus 17:07: 10**400 tokens raised OverflowError).
+MAX_COUNT = 10 ** 15
 
 
 def cost_usd(model: str, prompt_tokens: int | None, completion_tokens: int | None) -> float | None:

@@ -621,8 +621,11 @@ def capture_document(fetched: Fetched, run_dir: Path, source_id: str, *,
                                                                        "render_text_pdf (text capture)",
                         "render_failure": failure, "text_sha256": text_sha,
                         "text_file": str((folder / "text.txt").relative_to(run_dir)), "removed": removed,
+                        "visibility": "unknown",
                         "limitations": [f"Text capture: the page image was not rendered ({failure}); the citation "
-                                        f"box cannot be checked."] + render_limitations(removed)}
+                                        f"box cannot be checked.",
+                                        "Visibility unknown: a text capture cannot tell text the site hides with its "
+                                        "stylesheets from text it shows."] + render_limitations(removed)}
     elif kind == "json":
         pdf_bytes, renderer = render_json_pdf(body, title or fetched.final_url)
         (folder / "rendered.pdf").write_bytes(pdf_bytes)

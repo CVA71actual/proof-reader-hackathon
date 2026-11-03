@@ -51,6 +51,17 @@ INCLUDE = ["web_search_call.results", "reasoning.encrypted_content"]
 MAX_OUTPUT_TOKENS = 32768
 REASONING = {"effort": "medium"}
 
+# LIMITS-003 (CVA 2026-11-02): a research call waits up to 10 minutes for its reply (live run 4 lost a turn to the
+# shared 120 s read timeout). Scoped to the Responses research path only; capture/http.py's shared timeouts (and every
+# page-mode call) are unchanged. Connect stays 20 s.
+RESEARCH_READ_TIMEOUT_S = 600
+
+
+def research_timeout():
+    import httpx
+    return httpx.Timeout(RESEARCH_READ_TIMEOUT_S, connect=http.CONNECT_TIMEOUT_S)
+
+
 NO_KEY = ("No model key was found, so nothing was researched. Add MODEL_API_KEY to ~/.config/proof-reader/env "
           "and start again.")
 
@@ -117,6 +128,11 @@ class ResponsesReply:
                         if isinstance(a, dict) and a.get("type") == "url_citation":
                             out.append({"url": a.get("url"), "title": a.get("title")})
         return out
+
+    def unfinished_searches(self) -> list[dict]:
+        """Built-in searches in this reply that did not complete (searching, in_progress, failed, or no status): their
+        results are not complete, so a finish in the same reply is not accepted."""
+        return [s for s in self.web_searches() if s.get("status") != "completed"]
 
     @property
     def length_cut(self) -> bool:
@@ -185,6 +201,12 @@ def parse_response(body, requested_model: str = MODEL, request_bytes: int = 0) -
     output = body["output"]
     if not all(isinstance(i, dict) and isinstance(i.get("type"), str) for i in output):
         return malformed("an output item is not a typed object", requested_model, request_bytes, usage=usage, body=body)
+    status = body.get("status")
+    if status not in ("completed", "incomplete"):
+        # Manus 17:07: a response that is not finished (status missing, in_progress, queued, cancelled, failed) is
+        # never taken as an answer: a typed, possibly billed failure; its search count is unknown.
+        return malformed(f"its status is {status!r}, not a finished response", requested_model, request_bytes,
+                         usage=usage, body=body)
     usage = usage if isinstance(usage, dict) else {}
     details = usage.get("output_tokens_details") if isinstance(usage.get("output_tokens_details"), dict) else {}
     incomplete = body.get("incomplete_details") if isinstance(body.get("incomplete_details"), dict) else {}
@@ -245,7 +267,7 @@ class LiveResponsesReader:
 
         size = request_size(body)
         try:
-            with httpx.Client(timeout=http.timeout()) as client:
+            with httpx.Client(timeout=research_timeout()) as client:
                 resp = client.post(f"{self.base_url}/responses", json=body,
                                    headers={"Authorization": f"Bearer {self._key()}",
                                             "Content-Type": "application/json"})

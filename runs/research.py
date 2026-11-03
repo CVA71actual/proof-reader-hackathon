@@ -401,6 +401,12 @@ def make_job_class():
 
         def count(self, ticker: str, reply: rr.ResponsesReply, token, worst: float, input_bound: int) -> float | None:
             """Count one call on the run and on its company; release its reservation."""
+            try:
+                return self._count(ticker, reply, token, worst, input_bound)
+            finally:          # settle exactly once on every path: the reservation is always released
+                jobs.release_budget(self.dir.name, token)
+
+        def _count(self, ticker, reply, token, worst, input_bound):
             c = self.company(ticker)
             name = jobs.price_name(reply.model)
             with jobs.RUN_LOCK:
@@ -428,10 +434,13 @@ def make_job_class():
                     c["spend_usd"] = round(c["spend_usd"] + cost, prices.ROUND_TO)
                 if isinstance(reply.searches, int):
                     c["searches"] += reply.searches
-                if isinstance(reply.input_tokens, int) and reply.input_tokens > input_bound:
+                over_tokens = isinstance(reply.input_tokens, int) and reply.input_tokens > input_bound
+                over_dollars = cost is not None and worst is not None and cost > worst
+                if over_tokens or over_dollars:      # dollars compared too: searches alone can pass the reservation
                     self.research.setdefault("reservation_exceeded", []).append(
                         {"at": now_utc(), "ticker": ticker, "input_tokens": reply.input_tokens,
-                         "reserved_input_tokens": input_bound})
+                         "reserved_input_tokens": input_bound, "searches": reply.searches,
+                         "cost_usd": cost, "reserved_usd": worst})
                 jobs.release_budget(self.dir.name, token)
                 self.meta["unpriced_calls"] = jobs.unpriced_count(self.job)
                 self.save(refresh=False)
@@ -524,7 +533,7 @@ def make_job_class():
                      {"role": "user", "content": "Company card:\n" + json.dumps(card)}]
             continuation = self.choices.get("research_continuation") or rr.CONTINUE_REPLAY
             history, pending, prev_id = list(first), list(first), None
-            prose_nudged, empty_streak = False, 0
+            prose_nudged, empty_streak, timeout_streak = False, 0, 0
             functions = rc.function_tools()
             while True:
                 self.check_company_limits(ticker)
@@ -556,6 +565,21 @@ def make_job_class():
                           turn=c["requests"], input_bytes=rr.request_size(body), input_tokens=reply.input_tokens,
                           output_tokens=reply.output_tokens, reasoning_tokens=reply.reasoning_tokens,
                           searches=reply.searches, cost_usd=cost)
+                if reply.timed_out:
+                    # LIMITS-003 (CVA): a timeout no longer fails the company. The call is counted as possibly billed
+                    # at its reserved worst case (count above); the next turn is a fresh, admitted request with the
+                    # same replayed history (no resend of the same request). Two timeouts in a row stop the company
+                    # as a recorded technical failure, like the approved two-empty-replies safety stop.
+                    timeout_streak += 1
+                    self.step(ticker, "timeout", "Code", "runs.research",
+                              f"{reply.error} Counted as possibly billed at its reserved worst case "
+                              f"({jobs.money(worst)}); the next turn is a new request "
+                              f"({timeout_streak} in a row).", worst_case_usd=worst)
+                    if timeout_streak >= 2:
+                        raise Stop("failed", "Technical failure: the model did not answer twice in a row "
+                                             f"(read timeout {rr.RESEARCH_READ_TIMEOUT_S}s each).")
+                    continue
+                timeout_streak = 0
                 if reply.error:
                     self.step(ticker, "error", "Code", "runs.research", f"{reply.error}"
                               + (" It may have been billed; its reserved worst case was charged."
@@ -624,7 +648,20 @@ def make_job_class():
                     pending, prev_id = [nudge], reply.response_id
                     continue
                 outputs, finished = [], False
+                partial_search = reply.unfinished_searches()
                 for call in calls:
+                    if partial_search and call.get("name") == "finish_draft":
+                        # Manus 17:07: a finish in a reply whose own search did not complete is not accepted
+                        result = rc.envelope(call.get("call_id"), "error", None, [rc.issue(
+                            "unfinished_search", "finish_draft was not accepted: a web search in the same answer did "
+                                                 "not complete. Continue, then finish.")])
+                        with jobs.RUN_LOCK:
+                            self.research["refusals"].append({"at": now_utc(), "ticker": ticker,
+                                                              "call_id": call.get("call_id"), "tool": "finish_draft",
+                                                              "issues": result["issues"]})
+                        outputs.append({"type": "function_call_output", "call_id": call["call_id"],
+                                        "output": json.dumps(result, ensure_ascii=False)})
+                        continue
                     result, done = self.dispatch(ticker, call)
                     self.note_repeat(ticker, call, result)
                     item = {"type": "function_call_output", "call_id": call["call_id"],
@@ -632,10 +669,10 @@ def make_job_class():
                     data = result.get("data") if isinstance(result.get("data"), dict) else {}
                     if data.get("source_id") and data.get("text"):      # page text delivered: compactable later
                         st["delivered"].setdefault(data["source_id"], []).append(
-                            (item, [t["page_number"] for t in data["text"]]))
+                            (item, [t["page_number"] for t in data["text"]], c["requests"]))
                     outputs.append(item)
                     finished = finished or done
-                self.compact(ticker)
+                self.compact(ticker, c["requests"])     # retires only text the model has already been sent
                 history += outputs
                 pending, prev_id = outputs, reply.response_id
                 self.save_ledger()
@@ -711,13 +748,16 @@ def make_job_class():
 
         def record_search(self, ticker: str, s: dict) -> None:
             urls = [r["url"] for r in s["results"] if r.get("url")]
+            status = s.get("status")
             with jobs.RUN_LOCK:
                 self.manifest.append("leads", ticker=ticker, tool="web_search", item_id=s.get("id"),
-                                     queries=s["queries"], results=s["results"][:50])
+                                     status=status, queries=s["queries"], results=s["results"][:50])
             self.step(ticker, "search", "Model", "Muse Spark",
                       f"Searched the web: {'; '.join(s['queries']) or '(query not reported)'}. "
-                      f"{len(urls)} result{'s' if len(urls) != 1 else ''} (leads, not evidence).",
-                      queries=s["queries"], results=urls[:20])
+                      f"{len(urls)} result{'s' if len(urls) != 1 else ''} (leads, not evidence)."
+                      + ("" if status == "completed" else f" The search did not complete (status {status!r}); its "
+                                                          f"results are partial."),
+                      queries=s["queries"], results=urls[:20], status=status)
 
         # ------------------------------------------------------------ the function tools
 
@@ -829,7 +869,7 @@ def make_job_class():
             if by not in st["settled"][sid]:
                 st["settled"][sid].append(by)
 
-        def compact(self, ticker: str) -> None:
+        def compact(self, ticker: str, current_turn: int) -> None:
             """Replace the delivered page text of every settled source in the replayed history with a short code-
             written stub (the source, the pages read, what settled it). Each function_call keeps its output item, so
             the call/output pairing the API requires stays valid; the evidence stays in the captured files and can be
@@ -839,9 +879,9 @@ def make_job_class():
                 if sid not in st["settled"]:
                     continue
                 src = st["sources"][sid]
-                for item, pages in items:
-                    if id(item) in st["compacted"]:
-                        continue
+                for item, pages, turn in items:
+                    if id(item) in st["compacted"] or turn >= current_turn:
+                        continue      # Manus 17:07: a fresh read is consumed in the next request before it retires
                     stub = rc.envelope(item["call_id"], "ok", {
                         "source_id": sid, "title": src["title"], "url": src["url"], "pages_total": len(src["pages"]),
                         "pages_read": pages, "settled_by": list(st["settled"][sid]), "compacted": True,
@@ -940,7 +980,8 @@ def make_job_class():
                     page["capture_completeness"] = comp
                 if captured["rendered"].get("form") == "text":
                     page["text_capture"] = {"reason": captured["rendered"]["render_failure"],
-                                            "text_sha256": captured["rendered"]["text_sha256"]}
+                                            "text_sha256": captured["rendered"]["text_sha256"],
+                                            "visibility": "unknown"}
                 page["visual_evidence"] = sources.visual_evidence(page, words)
                 page["research_checks"] = rs.page_capture_checks(words)
                 pages.append(page)
@@ -1040,6 +1081,8 @@ def make_job_class():
                     "published_date": source["published_date"], "kind": source["kind"],
                     "retrieved_at": source["captured_at"], "pages_total": len(source["pages"]),
                     "pages": inventory, "text": shown,
+                    "capture_form": (source.get("retrieval") or {}).get("rendered", {}).get("form"),
+                    "capture_limitations": (source.get("retrieval") or {}).get("rendered", {}).get("limitations") or [],
                     "next": ("A-TO-Z-001: propose_events citing this source, or nothing_material with the reason, "
                              "before capturing another source." if source["id"] not in self.state[ticker]["settled"]
                              else "This source is settled.")}

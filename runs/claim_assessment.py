@@ -217,7 +217,20 @@ def timing_evidence_current(row: dict, sources_by_id: dict) -> bool:
         return True
     src = sources_by_id.get(timing.get("source_id")) or {}
     page = _page(src, timing.get("page_number"))
-    return bool(page) and timing == timing_snapshot(src, page, timing.get("quote"), timing.get("words_used"))
+    if not page:
+        return False
+    used = timing.get("words_used") or {}
+    # Manus 17:07: the artifact consumed NOW (derived words when the page has them, else the captured words) must be
+    # the one the check read; reusing the snapshot's own words_used would miss a replaced derived artifact.
+    return (_current_words(page) == {k: used.get(k) for k in ("file", "sha256", "kind")}
+            and timing == timing_snapshot(src, page, timing.get("quote"), used))
+
+
+def _current_words(page: dict) -> dict:
+    derived = page.get("derived_words") or {}
+    if derived:
+        return {"file": derived.get("file"), "sha256": derived.get("sha256"), "kind": "derived"}
+    return {"file": page.get("words"), "sha256": page.get("words_sha256"), "kind": "captured"}
 
 
 def timing_snapshot(source: dict, page: dict, quote: str | None, words_used: dict | None) -> dict:

@@ -69,8 +69,14 @@ def research_basis(run: dict, row: dict) -> dict:
             'source_sha256': src.get('sha256'),
             'original_sha256': (src.get('retrieval') or {}).get('original_sha256'),
             'rendered_from': (src.get('rendered_from') or {}).get('sha256'),
-            'image_sha256': page.get('image_sha256'), 'words_sha256': page.get('words_sha256')})
-    return {**{key: research.get(key) for key in RESEARCH_MATERIAL}, 'evidence': spans}
+            'image_sha256': page.get('image_sha256'), 'words_sha256': page.get('words_sha256'),
+            # Manus 17:07: the artifact actually consumed (derived words when present) and the publication context
+            # that dates and 'today' are read against are material too.
+            'derived_words': {key: (page.get('derived_words') or {}).get(key) for key in ('file', 'sha256')}
+                             if page.get('derived_words') else None,
+            'published_date': src.get('published_date')})
+    return {**{key: research.get(key) for key in RESEARCH_MATERIAL}, 'evidence': spans,
+            'timing': research.get('timing'), 'timing_release_day': research.get('timing_release_day')}
 
 
 def matches_review_basis(stored, current: dict) -> bool:

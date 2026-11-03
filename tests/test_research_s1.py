@@ -1116,6 +1116,7 @@ def test_the_ptgx_10q_falls_back_to_a_text_capture_and_research_continues(runs_d
     row = next(r for r in run["rows"] if r["id"] == "e1")
     checks = {c["name"]: c for c in row["checks"]}
     assert checks["quote_match"]["result"] == "pass" and "captured text" in checks["quote_match"]["reason"]
+    assert "is not established (text capture)" in checks["quote_match"]["reason"]
     assert checks["selector_match"]["result"] == "could_not_run"
     assert checks["selector_match"]["reason"].startswith("not_applicable: text capture (page image not rendered). "
                                                          "Render failure: Chrome exited normally")
@@ -1379,3 +1380,164 @@ def test_a_40_turn_run_keeps_input_bytes_under_a_ceiling(runs_dir):
         calls = [i["call_id"] for i in req["input"] if i.get("type") == "function_call"]
         outs = [i["call_id"] for i in req["input"] if i.get("type") == "function_call_output"]
         assert calls == outs
+
+
+# ---------------------------------------------------------------- LIMITS-003 (CVA): 600 s research read timeout
+
+
+def _timeout_reply():
+    return rr.ResponsesReply(model=rr.MODEL, timed_out=True, error="The Muse Spark service did not answer in time.",
+                             may_have_been_billed=True)
+
+
+def test_research_calls_wait_ten_minutes_and_shared_timeouts_are_unchanged():
+    from capture import http
+    t = rr.research_timeout()
+    assert rr.RESEARCH_READ_TIMEOUT_S == 600 and t.read == 600 and t.connect == 20
+    assert http.READ_TIMEOUT_S == 120 and http.CONNECT_TIMEOUT_S == 20
+
+
+def test_a_timeout_is_charged_its_worst_case_and_the_next_turn_goes_on(runs_dir):
+    reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")]),
+                              _timeout_reply(),
+                              F.body([F.call("nothing_material", {"source_id": "src-r1-ptgx", "reason": "x"}, "c1")]),
+                              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "c2")])])
+    _, rid, _ = start(runs_dir, reader)
+    meta = run_json(runs_dir, rid)["run"]
+    c = meta["research"]["companies"]["PTGX"]
+    assert c["status"] == "finished" and c["requests"] == 4
+    step = next(s for s in meta["research"]["steps"] if s["kind"] == "timeout")
+    worst = step["refs"]["worst_case_usd"]
+    assert worst > 0 and meta["spend_usd"] >= worst
+    assert reader.requests[2]["input"] == reader.requests[1]["input"]      # same replay, a new request
+
+
+def test_two_timeouts_in_a_row_stop_the_company_as_a_technical_failure(runs_dir):
+    reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")]),
+                              _timeout_reply(), _timeout_reply()])
+    _, rid, _ = start(runs_dir, reader)
+    c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
+    assert c["status"] == "failed" and "did not answer twice in a row" in c["status_reason"]
+
+
+# ---------------------------------------------------------------- Manus 17:07 item 1: delivery before retirement
+
+
+def test_a_reread_of_a_settled_source_reaches_the_model_before_it_is_compacted(runs_dir):
+    ev = F.event("ICARUS", QUOTE, date_text="Q2 2027")
+    reader = F.FakeResponses([
+        F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")]),
+        F.body([F.call("propose_events", {"events": [ev]}, "c1")]),             # settles src-r1-ptgx
+        F.body([F.call("read_source_pages", {"source_id": "src-r1-ptgx", "pages": [1], "purpose": "reread"},
+                       "c2")]),
+        F.body([F.call("record_coverage", {"ticker": "PTGX", "category": "pipeline", "question": "q",
+                                           "status": "checked_found", "tool_call_ids": ["c2"],
+                                           "source_ids": ["src-r1-ptgx"], "programs": [], "finding": "f"}, "c3")]),
+        F.body([F.call("finish_draft", {"dispositions": [
+            {"row_id": "e1", "disposition": "proposal", "related_row_id": None, "reason": "x"}],
+            "limitations": []}, "c4")])])
+    start(runs_dir, reader)
+    nxt = reader.requests[3]["input"]                      # the request right after the reread
+    out = next(json.loads(i["output"]) for i in nxt if i.get("call_id") == "c2" and "output" in i)
+    assert out["data"]["text"] and any("ICARUS" in l for l in out["data"]["text"][0]["lines"])
+    assert not out["data"].get("compacted")
+    later = reader.requests[4]["input"]                     # one turn later it is retired to a stub
+    out2 = next(json.loads(i["output"]) for i in later if i.get("call_id") == "c2" and "output" in i)
+    assert out2["data"]["compacted"] and out2["data"]["pages_read"] == [1]
+
+
+# ---------------------------------------------------------------- Manus 17:07 item 2: unfinished responses
+
+
+@pytest.mark.parametrize("status", [None, "in_progress", "queued", "cancelled", "failed"])
+def test_an_unfinished_response_is_a_typed_failure_not_an_answer(status):
+    b = F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])
+    if status is None:
+        b.pop("status")
+    else:
+        b["status"] = status
+    reply = rr.parse_response(b)
+    assert reply.error and reply.may_have_been_billed and reply.searches is None and not reply.function_calls()
+
+
+def test_a_finish_beside_an_unfinished_search_is_not_accepted_and_the_status_is_recorded(runs_dir):
+    still = dict(F.search("ptgx pdufa", [PR1]), status="searching")
+    reader = F.FakeResponses([
+        F.body([still, F.call("finish_draft", {"dispositions": [], "limitations": []}, "f1")]),
+        F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f2")])])
+    _, rid, _ = start(runs_dir, reader)
+    r = run_json(runs_dir, rid)["run"]["research"]
+    assert any(x["issues"][0]["code"] == "unfinished_search" for x in r["refusals"])
+    assert r["companies"]["PTGX"]["finish"]["call_id"] == "f2"           # finished only on the later, whole answer
+    search = next(s for s in r["steps"] if s["kind"] == "search")
+    assert search["refs"]["status"] == "searching" and "did not complete" in search["text"]
+
+
+# ---------------------------------------------------------------- Manus 17:07 item 5: settlement totality
+
+
+def test_an_absurd_usage_count_is_unpriced_never_an_overflow():
+    assert prices.cost_usd("Muse Spark", 10 ** 400, 10) is None
+    assert prices.responses_cost_usd("Muse Spark", 10, 10, 10 ** 400) is None
+
+
+def test_absurd_usage_releases_the_reservation_and_stops_paid_work(runs_dir):
+    reader = F.FakeResponses([F.body([F.call("fetch_url", {"url": PR1, "purpose": "x"}, "c0")],
+                                     u=F.usage(i=10 ** 400))])
+    _, rid, _ = start(runs_dir, reader)
+    meta = run_json(runs_dir, rid)["run"]
+    assert meta["unpriced_calls"] == 1 and not jobs._RESERVED.get(rid)
+    assert meta["research"]["companies"]["PTGX"]["limitation"]["kind"] == "unpriced"
+
+
+def test_a_search_only_overrun_is_recorded_in_dollars(runs_dir):
+    many = [F.search(f"q{i}", [PR1], sid=f"ws{i}") for i in range(200)]     # far more searches than the 5 assumed
+    reader = F.FakeResponses([F.body(many + [F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")],
+                                     u=F.usage(i=10, o=10))])
+    _, rid, _ = start(runs_dir, reader)
+    over = run_json(runs_dir, rid)["run"]["research"]["reservation_exceeded"]
+    assert over and over[0]["searches"] == 200 and over[0]["cost_usd"] > over[0]["reserved_usd"]
+
+
+# ---------------------------------------------------------------- Manus 17:07 item 3: one material identity
+
+
+@pytest.mark.parametrize("mutate", ["secondary_derived_words", "secondary_published_date"])
+def test_keep_checks_and_report_expire_together_when_secondary_timing_support_changes(runs_dir, mutate):
+    from runs.state import current_state
+    from report.data import build_view
+    box = {}
+    _two_source_timing_run(runs_dir, program="ICARUS", client_out=box)
+    client, rid = box["client"], box["rid"]
+    assert client.post(f"/api/runs/{rid}/decisions", json={"target": "e2", "action": "keep", "note": None,
+                                                           "fix": None}).status_code == 200
+    run, decisions = run_json(runs_dir, rid), _decisions(runs_dir, rid)
+    st = current_state(run, decisions)["targets"]["e2"]
+    assert st["accepted"] and not st["checks_stale"]
+    second = next(s for s in run["sources"] if s["id"] == "src-r2-ptgx")
+    if mutate == "secondary_derived_words":
+        second["pages"][0]["derived_words"] = {"kind": "model_transcription", "file": "pages/x.json", "sha256": "2" * 64,
+                                               "based_on_image_sha256": second["pages"][0]["image_sha256"],
+                                               "geometry": "approximate", "models": ["m"]}
+    else:
+        second["published_date"] = "2025-01-01"
+    st = current_state(run, decisions)["targets"]["e2"]
+    assert st["checks_stale"] is True and st["accepted"] is False and st["review_history"]
+    view = build_view(run, decisions, generated_at="2026-11-02T00:00:00+00:00")
+    assert "e2" not in {r["id"] for key in ("calendar", "past", "later", "contingent", "undated") for r in view[key]}
+    undone = decisions + [{"target": "e2", "action": "undo", "by": "person", "at": "2026-11-02T00:00:01+00:00",
+                           "note": None, "fix": None}]
+    st = current_state(run, undone)["targets"]["e2"]
+    assert st["accepted"] is False and st["semantic_status"] == "unresolved"
+
+
+def test_class_hidden_text_in_a_text_capture_is_recorded_as_visibility_unknown(tmp_path):
+    page = (b"<html><head><style>.gone{display:none}</style></head><body><p>Shown text in Q2 2027.</p>"
+            b"<p class='gone'>Hidden claim: approval in Q1 2027.</p></body></html>")
+
+    def broken(html, pdf):
+        raise rs.CaptureFailed("Chrome exited with code 1 after 0.2s and wrote no usable PDF.")
+    got = rs.capture_document(rs.Fetched("https://example.org/h", "https://example.org/h", 200, "text/html", page),
+                              tmp_path, "src-r1-x", render_html=broken)
+    assert got["rendered"]["form"] == "text" and got["rendered"]["visibility"] == "unknown"
+    assert any(l.startswith("Visibility unknown") for l in got["rendered"]["limitations"])

@@ -128,7 +128,8 @@ def row_checks(row: dict, source: dict, words_doc: dict | None, chosen: bool = F
         results = [replace(r, result=COULD_NOT_RUN, reason=f"not_applicable: text capture (page image not rendered). "
                                                            f"Render failure: {why}")
                    if r.check == SELECTOR_ID else
-                   replace(r, reason=("The quote appears in the captured text of the page, word for word."
+                   replace(r, reason=("The quote appears in the captured text of the page, word for word; whether "
+                                      "the site shows that text is not established (text capture)."
                                       if r.result == PASS else r.reason.replace("transcribed words", "captured text")))
                    if r.check == event_checks.QUOTE_ID else r for r in results]
     timing = (row.get("research") or {}).get("timing")
