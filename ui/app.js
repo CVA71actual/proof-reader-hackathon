@@ -477,9 +477,13 @@
   function rowTarget(row) { return detail.state.targets[row.id] || {}; }
   // DIALOGS-001: the material identity a decision confirms — the server serves
   // it per target as review_basis {version, sha256}; null on older payloads
-  function basisDigest(rowId) {
+  function basisOf(rowId) {
     var st = (typeof detail !== 'undefined' && detail && detail.state) || {};
     var b = (st.targets || {})[rowId] ? st.targets[rowId].review_basis : null;
+    return b && typeof b === 'object' ? b : null;
+  }
+  function basisDigest(rowId) {
+    var b = basisOf(rowId);
     return b && typeof b.sha256 === 'string' ? b.sha256 : null;
   }
   function rowOf(id) {
@@ -3667,11 +3671,11 @@
       // DIALOGS-001: a refresh may change the material behind the same id
       // (a revised proposal). The draft survives, but the confirmation must
       // not outlive the proposal the person actually saw.
-      if (action === 'keepanyway' && basisDigest(row.id) !== dialogMount.basis) markDialogStale(row);
+      if (action === 'keepanyway' && basisDigest(row.id) !== dialogMount.basisKey) markDialogStale(row);
       return;
     }
     dialogMount = action ? { key: currentRunId() + '/' + row.id + '/' + action,
-                             basis: action === 'keepanyway' ? basisDigest(row.id) : null,
+                             basis: basisOf(row.id), basisKey: basisDigest(row.id),
                              stale: false } : null;
     // U38: on a row whose quote check failed with a near match, the Fix
     // dialog opens on the quote field pre-filled with the page's wording —
@@ -3752,7 +3756,7 @@
       if (dialogMount && dialogMount.stale) {
         var fresh = rowOf(row.id) || row;
         dialogMount = { key: currentRunId() + '/' + fresh.id + '/keepanyway',
-                        basis: basisDigest(fresh.id), stale: false };
+                        basis: basisOf(fresh.id), basisKey: basisDigest(fresh.id), stale: false };
         keepAnywayDialog(fresh, note.value);
         return;
       }
@@ -3779,7 +3783,8 @@
     br.style.marginTop = '14px';
     br.append(btn('btn danger', 'Remove', function () {
       if (!note.value.trim()) { showDialogError('A reason is required — it is the recorded reason.'); return; }
-      postDecision(row.id, { target: row.id, action: 'remove', note: note.value.trim() },
+      postDecision(row.id, { target: row.id, action: 'remove', note: note.value.trim(),
+                             expected_basis: dialogMount ? dialogMount.basis : null },
         'Removed by you — moved to checked and removed.');
     }), btn('btn', 'Cancel', function () {
       navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id });
@@ -3877,7 +3882,8 @@
       if (problem) { showDialogError(problem); return; }
       var note = (document.getElementById('qnote') || {}).value || null;
       var body = { target: row.id, action: 'fix', note: note || null,
-                   fix: { field: sel.value, from: cur(), to: to.value } };
+                   fix: { field: sel.value, from: cur(), to: to.value },
+                   expected_basis: dialogMount ? dialogMount.basis : null };
       var old = dialogHost.querySelector('.errline');
       if (old) old.remove();
       var pendEl = el('div', 'pendline', 'Re-check pending…');
@@ -3894,6 +3900,9 @@
         pendEl.remove();
         if (!res.ok) {
           showDialogError((res.body && res.body.detail) || ('HTTP ' + res.status));
+          // DIALOGS-001 contract: a refused fix on changed material refreshes
+          // so the dialog re-binds to the current row
+          if (res.status === 409) refresh();
           return;
         }
         var st = res.body.state;

@@ -1453,7 +1453,7 @@ def test_dialog_survives_background_polling():
 
     js = (UI / "app.js").read_text()
     names = ("el", "esc", "clear", "btn", "noteField", "openDialog", "closeDialog", "removeDialog",
-             "fixDialog", "keepAnywayDialog", "showDialogError", "basisDigest", "markDialogStale")
+             "fixDialog", "keepAnywayDialog", "showDialogError", "basisDigest", "basisOf", "markDialogStale")
     fns = "\n".join(_grab_fn(js, n) for n in names)
     script = "\n".join([
         "var FIELD_WORDS = { quote: 'Quote', date_text: 'Date as written' };",
@@ -1556,7 +1556,7 @@ def test_keep_anyway_binds_the_shown_basis_and_renews_on_change():
 
     js = (UI / "app.js").read_text()
     names = ("el", "esc", "clear", "btn", "noteField", "openDialog", "closeDialog",
-             "keepAnywayDialog", "markDialogStale", "showDialogError", "basisDigest")
+             "keepAnywayDialog", "markDialogStale", "showDialogError", "basisDigest", "basisOf")
     fns = "\n".join(_grab_fn(js, n) for n in names)
     script = "\n".join([
         "var RULE_WORDS = { event_in_past: 'The period ended before this run began.' };",
@@ -1605,7 +1605,7 @@ def test_keep_anyway_binds_the_shown_basis_and_renews_on_change():
         "openDialog(rowOf('e1'), 'keepanyway');",
         "if (nodes['dialog'].querySelector('.dlgstale')) { console.error('false stale'); process.exit(3); }",
         "keepBtn().onclick();",
-        "if (posts.length !== 1 || posts[0].body.expected_basis !== 'aaa' || posts[0].body.note !== 'I keep the ORIGINAL PROPOSAL')",
+        "if (posts.length !== 1 || JSON.stringify(posts[0].body.expected_basis) !== JSON.stringify({ version: 1, sha256: 'aaa' }) || posts[0].body.note !== 'I keep the ORIGINAL PROPOSAL')",
         "  { console.error(JSON.stringify(posts)); process.exit(4); }",
         # the refresh brings revision 2 with a different basis
         "detail.run.rows[0].title = 'REVISED PROPOSAL';",
@@ -1623,11 +1623,16 @@ def test_keep_anyway_binds_the_shown_basis_and_renews_on_change():
         "if (nodes['dialog'].querySelector('.dlgstale')) { console.error('stale notice stuck'); process.exit(9); }",
         # the confirmed press writes, bound to the basis now shown
         "keepBtn().onclick();",
-        "if (posts.length !== 2 || posts[1].body.expected_basis !== 'bbb') { console.error(JSON.stringify(posts)); process.exit(10); }",
+        "if (posts.length !== 2 || JSON.stringify(posts[1].body.expected_basis) !== JSON.stringify({ version: 1, sha256: 'bbb' })) { console.error(JSON.stringify(posts)); process.exit(10); }",
         "console.log('ok');",
     ])
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
     assert got.returncode == 0, got.stdout + got.stderr
+
+    # the contract (#178 2cba64e): every decision from a dialog carries the
+    # SHOWN row's review_basis (the served object or its sha256)
+    for fn in ("keepAnywayDialog", "removeDialog", "fixDialog"):
+        assert _grab_fn(js, fn).count("expected_basis: dialogMount ? dialogMount.basis : null") == 1, fn
 
 
 def test_a_late_refresh_of_the_previous_run_never_paints_under_the_new_run():
@@ -3045,7 +3050,7 @@ function el(tag, cls, text) {{
 }}
 function btn(cls, text, onClick) {{ var b = el('button', cls, text); b._click = onClick; return b; }}
 function clear(node) {{ node.textContent = ''; node.children = []; return node; }}
-var dialogHost = make(), dialogWrap = make();
+var dialogHost = make(), dialogWrap = make(); var dialogMount = null;
 var TARGET = {{ values: {{}}, fixes: [], group: 'open' }};
 function rowTarget(r) {{ return TARGET; }}
 function currentRunId() {{ return 'run1'; }}
@@ -3240,7 +3245,7 @@ function el(tag, cls, text) {{
 }}
 function btn(cls, text, onClick) {{ var b = el('button', cls, text); b._click = onClick; return b; }}
 function clear(node) {{ node.textContent = ''; node.children = []; return node; }}
-var dialogHost = make(), dialogWrap = make();
+var dialogHost = make(), dialogWrap = make(); var dialogMount = null;
 function rowTarget(r) {{ return {{ values: {{}}, fixes: [], group: 'open' }}; }}
 function currentRunId() {{ return 'run1'; }}
 function navigate(h) {{ navigations.push(h); }}
