@@ -139,10 +139,16 @@ def run_label(research: dict, entries: dict) -> str:
     """Reviewed (no findings) only when every company's review is complete and clean; 'independently reviewed ...'
     only when every company's review is complete; partly reviewed when findings exist but some review did not
     complete; otherwise not independently reviewed. Every company's retrieval limits are carried."""
-    companies = list((research.get("companies") or {}).keys()) or list(entries)
+    comp = research.get("companies") or {}
+    companies = list(comp.keys()) or list(entries)
     done = [entries[t] for t in companies if t in entries]
+    # DRYRUN-1: a company whose RESEARCH did not finish (failed, stopped, starved at the cap) makes the run partial:
+    # never "independently reviewed", whatever its review of the partial draft said
+    unfinished = [t for t in companies if isinstance(comp.get(t), dict) and comp[t].get("status") != "finished"]
+    note = (f" — research did not finish for {len(unfinished)} of {len(companies)} "
+            f"compan{'y' if len(companies) == 1 else 'ies'}") if unfinished else ""
     if not done:
-        return LABEL
+        return LABEL + note
     limits = {k: sum((e.get("limits") or {}).get(k, 0) for e in done)
               for k in ("sources_not_opened", "searches_not_completed")}
     kinds = [e.get("label_kind", "none") for e in done]
@@ -151,6 +157,9 @@ def run_label(research: dict, entries: dict) -> str:
     who = ({"name": " and ".join(names),
             "family": RESEARCHER_FAMILY if any(w.get("family") == RESEARCHER_FAMILY for w in whos)
             else whos[0].get("family")} if whos else None)
+    if unfinished:
+        kind = "partial" if any(k in ("findings", "partial") for k in kinds) else "none"
+        return with_limits(kind, limits, who) + note
     every = len(done) == len(companies)
     if every and all(k == "clean" for k in kinds):
         return with_limits("clean", limits, who)

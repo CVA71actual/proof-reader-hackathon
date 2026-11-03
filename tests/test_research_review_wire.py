@@ -881,3 +881,44 @@ def test_labels_are_derived_from_the_recorded_review_on_load_not_read_back_as_st
     out = build_report(rid, out=tmp_path / "rep", run_dir=runs_dir / rid)
     assert want in " ".join("".join(p.get_text() for p in pymupdf.open(out["pdf"])).split())
     assert path.read_bytes() == before                                       # the saved file is not rewritten
+
+
+# ------------------------------------------------------------------ ten-company dry run (DRYRUN-1/2/3)
+
+def test_dryrun_1_the_run_label_is_never_independent_when_a_company_did_not_finish_research(runs_dir):
+    reviewer = F.FakeChat([F.chat_tools(("finish_review", {"summary": "Nothing to review."}))])
+    _, rid, _ = start(runs_dir, F.FakeResponses([]), reviewer, limit=0.12)     # research starved at its share
+    run = run_json(runs_dir, rid)
+    r = run["run"]["research"]
+    assert r["companies"]["PTGX"]["status"] == "stopped" and r["review"]["PTGX"]["status"] == "complete"
+    assert "independently reviewed by" not in r["label"]
+    assert r["label"].startswith(research.LABEL) and "research did not finish for 1 of 1 company" in r["label"]
+    RUN_SCHEMA.validate(run)
+
+
+def test_dryrun_2_finish_beside_other_calls_twice_ends_the_review_incomplete(runs_dir):
+    mixed = [F.chat_tools(("search", {"query": f"q{i}"}), ("finish_review", {"summary": "done"})) for i in range(50)]
+    reviewer = F.FakeChat([F.assess_then()] + mixed)
+    _, rid, tools = start(runs_dir, F.FakeResponses(happy_script()), reviewer,
+                          brave=F.FakeBrave({f"q{i}": [] for i in range(50)}))
+    run = run_json(runs_dir, rid)
+    e = run["run"]["research"]["review"]["PTGX"]
+    assert len(reviewer.sent) == 3                                  # assess, mixed (reminded), mixed (stop)
+    assert tools.brave.queries == ["q0", "q1"]                      # the other calls of both replies still ran
+    assert e["status"] == "incomplete" and "not sent on its own after a reminder" in e["reason"]
+    reps = [s for s in run["run"]["research"]["steps"] if s["kind"] == "repeat" and
+            (s.get("refs") or {}).get("stage") == "independent_review"]
+    assert len(reps) == 2 and "reminded" in reps[0]["text"] and "ended incomplete" in reps[1]["text"]
+
+
+def test_dryrun_3_each_company_carries_its_review_status(runs_dir):
+    seen = []
+
+    def finish(messages):
+        rid = next(p.name for p in runs_dir.iterdir())
+        seen.append(run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]["review_status"])
+        return F.chat_tools(("finish_review", {"summary": "x"}))
+    reviewer = F.FakeChat([F.assess_then(), finish])
+    _, rid, _ = start(runs_dir, F.FakeResponses(happy_script()), reviewer)
+    c = run_json(runs_dir, rid)["run"]["research"]["companies"]["PTGX"]
+    assert seen == ["reviewing"] and c["status"] == "finished" and c["review_status"] == "done"

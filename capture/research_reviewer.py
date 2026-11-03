@@ -1193,6 +1193,11 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                     "pages_total": out.get("pages_total", out.get("pages")),
                     "note": "Page text was delivered once and removed from the conversation; it is still captured. "
                             "Read it again with read_source_pages if you need it."}))
+        if len(ignored_finishes) >= 2 and not finished:
+            # DRYRUN-2 (Operator ruling): a finish beside other calls is sent back once with a reminder; the second
+            # time, the reply's other calls have run, then the review ends incomplete. A stop on a broken protocol, not a spend limit.
+            return result(INCOMPLETE, "Incomplete: finish_review was not sent on its own after a reminder; the other "
+                                      "calls in that reply were processed.")
         if finished:
             n = len(findings)
             reason = "The reviewer finished: " + (f"{n} finding{'s' if n != 1 else ''}." if n else "no findings.")

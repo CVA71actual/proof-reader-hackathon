@@ -345,7 +345,7 @@ def make_job_class():
                         "company": None, "requests": 0, "searches": 0, "fetches": 0, "pages_delivered": 0,
                         "sources": 0, "proposals": 0, "spend_usd": 0.0, "unpriced_calls": 0,
                         "empty_answers": 0, "started_at": None, "finished_at": None, "limitation": None,
-                        "capture_failures": [], "finish": None})
+                        "capture_failures": [], "finish": None, "review_status": "queued"})
                 for k in ("steps", "refusals", "coverage", "consolidations", "repeats", "kill_conditions"):
                     r.setdefault(k, [])
                 if not isinstance(r.get("review"), dict) or "stage" in r["review"]:
@@ -775,6 +775,9 @@ def make_job_class():
                 adj = {"stage": "adjudication", "status": "not_run", "reason": "The review did not run.",
                        "outcomes": [], "skipped": [], "usage": None}
                 return self.save_review(ticker, rows, record, adj, ended, started, [])
+            with jobs.RUN_LOCK:      # DRYRUN-3: a finished company is not "done" while its review runs
+                self.company(ticker)["review_status"] = "reviewing"
+                self.save_ledger()
             reviewer, choice = rv.choose_reviewer(self.tools.reviewer, getattr(self.tools, "reviewer_fallback", None))
             if choice.get("fallback_used"):
                 self.step(ticker, "review", "Code", "runs.research",
@@ -946,6 +949,7 @@ def make_job_class():
                          "review": record, "adjudication": adj, "usage": dict(self.review_usage(ticker)),
                          "attempts": attempts}
                 self.research.setdefault("review", {})[ticker] = entry
+                self.company(ticker)["review_status"] = {"complete": "done"}.get(status, status or "incomplete")
                 derive_review_labels(self.run)          # every label, from the record (the same function as on load)
                 label = entry["label"]
                 self.save_ledger()
@@ -959,6 +963,12 @@ def make_job_class():
                              if o else ""),
                           stage=REVIEW_STAGE, finding_id=f["finding_id"], finding_kind=f["kind"],
                           rows=[x["row_id"] for x in f["row_revision_ids"]])
+            for k, x in enumerate(record.get("ignored_finishes") or [], 1):
+                self.step(ticker, "repeat", "Model", (who_ran or {}).get("name") or rv.REVIEWER_NAME,
+                          f"finish_review came beside other calls (turn {x.get('turn')}); "
+                          + ("it was ignored and the reviewer was reminded to send it on its own."
+                             if k == 1 else "it was ignored again, so the review ended incomplete."),
+                          stage=REVIEW_STAGE, turn=x.get("turn"))
             lims = record.get("limitations") or []
             self.step(ticker, "review", "Code", "runs.research",
                       f"Independent review of {ticker}: {record.get('status')}. {record.get('reason')}"
