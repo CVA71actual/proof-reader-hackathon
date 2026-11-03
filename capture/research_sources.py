@@ -272,6 +272,7 @@ _DROP_TAG = {"base", "link", "source", "track", "portal"}
 _URL_ATTRS = {"src", "srcset", "data", "poster", "background", "formaction", "action", "lowsrc", "dynsrc",
               "xlink:href", "ping", "manifest", "codebase", "archive", "longdesc", "usemap", "icon"}
 _CSS_URL = __import__("re").compile(r"url\s*\(\s*(['\"]?)(?!data:)[^)]*\1\s*\)", __import__("re").I)
+_CSS_URL_OPEN = __import__("re").compile(r"url\s*\(", __import__("re").I)
 _CSS_IMPORT = __import__("re").compile(r"@import[^;]*;?", __import__("re").I)
 
 
@@ -289,7 +290,14 @@ def _clean_css(css: str, counts: dict) -> str:
         counts["css_urls_removed"] = counts.get("css_urls_removed", 0) + n_url
     if n_imp:
         counts["css_imports_removed"] = counts.get("css_imports_removed", 0) + n_imp
-    return _CSS_URL.sub("none", _CSS_IMPORT.sub("", css))
+    css = _CSS_URL.sub("none", _CSS_IMPORT.sub("", css))
+    # Red Team b7bbc34: an UNCLOSED url( (url(file:///etc/passwd …) is not matched above. Any url( left that is not an
+    # inline data: image drops the whole style text; the code-owned CSP stays as the second barrier.
+    for m in _CSS_URL_OPEN.finditer(css):
+        if not css[m.end():].lstrip(" \t\n'\"").lower().startswith("data:"):
+            counts["css_dropped_unclosed_url"] = counts.get("css_dropped_unclosed_url", 0) + 1
+            return ""
+    return css
 
 
 def sanitize_html(html_text: str) -> tuple[str, dict]:

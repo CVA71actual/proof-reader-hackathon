@@ -551,6 +551,7 @@ def make_job_class():
                           f"{brave_problem} Research continues on Meta's web_search.", engine="Brave Search")
             functions = rc.function_tools(brave=st["brave"])
             while True:
+                self.retire_brave(ticker, c["requests"])       # every path: Brave payloads are delivered only once
                 self.check_company_limits(ticker)
                 searches_left = self.searches_left(ticker)
                 items = (pending if (continuation == rr.CONTINUE_PREVIOUS and prev_id)
@@ -975,17 +976,23 @@ def make_job_class():
             if by not in st["settled"][sid]:
                 st["settled"][sid].append(by)
 
+        def retire_brave(self, ticker: str, requests_made: int) -> None:
+            """BRAVE-PRIMARY-001: a Brave answer's titles and snippets are sent to the model exactly once. Called before
+            every request on every path (tool, prose, empty answer, timeout) and from compact: an answer registered at
+            turn T was delivered by request T+1 and is retired to its query and URLs before any later request."""
+            st = self.state[ticker]
+            for item, turn in st["brave_items"]:
+                if turn < requests_made and id(item) not in st["compacted"]:
+                    item["output"] = json.dumps(st["brave_calls"][item["call_id"]], ensure_ascii=False)
+                    st["compacted"].add(id(item))
+
         def compact(self, ticker: str, current_turn: int) -> None:
             """Replace the delivered page text of every settled source in the replayed history with a short code-
             written stub (the source, the pages read, what settled it). Each function_call keeps its output item, so
             the call/output pairing the API requires stays valid; the evidence stays in the captured files and can be
             read again with read_source_pages. (With previous_response_id the provider keeps its own history.)"""
             st = self.state[ticker]
-            for item, turn in st["brave_items"]:
-                if turn < current_turn and id(item) not in st["compacted"]:
-                    # BRAVE-PRIMARY-001: titles and snippets live only for the turn that delivered them
-                    item["output"] = json.dumps(st["brave_calls"][item["call_id"]], ensure_ascii=False)
-                    st["compacted"].add(id(item))
+            self.retire_brave(ticker, current_turn)
             for sid, items in st["delivered"].items():
                 if sid not in st["settled"]:
                     continue

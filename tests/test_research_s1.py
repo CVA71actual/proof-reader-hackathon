@@ -1636,3 +1636,36 @@ def test_a_brave_request_is_admitted_through_the_strict_cap(runs_dir):
     doc["run"]["spend_usd"] = 0.998
     path.write_text(json.dumps(doc))
     assert jobs.reserve_budget("brave-cap", 0.998, 1.0, 0.005, alone_may_cross=False) is None
+
+
+# ---------------------------------------------------------------- Red Team b7bbc34
+
+
+@pytest.mark.parametrize("css", ["background:url(file:///etc/passwd", "background:url(http://127.0.0.1/x",
+                                 "background: URL( 'http://127.0.0.1:8777/a"])
+def test_an_unclosed_css_url_never_survives_into_the_snapshot(css):
+    for page in (f'<div style="{css}">x</div>', f"<style>p{{{css}</style><p>x</p>"):
+        snap, counts = rs.sanitize_html(page)
+        assert snap.startswith(rs.CSP_META)
+        body = snap[len(rs.CSP_META):].lower()
+        assert "url(" not in body.replace(" ", "") and "etc/passwd" not in body and "127.0.0.1" not in body
+        assert counts.get("css_dropped_unclosed_url") == 1
+
+
+def test_a_data_image_url_is_still_kept():
+    snap, _ = rs.sanitize_html('<div style="background:url(data:image/png;base64,AAAA)">x</div>')
+    assert "data:image/png" in snap
+
+
+@pytest.mark.parametrize("path", ["prose", "empty", "timeout"])
+def test_brave_payloads_are_delivered_exactly_once_on_every_path(runs_dir, path):
+    brave = F.FakeBrave({"q": [PR1]})
+    second = {"prose": F.body([F.message("Thinking about it.")]),
+              "empty": F.body([], status="incomplete", incomplete="max_output_tokens"),
+              "timeout": _timeout_reply()}[path]
+    script = [F.body([F.call("brave_search", {"query": "q", "count": 3}, "b1")]), second,
+              F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])]
+    reader, rid = _brave_run(runs_dir, brave, extra=script)
+    assert "SNIPPET-" in json.dumps(reader.requests[1]["input"])           # the one delivery
+    assert "SNIPPET-" not in json.dumps(reader.requests[2]["input"])       # never sent again
+    assert "TITLE-" not in json.dumps(reader.requests[2]["input"]) and PR1 in json.dumps(reader.requests[2]["input"])
