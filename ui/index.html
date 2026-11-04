@@ -138,8 +138,17 @@
     <div id="nr-intake-out" hidden></div>
     <h4 class="qhead" id="nr-prev-h" hidden>Previously captured</h4>
     <div class="sh-grid" id="nr-prev"></div>
-    <h4>Spending limit <span class="opt">(USD — leave empty for no limit)</span></h4>
-    <input class="fld" id="nr-limit" inputmode="decimal" placeholder="2.00" style="width:130px">
+    <div style="display:flex;gap:24px;flex-wrap:wrap">
+      <div>
+        <h4>Spending limit <span class="opt">(USD — leave empty for no limit)</span></h4>
+        <input class="fld" id="nr-limit" inputmode="decimal" placeholder="2.00" style="width:130px">
+      </div>
+      <div>
+        <h4>Turn limit per company</h4>
+        <input class="fld" id="nr-turn-limit" inputmode="numeric" placeholder="200" style="width:130px">
+        <div class="hint">Research stops at this many model turns per company; the review and checks still run.</div>
+      </div>
+    </div>
     <h4>Research instructions <span class="opt">(optional)</span></h4>
     <textarea class="fld" id="nr-note" rows="12" style="resize:vertical;min-height:200px" placeholder="What the research should focus on"></textarea>
     <div class="hint" id="nr-note-hint">Guides the research; the source checks still run on every row.</div>
@@ -151,12 +160,12 @@
     <label><input type="checkbox" id="nr-tools"> Let the first reader call the checks while it reads</label>
     <div class="hint">The reader may ask the checks about its own proposals; the checks still run on every row afterwards.</div>
     </div>
-    <h4>Checks on every run</h4>
-    <div class="hint">&#10003; Quote is printed on the cited page (code)</div>
-    <div class="hint">&#10003; Citation is where it says (code)</div>
-    <div class="hint">&#10003; Dates match the quote (code)</div>
-    <div class="hint">&#10003; Independent review by a second model &mdash; the run records which one ran and whether it is a different family</div>
-    <div class="hint" id="nr-support-line" hidden>&#10003; Hallucination check on the wording (advisory &mdash; a flag changes no check, count or decision)</div>
+    <h4>Checks this run will attempt</h4>
+    <div class="hint">&bull; Quote is printed on the cited page (code)</div>
+    <div class="hint">&bull; Citation is where it says (code)</div>
+    <div class="hint">&bull; Dates match the quote (code)</div>
+    <div class="hint">&bull; Independent review by a second model &mdash; the run records which one ran and whether it is a different family</div>
+    <div class="hint" id="nr-support-line" hidden>&bull; Hallucination check on the wording (advisory &mdash; a flag changes no check, count or decision)</div>
     <div class="errline" id="nr-error" hidden></div>
     <div class="btnrow nr-actions">
       <button class="btn pri" id="nr-go">Run now</button>

@@ -1040,7 +1040,6 @@
     // URL, click again clears; zero counts are not clickable
     var countersEl = clear(document.getElementById('audit-counters'));
     var chipDefs = [
-      ['MCODE', 'mistakes caught by code', st.mistakes.code],
       ['MREADER', 'mistakes caught by the second reader', st.mistakes.second_reader],
       ['MYOU', 'mistakes caught by you', st.mistakes.person],
       ['EXC', 'excluded', st.excluded.code + st.excluded.person]
@@ -2488,6 +2487,13 @@
     var det = clear(document.getElementById('trail-det'));
     var rs = runResearch();
     mid.append(trailInstructionsBlock());
+    mid.append(stageOutcomesBlock());
+    var activity = el('details', 'trailactivity');
+    activity.append(el('summary', 'trailclaimsum', 'Detailed activity'));
+    var activityBody = el('div', 'trailactivitybody');
+    activity.append(activityBody);
+    mid.append(activity);
+    mid = activityBody;
     var row = rowOf(trailSel) || detail.run.rows[0] || null;
     if (!row) {
       mid.append(el('div', 'empty', 'No rows in this run.'));
@@ -2532,6 +2538,100 @@
     wrap.append(el('pre', 'codeblk', typeof note === 'string' && note !== ''
       ? note : 'No note for the agent was sent.'));
     return wrap;
+  }
+
+  // DEMO CUT: three recorded stage outcomes. Research ending is not review
+  // ending, and an attempted check that could not run is never a pass.
+  function stageOutcomesBlock() {
+    var meta = (detail && detail.run && detail.run.run) || {};
+    var rs = meta.research || {};
+    var companies = rs.companies || {};
+    var companyNames = Object.keys(companies);
+    function savedReason(rec) {
+      if (!rec) return '';
+      var value = rec.status_reason || rec.reason || (rec.limitation && rec.limitation.reason) || '';
+      return typeof value === 'string' ? value : '';
+    }
+    function firstReason(records) {
+      for (var i = 0; i < records.length; i++) {
+        var why = savedReason(records[i]);
+        if (why) return why;
+      }
+      return '';
+    }
+    function stoppedStatus(st) {
+      return st === 'stopped' || st === 'failed' || st === 'incomplete' ||
+             st === 'needs_input' || st === 'paused_turn_limit';
+    }
+    function finishedStatus(st) { return st === 'done' || st === 'complete' || st === 'finished'; }
+
+    var companyRecords = companyNames.map(function (t) { return companies[t] || {}; });
+    var researchOutcome = 'not run';
+    var researchWhy = savedReason(meta) || firstReason(companyRecords);
+    var researchRequests = companyRecords.reduce(function (n, c) {
+      return n + (typeof c.requests === 'number' ? c.requests : 0);
+    }, 0);
+    if (meta.status === 'done' || meta.finished_at ||
+        (companyRecords.length && companyRecords.every(function (c) { return c.status === 'finished'; }))) {
+      researchOutcome = 'completed';
+    } else if (stoppedStatus(meta.status) || companyRecords.some(function (c) { return stoppedStatus(c.status); })) {
+      researchOutcome = 'stopped';
+    } else if (!researchRequests && !(rs.steps || []).length) {
+      researchOutcome = 'no calls made';
+    }
+
+    var review = rs.review || {};
+    var reviewRecords = Object.keys(review).map(function (t) { return review[t] || {}; });
+    var reviewOutcome = 'not run';
+    var reviewWhy = firstReason(reviewRecords) || firstReason(companyRecords.map(function (c) {
+      return { reason: c.review_reason, status_reason: c.review_status_reason };
+    }));
+    if (reviewRecords.length) {
+      if (reviewRecords.every(function (r) { return finishedStatus(r.status); })) reviewOutcome = 'completed';
+      else if (reviewRecords.some(function (r) { return stoppedStatus(r.status); })) reviewOutcome = 'stopped';
+      else if (reviewRecords.every(function (r) {
+        return r.requests === 0 || r.calls === 0 || r.requests_made === 0;
+      })) reviewOutcome = 'no calls made';
+    } else if (companyRecords.length && companyRecords.every(function (c) { return c.review_status === 'done'; })) {
+      reviewOutcome = 'completed';
+    } else if (companyRecords.some(function (c) { return stoppedStatus(c.review_status); })) {
+      reviewOutcome = 'stopped';
+    } else if (meta.second_reader && (meta.status === 'done' || meta.finished_at)) {
+      reviewOutcome = 'completed';
+    } else if (meta.second_reader && stoppedStatus(meta.status)) {
+      reviewOutcome = 'stopped';
+    } else if (meta.choices && meta.choices.models === 'one') {
+      reviewWhy = reviewWhy || NO_SECOND_READER;
+    }
+
+    var findings = (detail && detail.run && detail.run.support_findings) || {};
+    var findingRecords = Object.keys(findings).map(function (id) { return findings[id] || {}; });
+    var supportSteps = (rs.steps || []).filter(function (s) { return s && s.who === 'capture.support_signal'; });
+    var supportRecords = findingRecords.concat(supportSteps);
+    var supportOutcome = 'not run';
+    var supportWhy = firstReason(findingRecords);
+    if (!supportWhy) {
+      for (var i = 0; i < supportSteps.length; i++) {
+        if (supportSteps[i].refs && supportSteps[i].refs.result === 'could_not_run' && supportSteps[i].text) {
+          supportWhy = supportSteps[i].text;
+          break;
+        }
+      }
+    }
+    var supportResults = supportRecords.map(function (s) { return (s.refs && s.refs.result) || s.result; });
+    if (supportResults.some(function (r) { return r === 'unsupported_spans' || r === 'no_finding' || r === 'stale'; })) {
+      supportOutcome = 'completed';
+    } else if (supportResults.indexOf('could_not_run') >= 0) {
+      supportOutcome = 'not run';
+    } else if (meta.choices && meta.choices.support_check === 'lettucedetect') {
+      supportOutcome = 'no calls made';
+    }
+
+    var box = el('div', 'stageout');
+    box.append(el('div', 'jb-sub stageline', 'Research · ' + researchOutcome + (researchWhy ? ' — ' + researchWhy : '')),
+               el('div', 'jb-sub stageline', 'Independent review · ' + reviewOutcome + (reviewWhy ? ' — ' + reviewWhy : '')),
+               el('div', 'jb-sub stageline', 'LettuceDetect · ' + supportOutcome + (supportWhy ? ' — ' + supportWhy : '')));
+    return box;
   }
 
   function researchStepsForRow(rs, rowId) {
@@ -4821,7 +4921,6 @@
       });
     }
     kv('Needs attention', String(st.unresolved));
-    kv('Mistakes caught by code', String(st.mistakes.code));
     if (oneModelRun(meta)) kv('Second reader', NO_SECOND_READER);
     else kv('Mistakes caught by the second reader', String(st.mistakes.second_reader));
     kv('Mistakes caught by you', String(st.mistakes.person));
@@ -5011,12 +5110,24 @@
     if (!text.trim() && rs.defaultText) return 'Blank — the run uses the default instructions.';
     return 'Guides the research; the source checks still run on every row.';
   }
+  function turnLimitFromSettings(body) {
+    var n = body && body.turn_limit_per_company_default;
+    return typeof n === 'number' && Number.isFinite(n) && Math.floor(n) === n && n > 0 ? n : 200;
+  }
+  function nrTurnLimit() {
+    var input = document.getElementById('nr-turn-limit');
+    var raw = input && typeof input.value === 'string' ? input.value.trim() : '';
+    var n = raw === '' ? 200 : Number(raw);
+    return Number.isFinite(n) && Math.floor(n) === n && n > 0 ? n : null;
+  }
   function applyResearchSettings(body) {
     nrResearch = researchFromSettings(body);
     var el = document.getElementById('nr-note');
     // prefill from the server's default once; a person's edits never
     // overwritten — a delayed answer finds the box as the person left it
     if (nrResearch.loaded && nrResearch.defaultText && !el.value) el.value = nrResearch.defaultText;
+    var turns = document.getElementById('nr-turn-limit');
+    if (turns && !turns.value) turns.value = String(turnLimitFromSettings(body));
     updateNoteHint();
   }
   function updateNoteHint() {
@@ -5027,16 +5138,16 @@
   // ---------------- LETTUCE-OPTION (CVA: no toggle): the hallucination check on
   // the wording is not a choice. It is SENT ON EVERY START when the server
   // (/api/research/options) says it is available; otherwise nothing is sent.
-  // The fifth line under "Checks on every run" says which, in plain words.
+  // The fifth line under "Checks this run will attempt" says which, in plain words.
   var nrSupport = { loaded: false, available: false, reason: null, choices: [] };
   // NR-002: while a fresh options request is in flight a start sends nothing —
   // a stale availability answer never ships.
   // NR-003: only the newest request may apply (the company-list loader's rule).
   var nrSupportSeq = 0;
   var nrSupportPending = false;
-  var SUPPORT_LINE_ON = '✓ Hallucination check on the wording (advisory — a flag changes no check, count or decision)';
-  var SUPPORT_LINE_OFF = '– Hallucination check: not set up on this computer';
-  var SUPPORT_LINE_UNKNOWN = '– Hallucination check: availability could not be loaded. Close and open New run to try again.';
+  var SUPPORT_LINE_ON = '• Hallucination check on the wording (advisory — a flag changes no check, count or decision)';
+  var SUPPORT_LINE_OFF = '• Hallucination check: not set up on this computer';
+  var SUPPORT_LINE_UNKNOWN = '• Hallucination check: availability could not be loaded. Close and open New run to try again.';
   function supportFromOptions(body) {
     var o = body && body.support_check;
     var choices = o && Array.isArray(o.choices) ? o.choices : null;
@@ -5313,6 +5424,11 @@
         return;
       }
     }
+    var turnLimit = nrTurnLimit();
+    if (turnLimit === null) {
+      nrError('The turn limit per company must be a positive whole number.');
+      return;
+    }
     nrError('');
     nrBusy = true;
     if (btn) btn.disabled = true;
@@ -5328,7 +5444,7 @@
     return A.newRun({ intake_id: st.intake_id, companies: ready,
                accept_ready_subset: st.requested.some(function (s) { return ready.indexOf(s) < 0; }),
                mode: 'research',
-               spending_limit_usd: limit,
+               spending_limit_usd: limit, turn_limit_per_company: turnLimit,
                note_for_agent: notePayload(),
                support_check: nrSupportValue() }).then(function (res) {
       if (!res.ok && res.status === 409 && res.body && typeof res.body.run_id === 'string') {
@@ -5386,6 +5502,7 @@
   // G4-6: one wording in both limit boxes, and the red line clears as soon as
   // the box is edited
   document.getElementById('nr-limit').addEventListener('input', function () { nrError(''); });
+  document.getElementById('nr-turn-limit').addEventListener('input', function () { nrError(''); });
   newrunWrap.addEventListener('click', function (e) { if (e.target === newrunWrap) newrunWrap.hidden = true; });
   // Run now: the captured names ticked above; refused while the paste box has text
   function startRunNow() {
@@ -5412,6 +5529,11 @@
       if (!Number.isFinite(limit) || limit < 0) { nrError('The spending limit must be a number of dollars, zero or more.'); return; }
     }
     var note = notePayload();
+    var turnLimit = nrTurnLimit();
+    if (turnLimit === null) {
+      nrError('The turn limit per company must be a positive whole number.');
+      return;
+    }
     nrError('');
     nrBusy = true;
     syncPasteMode();
@@ -5419,7 +5541,7 @@
     // research is the only mode the screen starts; the page reader's choices
     // (event types, window, reader tools, second-reader models) stay home
     return A.newRun({ companies: companies, mode: 'research',
-               spending_limit_usd: limit, note_for_agent: note,
+               spending_limit_usd: limit, turn_limit_per_company: turnLimit, note_for_agent: note,
                support_check: nrSupportValue() }).then(function (res) {
       done();
       if (!res.ok) { nrError((res.body && res.body.detail) || ('HTTP ' + res.status)); return; }
@@ -5519,6 +5641,15 @@
     if (!host) return;
     clear(host);
     if (!detail) { host.hidden = true; return; }
+    host.hidden = false;
+    host.append(trailInstructionsBlock());
+    host.append(stageOutcomesBlock());
+    var activity = el('details', 'jobactivity');
+    activity.append(el('summary', 'trailclaimsum', 'Detailed activity'));
+    var activityBody = el('div', 'jobactivitybody');
+    activity.append(activityBody);
+    host.append(activity);
+    host = activityBody;
     var meta = detail.run.run || {};
     var st = meta.status;
     if (!st) {
@@ -5562,7 +5693,8 @@
     if (rsReview) host.append(el('div', 'jb-sub', rsReview));
     var bits = [];
     if (meta.turn_count !== null && meta.turn_count !== undefined) {
-      bits.push('turn ' + meta.turn_count + ' of ' + (meta.turn_limit || '?'));
+      var savedTurnLimit = meta.choices && meta.choices.turn_limit_per_company;
+      bits.push('turn ' + meta.turn_count + ' of ' + (meta.turn_limit || savedTurnLimit || '?'));
     }
     if (meta.spend_usd !== null && meta.spend_usd !== undefined) {
       bits.push(meta.choices && meta.choices.spending_limit_usd !== null && meta.choices.spending_limit_usd !== undefined
