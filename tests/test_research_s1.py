@@ -1352,8 +1352,8 @@ def test_an_sec_document_captured_by_url_takes_its_filing_date_so_year_end_has_a
 
 def test_guidance_says_code_derives_period_bounds_and_quotes_are_whole():
     from capture import research_instructions as ri      # timing policy is in the visible brief, not in code text
-    assert "leave date and date_end empty" in ri.RESEARCH_DEFAULT
-    assert "Quote whole sentences including the timing words" in ri.RESEARCH_DEFAULT
+    assert "Exact date only for a printed day" in ri.RESEARCH_DEFAULT          # brief v7
+    assert "Quote the exact supporting passage" in ri.RESEARCH_DEFAULT
     from checks import event_checks as e
     q = "into a comprehensive Phase 2 psoriasis program, with initiation expected in early Q1 2027."
     assert e.date_match("early Q1 2027", None, q, date_end=None).result == "pass"       # null bounds: derived
@@ -1584,7 +1584,7 @@ def test_brave_is_offered_first_used_and_its_leads_reach_the_model(runs_dir):
     names = [t.get("name") for t in first["tools"]]
     assert "brave_search" in names and "brave_search (primary)" in json.dumps(first["input"])
     from capture import research_instructions as ri
-    assert "Search with brave_search first" in ri.RESEARCH_DEFAULT and "brave_search first" not in rc.CONTROLLER
+    assert "Use brave_search first" in ri.RESEARCH_DEFAULT and "brave_search first" not in rc.CONTROLLER
     assert brave.queries == ["Protagonist PDUFA 2027"]
     out = json.loads(reader.requests[1]["input"][-1]["output"])
     assert out["data"]["results"][0]["title"] == f"TITLE-{PR1}"          # the model sees titles for its turn
@@ -1866,10 +1866,10 @@ def test_the_default_research_request_is_exactly_the_one_box(runs_dir):
     reader = F.FakeResponses([F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
     _, rid, _ = start(runs_dir, reader)
     sent = reader.requests[0]["instructions"]
-    assert len(ri.RESEARCH_DEFAULT) <= 3700 < ri.MAX_LENGTH
+    assert len(ri.RESEARCH_DEFAULT) <= ri.MAX_LENGTH
     assert sent == _instructions_for(ri.RESEARCH_DEFAULT) and sent.startswith(ri.RESEARCH_DEFAULT)
     assert run_json(runs_dir, rid)["run"]["choices"]["note_for_agent"] == ri.RESEARCH_DEFAULT
-    assert "EMA, MHRA, PMDA, NMPA or TGA" in sent
+    assert "FDA, EMA, MHRA, PMDA, NMPA, TGA, Swissmedic" in sent
     assert not any(ri.RESEARCH_DEFAULT in (i.get("content") or "") for i in reader.requests[0]["input"])
 
 

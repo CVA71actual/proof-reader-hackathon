@@ -54,12 +54,15 @@ def test_no_research_policy_outside_the_brief():
     for phrase in MOVED:
         assert phrase not in rc.CONTROLLER, phrase
     brief = ri.RESEARCH_DEFAULT
-    for phrase in ("publication date is not the event date", "exact printed day", "Quote whole sentences",
-                   "Prefer primary sources", "brave_search first", "primary origin", "leave date and date_end empty",
-                   "do not propose it", "one proposal citing all of them", "monitoring item", "an approval is not a launch",
-                   "Past events are not catalysts"):
+    # brief v7 (CVA 2026-11-04, run 16): CVA's structured brief plus one event per conference and replaced guidance
+    for phrase in ("A publication date is not the event date", "Exact date only for a printed day",
+                   "Prefer primary sources", "Use brave_search first", "at its origin", "An approval is not a launch",
+                   "An event that already happened is not an event to report", "monitoring item",
+                   "One event in several sources: one event citing all", "Each conference or meeting is its own event",
+                   "cite the earlier as replaced", "record_coverage", "finish_draft.limitations"):
         assert phrase in brief, phrase
-    assert len(brief) < 3700 < ri.MAX_LENGTH
+    assert "company card" not in brief and "PTGX" not in brief
+    assert len(brief) <= ri.MAX_LENGTH
     card = rq.company_card("PTGX", __import__("datetime").date(2026, 11, 3), "P", "1", True)
     assert set(card) == {"ticker", "company", "cik", "as_of", "calendar_window", "search_tools"}     # facts only
     assert card["calendar_window"] == ["2026-11-03", "2027-05-03"]

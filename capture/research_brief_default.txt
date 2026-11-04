@@ -1,32 +1,44 @@
-Task: build the investment catalyst calendar for one public biotech company. Find every development expected from today through 6 months from today that could move the stock, and propose each one with the source sentence that supports it.
+Company, ticker, today's date and the window (today to 6 months from today) are given with this request.
 
-What counts as a catalyst
-- Clinical: trial starts, enrolment completions, data readouts, presentations at named meetings.
-- Regulatory: filings, acceptances, advisory committees, PDUFA and other decision dates, approvals expected from the FDA, EMA, MHRA, PMDA, NMPA or TGA.
-- Commercial: launches and launch timing.
-- Corporate: announced earnings dates, investor days and conferences, partnership milestones and payments, financing events.
-- Undated but material plans count; propose them as undated.
-- An event announced as firm and material but expected after the window (a set PDUFA date, a pivotal readout) counts; propose it as later.
-- Past events are not catalysts. Do not propose them.
+GOAL
+Find developments expected in the window that could move the stock. Each event must be supported by a quoted passage from a source. Also include firm, material events expected after the window, marked as outside the window. Use the application's required output format; these rules govern research, not format.
 
-Where to look
-- The company's latest 10-Q, 10-K, 8-Ks, press releases, investor presentations and IR events page.
-- Each partner named in the latest 10-Q or 10-K: its releases, earnings materials and event schedules, searched by this company's asset names.
-- ClinicalTrials.gov for this company's and its partners' trials. An estimated primary completion date is a monitoring item, not a promised readout.
-- Regulator pages for pending decisions on filed or approved assets.
-- Search with brave_search first; use web_search when Brave finds too little or is unavailable. Prefer primary sources; if a copy is refused, find the same document at its primary origin.
+EVENT TYPES (one per event)
+Clinical: trial start, enrollment complete, data readout, presentation at a named meeting.
+Regulatory: submission, acceptance, advisory committee, decision expected, approval expected (FDA, EMA, MHRA, PMDA, NMPA, TGA, Swissmedic or other regulators).
+Commercial: launch.
+Corporate: announced earnings date, investor day or conference, partner milestone or payment, financing.
+A submission is not a decision. An approval is not a launch. Trial completion is not a readout.
 
-Before proposing, check it is still upcoming
-- For guidance whose expected period has started or passed, look for a later source. If the event already happened, do not propose it. If its timing changed, propose it once, with the new timing, citing both sources.
+PAST EVENTS
+An event that already happened is not an event to report. It may be cited as context for a future one (a past approval supports an upcoming launch).
 
-Timing
-- Copy timing exactly as printed (date_text), with its qualifiers ("expected", "early", "by year-end", "subject to approval"), and say whose statement it is.
-- Exact date only for an exact printed day. A month, quarter, half or year is a period: leave date and date_end empty. Never add precision or invent a date. Conditional timing stays conditional.
-- A publication date is not the event date unless the text ties the event to it ("today").
-- Quote whole sentences including the timing words; if the sentence has no year, add a span that prints it.
+WHERE TO LOOK
+Company: latest 10-Q, 10-K, 8-Ks, press releases, investor presentations, IR events page.
+Partners named in the latest 10-Q or 10-K: releases, earnings materials and event schedules, searched by the company's asset names.
+Regulator pages for pending decisions on filed or approved assets.
+ClinicalTrials.gov: estimated completion dates are monitoring items, never events.
+Use brave_search first; web_search if Brave finds too little or is unavailable. Prefer primary sources; if a copy is refused, find the same document at its origin.
 
-Each event
-- Name the exact step: submission, acceptance, decision expected, approval, launch, readout, presentation. A submission is not a decision; an approval is not a launch; trial completion is not a readout.
-- One event found in several sources is one proposal citing all of them. Different events on the same day stay separate.
-- If no earnings date is announced, say so; a third-party date is an estimate.
-- Say what is expected, why it matters and what conditions apply. Where sources disagree, cite each. Never invent missing information.
+CHECK BEFORE REPORTING
+For every candidate, check for later information that confirms occurrence, changes timing, cancels the event, or contradicts the original guidance. If it happened or was cancelled, exclude it and record why. If timing changed, report once using the latest supported timing and cite both sources. If no update is found and the original window remains open, report as guidance.
+If no update is found and the window has passed, do not report it as an event; record it as a monitoring item: "prior guidance expired; outcome unverified."
+One event in several sources: one event citing all. Different events on the same day stay separate.
+Each conference or meeting is its own event, even when one release lists several.
+Later company guidance that replaces earlier guidance: report the latest, cite the earlier as replaced; not a disagreement.
+Earnings: report only a date or reporting window stated by the company. If none, record as a monitoring item. A third-party date is an estimate, never an event.
+
+TIMING
+Copy timing exactly as printed, with qualifiers ("expected", "early", "by year-end", "subject to approval"), and say whose statement it is.
+Exact date only for a printed day. A month, quarter, half or year is a period: no exact date. No timing printed: undated.
+Never add precision or invent a date. Conditional timing stays conditional.
+A publication date is not the event date unless the text ties them ("today").
+
+EVIDENCE
+Quote the exact supporting passage. Tables and slides are allowed: include the row or entry plus its heading, the year and any qualifiers. If the passage has no year, quote the text that shows it.
+Every date and factual detail must appear in a quote. "Why it matters" is your interpretation; label it as such.
+Where sources disagree, cite each. Never invent missing information.
+
+COVERAGE RECORD: Use `record_coverage` to record searches, sources read or inaccessible, monitoring items, and excluded candidates with reasons. Identify monitoring items explicitly in the finding; do not present them as future catalysts. Record unresolved questions in `finish_draft.limitations`. Cite the relevant tool-call and source IDs. Do not claim exhaustive coverage.
+
+Before finishing, review each event against these rules. This review is a second look, not independent verification.
