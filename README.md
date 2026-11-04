@@ -84,6 +84,8 @@ The mechanical parts and the saved records:
 - stage labels that say what actually ran
 - one saved request per run
 
+Explicit instructions also helped. After I specified "each conference is its own event", four investor conferences appeared as separate rows rather than one grouped row. Other settings also changed, so this was an observation, not a controlled test of that instruction.
+
 Saved records helped me investigate failures. These parts also needed fixes along the way. For example, an early run let the same conference be accepted twice as two separate rows. Code can reject a repeated action on one row, but semantic duplicates across different rows still need detection and review.
 
 ## What remained unreliable, and why
@@ -94,12 +96,11 @@ The reviewer was uneven. In run 17 it flagged stale launch guidance on a row the
 
 ## Why LLMs were hard to build on
 
-My experiments exposed four practical risks in this implementation:
+My experiments exposed three practical risks in this implementation:
 
 1. **Models did not reliably follow instructions.** Across runs, the reviewer was told to give every row a verdict and then finish. Instead it looped for 92 calls, replied in prose instead of calling tools, filed findings without verdicts, and left sources it had opened unconcluded. Code either recorded the review as incomplete, or closed it under explicit completion rules with the remaining limitations kept.
-2. **Outputs changed with prompts and settings.** After I added one sentence ("each conference is its own event"), four investor conferences came back as four rows instead of one. Other settings also changed, and I did not isolate prompt sensitivity in controlled repeats.
-3. **Results varied between runs.** The reviewer caught stale guidance in one run and missed similar issues in another. Inputs and settings also differed.
-4. **Passing tests did not establish live quality.** More than 3,000 passing tests did not represent the failures that live runs exposed. Live runs, and audits against the sources afterwards, found them.
+2. **Results varied between runs.** The reviewer caught stale guidance in one run and missed similar issues in another. Inputs and settings also differed.
+3. **Passing tests did not establish live quality.** More than 3,000 passing tests did not represent the failures that live runs exposed. Live runs, and audits against the sources afterwards, found them.
 
 What I would keep: code that constrains what can be accepted and preserves evidence, honest stage labels, and a person deciding. Checking a model's format does not make its judgment correct. Models explore, code checks what can be checked mechanically, and a person judges.
 
