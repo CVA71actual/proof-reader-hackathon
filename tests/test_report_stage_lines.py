@@ -11,7 +11,7 @@ import pytest
 from report.data import build_view, load_run_dir, stage_lines
 from tests.test_report_layout import FIXED_TIME, RUNS, _view
 
-RUN9 = Path("/Users/cva26/proof-reader-candidate/runs/run-9/run.json")
+RUN9 = Path.home() / "proof-reader-candidate/runs/run-9/run.json"
 
 
 def _research_run(review=None, support=None, requested="lettucedetect"):

@@ -212,7 +212,7 @@ def test_both_kept_projected_unresolved_without_rewriting(tmp_path):
 
 # ---- run 9 replay (read-only; the saved run is copied, its pages hard-linked) --------------------------------------
 
-RUN9 = Path("/Users/cva26/proof-reader-candidate/runs/run-9")
+RUN9 = Path.home() / "proof-reader-candidate/runs/run-9"
 
 
 def _link_or_copy(src, dst):

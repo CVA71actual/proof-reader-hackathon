@@ -12,7 +12,7 @@ DEFAULT = (
     "supporting passage. Do not invent missing information; leave uncertainty visible for the person reviewing it."
 )
 LEGACY_DEFAULT = PAGE_DEFAULT = DEFAULT
-# BRIEF_V2 (CVA 2026-11-02, glass-queue/prompts/BRIEF_V2_2026-11-02.txt): where a research run looks, verbatim. The
+# BRIEF_V2 (CVA 2026-11-02): where a research run looks, verbatim. The
 # block is kept verbatim in a data file next to this module: its wording is CVA's instruction to the model (it names
 # regulators' decisions on marketed or filed assets), not a claim made by this code.
 WHERE_TO_LOOK = (__import__("pathlib").Path(__file__).with_name("brief_v2_where_to_look.txt")

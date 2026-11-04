@@ -182,7 +182,10 @@ def test_nothing_is_served_with_no_serve_and_no_key_or_model_is_touched(capsys, 
 
 
 def test_the_readme_says_how_to_run_the_demo_without_a_key():
-    text = (REPO / "README.md").read_text()
+    # public README (4 Nov): the README gives the command; the six-step walkthrough lives in the build notes
+    readme = (REPO / "README.md").read_text()
+    assert ".venv/bin/python -m runs.demo" in readme and "docs/BUILD_NOTES_PAGE_READER.md" in readme
+    text = (REPO / "docs" / "BUILD_NOTES_PAGE_READER.md").read_text()
     section = text.split("## Run it without a key\n", 1)[1].split("\n## ", 1)[0]
     assert ".venv/bin/python -m runs.demo" in section and "127.0.0.1:8777/#/ptgx-r5/audit" in section
     assert "proof-reader-docs" not in text and "proof-reader-docs" not in (REPO / "server/README.md").read_text()

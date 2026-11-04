@@ -265,7 +265,7 @@ read 105 of the index's 313 pages (IONS 19, PTGX 55, VKTX 28, RVMD 3 of 12; ABVX
 limit ($5.06 of $5.00: the call that crosses the limit stops the run), so its status is `needs_input` and **no report was built**
 (a report is built when a run is done). No page broke it, none was skipped, the fallback route was not used. Six turn-limit pauses
 were resumed by the command. 95 rows: 14 kept, 3 corrected, 28 removed by the time window, 2 unverified, 48 open; cost $5.055, cost per
-kept row $0.2974. The numbers are the real ones; they are not good ones (most rows fail a check), and the failures are read in INBOX_7.
+kept row $0.2974. The numbers are the real ones; they are not good ones (most rows fail a check).
 
 ### The second reader reads the image
 
