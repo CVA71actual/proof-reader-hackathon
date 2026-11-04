@@ -414,6 +414,22 @@
       settings: function () { return getJSON('/api/settings').then(function (b) { return b || {}; }, function () { return null; }); },
       // LETTUCE-OPTION: the New run wording-check choice, its default and its availability
       researchOptions: function () { return getJSON('/api/research/options').then(function (b) { return b || {}; }, function () { return null; }); },
+      effectiveRequest: function (choices) {
+        var q = new URLSearchParams();
+        q.set('tickers', (choices.tickers || []).join(','));
+        q.set('note', choices.note || '');
+        if (choices.support_check) q.set('support_check', choices.support_check);
+        return fetch('/api/research/effective-request?' + q.toString()).then(function (r) {
+          return r.json().catch(function () { return {}; })
+            .then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+        });
+      },
+      requestRecord: function (id) {
+        return fetch('/api/runs/' + encodeURIComponent(id) + '/request-record').then(function (r) {
+          return r.json().catch(function () { return {}; })
+            .then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+        });
+      },
       intake: function (text) {
         // TICKER-INTAKE-001: pasted tickers the server resolves and captures; no model call
         return fetch('/api/intake', {
@@ -489,7 +505,9 @@
   var changedCountCache = null;
   var changedCache = null;  // {key, a, b, cards}
   var pending = false;      // a decision POST is in flight
+  var duplicateRefusals = {}; // the 409 duplicate_unresolved body shown by the resolution dialog
   var decisionsCache = { id: null, lines: null };   // decisions.jsonl lines, for the trail's person step
+  var requestRecordCache = { id: null, loading: false, body: null, error: null };
   var accuracyCache = { id: null, line: null, tried: false };   // runs/<id>/accuracy.json, one line for the audit header
 
   function needsAttention(t) {
@@ -652,7 +670,7 @@
     }
     if (out.screen === 'judgment') { out.rowId = seg[2] || null; out.dialog = q.d || null; }
     if (out.screen === 'trail') { out.rowId = seg[2] || null; }
-    if (out.screen === 'calendar') { out.rowId = seg[2] || null; out.w = q.w ? Number(q.w) : null; }
+    if (out.screen === 'calendar') { out.rowId = seg[2] || null; out.dialog = q.d || null; out.w = q.w ? Number(q.w) : null; }
     if (out.screen === 'changed') { out.a = q.a || null; out.b = q.b || null; }
     return out;
   }
@@ -674,6 +692,7 @@
       if (o.screen === 'judgment' && o.dialog) q.push('d=' + encodeURIComponent(o.dialog));
     } else if (o.screen === 'calendar') {
       if (o.rowId) h += '/' + encodeURIComponent(o.rowId);
+      if (o.dialog) q.push('d=' + encodeURIComponent(o.dialog));
       if (o.w) q.push('w=' + o.w);
     } else if (o.screen === 'changed') {
       if (o.a) q.push('a=' + encodeURIComponent(o.a));
@@ -2510,7 +2529,8 @@
     var mid = clear(document.getElementById('trail-mid'));
     var det = clear(document.getElementById('trail-det'));
     var rs = runResearch();
-    mid.append(trailInstructionsBlock());
+    ensureRequestRecord();
+    mid.append(trailRequestBlock());
     mid.append(stageOutcomesBlock());
     var activity = el('details', 'trailactivity');
     activity.append(el('summary', 'trailclaimsum', 'Detailed activity'));
@@ -2591,6 +2611,102 @@
     if (fin === 'prose') return 'the model ended with a written answer';
     return '';
   }
+
+  var REQUEST_STAGE_WORDS = { research: 'Research', review: 'Independent review',
+    adjudication: 'Adjudication', support_check: 'LettuceDetect' };
+  function requestStageTitle(stage) {
+    var name = REQUEST_STAGE_WORDS[stage.stage] || stage.stage || 'Request';
+    return name + (stage.model ? ' · ' + stage.model : stage.engine ? ' · ' + stage.engine : '');
+  }
+  function appendRequestStages(host, stages) {
+    (stages || []).forEach(function (stage) {
+      var fold = el('details', 'instrbox');
+      fold.append(el('summary', null, requestStageTitle(stage)));
+      fold.append(el('pre', 'codeblk', JSON.stringify(stage, null, 2)));
+      host.append(fold);
+    });
+  }
+  function requestRecordBrief(record) {
+    if (!record || record.status !== 'recorded' || !(record.versions || []).length) return null;
+    var version = record.versions.filter(function (v) { return v.version === record.current_version; })[0] ||
+      record.versions[record.versions.length - 1];
+    var research = (version.stages || []).filter(function (s) { return s.stage === 'research'; })[0];
+    return research && research.editable && typeof research.editable.brief === 'string'
+      ? research.editable.brief : null;
+  }
+  function trailRequestBlock() {
+    var meta = detail.run.run || {};
+    var cached = requestRecordCache.id === detail.id ? requestRecordCache : null;
+    var record = cached && cached.body;
+    var recordedBrief = requestRecordBrief(record);
+    var note = recordedBrief !== null ? recordedBrief : meta.choices && meta.choices.note_for_agent;
+    var wrap = el('div', 'trailwrap trailinstructions');
+    wrap.append(el('div', 'rstitle', 'Instructions used for this run'));
+    wrap.append(el('pre', 'codeblk', typeof note === 'string' && note !== ''
+      ? note : 'No note for the agent was sent.'));
+    if (cached && cached.loading) {
+      wrap.append(el('div', 'hint', 'Loading the saved request record…'));
+      return wrap;
+    }
+    if (cached && cached.error) {
+      wrap.append(el('div', 'hint', 'Full request record unavailable — ' + cached.error));
+      return wrap;
+    }
+    if (!record) return wrap;
+    if (record.status !== 'recorded') {
+      wrap.append(el('div', 'hint', 'Full request record unavailable — ' +
+        (record.reason || 'no saved request record was returned.')));
+      var legacy = record.from_saved_request_files;
+      if (legacy) {
+        var legacyFold = el('details', 'instrbox');
+        legacyFold.append(el('summary', null, legacy.label || 'From saved request files'));
+        (legacy.companies || []).forEach(function (company) {
+          var cf = el('details', 'instrbox');
+          cf.append(el('summary', null, company.ticker || 'Saved company request'));
+          cf.append(el('pre', 'codeblk', JSON.stringify(company, null, 2)));
+          legacyFold.append(cf);
+        });
+        wrap.append(legacyFold);
+      }
+      return wrap;
+    }
+    var full = el('details', 'instrbox');
+    full.append(el('summary', null, 'Full request sent to each model'));
+    (record.versions || []).forEach(function (version) {
+      var vf = el('details', 'instrbox');
+      vf.append(el('summary', null, 'Version ' + version.version +
+        (version.reason ? ' · ' + version.reason : '') +
+        (version.intact === false ? ' · saved digest does not match' : '')));
+      if (version.intact === false) {
+        vf.append(el('div', 'errline', 'This saved version no longer matches its recorded digest.'));
+      }
+      appendRequestStages(vf, version.stages);
+      full.append(vf);
+    });
+    wrap.append(full);
+    return wrap;
+  }
+  function ensureRequestRecord() {
+    var id = detail && detail.id;
+    if (!id || (requestRecordCache.id === id &&
+        (requestRecordCache.loading || requestRecordCache.body || requestRecordCache.error))) return;
+    requestRecordCache = { id: id, loading: true, body: null, error: null };
+    if (!A.requestRecord) {
+      requestRecordCache = { id: id, loading: false, body: null, error: 'this server does not serve request records.' };
+      return;
+    }
+    A.requestRecord(id).then(function (res) {
+      if (requestRecordCache.id !== id) return;
+      requestRecordCache = { id: id, loading: false, body: res.ok ? res.body : null,
+        error: res.ok ? null : ((res.body && res.body.detail) || ('The server answered ' + res.status + '.')) };
+      if (detail && detail.id === id && route && route.screen === 'trail') renderTrail();
+    }).catch(function () {
+      if (requestRecordCache.id !== id) return;
+      requestRecordCache = { id: id, loading: false, body: null, error: 'the server is not reachable.' };
+      if (detail && detail.id === id && route && route.screen === 'trail') renderTrail();
+    });
+  }
+
   function stageOutcomesBlock() {
     var meta = (detail && detail.run && detail.run.run) || {};
     var choices = meta.choices || {};
@@ -3958,6 +4074,15 @@
     A.decide(currentRunId(), body).then(function (res) {
       pending = false;
       if (!res.ok) {
+        if (res.status === 409 && res.body && res.body.code === 'duplicate_unresolved') {
+          duplicateRefusals[currentRunId() + '/' + rowId] = res.body;
+          var duplicateNav = { runId: currentRunId(),
+            screen: (opts && opts.screen) || (route.screen === 'audit' ? 'audit' : 'judgment'),
+            rowId: rowId, dialog: 'duplicate' };
+          if (opts && opts.w) duplicateNav.w = opts.w;
+          navigate(duplicateNav);
+          return;
+        }
         var msg = (res.body && res.body.detail) || ('HTTP ' + res.status);
         if (route.dialog) showDialogError(msg);
         else toast(msg);
@@ -4033,8 +4158,55 @@
     if (action === 'fix') fixDialog(row, nearMissPrefill(row));
     else if (action === 'remove') removeDialog(row);
     else if (action === 'keepanyway') keepAnywayDialog(row);
+    else if (action === 'duplicate') duplicateDialog(row);
     else closeDialog();
   }
+
+  // DUPLICATE-RESOLUTION-001: a refused Keep never silently accepts a second
+  // copy. Same event adds this row as a source of the accepted row; Different
+  // events records the person's reason and still leaves the final Keep to them.
+  function duplicateDialog(row) {
+    var t = rowTarget(row);
+    var refused = duplicateRefusals[currentRunId() + '/' + row.id] || {};
+    var other = refused.duplicate_of || t.duplicate_of || {};
+    var reason = refused.reason || refused.detail || t.keep_refused ||
+      'These rows may be two copies of one event. Choose how to record them.';
+    clear(dialogHost);
+    dialogHost.append(el('div', 'sh-t', 'Two copies of one event'));
+    dialogHost.append(el('div', 'sh-s', row.ticker + ' · ' + row.title));
+    dialogHost.append(el('p', 'hint', reason));
+    if (other.title) dialogHost.append(el('p', 'hint', 'Other row: ' + other.title + (other.date ? ' · ' + other.date : '')));
+    dialogHost.append(el('h4', null, 'Your note (required for Different events)'));
+    var note = noteField('dnote', 'e.g. Separate meetings announced separately.');
+    var qnote = document.getElementById('qnote');
+    if (qnote && qnote.value) note.value = qnote.value;
+    dialogHost.append(note);
+    var screen = route.screen === 'audit' ? 'audit' : route.screen === 'calendar' ? 'calendar' : 'judgment';
+    var opts = { screen: screen };
+    if (screen === 'calendar') opts.w = route.w;
+    function decision(action) {
+      var text = note.value.trim();
+      if (action === 'distinct_events' && !text) {
+        showDialogError('Say in a note why these are different events.');
+        return;
+      }
+      postDecision(row.id, { target: row.id, action: action, duplicate_of: other.row_id || null,
+                             note: text || null, expected_basis: dialogMount ? dialogMount.basis : null },
+        action === 'same_event' ? 'Same event — kept as a second source.' :
+          'Different events recorded — press Keep to put this row on the calendar.', opts);
+    }
+    var br = el('div', 'btnrow');
+    br.style.marginTop = '14px';
+    br.append(btn('btn pri', 'Same event', function () { decision('same_event'); }),
+              btn('btn', 'Different events', function () { decision('distinct_events'); }),
+              btn('btn', 'Cancel', function () {
+                navigate(dialogHome(row, { runId: currentRunId(), screen: screen, rowId: row.id, w: opts.w }));
+              }));
+    dialogHost.append(br);
+    dialogWrap.hidden = false;
+    note.focus();
+  }
+
   // DIALOGS-001: the proposal on screen no longer matches the one the box was
   // opened on — disclose the current wording and require a fresh confirmation;
   // the reason draft is untouched
@@ -4988,8 +5160,8 @@
     }
     kv('Needs attention', String(st.unresolved));
     if (oneModelRun(meta)) kv('Second reader', NO_SECOND_READER);
-    else kv('Mistakes caught by the second reader', String(st.mistakes.second_reader));
-    kv('Mistakes caught by you', String(st.mistakes.person));
+    else kv('Corrected by the second reader', String(st.mistakes.second_reader));
+    kv('Corrected by you', String(st.mistakes.person));
     kv('Excluded by code', String(st.excluded.code));
     kv('Excluded by you', String(st.excluded.person));
     det.append(sec);
@@ -5201,6 +5373,52 @@
       noteHintText(document.getElementById('nr-note').value, nrResearch);
   }
   document.getElementById('nr-note').addEventListener('input', function () { nrError(''); updateNoteHint(); });
+
+  // The preview is always rebuilt from the current choices when opened. It is
+  // a GET only: no run is admitted and no model is called.
+  var nrRequestSeq = 0;
+  function nrRequestTickers() {
+    var prepared = intakeDoneN();
+    var selector = prepared && typeof prepared === 'object' ? '.nr-ik:checked' : '.nr-co:checked';
+    return Array.prototype.map.call(document.querySelectorAll(selector), function (box) { return box.value; });
+  }
+  function loadEffectiveRequest() {
+    var panel = document.getElementById('nr-request');
+    if (!panel || !panel.open) return;
+    var seq = ++nrRequestSeq;
+    var host = clear(document.getElementById('nr-request-body'));
+    var tickers = nrRequestTickers();
+    if (!tickers.length) {
+      host.append(el('div', 'hint', 'Tick at least one company to see its full request.'));
+      return;
+    }
+    host.append(el('div', 'hint', 'Loading the full request for the current choices…'));
+    if (!A.effectiveRequest) {
+      clear(host).append(el('div', 'hint', 'The full request preview is not available on this server.'));
+      return;
+    }
+    A.effectiveRequest({ tickers: tickers, note: notePayload(), support_check: nrSupportValue() }).then(function (res) {
+      if (seq !== nrRequestSeq || !panel.open) return;
+      clear(host);
+      if (!res.ok) {
+        host.append(el('div', 'errline', (res.body && res.body.detail) || ('The server answered ' + res.status + '.')));
+        return;
+      }
+      appendRequestStages(host, res.body.stages);
+    }).catch(function () {
+      if (seq !== nrRequestSeq || !panel.open) return;
+      clear(host).append(el('div', 'errline', 'The server is not reachable.'));
+    });
+  }
+  document.getElementById('nr-request').addEventListener('toggle', function () {
+    if (this.open) loadEffectiveRequest();
+    else nrRequestSeq += 1;
+  });
+  newrunWrap.addEventListener('change', function (e) {
+    var panel = document.getElementById('nr-request');
+    if (panel.open && !panel.contains(e.target)) loadEffectiveRequest();
+  });
+
   // ---------------- LETTUCE-OPTION (CVA: no toggle): the hallucination check on
   // the wording is not a choice. It is SENT ON EVERY START when the server
   // (/api/research/options) says it is available; otherwise nothing is sent.
