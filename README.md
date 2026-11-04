@@ -15,7 +15,7 @@ This README is an honest after-action report: what worked, what did not, and why
 1. **Muse Spark** (Meta Model API) works as a research agent for one company. It searches the web (Brave Search), captures pages, and proposes each event with an exact quote from a captured page.
 2. **Code** then runs mechanical checks on each proposal: is the quote on the captured page, is the citation located, is the date printed in the quote, and does the source follow the source rule. Each check is recorded as passed, failed or not checked. These checks do not establish whether an event is true, current or complete.
 3. **Muse Spark Open** (Meta's open-weight model, served on Baseten as `meta-models/muse-spark-open-1026`) reviews the rows. It looks for stale guidance and missing events, and can fetch sources itself. DeepSeek V4 Pro is a fallback only if Muse Spark Open is unavailable. The reviewer is from the same model family as the researcher, and the app says so: it is a second look, not independent verification.
-4. **Muse Wonder** (Meta Model API) proposes a resolution for each disagreement it is sent. Its ruling is never a human acceptance.
+4. **Muse Wonder** (Meta Model API) proposes a resolution for each disagreement it is sent. Its proposal does not accept a row; that decision belongs to the person.
 5. **LettuceDetect**, a model-based support check, may flag wording for a person to inspect. No flag is not proof of correctness.
 6. **A person reviews** each row that has a failed check or a reviewer finding, and keeps, fixes or removes it, by click or by voice (**Muse Voice Transcribe**). Voice only pre-fills; nothing is saved until the person clicks. A row with no failed check and no reviewer finding is placed on the calendar automatically. It is labelled "not reviewed by you" until a person decides it, and the person can still keep or remove it.
 7. The **calendar** and the **PDF and Word reports** are built by code from the saved run. Each row shows whether a person kept it or it was placed automatically.
@@ -23,6 +23,42 @@ This README is an honest after-action report: what worked, what did not, and why
 The research brief is one visible, editable box. The exact request sent to the models is frozen and saved with each run.
 
 ![Run 17: the calendar of rows the person kept](docs/images/run17-calendar.png)
+
+## Run it
+
+### Saved-run demo (earlier page-reading version)
+
+The no-key demo demonstrates the earlier page-reading workflow. The agentic research runs shown in the video are not included in this repository. After installation, the bundled saved-run demo requires no API keys or paid model calls.
+
+```sh
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python -m runs.demo
+```
+
+The app opens at <http://127.0.0.1:8777/#/ptgx-r5/audit>. Three clicks:
+
+1. In **Audit log**, click the row **PN-8047** (Q1 2027).
+2. Read its checks, then click its source link to see the quote boxed on the captured page.
+3. Open **Catalyst Calendar** to see the result, and **Export** for its PDF and Word reports.
+
+More detail is in [docs/BUILD_NOTES_PAGE_READER.md](docs/BUILD_NOTES_PAGE_READER.md).
+
+### Live research (keys needed; new runs cost money)
+
+Put your keys in `~/.config/proof-reader/env`, one per line. Keep credentials outside the repository, and do not commit the environment file.
+- `MODEL_API_KEY`: the Meta Model API key, for Muse Spark, Muse Wonder and Muse Voice Transcribe.
+- `BASETEN_API_KEY`: Muse Spark Open.
+- `BRAVE_API_KEY`: Brave Search.
+
+Then:
+
+```sh
+set -a; . ~/.config/proof-reader/env; set +a
+.venv/bin/python -m uvicorn server.app:app --port 8790
+```
+
+Open <http://127.0.0.1:8790>, click **New run**, choose a company, set a spending limit and a turn limit, and review the brief. Then click **Run now**. Recorded costs for the two featured runs were $4.19 and $2.79. Costs vary with settings and research length. LettuceDetect is optional: set `LETTUCE_PYTHON` and `LETTUCE_WEIGHTS_PATH` to a local install of `KRLabsOrg/lettucedect-v2-mmbert-base`.
+
 
 ## Demo runs (PTGX, Protagonist Therapeutics, 4 Nov 2026)
 
@@ -80,39 +116,6 @@ Also tried and not in the final path:
 - letting the researcher call the checks itself
 
 Not used: Muse Code.
-
-## Run it
-
-### Offline demo (no key, no network, no cost; earlier page-reading version)
-
-```sh
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m runs.demo
-```
-
-The app opens at <http://127.0.0.1:8777/#/ptgx-r5/audit>. Three clicks:
-
-1. In **Audit log**, click the row **PN-8047** (Q1 2027).
-2. Read its checks, then click its source link to see the quote boxed on the captured page.
-3. Open **Catalyst Calendar** to see the result, and **Export** for its PDF and Word reports.
-
-More detail is in [docs/BUILD_NOTES_PAGE_READER.md](docs/BUILD_NOTES_PAGE_READER.md).
-
-### Live research (keys needed; new runs cost money)
-
-Put your keys in `~/.config/proof-reader/env`, one per line. The code never prints or saves them.
-- `MODEL_API_KEY`: the Meta Model API key, for Muse Spark, Muse Wonder and Muse Voice Transcribe.
-- `BASETEN_API_KEY`: Muse Spark Open.
-- `BRAVE_API_KEY`: Brave Search.
-
-Then:
-
-```sh
-set -a; . ~/.config/proof-reader/env; set +a
-.venv/bin/python -m uvicorn server.app:app --port 8790
-```
-
-Open <http://127.0.0.1:8790>, click **New run**, choose a company, set a spending limit and a turn limit, and review the brief. Then click **Run now**. A one-company run cost about $3 to $5 in my tests. LettuceDetect is optional: set `LETTUCE_PYTHON` and `LETTUCE_WEIGHTS_PATH` to a local install of `KRLabsOrg/lettucedect-v2-mmbert-base`.
 
 ## Built during the hackathon
 
