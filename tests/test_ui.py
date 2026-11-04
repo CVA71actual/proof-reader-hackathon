@@ -8051,7 +8051,7 @@ def test_calendar_row_and_pane_use_the_current_corrected_fields():
 def test_run9_research_finish_and_stop_require_confirmation_and_hide_when_done():
     js = (UI / "app.js").read_text()
     assert "/research-finish" in js and "/research-stop" in js
-    assert "researchRunControls(meta, live)" in js
+    assert "researchRunControls(meta, true)" in js
     assert "jobReason(st, meta, detail.run.unknown_cost_accepted)" in js
     script = "\n".join([
         "function fail(code, msg) { console.error(code + ': ' + msg); process.exit(code); }",
@@ -8359,3 +8359,25 @@ def test_runcard_stage_lines_review_and_support_states():
 
     page = _render_card_and_summary({"status": "done", "choices": {"mode": "pages", "models": "one"}})
     assert _stage_lines(page) == []           # a page-mode run carries no research stage lines
+
+
+def test_runcard_live_controls_and_stop_sentence_sit_under_the_stage_lines():
+    # RUNCARD-002: while live, the stop sentence and Finish now / Stop and discard are on top, right under the
+    # stage lines and outside the closed Detailed activity fold; once the run ends they are gone from the top
+    research = {"companies": {"PTGX": {"status": "researching", "review_status": "queued", "requests": 2}}}
+    live = _render_card_and_summary({"status": "running", "status_reason": "Researching.",
+                                     "choices": {"mode": "research"}}, research=research)
+    assert live["top"][:4] == ["jb-row1 live", "stageout", "jb-sub", "jb-ctl research-controls"], live["top"]
+    assert live["top"][-1] == "jobactivity"
+    card = live["card"]
+    assert card.count("Finish now") == 1 and card.count("Stop and discard") == 1, card
+    assert card.count("Researching.") == 1, card            # the sentence once, not again inside the fold
+    assert card.index("Finish now") < card.index("Detailed activity")
+
+    ended = _render_card_and_summary({"status": "done", "status_reason": "Researched 1 company.",
+                                      "choices": {"mode": "research"}},
+                                     research={"companies": {"PTGX": {"status": "finished", "review_status": "done"}}})
+    assert "jb-ctl research-controls" not in ended["top"] and "jb-sub" not in ended["top"], ended["top"]
+    assert "Finish now" not in ended["card"] and "Stop and discard" not in ended["card"]
+    # the ended run's sentence stays available, under the fold
+    assert ended["card"].index("Researched 1 company.") > ended["card"].index("Detailed activity")

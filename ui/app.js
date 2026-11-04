@@ -5714,8 +5714,16 @@
     // stage lines (research runs), each company's progress, then the brief as
     // one closed line; everything else under the closed Detailed activity fold
     var card = host;
-    function cardTop() {
+    function cardTop(live) {
       if (isResearchRun(meta)) card.append(stageOutcomesBlock());
+      // RUNCARD-002: while the run is live its stop sentence and the Finish
+      // now / Stop and discard controls sit right under the stage lines, never
+      // in the closed fold; once the run ends they are gone from the top
+      if (live) {
+        if (meta.status_reason) card.append(el('div', 'jb-sub', jobReason(st, meta, detail.run.unknown_cost_accepted)));
+        var liveCtl = researchRunControls(meta, true);
+        if (liveCtl) card.append(liveCtl);
+      }
       var rscTop = researchCompanyBlock(runResearch() && runResearch().companies);
       if (rscTop) card.append(rscTop);
       card.append(trailInstructionsBlock(true));
@@ -5754,7 +5762,7 @@
       row1.append(el('span', null, JOB_STATUS_WORDS[st] || st));
     }
     card.append(row1);
-    host = cardTop();
+    host = cardTop(live);
     // PROJECTION-002: the one-reader sentence is a page-mode sentence — a
     // research run's independent reviewer is stage S2, named from the record
     if (oneModelRun(meta) && meta.choices.mode !== 'research') {
@@ -5792,11 +5800,9 @@
     }
     // the stop sentence wears the warm box only when it needs you; a done
     // run's 'Read N pages' summary is plain text
-    if (meta.status_reason) {
+    if (meta.status_reason && !live) {
       host.append(el('div', JOB_PAUSABLE.indexOf(st) >= 0 ? 'jb-stop' : 'jb-sub', jobReason(st, meta, detail.run.unknown_cost_accepted)));
     }
-    var researchCtl = researchRunControls(meta, live);
-    if (researchCtl) host.append(researchCtl);
     if (JOB_PAUSABLE.indexOf(st) >= 0) {
       var limitInput = null;
       if (st === 'needs_input') {
