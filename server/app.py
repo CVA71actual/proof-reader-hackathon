@@ -59,7 +59,7 @@ _CODE_REF = re.compile(r"^checks/([A-Za-z0-9_]+)\.py:([A-Za-z_][A-Za-z0-9_]*)$")
 NO_SUCH_CHECK = "No check code has that reference; only functions under checks/ can be shown."
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
-BODY_FIELDS = {"target", "action", "note", "fix", "by", "expected_basis"}
+BODY_FIELDS = {"target", "action", "note", "fix", "by", "expected_basis", "duplicate_of"}
 # DIALOGS-001: a decision made in a dialog may say which proposal/evidence it was shown (the target's review_basis,
 # or just its sha256). When the target has changed since, nothing is written.
 STALE_DECISION_REASON = ("This row changed since you opened it: its proposal or evidence is different now. Nothing was "
@@ -586,9 +586,11 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         if body.get("action") not in PERSON_ACTIONS:
             if body.get("action") == "recheck":
                 raise HTTPException(422, "Only code writes a re-check.")
-            raise HTTPException(422, "The action must be keep, fix, remove or undo.")
+            raise HTTPException(422, "The action must be keep, fix, remove, undo, same_event or distinct_events.")
         line = {"at": now_utc(), "target": body.get("target"), "action": body["action"],
                 "note": body.get("note"), "fix": body.get("fix"), "by": "person"}
+        if body["action"] in DUPLICATE_ACTIONS and body.get("duplicate_of") is not None:
+            line["duplicate_of"] = body["duplicate_of"]
         errors = sorted(validator.iter_errors(line), key=lambda e: list(e.path))
         if errors:
             raise HTTPException(422, _schema_reason(errors[0], line))
@@ -597,7 +599,10 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
             # Every page file run.json names is checked again here, at decision time, not only the words file
             # the re-check reads: a file changed since the run was loaded refuses the decision before any write.
             verify_page_files(store.run_dir(run_id), run)
-            return _decide(store, run_id, run, line, expected_basis=body.get("expected_basis"))
+            try:
+                return _decide(store, run_id, run, line, expected_basis=body.get("expected_basis"))
+            except DuplicateKeepRefused as refused:
+                return JSONResponse(refused.body, status_code=409)
 
     @app.post("/api/runs/{run_id}/voice/decide")
     async def voice_decide(run_id: str, request: Request, target: str = "") -> dict:
@@ -741,6 +746,8 @@ def _decide(store: RunStore, run_id: str, run: dict, line: dict, expected_basis=
             raise HTTPException(422, "No row or table value has that id.")
         if (shown_target.get("review_basis") or {}).get("sha256") != want:
             raise HTTPException(409, STALE_DECISION_REASON)
+    if line["action"] in ("keep", *DUPLICATE_ACTIONS):
+        line = _duplicate_gate(run, decisions, line)
     if line["action"] == "keep":
         before = current_state(run, decisions)
         target = before["targets"].get(line.get("target"))
@@ -800,6 +807,47 @@ def _decide(store: RunStore, run_id: str, run: dict, line: dict, expected_basis=
         report_refresh = keep_reports_honest(store.run_dir(run_id), line["at"])
     return {"target": line["target"], "state": state["targets"][line["target"]], "written": written,
             "report_refresh": report_refresh, **_summary(state)}
+
+
+DUPLICATE_ACTIONS = ("same_event", "distinct_events")
+
+
+class DuplicateKeepRefused(Exception):
+    """A plain Keep of the second copy of an event already on the calendar; body is the whole 409 JSON body."""
+
+    def __init__(self, body: dict):
+        super().__init__(body["reason"])
+        self.body = body
+
+
+def _duplicate_gate(run: dict, decisions: list, line: dict) -> dict:
+    """DUPLICATE-RESOLUTION-001, under DECISIONS_LOCK on the log as it is now (so of two concurrent Keeps on two
+    copies of one event, the second sees the first and is refused). A plain Keep of a row whose other copy is on the
+    calendar is refused with 409 unless the person declared them different events. same_event and distinct_events
+    are taken only for a row that has another copy (duplicate_of); the line records which one. A duplicate_of the
+    person was shown that is no longer the row's other copy is refused with 409, nothing written."""
+    target = current_state(run, decisions)["targets"].get(line.get("target"))
+    if target is None or target.get("kind") != "row":
+        if line["action"] == "keep":
+            return line
+        raise HTTPException(422, "A same-event or different-events decision needs an event row.")
+    first = target.get("duplicate_of")
+    if line["action"] == "keep":
+        if target.get("keep_refused"):
+            raise DuplicateKeepRefused({"detail": target["keep_refused"], "reason": target["keep_refused"],
+                                        "code": "duplicate_unresolved", "target": line["target"],
+                                        "duplicate_of": first, "actions": list(target.get("duplicate_actions") or [])})
+        return line
+    if first is None or line["action"] not in (target.get("duplicate_actions") or []):
+        raise HTTPException(409, "This row has no other copy of the same event to resolve now; nothing was saved.")
+    shown = line.get("duplicate_of")
+    if shown is not None and shown != first["row_id"]:
+        raise HTTPException(409, f"This row's other copy is now {first['row_id']}, not {shown}. Nothing was saved. "
+                                 "Look at it again, then decide.")
+    if line["action"] == "same_event" and not first.get("accepted"):
+        raise HTTPException(409, f"{first['row_id']} is not on the calendar, so this row cannot be added as its "
+                                 f"second source. Keep {first['row_id']} first, or keep this row instead.")
+    return {**line, "duplicate_of": first["row_id"]}
 
 
 def _schema_reason(err, line: dict) -> str:

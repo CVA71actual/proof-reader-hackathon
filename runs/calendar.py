@@ -173,6 +173,9 @@ def calendar_entries(run: dict, state: dict) -> list[dict]:
             "page_number": row["page_number"], "group": s["group"], "status": s["status"],
             "decided_by_person": s["decided_by_person"], "last_action": s["last_action"],
             "needs_recheck": s["needs_recheck"], "reason": s["reason"],
+            # DUPLICATE-RESOLUTION-001 (runs.state._resolve_duplicates): the other copies of this event.
+            "duplicate_of": s.get("duplicate_of"), "duplicate_state": s.get("duplicate_state"),
+            "supporting_sources": list(s.get("supporting_sources") or []),
         })
     out.sort(key=lambda e: (e["date"] is None, e["date"] or "", e["id"]))
     return out

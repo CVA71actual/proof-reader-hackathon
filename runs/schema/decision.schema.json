@@ -2,14 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://proof-reader.local/schema/decision.schema.json",
   "title": "Proof Reader decision",
-  "description": "One line of decisions.jsonl. Lines are only ever appended; an undo is a new line, never an edit. A person writes keep, fix, remove and undo; code writes recheck after running the checks again on a person's fix.",
+  "description": "One line of decisions.jsonl. Lines are only ever appended; an undo is a new line, never an edit. A person writes keep, fix, remove, undo, same_event and distinct_events; code writes recheck after running the checks again on a person's fix.",
   "type": "object",
   "additionalProperties": false,
   "required": ["at", "target", "action", "note", "fix", "by"],
   "properties": {
     "at": {"type": "string", "format": "date-time"},
     "target": {"type": "string", "description": "A row id or a table cell id from run.json."},
-    "action": {"enum": ["keep", "fix", "remove", "undo", "recheck"]},
+    "action": {"enum": ["keep", "fix", "remove", "undo", "recheck", "same_event", "distinct_events"]},
+    "duplicate_of": {"type": "string", "description": "same_event / distinct_events only: the row id of the other copy of the event (DUPLICATE-RESOLUTION-001). same_event: this row is a second source of that row, not a second calendar entry. distinct_events: the person says the two rows are different events (a note is required)."},
     "note": {"type": ["string", "null"]},
     "fix": {
       "oneOf": [

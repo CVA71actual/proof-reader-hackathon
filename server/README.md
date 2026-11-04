@@ -47,7 +47,7 @@ curl -s 127.0.0.1:8777/api/runs/sample/decisions | jq length
 ```
 
 `POST /api/runs/{id}/decisions`: one decision by the person. Body: `target`, `action` (keep, fix, remove,
-undo), `note` (text or null), `fix` ({field, from, to} on a fix, otherwise null). The server adds `at` (now, UTC)
+undo, same_event, distinct_events — see "Two copies of one event" below), `note` (text or null), `fix` ({field, from, to} on a fix, otherwise null). The server adds `at` (now, UTC)
 and `by: "person"`.
 
 ```sh
@@ -86,6 +86,64 @@ A decision the state rule would ignore is refused with 422 and the rule's reason
 ```
 
 A decision by anyone but the person (`"by": "model"`), or a `recheck` sent by a client, is refused the same way.
+
+### Two copies of one event (DUPLICATE-RESOLUTION-001)
+
+The rule (full text in `runs/state.py`, above `duplicate_pair`): two event rows are possibly one event only when they
+have the same company and the same exact day, no distinctness guard fires (different regulators, regions, trial
+phases, indications, or programs with no shared name), and either the titles are equal after normalization, or both
+name the same meeting (same kind: conference/symposium, earnings, investor day, shareholder meeting, and the same
+organiser/meeting name once generic words are dropped), or both have the same program and the same action
+(approval, launch, readout, ...). Same company and day alone never pair ("Wolfe conference" and "UBS conference" on
+one day stay two events). In each group the copy on the calendar (the primary) is the earliest current Keep, else
+the first row placed automatically, else the first row.
+
+Every event row in `state.targets` (and every `/calendar` entry) carries:
+
+```
+"duplicate_of":      null | {"row_id": "e10", "title": "...", "date": "2026-11-12", "accepted": true}
+                     # accepted: that copy is on the calendar (kept by you or placed automatically)
+"duplicate_state":   null | "unresolved" | "both_kept" | "same_event" | "distinct_events"
+"duplicate_actions": [] | ["same_event", "distinct_events"] | ["undo"]   # what the server takes for it now
+"keep_refused":      null | "<the 409 sentence below>"                   # a plain Keep would be refused
+"supporting_sources": [{"row_id", "source_id", "page_number", "title", "date", "date_text", "quote", "note", "at"}]
+                     # on the primary: copies a person marked as the same event (state only; also on /calendar)
+"possible_duplicates": ["e28"]                                          # on the primary (state only)
+```
+
+`both_kept`: Keeps on both copies already exist (run 9 e10/e28). Nothing is rewritten; the later Keep is held, the
+row is in Needs review with the issue "Both copies were kept (this one and e10); resolve: same event or different
+events", its held Keep is listed in `review_history`, and the calendar shows only the primary.
+
+A plain Keep while `keep_refused` is set is refused, under the decisions lock (so of two concurrent Keeps on two
+copies the second sees the first), nothing written:
+
+```sh
+curl -s -X POST .../api/runs/run-9/decisions -d '{"target": "e28", "action": "keep"}'
+# 409 {"detail": "Same event as e10, already on the calendar. Choose: it is the same event (add this as a second
+#      source of e10) or they are different events.", "reason": "<the same sentence>",
+#      "code": "duplicate_unresolved", "target": "e28",
+#      "duplicate_of": {"row_id": "e10", "title": "...", "date": "2026-11-12", "accepted": true},
+#      "actions": ["same_event", "distinct_events"]}
+```
+
+The two resolution actions (body as any decision; `duplicate_of` optional — when sent it must still be the row's
+other copy, else 409 and nothing written; `expected_basis` works as for every decision):
+
+```sh
+# the same event: e28 becomes a supporting source of e10, not a second calendar entry; its evidence stays on e28
+-d '{"target": "e28", "action": "same_event", "duplicate_of": "e10", "note": null}'
+# 200 {..., "state": {"duplicate_state": "same_event", "inclusion": "excluded", "semantic_status": "same_event",
+#      "on_calendar": false, "review_label": "Same event as e10 — kept as a second source of e10", ...}}
+#   refused 409 when e10 is not on the calendar ("Keep e10 first, or keep this row instead.")
+
+# different events: a note is required (422 "Say in a note why these are different events." without one);
+# then a plain Keep of e28 is taken and both are on the calendar
+-d '{"target": "e28", "action": "distinct_events", "duplicate_of": "e10", "note": "Separate fireside chat"}'
+```
+
+The line written records `"duplicate_of": "<row id>"`. Both are undone with `undo` like any decision.
+`distinct_events` is an assertion, not acceptance: the row still needs a Keep.
 
 `GET /runs/{id}/pages/{file}`: page images and words files, at the paths `run.json` names.
 
