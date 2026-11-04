@@ -68,6 +68,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -128,6 +129,7 @@ class ChatReply:
     served_by: dict | None = None        # which model answered (a server-side fallback may have)
     attempts: list | None = None         # per attempt: price_name, prompt_tokens, completion_tokens
     access_reason: str | None = None     # set when the provider refused the KEY (not the request), e.g. billing
+    retry_after: float | None = None     # seconds, from a rate-limit refusal's Retry-After header when it had one
 
 
 def _int_or_none(v) -> int | None:
@@ -191,7 +193,7 @@ class OneShotChat:
                                  may_have_been_billed=http.may_have_been_billed(e))
             bill = read_table.failure_billing(e)
             return ChatReply(self.model, error=read_table._plain_error(e), http_status=bill["http_status"],
-                             may_have_been_billed=bill["may_have_been_billed"])
+                             may_have_been_billed=bill["may_have_been_billed"], retry_after=_retry_after(e))
         try:
             return parse_chat_response(resp, self.model)
         except Exception as e:   # never raises: an unreadable success envelope is a possibly-billed failure
@@ -236,6 +238,30 @@ def parse_chat_response(resp, requested_model: str) -> ChatReply:
     reason = get(choices[0], "finish_reason")   # kept as given; review_draft and _verdict classify it
     return ChatReply(model, content=content if isinstance(content, str) else None, tool_calls=calls,
                      finish_reason=reason if isinstance(reason, str) else None, prompt_tokens=p, completion_tokens=c)
+
+
+def _retry_after(e) -> float | None:
+    """Seconds from a refusal's Retry-After header (a number of seconds), else None. Never raises."""
+    try:
+        headers = getattr(getattr(e, "response", None), "headers", None) or {}
+        v = headers.get("retry-after") or headers.get("Retry-After")
+        f = float(v) if v is not None else None
+        return f if f is not None and 0 <= f < float("inf") else None
+    except Exception:
+        return None
+
+
+# RATE-LIMIT-001 (live run 10: Baseten returned HTTP 429 to DeepSeek V4 Pro mid-review and the review ended
+# incomplete). A rate-limit refusal is retried after these waits (seconds), each retry its own admitted and settled
+# request; a Retry-After header is honoured (at most RATE_LIMIT_MAX_WAIT). Still refused after the last retry, the
+# review stops with record.rate_limited set, and the caller hands the frozen draft to the next reviewer in the chain.
+RATE_LIMIT_BACKOFF = (5, 15, 30)
+RATE_LIMIT_MAX_WAIT = 120
+_sleep = time.sleep      # tests replace it
+
+
+def rate_limited(reply: ChatReply) -> bool:
+    return bool(reply.error) and (reply.http_status == 429 or "RateLimitError" in (reply.error or ""))
 
 
 def _chat(model, messages, **kw) -> ChatReply:
@@ -717,6 +743,10 @@ class ReviewResult:
     rows_not_assessed: list = field(default_factory=list)
     order_refusals: list = field(default_factory=list)
     nothing_material: list = field(default_factory=list)
+    ended_by: str | None = None
+    rate_limited: dict | None = None
+    rate_limit_waits: list = field(default_factory=list)
+    carried: dict | None = None
 
     @property
     def clean(self) -> bool:
@@ -740,7 +770,25 @@ class ReviewResult:
                 "family": self.family, "reviewer": self.reviewer_name, "access_refused": self.access_refused,
                 "served_by": self.served_by, "refusal": self.refusal,
                 "turns": self.turns, "searches": self.searches, "fetches": self.fetches, "usage": self.usage,
-                "summary": self.summary, "settings": self.settings}
+                "summary": self.summary, "settings": self.settings, "ended_by": self.ended_by,
+                "rate_limited": self.rate_limited, "rate_limit_waits": self.rate_limit_waits,
+                "carried": self.carried}
+
+
+# REVIEW-CAP-001 (live run 10: DeepSeek V4 Pro made 92 reviewer requests, $3.77 of the run's $7.25, largely repeating
+# the same searches). ON by default (research_limits.review_turn_ceiling_per_company, 0 = off): when the reviewer has
+# had this many answered turns, it gets ONE final turn with search, fetch and page reading withdrawn and an explicit
+# instruction to submit its findings now. It ends complete if it finishes then with every unit concluded; otherwise
+# incomplete with the plain reason "review turn limit (N) reached".
+REVIEW_TURN_CEILING = 30
+FINAL_TURN_TOOL_NAMES = ("assess_rows", "report_finding", "nothing_material", "finish_review")
+
+
+def _final_turn_message(ceiling: int) -> str:
+    return (f"The review turn limit ({ceiling}) has been reached. Submit your findings now, in this reply: report any "
+            f"finding you have not yet reported (report_finding), give every row still without a verdict its verdict "
+            f"(assess_rows), settle a fetched source with nothing_material if it has no finding, then call "
+            f"finish_review. Search, fetch and page reading are no longer available. This is the last turn.")
 
 
 def review_draft(*, company, assignment: str, proposals: list[dict], sources: list[dict],
@@ -748,7 +796,8 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                  spend_gate: Callable[[dict], Any], model=None, max_turns: int | None = None,
                  max_searches: int | None = None, max_fetches: int | None = None,
                  pages_per_read: int = PAGES_PER_READ, replay_turns: int = REPLAY_TURNS,
-                 assess_rows_per_turn: int = ASSESS_ROWS_PER_TURN, adjudicator_model_id: str | None = None) -> dict:
+                 assess_rows_per_turn: int = ASSESS_ROWS_PER_TURN, adjudicator_model_id: str | None = None,
+                 turn_ceiling: int | None = REVIEW_TURN_CEILING, carried: dict | None = None) -> dict:
     """Run the independent review of one company's frozen draft; return its record (ReviewResult.to_record()).
 
     proposals: [{row_id, revision_id, ...}] (`id`/`revision` are accepted as the same fields). Findings bind to these
@@ -757,7 +806,12 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
     pages_per_read / replay_turns: request-size code defaults (recorded in settings), not research limits.
     search(query) -> list of results, or {"results": [...], "searches": int|None}; fetch_capture(url) -> captured
     source {source_id, text, url, ...} or None / raises when it cannot be captured.
-    max_turns / max_searches / max_fetches: optional settings, None (off) by default (LIMITS-001)."""
+    max_turns / max_searches / max_fetches: optional settings, None (off) by default (LIMITS-001).
+    turn_ceiling: REVIEW-CAP-001, ON by default (REVIEW_TURN_CEILING); 0 or None = off. After that many answered
+    turns the reviewer gets one final submit-your-findings turn (no search, fetch or page reading).
+    carried: RATE-LIMIT-001 handover, {"from": name, "findings": [...], "assessments": [...],
+    "nothing_material": [...]} from the previous reviewer's review of this same frozen draft. Each carried finding is
+    re-checked against the draft and the captured text (keeping its own "by"); one that no longer binds is rejected."""
     model = model or reviewer_model()
     who = {**identity(model), "price_name": getattr(model, "price_name", None) or identity(model)["name"]}
     gate = _Gate(spend_gate, "independent_review")
@@ -775,7 +829,11 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
     rejected: list[dict] = []
     searches: list[dict] = []
     fetches: list[dict] = []
-    state = {"turns": 0, "model": None, "summary": None}
+    state = {"turns": 0, "model": None, "summary": None, "final": False, "ended_by": None,
+             "rate_limited": None, "waits": [], "carried": None}
+    turn_ceiling = turn_ceiling if isinstance(turn_ceiling, int) and not isinstance(turn_ceiling, bool) \
+        and turn_ceiling > 0 else None
+    search_cache: dict[str, dict] = {}     # normalised query -> {"turn", "urls", "results"} of its earlier search
     # Retrieval the reviewer asked for that did not complete, keyed by what was asked. A later successful search of
     # the same query or capture of the same url covers it; otherwise it stays a specific limitation.
     open_retrieval: dict[tuple[str, str], dict] = {}
@@ -785,6 +843,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         open_retrieval[(kind, target)] = {"kind": kind, ("query" if kind == "search" else "url"): target,
                                           "reason": reason}
     settings = {"max_turns": max_turns, "max_searches": max_searches, "max_fetches": max_fetches,
+                "review_turn_ceiling": turn_ceiling, "rate_limit_backoff_s": list(RATE_LIMIT_BACKOFF),
                 "pages_per_read": pages_per_read, "replay_turns": replay_turns,
                 "assess_rows_per_turn": assess_rows_per_turn,
                 "order_rule": "A-TO-Z-001: search and fetch run only once min(all rows, turn x assess_rows_per_turn) "
@@ -815,6 +874,9 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         return not_reviewed, cited_unread, {sid: _ranges(r) for sid, r in srcs.read.items() if r}
 
     def result(status: str, reason: str) -> dict:
+        if state["final"] and status == INCOMPLETE:
+            reason = (f"Incomplete: review turn limit ({turn_ceiling}) reached, and the final submit-your-findings "
+                      f"turn did not finish the review. {reason}")
         return ReviewResult(
             status=status, reason=reason, findings=findings, rejected=rejected,
             reviewed_sources={"given": list(srcs.given), "fetched": list(srcs.fetched)},
@@ -824,7 +886,8 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
             family=who["family"], reviewer_name=who["name"], access_refused=state.get("access_refused"),
             served_by=state.get("served_by") or [], refusal=state.get("refusal"),
             turns=state["turns"], searches=searches, fetches=fetches, usage=gate.usage(),
-            summary=state["summary"], settings=settings,
+            summary=state["summary"], settings=settings, ended_by=state["ended_by"],
+            rate_limited=state["rate_limited"], rate_limit_waits=state["waits"], carried=state["carried"],
             assessments=list(assessed.values()), order_refusals=order_refusals, nothing_material=nothing_material,
             rows_not_assessed=[{"row_id": r["row_id"], "revision_id": r["revision_id"],
                                 "reason": "The reviewer gave this row no verdict, so it was not assessed."}
@@ -883,6 +946,65 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                                                                              for m in t]
 
     refused_finish = [0]
+
+    def take_carried(c: dict) -> str:
+        """RATE-LIMIT-001: the previous reviewer's validated work on this same frozen draft, re-checked by code and
+        kept with its own attribution; the next reviewer continues from it."""
+        src = str(c.get("from") or "the previous reviewer")
+        kept, dropped = [], 0
+        for f in c.get("findings") or []:
+            if not isinstance(f, dict):
+                continue
+            problems, bound, spans = [], [], []
+            for ref in f.get("row_revision_ids") or []:
+                key = _row_key(ref.get("row_id"), ref.get("revision_id")) if isinstance(ref, dict) else None
+                if key not in rows:
+                    problems.append(f"Row {key} is not in this draft.")
+                else:
+                    bound.append({"row_id": rows[key]["row_id"], "revision_id": rows[key]["revision_id"]})
+            for span in f.get("evidence") or []:
+                ok, why = srcs.check_span(span)
+                problems.append(why) if why else spans.append(ok)
+            if problems or f.get("kind") not in FINDING_KINDS:
+                dropped += 1
+                rejected.append({"tool": "carried_finding", "arguments": f, "carried_from": src,
+                                 "problems": problems or ["Its kind is not a finding kind."]})
+                continue
+            nf = {"finding_id": f"F{len(findings) + 1}", "kind": f["kind"], "row_revision_ids": bound,
+                  "evidence": spans, "text": f.get("text"), "by": f.get("by") or src, "carried_from": src}
+            findings.append(nf)
+            kept.append(nf)
+        for a in c.get("assessments") or []:
+            key = _row_key(a.get("row_id"), a.get("revision_id")) if isinstance(a, dict) else None
+            if key not in rows or a.get("verdict") not in VERDICTS:
+                continue
+            on_row = [f["finding_id"] for f in findings if any(_row_key(x["row_id"], x["revision_id"]) == key
+                                                               for x in f["row_revision_ids"])]
+            if (a["verdict"] == "finding") != bool(on_row):
+                continue
+            assessed[key] = {**a, "row_id": rows[key]["row_id"], "revision_id": rows[key]["revision_id"],
+                             "finding_ids": on_row, "turn": 0, "carried_from": src}
+        for n in c.get("nothing_material") or []:
+            if isinstance(n, dict) and str(n.get("source_id")) in srcs.by_id:
+                nothing_material.append({**n, "turn": 0, "carried_from": src})
+        state["carried"] = {"from": src, "findings": len(kept), "findings_rejected": dropped,
+                            "assessments": sum(1 for a in assessed.values() if a.get("carried_from") == src)}
+        missing = [r for k, r in rows.items() if k not in assessed]
+        lines = [f"This review continues the review {src} started on this same draft; it stopped because its "
+                 f"provider refused with a rate limit. Its work, re-checked by code, is kept:"]
+        lines += [f"- finding {f['finding_id']} {f['kind']} on "
+                  + (", ".join(f"{r['row_id']} rev {r['revision_id']}" for r in f["row_revision_ids"]) or "no row")
+                  + f": {str(f['text'])[:200]}" for f in kept]
+        lines += [f"- omission already recorded (kept on the earlier attempt): {str(o.get('text'))[:200]}"
+                  for o in c.get("omissions") or [] if isinstance(o, dict)]
+        lines.append(f"- rows with a verdict: {len(assessed)} of {len(rows)}"
+                     + (("; still to assess: " + ", ".join(f"{r['row_id']} rev {r['revision_id']}"
+                                                           for r in missing))[:800] if missing else ""))
+        lines.append("Do not report these findings again. Continue the review, then finish_review.")
+        return "\n".join(lines)
+
+    if isinstance(carried, dict):
+        base.append({"role": "user", "content": take_carried(carried)})
 
     def unconcluded() -> str | None:
         missing = [r for k, r in rows.items() if k not in assessed]
@@ -972,10 +1094,19 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         q = args.get("query")
         if not isinstance(q, str) or not q.strip():
             return {"status": "error", "message": "search needs a non-empty query."}
+        seen = search_cache.get(_norm(q).lower())
+        if seen is not None:
+            # REVIEW-CAP-001 (live run 10 repeated the same Brave searches): an identical query is answered from the
+            # earlier result, the query and its URLs, with no new search and no charge.
+            searches.append({"query": q, "status": "repeated", "results": len(seen["urls"]),
+                             "first_turn": seen["turn"]})
+            return {"status": "ok", "repeated": True, "query": q, "urls": seen["urls"],
+                    "note": f"Same search as turn {seen['turn']}: answered from that result (its URLs below); no new "
+                            f"search was made. Fetch a URL to read it, or search for something different."}
         refused = order_refused("search", q)
         if refused:
             return refused
-        if max_searches is not None and len(searches) >= max_searches:
+        if max_searches is not None and sum(1 for x in searches if x["status"] != "repeated") >= max_searches:
             retrieval_failed("search", q, "The search limit a person set had been reached, so it was not run.")
             return {"status": "error", "message": "The search limit a person set has been reached."}
         ticket = gate.reserve("search", "search", "search", _bytes(q), None, 1, keep_back())
@@ -994,6 +1125,8 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
             return {"status": "error", "message": "The search did not succeed."}
         gate.settle(ticket, "search", "search", "search", None, None, n, None, None)
         searches.append({"query": q, "status": "ok", "results": len(results)})
+        search_cache[_norm(q).lower()] = {"turn": state["turns"], "urls": [r.get("url") for r in results
+                                                                          if isinstance(r, dict) and r.get("url")]}
         open_retrieval.pop(("search", q), None)
         return {"status": "ok", "note": "Leads only. Fetch a source before citing it.", "results": results}
 
@@ -1126,17 +1259,46 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
 
     finished = False
     undelivered_searches: list[tuple[dict, dict]] = []
+    final_tools = [t for t in REVIEWER_TOOLS if (t.get("function") or t).get("name") in FINAL_TURN_TOOL_NAMES]
+
+    def send(messages: list[dict], tools: list[dict]) -> ChatReply:
+        """One reviewer turn: a request, plus RATE-LIMIT-001 retries of a rate-limit refusal after waits. Every
+        physical request is reserved and settled on the gate (GateRefused propagates)."""
+        waits = list(RATE_LIMIT_BACKOFF)
+        state["send_waits"] = mine = []
+        while True:
+            ticket = gate.reserve("model", model.model, who["price_name"], _bytes([messages, tools]),
+                                  getattr(model, "max_tokens", None) or http.MAX_COMPLETION_TOKENS, 0, keep_back())
+            reply = _chat(model, messages, tools=tools)
+            gate.settle(ticket, "model", reply.model, who["price_name"], reply.prompt_tokens, reply.completion_tokens,
+                        0, reply.error, reply.may_have_been_billed if reply.error else None,
+                        None if reply.error else reply.attempts)
+            if not rate_limited(reply) or not waits:
+                return reply
+            wait = waits.pop(0)
+            if reply.retry_after is not None:
+                wait = min(max(reply.retry_after, 0), RATE_LIMIT_MAX_WAIT)
+            w = {"turn": state["turns"] + 1, "wait_s": wait, "retry_after": reply.retry_after,
+                 "http_status": reply.http_status}
+            state["waits"].append(w)
+            mine.append(w)
+            _sleep(wait)
+
     while True:
         if max_turns is not None and state["turns"] >= max_turns:
             return result(INCOMPLETE, f"The turn limit a person set ({max_turns}) was reached before the reviewer "
                                       f"finished.")
+        if turn_ceiling is not None and state["turns"] >= turn_ceiling:
+            if state["final"]:
+                return result(INCOMPLETE, "The reviewer did not call finish_review on the final turn.")
+            state["final"] = True
         try:
             messages = request_messages()
-            ticket = gate.reserve("model", model.model, who["price_name"], _bytes([messages, REVIEWER_TOOLS]),
-                                  getattr(model, "max_tokens", None) or http.MAX_COMPLETION_TOKENS, 0, keep_back())
+            if state["final"]:
+                messages = messages + [{"role": "user", "content": _final_turn_message(turn_ceiling)}]
+            reply = send(messages, final_tools if state["final"] else REVIEWER_TOOLS)
         except GateRefused as e:
             return result(INCOMPLETE, f"The spend gate refused the next reviewer call: {e}")
-        reply = _chat(model, messages, tools=REVIEWER_TOOLS)
         if reply.served_by:
             state.setdefault("served_by", []).append({"turn": state["turns"] + 1, **reply.served_by})
         if not reply.error:      # sent and answered: the pages in it were delivered
@@ -1146,11 +1308,17 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         for msg, stub in undelivered_searches:
             msg["content"] = json.dumps(stub, ensure_ascii=False, default=str)
         undelivered_searches.clear()
+        if rate_limited(reply):
+            mine = state.get("send_waits") or []
+            n = len(mine) + 1
+            state["rate_limited"] = {"http_status": reply.http_status, "requests": n, "message": reply.error,
+                                     "after_turns": state["turns"], "waits_s": [w["wait_s"] for w in mine]}
+            return result(INCOMPLETE, f"The reviewer's provider refused with a rate limit (HTTP "
+                                      f"{reply.http_status or 429}) {n} times in a row, after waits of "
+                                      f"{', '.join(str(w['wait_s']) + 's' for w in mine) or 'none'}; the review "
+                                      f"stopped after {state['turns']} answered turn(s).")
         state["turns"] += 1
         state["model"] = reply.model or state["model"]
-        gate.settle(ticket, "model", reply.model, who["price_name"], reply.prompt_tokens, reply.completion_tokens, 0,
-                    reply.error, reply.may_have_been_billed if reply.error else None,
-                    None if reply.error else reply.attempts)
         if reply.error:
             if reply.http_status in REFUSED_STATUSES or reply.access_reason:
                 state["access_refused"] = {"http_status": reply.http_status, "message": reply.error,
@@ -1184,8 +1352,11 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         turns.append(turn)
         # finish_review counts only when it is the reply's ONLY tool call: alongside a search, fetch or finding the
         # model has not yet seen those results, so its "finished" is ignored and it must finish alone later.
-        finish_alone = len(reply.tool_calls) == 1
-        for c in reply.tool_calls:
+        # On the final (turn-limit) turn there is no later turn: its other calls run first, then finish_review.
+        finish_alone = len(reply.tool_calls) == 1 or state["final"]
+        calls = (sorted(reply.tool_calls, key=lambda c: c["name"] == "finish_review") if state["final"]
+                 else reply.tool_calls)
+        for c in calls:
             try:
                 args = json.loads(c["arguments"]) if isinstance(c["arguments"], str) else c["arguments"]
                 if not isinstance(args, dict):
@@ -1195,7 +1366,10 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                 rejected.append({"tool": c["name"], "arguments": c["arguments"], "problems": [out["message"]]})
             else:
                 try:
-                    if c["name"] == "search":
+                    if state["final"] and c["name"] in ("search", "fetch", "read_source_pages"):
+                        out = {"status": "refused", "message": "The review turn limit was reached: search, fetch "
+                                                               "and page reading are no longer available."}
+                    elif c["name"] == "search":
                         out = do_search(args)
                     elif c["name"] == "fetch":
                         out = do_fetch(args)
@@ -1211,6 +1385,8 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                         ignored_finishes.append({"turn": state["turns"], "reason": FINISH_NOT_ALONE})
                         out = {"status": "ignored", "message": FINISH_NOT_ALONE + ". Read the other results, then "
                                                                "call finish_review on its own."}
+                    elif c["name"] == "finish_review" and unconcluded() and state["final"]:
+                        return result(INCOMPLETE, unconcluded())
                     elif c["name"] == "finish_review" and unconcluded():
                         # A-TO-Z-001: the review cannot end complete with unconcluded units; sent back once
                         why = unconcluded()
@@ -1254,6 +1430,10 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         if finished:
             n = len(findings)
             reason = "The reviewer finished: " + (f"{n} finding{'s' if n != 1 else ''}." if n else "no findings.")
+            if state["final"]:
+                state["ended_by"] = "review_turn_ceiling"
+                reason = (f"The review turn limit ({turn_ceiling}) was reached; the reviewer was asked to submit its "
+                          f"findings and finished: " + (f"{n} finding{'s' if n != 1 else ''}." if n else "no findings."))
             if open_retrieval:
                 k = len(open_retrieval)
                 reason += (f" {k} search or capture step{'s' if k != 1 else ''} did not complete and "

@@ -111,7 +111,8 @@ def assert_reviewed_and_published(meta, r, code):
 def test_stop_rules_are_on_by_default_settable_and_zero_is_off():
     lim = research.validate_limits(None)
     assert {k: lim[k] for k in research.STOP_RULE_DEFAULTS} == {
-        "stall_turns_per_company": 40, "turn_ceiling_per_company": 200, "minutes_ceiling_per_company": 45}
+        "stall_turns_per_company": 40, "turn_ceiling_per_company": 200, "minutes_ceiling_per_company": 45,
+        "review_turn_ceiling_per_company": 30}       # REVIEW-CAP-001: the reviewer's own turn cap
     lim = research.validate_limits({"stall_turns_per_company": 10, "turn_ceiling_per_company": 0,
                                     "minutes_ceiling_per_company": 2.5})
     assert (lim["stall_turns_per_company"], lim["turn_ceiling_per_company"], lim["minutes_ceiling_per_company"]) \

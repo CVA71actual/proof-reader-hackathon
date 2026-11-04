@@ -92,8 +92,11 @@ RESEARCH_TURN_LIMIT = 1_000_000     # a research run is not paused by the page-m
 #   turn_ceiling_per_company: model turns per company.  minutes_ceiling_per_company: minutes per company.
 # turn_ceiling_per_company 250 -> 200 (CVA 2026-11-03, New Run's turn limit): a run-9 replay at 200 keeps 26 of its
 # 29 rows (lost: e27 Takeda earnings, e28 a duplicate, e29 a past approval).
+# review_turn_ceiling_per_company (REVIEW-CAP-001, live run 10: the reviewer made 92 requests, largely repeated
+# searches, then was rate-limited): reviewer model turns per company. It bounds the REVIEW, not the research: when
+# reached the reviewer is asked once to submit its findings (capture/research_reviewer.REVIEW_TURN_CEILING).
 STOP_RULE_DEFAULTS = {"stall_turns_per_company": 40, "turn_ceiling_per_company": 200,
-                      "minutes_ceiling_per_company": 45}
+                      "minutes_ceiling_per_company": 45, "review_turn_ceiling_per_company": 30}
 LIMIT_KEYS = ("max_spend_per_company_usd", "max_requests_per_company", "max_searches_per_company",
               "max_searches_per_request", "max_fetches_per_company", "max_pages_per_company",
               "max_minutes_per_company", "stop_on_empty_rate", "concurrency") + tuple(STOP_RULE_DEFAULTS)
@@ -1034,7 +1037,8 @@ def make_job_class():
             return {"checked": True, "at": now_utc(), "refused": refused, "http_status": reply.http_status,
                     "message": reply.error if reply.error else None, **({"reason": reason} if reason else {})}
 
-        def refused_reviewer(self, ticker: str, refusal: dict, locked: bool = False, refused_model=None) -> tuple:
+        def refused_reviewer(self, ticker: str, refusal: dict, locked: bool = False, refused_model=None,
+                             rate_limited: bool = False) -> tuple:
             """The provider refused the key for the reviewer that was running (on a real call): record it, never
             retry it, and move to the next in the chain (or the declared fallback) for the rest of the run.
             OW-CHAIN-002: compare-and-advance under the lock. Only a refusal of the CURRENT shared choice advances
@@ -1055,16 +1059,22 @@ def make_job_class():
                                           "http_status": refusal.get("http_status"),
                                           "access_reason": refusal.get("reason")})
                     self._record_access({"name": who["name"], "model": who["model"], "position": i, "checked": True,
-                                         "refused": True, "skipped": True, "on": "review call",
+                                         "refused": not rate_limited, "skipped": True, "on": "review call",
+                                         **({"rate_limited": True} if rate_limited else {}),
                                          "http_status": refusal.get("http_status"), "message": refusal.get("message"),
                                          **({"reason": refusal["reason"]} if refusal.get("reason") else {})},
-                                        top=(i == 0))
+                                        top=(i == 0 and not rate_limited))
                     with jobs.RUN_LOCK:
                         acc = self.research["reviewer_access"]
-                        acc.update({"refused": True, "http_status": refusal.get("http_status"),
-                                    "message": refusal.get("message")})
-                        if refusal.get("reason"):
-                            acc["reason"] = refusal["reason"]
+                        if rate_limited:      # RATE-LIMIT-001: a handover, not a key refusal
+                            acc.setdefault("handovers", []).append({
+                                "at": now_utc(), "ticker": ticker, "from": who["name"], "reason": reason,
+                                "http_status": refusal.get("http_status"), "message": refusal.get("message")})
+                        else:
+                            acc.update({"refused": True, "http_status": refusal.get("http_status"),
+                                        "message": refusal.get("message")})
+                            if refusal.get("reason"):
+                                acc["reason"] = refusal["reason"]
                 return self._pick_from(ticker, i + 1)
 
         def review_company(self, ticker: str, ended_kind: str, ended_reason: str) -> dict:
@@ -1114,12 +1124,55 @@ def make_job_class():
                 # OW-CHAIN-001: every newly selected reviewer's result is classified the same way. A refusal on its
                 # FIRST call (no work done) advances monotonically through the chain and the company is reviewed by
                 # the next one; a refusal after work keeps that work (incomplete). One gate per physical attempt.
+                cap = self.limits.get("review_turn_ceiling_per_company") if isinstance(self.limits, dict) else None
+                carried = None
                 while True:
                     record = rv.review_draft(company=company, assignment=brief,
-                                             proposals=[self.review_proposal(r) for r in rows], sources=given,
+                                             proposals=[self.review_proposal(r) for r in rows],
+                                             sources=given + [f for f in fetched if carried],
                                              search=self.review_search(ticker),
                                              fetch_capture=self.review_fetch(ticker, fetched),
-                                             spend_gate=self.review_gate(ticker), model=reviewer)
+                                             spend_gate=self.review_gate(ticker), model=reviewer,
+                                             turn_ceiling=cap or None, carried=carried)
+                    limited = record.get("rate_limited")
+                    if limited and not choice.get("fallback_used"):
+                        # RATE-LIMIT-001: still rate-limited after the retries. Hand the frozen draft to the next
+                        # reviewer in the chain (a billing-refused one is skipped by its access check), carrying this
+                        # reviewer's validated work; this reviewer's attempt is saved first, so attribution names
+                        # every reviewer that made calls (the attempt history, fb40b6d).
+                        why = (f"rate limited by its provider (HTTP {limited.get('http_status') or 429}) after "
+                               f"{limited.get('requests')} requests")
+                        nxt = self.refused_reviewer(ticker, {"http_status": limited.get("http_status"),
+                                                             "message": limited.get("message"), "reason": why},
+                                                    refused_model=reviewer, rate_limited=True)
+                        if nxt[0] is reviewer:      # nothing further in the chain
+                            break
+                        record["handed_over_to"] = nxt[1].get("name")
+                        record["reason"] = (f"Handed over: {choice['name']} was {why}, after {record.get('turns')} "
+                                            f"answered turn(s); its {len(record.get('findings') or [])} validated "
+                                            f"finding(s) are carried to {nxt[1].get('name')}, which continues the "
+                                            f"review of the same draft.")
+                        if (record.get("turns") or 0) > 0:      # it did work: saved as its own attempt
+                            self.save_review(ticker, rows, record, {
+                                "stage": "adjudication", "status": "not_run", "outcomes": [], "skipped": [],
+                                "usage": None, "reason": "Handed over: disputes are adjudicated after the review "
+                                                         "that continues this one."}, ended, started, [], choice)
+                            started = now_utc()
+                        # row-less omissions are already kept by the saved attempt (unbound_findings), so they are
+                        # named to the next reviewer but not carried as findings (no double count)
+                        saved = (record.get("turns") or 0) > 0
+                        carried = {"from": choice["name"],
+                                   "findings": [f for f in record.get("findings") or []
+                                                if f.get("row_revision_ids") or not saved],
+                                   "omissions": [f for f in record.get("findings") or []
+                                                 if not f.get("row_revision_ids") and saved],
+                                   "assessments": record.get("assessments") or [],
+                                   "nothing_material": record.get("nothing_material") or []}
+                        reviewer, choice = nxt
+                        self.step(ticker, "review", "Code", "runs.research",
+                                  f"{review_phrase(choice)} of {ticker} continues the review: the previous reviewer "
+                                  f"was {why}.", stage=REVIEW_STAGE)
+                        continue
                     refused = record.get("access_refused")
                     if not refused or choice.get("fallback_used"):
                         break
@@ -1774,7 +1827,8 @@ def make_job_class():
             c, L, st = self.company(ticker), self.limits, self.state[ticker]
             turns, last = c["requests"], st["last_progress_turn"]
             minutes = (time.monotonic() - st["started"]) / 60
-            stall, ceiling, mins = (L.get(k) for k in STOP_RULE_DEFAULTS)
+            stall, ceiling, mins = (L.get(k) for k in ("stall_turns_per_company", "turn_ceiling_per_company",
+                                                       "minutes_ceiling_per_company"))
             if self.finish_requested():
                 code, setting, why = "finish_now", None, "a person chose Finish now"
             elif ceiling and turns >= ceiling:
