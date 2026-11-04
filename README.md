@@ -55,11 +55,11 @@ The app opens at <http://127.0.0.1:8777/#/run-17/audit>. The Agent trail shows e
 
 ### Live research (keys needed; new runs cost money)
 
-Put your keys in `~/.config/proof-reader/env`, one per line. Keep credentials outside the repository, and do not commit the environment file.
+Put your keys in `~/.config/proof-reader/env`, one per line, each as `NAME="value"`. Keep credentials outside the repository, and do not commit the environment file.
 - `MODEL_API_KEY`: the Meta Model API key, for Muse Spark, Muse Wonder and Muse Voice Transcribe.
 - `BASETEN_API_KEY`: Muse Spark Open.
 - `BRAVE_API_KEY`: Brave Search.
-- `SEC_USER_AGENT`: your name and email, which SEC EDGAR requires on every request (for example `Jane Doe jane@example.com`).
+- `SEC_USER_AGENT`: your name and email, which SEC EDGAR requires on every request. Quote it, for example `SEC_USER_AGENT="Jane Doe jane@example.com"`.
 
 You also need Google Chrome installed: captured pages are rendered with headless Chrome. Install first, as in the saved-run demo (`python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`).
 
