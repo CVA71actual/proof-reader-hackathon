@@ -182,12 +182,12 @@ def test_requests_replay_full_output_before_tool_results_with_auto_tool_choice(r
     assert "max_tool_calls" not in first          # no search limit is on unless a person sets one
     assert {t["name"] for t in first["tools"][1:]} == set(rc.ARGUMENTS) - {"brave_search"}   # no key in tests
     assert all("function" not in t for t in first["tools"][1:])       # flat Responses form
-    # the instructions are the compact controller; the assignment is its own input item, exactly
-    assert first["instructions"] == rc.CONTROLLER and len(rc.CONTROLLER) < 3000       # compact, not the 3,996 brief
-    assert first["input"][0]["content"].endswith(run_choices_note())
-    kinds = [i.get("type") for i in second["input"][2:]]
+    # CVA 2026-11-03: the brief leads the instructions, then the compact technical contract; the card is input 0
+    assert first["instructions"] == run_choices_note() + "\n\n" + rc.CONTROLLER and len(rc.CONTROLLER) < 3000
+    assert first["input"][0]["content"].startswith("Company card:\n")
+    kinds = [i.get("type") for i in second["input"][1:]]
     assert kinds == ["reasoning", "web_search_call", "function_call", "function_call_output"]
-    assert second["input"][4]["call_id"] == second["input"][5]["call_id"] == "c1"
+    assert second["input"][3]["call_id"] == second["input"][4]["call_id"] == "c1"
 
 
 def run_choices_note():
@@ -1351,8 +1351,9 @@ def test_an_sec_document_captured_by_url_takes_its_filing_date_so_year_end_has_a
 
 
 def test_guidance_says_code_derives_period_bounds_and_quotes_are_whole():
-    assert "set date and date_end to null: code derives the bounds" in rc.CONTROLLER
-    assert "Quote whole sentences exactly as printed, including the date words" in rc.CONTROLLER
+    from capture import research_instructions as ri      # timing policy is in the visible brief, not in code text
+    assert "leave date and date_end empty and code derives the bounds" in ri.RESEARCH_DEFAULT
+    assert "Quote whole sentences as printed, including the timing words" in ri.RESEARCH_DEFAULT
     from checks import event_checks as e
     q = "into a comprehensive Phase 2 psoriasis program, with initiation expected in early Q1 2027."
     assert e.date_match("early Q1 2027", None, q, date_end=None).result == "pass"       # null bounds: derived
@@ -1582,7 +1583,8 @@ def test_brave_is_offered_first_used_and_its_leads_reach_the_model(runs_dir):
     first = reader.requests[0]
     names = [t.get("name") for t in first["tools"]]
     assert "brave_search" in names and "brave_search (primary)" in json.dumps(first["input"])
-    assert "use brave_search first for discovery" in rc.CONTROLLER
+    from capture import research_instructions as ri
+    assert "Search with brave_search first" in ri.RESEARCH_DEFAULT and "brave_search first" not in rc.CONTROLLER
     assert brave.queries == ["Protagonist PDUFA 2027"]
     out = json.loads(reader.requests[1]["input"][-1]["output"])
     assert out["data"]["results"][0]["title"] == f"TITLE-{PR1}"          # the model sees titles for its turn
@@ -1853,26 +1855,22 @@ def test_a_bot_wall_asking_to_confirm_a_human_is_a_block_page():
 # ---------------------------------------------------------------- brief v2 default, DATE-001 one source of bounds
 
 
-ASSIGNMENT_LABEL = "Research assignment (from the person, exactly as written):\n"     # fixed framing, not the box
+def _instructions_for(brief):
+    return brief + "\n\n" + rc.CONTROLLER
 
 
 def test_the_default_research_request_is_exactly_the_one_box(runs_dir):
-    """CVA 2026-11-03: one editable box; what is in the box is exactly what is sent (was: a note plus an appended
-    where-to-look block)."""
-    import re as _re
+    """CVA 2026-11-03: one editable box, the whole research policy, sent FIRST as the leading instruction block; code
+    adds only the technical contract after it (no second copy of policy, nothing appended to the box)."""
     from capture import research_instructions as ri
     reader = F.FakeResponses([F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
     _, rid, _ = start(runs_dir, reader)
-    assignment = reader.requests[0]["input"][0]["content"]
-    assert ri.RESEARCH_DEFAULT == ri.LEGACY_DEFAULT + "\n\n" + ri.WHERE_TO_LOOK and len(ri.RESEARCH_DEFAULT) <= ri.MAX_LENGTH
-    assert assignment == ASSIGNMENT_LABEL + ri.RESEARCH_DEFAULT and assignment.count(ri.WHERE_TO_LOOK) == 1
+    sent = reader.requests[0]["instructions"]
+    assert len(ri.RESEARCH_DEFAULT) <= 3700 < ri.MAX_LENGTH
+    assert sent == _instructions_for(ri.RESEARCH_DEFAULT) and sent.startswith(ri.RESEARCH_DEFAULT)
     assert run_json(runs_dir, rid)["run"]["choices"]["note_for_agent"] == ri.RESEARCH_DEFAULT
-    assert "Regulators beyond the FDA: check the EMA, MHRA, PMDA, NMPA and TGA" in assignment
-    # verbatim from glass-queue/prompts/BRIEF_V2_2026-11-02.txt; its only banned-pattern hit is the brief's own
-    # "approved or filed assets" (regulatory approval), kept in a data file so the product-code rule still holds
-    assert [m.group(0) for m in _re.finditer(r"\w*(?:verif|prove|correct)\w*", ri.WHERE_TO_LOOK, _re.I)] == ["approved"]
-    assert ri.WHERE_TO_LOOK.startswith("Where to look, beyond the company's own filings and releases:")
-    assert ri.WHERE_TO_LOOK.count("\n- ") == 6
+    assert "Regulators beyond the FDA: EMA, MHRA, PMDA, NMPA and TGA" in sent
+    assert not any(ri.RESEARCH_DEFAULT in (i.get("content") or "") for i in reader.requests[0]["input"])
 
 
 def test_an_edited_note_is_sent_exactly_as_given(runs_dir):
@@ -1880,15 +1878,14 @@ def test_an_edited_note_is_sent_exactly_as_given(runs_dir):
     note = "Focus on PN-881 and its partner trials."
     reader = F.FakeResponses([F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
     start(runs_dir, reader, note_for_agent=note)
-    assert reader.requests[0]["input"][0]["content"] == ASSIGNMENT_LABEL + note
-    assert ri.research_assignment(note) == note
+    assert reader.requests[0]["instructions"] == _instructions_for(note)
+    assert ri.research_assignment(note) == note and ri.RESEARCH_DEFAULT not in reader.requests[0]["instructions"]
 
 
 def test_a_note_with_the_block_deleted_sends_no_block_and_none_is_doubled():
     from capture import research_instructions as ri
-    without = ri.LEGACY_DEFAULT.replace("Cite the supporting passage. ", "")
-    assert ri.research_assignment(without) == without and ri.WHERE_TO_LOOK not in ri.research_assignment(without)
-    assert ri.research_assignment(ri.RESEARCH_DEFAULT).count(ri.WHERE_TO_LOOK) == 1
+    without = ri.RESEARCH_DEFAULT.replace("Duplicates\n", "")
+    assert ri.research_assignment(without) == without
     edited = "My own focus.\n\n" + ri.WHERE_TO_LOOK
     assert ri.research_assignment(edited) == edited and ri.research_assignment(edited).count(ri.WHERE_TO_LOOK) == 1
     for blank in (None, "", "   "):
@@ -1899,13 +1896,14 @@ def test_the_old_short_default_maps_to_the_full_one(runs_dir):
     from capture import research_instructions as ri
     assert ri.research_assignment(ri.LEGACY_DEFAULT) == ri.RESEARCH_DEFAULT
     assert ri.is_default(ri.LEGACY_DEFAULT) and ri.is_default(ri.RESEARCH_DEFAULT) and not ri.is_default("x")
+    assert ri.is_default(ri.RESEARCH_DEFAULT_V1)      # run 9's box (short default + where-to-look) is still a default
     # page mode (legacy, off the demo path) keeps the short default; New Run's box shows the research brief
     from server import jobs
     assert jobs.validate_choices({"companies": ["PTGX"]})["note_for_agent"] == ri.DEFAULT == ri.LEGACY_DEFAULT
     assert jobs.validate_choices({"mode": "research", "companies": ["PTGX"]})["note_for_agent"] == ri.RESEARCH_DEFAULT
     reader = F.FakeResponses([F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "f")])])
     start(runs_dir, reader, note_for_agent=ri.LEGACY_DEFAULT)               # a saved legacy note
-    assert reader.requests[0]["input"][0]["content"] == ASSIGNMENT_LABEL + ri.RESEARCH_DEFAULT
+    assert reader.requests[0]["instructions"] == _instructions_for(ri.RESEARCH_DEFAULT)
 
 
 def test_a_period_row_with_code_derived_bounds_is_placed_not_undated(runs_dir):

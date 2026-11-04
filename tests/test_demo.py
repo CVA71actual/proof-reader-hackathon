@@ -216,7 +216,7 @@ def test_the_default_run_setting_is_served_and_the_demo_prints_where_to_open(run
 
     # CVA 2026-11-03: the New Run box (research mode) shows the full research brief
     fields = {"research_instructions_default": research_instructions.RESEARCH_DEFAULT,
-              "research_instructions_max_length": 4000}
+              "research_instructions_max_length": 4000, "turn_limit_per_company_default": 200}
     assert TestClient(create_app(runs_dir=runs_dir)).get("/api/settings").json() == {"default_run": None, **fields}
     assert TestClient(create_app(runs_dir=runs_dir, default_run="nope")).get("/api/settings").json() == {
         "default_run": None, **fields}

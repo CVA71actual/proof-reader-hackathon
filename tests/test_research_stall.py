@@ -1,7 +1,7 @@
 """STOP-RULE-001 (CVA 2026-11-03, after live run 9): the research stopping rule and the person's Finish now.
 
 A company's research ENDS AS FINISHED (not a limitation) when it has gone stall_turns_per_company model turns with no
-new proposal (default 40), reaches turn_ceiling_per_company model turns (default 250) or minutes_ceiling_per_company
+new proposal (default 40), reaches turn_ceiling_per_company model turns (default 200) or minutes_ceiling_per_company
 minutes (default 45), or a person chooses Finish now (POST /api/runs/{id}/research-finish). The run then goes on to
 the independent review, adjudication and the support check and publishes like a model finish. research-stop
 (discard: nothing reviewed, nothing published) is unchanged and wins over Finish now.
@@ -111,7 +111,7 @@ def assert_reviewed_and_published(meta, r, code):
 def test_stop_rules_are_on_by_default_settable_and_zero_is_off():
     lim = research.validate_limits(None)
     assert {k: lim[k] for k in research.STOP_RULE_DEFAULTS} == {
-        "stall_turns_per_company": 40, "turn_ceiling_per_company": 250, "minutes_ceiling_per_company": 45}
+        "stall_turns_per_company": 40, "turn_ceiling_per_company": 200, "minutes_ceiling_per_company": 45}
     lim = research.validate_limits({"stall_turns_per_company": 10, "turn_ceiling_per_company": 0,
                                     "minutes_ceiling_per_company": 2.5})
     assert (lim["stall_turns_per_company"], lim["turn_ceiling_per_company"], lim["minutes_ceiling_per_company"]) \

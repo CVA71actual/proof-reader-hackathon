@@ -17,9 +17,15 @@ LEGACY_DEFAULT = PAGE_DEFAULT = DEFAULT
 # regulators' decisions on marketed or filed assets), not a claim made by this code.
 WHERE_TO_LOOK = (__import__("pathlib").Path(__file__).with_name("brief_v2_where_to_look.txt")
                  .read_text(encoding="utf-8").strip())
-# CVA (2026-11-03): ONE editable box for a research run, and what is in the box is exactly what is sent. The default
-# box holds the full brief; nothing is appended behind the person's back. (New Run starts research mode only.)
-RESEARCH_DEFAULT = DEFAULT + "\n\n" + WHERE_TO_LOOK
+# BRIEF_V1 (2026-11-03 morning, run 9): the short assignment plus the where-to-look block. Kept so a saved note equal
+# to it is still recognized as a default box; it is no longer what a blank box selects.
+RESEARCH_DEFAULT_V1 = DEFAULT + "\n\n" + WHERE_TO_LOOK
+# CVA (2026-11-03, after run 9): the research brief is ONE visible, editable text and the whole research policy. It is
+# sent FIRST, as the leading block of the researcher's instructions; the code-owned technical contract
+# (runs/research_contract.CONTROLLER: tool mechanics and output format only) follows it. Nothing else steers the
+# research: no policy in code, no silent append. The default wording is a data file next to this module.
+RESEARCH_DEFAULT = (__import__("pathlib").Path(__file__).with_name("research_brief_default.txt")
+                    .read_text(encoding="utf-8").strip())
 
 
 def research_assignment(note: str | None) -> str:
@@ -33,7 +39,7 @@ def research_assignment(note: str | None) -> str:
 
 def is_default(note: str | None) -> bool:
     """The default box, in its research (full) or page/legacy (short) form."""
-    return note in (RESEARCH_DEFAULT, DEFAULT)
+    return note in (RESEARCH_DEFAULT, RESEARCH_DEFAULT_V1, DEFAULT)
 
 
 MAX_LENGTH = 4000

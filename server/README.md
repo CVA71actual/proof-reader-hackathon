@@ -253,3 +253,75 @@ before its next model call; nothing is published. `POST /api/runs/{id}/research-
 its research before its next model call as finished, then the review, adjudication and support check run on what
 was found and the run publishes; research-stop wins if both are asked. Both answer 409 unless the run is a queued or
 running research run. `POST /api/runs/{id}/resume` refuses a research run in S1.
+
+### Research brief, effective request and request record (2026-11-03, after run 9)
+
+One visible brief holds the whole research policy. New Run's box is `note_for_agent`; its default is
+`GET /api/settings` `research_instructions_default` (the text of `capture/research_brief_default.txt`, max
+`research_instructions_max_length` 4000). The researcher (Muse Spark) receives, as its `instructions`, the brief FIRST,
+then the technical contract (`runs/research_contract.CONTROLLER`: tool mechanics and output format only, read-only);
+its first input item is the company card (facts only: ticker, company, cik, as_of, calendar_window, search_tools).
+Nothing else is appended. The box alone is not the whole request: show the effective request below.
+
+**Turn limit.** `POST /api/runs/new` (research) takes optional `turn_limit_per_company`: a whole number >= 1, recorded as
+`run.choices.research_limits.turn_ceiling_per_company` (STOP-RULE-001: reaching it ends that company's research as
+finished, then review, then publish). Absent or null = the default, served as `GET /api/settings`
+`turn_limit_per_company_default` (200). Anything else (0, negative, fraction, string, boolean) is 422 with one plain
+sentence; on a page-mode run it is 422.
+
+**Preview, before starting** (no model call; the body is validated exactly as `POST /api/runs/new` validates it):
+
+```
+GET  /api/research/effective-request?tickers=PTGX,IONS&note=<brief>&as_of=YYYY-MM-DD&support_check=lettucedetect
+POST /api/research/effective-request   {same body as POST /api/runs/new; "mode" may be left out}
+200 {"choices": {...validated choices...}, "note": "...", "stages": [
+  {"stage": "research", "model": "Muse Spark", "model_id", "sent_as": "...",
+   "editable": {"brief": text, "brief_is_default": bool},
+   "enforced_by_code": {"contract_text", "instructions_text" (brief + contract, exactly as sent),
+                        "company_card_framing", "tools": [{"name", "description", "parameters"}, ...],
+                        "tool_availability", "request_settings", "code_messages": {"no_tool_call", "cut_off",
+                        "empty_answer", "replay_summary"}},
+   "run_context": {"reference_date", "window": {"start", "end", "months"},
+                   "company_cards": [{"ticker", "company": null, "cik": null, "as_of", "calendar_window",
+                                      "search_tools": null}],
+                   "resolved_at_research_start": ["company", "cik", "search_tools"],
+                   "turn_limit_per_company", "stop_rules": {...}}},
+  {"stage": "review", "model": "DeepSeek V4 Pro then Claude Opus 5.5", "models": [{"name", "model", "family",
+   "order", "role"?}], "sent_as", "editable": {"brief"}, "enforced_by_code": {"instructions_text", "tools"},
+   "run_context": {"reference_date", "window"}},
+  {"stage": "adjudication", "model": "Muse Wonder", "model_id", "runs_when", "editable": null,
+   "enforced_by_code": {"instructions_text", "tools": []}},
+  {"stage": "support_check", "engine": "LettuceDetect", "model", "model_revision", "enabled": bool,
+   "status_if_off": text|null, "editable": null, "enforced_by_code": {"question", "max_tokens", "input"}, "note"}]}
+```
+
+Label `editable` as what the person wrote and `enforced_by_code` as fixed by code (read-only). Company and cik are
+filled in, and Brave availability decided, when each company's research starts; they are recorded with the run.
+422 with one sentence for invalid choices (for example no ticker).
+
+**Request record, frozen at admission.** `POST /api/runs/new` writes `runs/<id>/research/request_record.json`
+(version 1 = exactly the preview's `stages` for the same choices and reference date). A later effective request that
+differs (for example the code's contract changed while the run was queued) appends a new version; versions are never
+edited. Every saved research turn (`research/turns/<ticker>-<n>.json`) carries `request_version`, and each research row
+carries `research.request_version`. Serve it with:
+
+```
+GET /api/runs/{id}/request-record
+200 {"run_id", "status": "recorded", "current_version": n,
+     "versions": [{"version", "created_at", "reason" ("admission" or why it changed), "changed": ["stage.part.key"],
+                   "digest", "intact": bool (digest re-checked), "stages": [...as the preview...],
+                   "used_by": [uses of this version]}],
+     "company_starts": [{"ticker", "version", "at", "company_card" (exactly as sent), "tools_sent": [names]}],
+     "uses": [{"stage": "research"|"review"|"adjudication"|"support_check", "ticker", "version", "at",
+               "turn"?, "file"?, "model"?, "engine"?, ...}]}
+200 {"run_id", "status": "unavailable", "reason": "...admitted before request records existed...",
+     "from_saved_request_files": null | {"label": "From saved request files (research/turns), not an admission
+     record...", "companies": [{"ticker", "first_turn_file", "last_turn_file", "turn_files", "instructions_text",
+     "first_input_messages", "tools", "instructions_same_in_last_turn"}]}}
+200 {"run_id", "status": "not_applicable", "reason": "This is not a research run."}
+```
+
+Show a legacy run's saved-file evidence only under its label; never present it as the original admission record.
+Show `intact: false` plainly if a version's digest no longer matches. Secrets (configured key values) are redacted;
+instructions are never hidden. The trail must show the run's saved versions, never today's defaults from
+`/api/settings`.
