@@ -388,3 +388,33 @@ def test_an_unconcluded_fetched_source_with_rows_unassessed_stays_incomplete():
     assert rec["reason"].startswith("review turn limit (2) reached; 1 of 2 rows assessed")
     assert "S3 was fetched and not settled" in rec["reason"]                # really fetched, left open
     assert not [x for x in rec["limitations"] if x["kind"] == "source_not_concluded"]
+
+
+# ------------------------------------------------------------------ REVIEW-FINDING-VERDICT-001 (live run 16)
+def _finding_on(row_id, revision_id, text):
+    return call("report_finding", {"kind": "unsupported_claim",
+                                   "row_revision_ids": [{"row_id": row_id, "revision_id": revision_id}],
+                                   "evidence": [], "text": text})
+
+
+def test_findings_on_every_row_without_assess_rows_close_complete_with_code_recorded_verdicts():
+    model = ToolsModel([tools(_finding_on("r1", 2, "S1 does not say it."), _finding_on("r2", 1, "S2 is stale.")),
+                        tools(call("search", {"query": QUERY})),
+                        tools(call("search", {"query": "ignored the final turn"}))])
+    rec = review(model, turn_ceiling=2)
+    assert rec["status"] == "complete" and rec["closed_by"] == "code" and rec["clean"] is False
+    assert "all 2 rows assessed, 2 findings" in rec["reason"]
+    assert [(a["row_id"], a["verdict"], a.get("by")) for a in rec["assessments"]] == [
+        ("r1", "finding", "code"), ("r2", "finding", "code")]
+    assert all("from the reviewer's finding" in a["note"] for a in rec["assessments"])
+
+
+def test_a_row_without_a_finding_is_never_given_a_verdict_by_code():
+    model = ToolsModel([tools(_finding_on("r1", 2, "S1 does not say it.")),
+                        tools(call("search", {"query": QUERY})),
+                        tools(call("search", {"query": "ignored the final turn"}))])
+    rec = review(model, turn_ceiling=2)
+    assert rec["status"] == "incomplete"
+    assert rec["reason"].startswith("review turn limit (2) reached; 1 of 2 rows assessed")
+    assert [(a["row_id"], a["verdict"]) for a in rec["assessments"]] == [("r1", "finding")]
+    assert [r["row_id"] for r in rec["rows_not_assessed"]] == ["r2"]

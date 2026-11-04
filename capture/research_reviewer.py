@@ -1068,6 +1068,21 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         carries them); the status follows what was actually concluded."""
         state["closed_by"] = "code"
         state["ended_by"] = "reviewer_stopped_early" if early else "review_turn_ceiling"
+        # REVIEW-FINDING-VERDICT-001 (live run 16: six findings, one per row, and no assess_rows call, so "0 of 6
+        # rows assessed"). A row with a finding on its current revision can only have the verdict "finding"
+        # (do_assess enforces exactly that), so code records it; the verdict says it came from the finding. A row
+        # with no finding is never given no_issue by code: it stays unassessed.
+        for key in rows:
+            if key in assessed:
+                continue
+            on_row = [f["finding_id"] for f in findings if any(_row_key(x["row_id"], x["revision_id"]) == key
+                                                               for x in f["row_revision_ids"])]
+            if on_row:
+                assessed[key] = {"row_id": rows[key]["row_id"], "revision_id": rows[key]["revision_id"],
+                                 "verdict": "finding", "turn": state["turns"], "finding_ids": on_row,
+                                 "note": "Verdict recorded by code from the reviewer's finding(s) "
+                                         + ", ".join(on_row) + " when code closed the review.",
+                                 "by": "code"}
         m, k, n = len(rows), sum(1 for key in rows if key in assessed), len(findings)
         found = f"{n} finding{'s' if n != 1 else ''}" if n else "no findings"
         # an empty draft is never closed complete early: the omission search is then the whole review
