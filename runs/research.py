@@ -281,10 +281,11 @@ class ResearchTools:
         self.resolve = resolve or self._resolve
         self.brave = brave if brave is not None else LiveBrave()      # BRAVE-PRIMARY-001: the primary search
         # S2: the independent reviewer (Muse Spark Open) and the adjudicator (Muse Wonder); tests pass fakes
-        # the reviewer chain, tried in order once per run (CVA 2026-11-03): DeepSeek V4 Pro (Baseten, its own key),
-        # then Claude Opus 5.5; a reviewer passed alone is a chain of one
+        # the reviewer chain, tried in order once per run (CVA 2026-11-03 late: Meta's open-weight Muse Spark Open on
+        # Baseten first, for the demo; DeepSeek V4 Pro only if it is unavailable); a reviewer passed alone is a chain
+        # of one
         if reviewers is None and reviewer is None:
-            reviewers = [rv.deepseek_reviewer_model(), rv.reviewer_model()]
+            reviewers = [rv.fallback_reviewer_model(), rv.deepseek_reviewer_model()]
         self.reviewers = list(reviewers) if reviewers is not None else None
         self.reviewer = reviewer if reviewer is not None else (self.reviewers[0] if self.reviewers
                                                                else rv.reviewer_model())

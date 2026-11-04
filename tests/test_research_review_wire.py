@@ -1154,13 +1154,15 @@ def test_a_reasoning_content_only_reply_is_not_an_answer():
     assert rec["closed_by"] == "code" and len(rec["prose_replies"]) == 2
 
 
-def test_the_production_chain_is_deepseek_then_claude_with_their_own_keys():
+def test_the_production_chain_is_muse_spark_open_then_deepseek_with_their_own_keys():
     from runs import research as R
     tools = R.ResearchTools(fetcher=object(), render_html=lambda *a: None, resolve=lambda t: ("1", "x"),
                             brave=F.FakeBrave(key=False))
     chain = tools.reviewer_chain()
-    assert [rv.identity(m)["name"] for m in chain] == ["DeepSeek V4 Pro", "Claude Opus 5.5"]
-    assert chain[0].key_env == "BASETEN_DEEPSEEK_API_KEY" and rv.identity(chain[0])["provider"] == "baseten"
+    # CVA 2026-11-03 late: Meta's open-weight Muse Spark Open reviews first; DeepSeek only if it is unavailable
+    assert [rv.identity(m)["name"] for m in chain] == ["Muse Spark Open", "DeepSeek V4 Pro"]
+    assert chain[0].key_env == "BASETEN_API_KEY" and rv.identity(chain[0])["provider"] == "baseten"
+    assert chain[1].key_env == "BASETEN_DEEPSEEK_API_KEY"
     assert rv.identity(tools.reviewer_fallback)["name"] == "Muse Spark Open"
     assert tools.reviewer_fallback.key_env == "BASETEN_API_KEY"
 
