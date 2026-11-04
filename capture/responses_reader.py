@@ -6,10 +6,11 @@ prices the reply afterwards with runs/prices.py from the usage the reply carries
 
 What a request carries (build_request):
     model                 muse-spark-1.3
-    instructions          the compact research controller (runs/research_contract.CONTROLLER), never the 3,996-character
-                          page brief as a system message (run 15 lost 10 of 14 calls to reasoning tokens)
-    input                 the person's research assignment, exactly, as its own user item; the company card; then the
-                          replayed output items of every earlier response and our function_call_output items
+    instructions          the person's research brief FIRST, then the technical contract (runs/research_contract.
+                          researcher_instructions; CVA 2026-11-03). Note: run 15 (page brief as a system message) lost
+                          10 of 14 calls to reasoning tokens; watch reasoning tokens on research runs.
+    input                 the company card; then the replayed output items of every earlier response and our
+                          function_call_output items
     tools                 [{"type": "web_search"}] while the company has searches left, plus the flat function tools
     tool_choice           "auto" (the only value the API accepts)
     parallel_tool_calls   false: one function call per turn, so every step is gated and logged on its own

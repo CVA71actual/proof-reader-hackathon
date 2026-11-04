@@ -16,7 +16,7 @@ Limits (CVA ruling 2026-11-02: "I don't want any limits on anything without my a
     There is no page cap on a fetched source.
 Stopping rule (STOP-RULE-001, CVA 2026-11-03, ON by default, settable in research_limits, 0 = off): a company's
 research ENDS AS FINISHED, then goes on to the review, adjudication and support check and publishes, when it has gone
-stall_turns_per_company (40) model turns with no new proposal, reaches turn_ceiling_per_company (250) model turns or
+stall_turns_per_company (40) model turns with no new proposal, reaches turn_ceiling_per_company (200) model turns or
 minutes_ceiling_per_company (45) minutes, or a person chooses Finish now (request_finish). Each is recorded in
 run.research.kill_conditions, on the company (ended_by) and on the Agent trail.
 With the optional limits off, a company's loop ends only when: the model says it is done (finish_draft, or a final
@@ -90,7 +90,9 @@ RESEARCH_TURN_LIMIT = 1_000_000     # a research run is not paused by the page-m
 #       company; a refused proposal, an exact duplicate and a repeated search are no progress). Run 9's largest gap
 #       between new proposals was 30 turns.
 #   turn_ceiling_per_company: model turns per company.  minutes_ceiling_per_company: minutes per company.
-STOP_RULE_DEFAULTS = {"stall_turns_per_company": 40, "turn_ceiling_per_company": 250,
+# turn_ceiling_per_company 250 -> 200 (CVA 2026-11-03, New Run's turn limit): a run-9 replay at 200 keeps 26 of its
+# 29 rows (lost: e27 Takeda earnings, e28 a duplicate, e29 a past approval).
+STOP_RULE_DEFAULTS = {"stall_turns_per_company": 40, "turn_ceiling_per_company": 200,
                       "minutes_ceiling_per_company": 45}
 LIMIT_KEYS = ("max_spend_per_company_usd", "max_requests_per_company", "max_searches_per_company",
               "max_searches_per_request", "max_fetches_per_company", "max_pages_per_company",
@@ -202,6 +204,21 @@ def validate_limits(raw) -> dict:
                 raise ValueError(f"{k} must be a positive number, or null (off).")
         out[k] = v
     return out
+
+
+TURN_LIMIT_FIELD = "turn_limit_per_company"     # New Run's turn limit: research_limits.turn_ceiling_per_company
+
+
+def validate_turn_limit(raw, limits: dict) -> dict:
+    """POST /api/runs/new `turn_limit_per_company`: absent or null keeps limits as validated (the default,
+    STOP_RULE_DEFAULTS); else a positive whole number of model turns, recorded as turn_ceiling_per_company (the
+    STOP-RULE-001 key: reaching it ends the company as finished, then review, then publish)."""
+    if raw is None:
+        return limits
+    if not (isinstance(raw, int) and not isinstance(raw, bool) and raw >= 1):
+        raise ValueError(f"{TURN_LIMIT_FIELD} must be a whole number of model turns, 1 or more, or absent "
+                         f"(the default, {STOP_RULE_DEFAULTS['turn_ceiling_per_company']}).")
+    return {**limits, "turn_ceiling_per_company": raw}
 
 
 def validate_research_companies(companies) -> list[str]:
@@ -437,6 +454,13 @@ def make_job_class():
                 if not isinstance(r.get("review"), dict) or "stage" in r["review"]:
                     r["review"] = {}      # per company: run.research.review[ticker] (an S1 placeholder is replaced)
                 r["review_reserve"] = self.review_reserve()
+                # the request record (research/request_record.json): frozen at admission; a run without one (made
+                # outside server/jobs.create_run) is recorded now, saying so
+                from runs import research_request as rq
+                rq.ensure_current(self.dir, self.run, "the job's start")
+                r["request_record"] = {"file": rq.RECORD_FILE,
+                                       "note": "The exact effective request per stage, versioned; served by GET "
+                                               "/api/runs/{id}/request-record."}
                 r["manifest"] = self.manifest.summary()
                 r.setdefault("audit", None)
                 r["reservation"] = {
@@ -1079,13 +1103,19 @@ def make_job_class():
                       f"{len(rows)} proposal{'s' if len(rows) != 1 else ''} and {len(given)} captured source"
                       f"{'s' if len(given) != 1 else ''} sent to {choice['name']}; its own search is Brave Search.",
                       stage=REVIEW_STAGE)
+            from capture import research_instructions
+            from runs import research_request as rq
+            brief = research_instructions.research_assignment(self.choices.get("note_for_agent"))
+            with jobs.RUN_LOCK:
+                version = rq.ensure_current(self.dir, self.run, f"{ticker}'s review start")
+                rq.record_use(self.dir, "review", ticker, version, model=choice.get("name"))
             fetched: list[dict] = []
             try:
                 # OW-CHAIN-001: every newly selected reviewer's result is classified the same way. A refusal on its
                 # FIRST call (no work done) advances monotonically through the chain and the company is reviewed by
                 # the next one; a refusal after work keeps that work (incomplete). One gate per physical attempt.
                 while True:
-                    record = rv.review_draft(company=company, assignment=self.choices.get("note_for_agent") or "",
+                    record = rv.review_draft(company=company, assignment=brief,
                                              proposals=[self.review_proposal(r) for r in rows], sources=given,
                                              search=self.review_search(ticker),
                                              fetch_capture=self.review_fetch(ticker, fetched),
@@ -1124,6 +1154,9 @@ def make_job_class():
                           f"{len(disputes)} finding{'s' if len(disputes) != 1 else ''} dispute{'' if len(disputes) != 1 else 's'} "
                           f"a row's reading: sent to {rv.ADJUDICATOR_NAME}, one request each, fail-closed.",
                           stage="adjudication")
+                with jobs.RUN_LOCK:
+                    rq.record_use(self.dir, "adjudication", ticker, version, model=rv.ADJUDICATOR_NAME,
+                                  disputes=len(disputes))
                 try:
                     adj = rv.adjudicate(disputes=disputes, sources=given + fetched, spend_gate=self.review_gate(ticker),
                                         model=self.tools.adjudicator)
@@ -1436,6 +1469,11 @@ def make_job_class():
             rows = [r for r in self.run["rows"] if (r.get("research") or {}).get("ticker") == ticker]
             items = [{"id": r["id"], "claim": r.get("title") or "", "passage": support_passage(r)} for r in rows]
             det = self.tools.support_detector
+            from runs import research_request as rq
+            with jobs.RUN_LOCK:
+                rq.record_use(self.dir, "support_check", ticker,
+                              rq.ensure_current(self.dir, self.run, f"{ticker}'s support check"),
+                              engine="LettuceDetect", rows=len(items))
             began = time.monotonic()
             if det is not None:          # an in-process detector (tests and fakes only)
                 results = {i["id"]: ss.support_signal({"claim": i["claim"]}, i["passage"], detector=det)
@@ -1501,16 +1539,13 @@ def make_job_class():
                                        "brave_calls": {}, "brave_items": [], "last_progress_turn": 0,
                                        "window_end": window_end, "started": time.monotonic()}
             from capture import research_instructions
+            from runs import research_request as rq
             assignment = research_instructions.research_assignment(self.choices.get("note_for_agent"))
-            card = {"ticker": ticker, "company": company, "cik": st["cik"], "as_of": as_of.isoformat(),
-                    "calendar_window": [as_of.isoformat(), window_end.isoformat()],
-                    "search_tools": ("brave_search (primary), web_search (secondary)" if
-                                     (self.tools.brave is not None and self.tools.brave.ready() is None)
-                                     else "brave_search is unavailable in this run; use web_search"),
-                    "note": "Research events upcoming in the window; include relevant recent history as context."}
-            first = [{"role": "user", "content": "Research assignment (from the person, exactly as written):\n"
-                                                 + assignment},
-                     {"role": "user", "content": "Company card:\n" + json.dumps(card)}]
+            # the brief is the leading block of the instructions (CVA 2026-11-03); the card is facts only
+            instructions = rc.researcher_instructions(assignment)
+            brave_on = self.tools.brave is not None and self.tools.brave.ready() is None
+            card = rq.company_card(ticker, as_of, company=company, cik=st["cik"], brave=brave_on)
+            first = [rq.card_message(card)]
             continuation = self.choices.get("research_continuation") or rr.CONTINUE_REPLAY
             history, pending, prev_id = list(first), list(first), None
             prose_nudged, empty_streak, timeout_streak = False, 0, 0     # timeout_streak counts runaways too
@@ -1523,6 +1558,11 @@ def make_job_class():
                 self.step(ticker, "limit", "Code", "runs.research",
                           f"{brave_problem} Research continues on Meta's web_search.", engine="Brave Search")
             functions = rc.function_tools(brave=st["brave"])
+            with jobs.RUN_LOCK:
+                st["request_version"] = rq.ensure_current(self.dir, self.run, f"{ticker}'s research start")
+                rq.record_company_start(self.dir, ticker, st["request_version"], card,
+                                        (["web_search"] if self.searches_left(ticker) > 0 else [])
+                                        + [f["name"] for f in functions])
             while True:
                 self.retire_brave(ticker, c["requests"])       # every path: Brave payloads are delivered only once
                 self.check_company_limits(ticker)
@@ -1531,7 +1571,7 @@ def make_job_class():
                 searches_left = self.searches_left(ticker)
                 items = (pending if (continuation == rr.CONTINUE_PREVIOUS and prev_id)
                          else self.replay_input(ticker, history, len(first)))
-                body = rr.build_request(instructions=rc.CONTROLLER, input_items=items, functions=functions,
+                body = rr.build_request(instructions=instructions, input_items=items, functions=functions,
                                         searches_left=searches_left, continuation=continuation,
                                         previous_response_id=prev_id)
                 if self.limits["max_searches_per_request"] is None and "max_tool_calls" in body and \
@@ -1818,7 +1858,14 @@ def make_job_class():
                                 "searches": reply.searches, "error": reply.error, "http_status": reply.http_status,
                                 "may_have_been_billed": reply.may_have_been_billed},
                    "cost_usd": cost}
-            (folder / f"{ticker}-{n:03d}.json").write_text(json.dumps(rec, ensure_ascii=False, indent=1) + "\n")
+            version = (self.state.get(ticker) or {}).get("request_version")
+            rec["request_version"] = version
+            name = f"{ticker}-{n:03d}.json"
+            (folder / name).write_text(json.dumps(rec, ensure_ascii=False, indent=1) + "\n")
+            if version is not None:
+                from runs import research_request as rq
+                with _jobs().RUN_LOCK:
+                    rq.record_use(self.dir, "research", ticker, version, turn=n, file=f"research/turns/{name}")
 
         def record_search(self, ticker: str, s: dict) -> None:
             urls = [r["url"] for r in s["results"] if r.get("url")]
@@ -2365,6 +2412,13 @@ def make_job_class():
                                                                      "nct_id must look like NCT01234567.")]), False
                 return self.t_fetch_url(ticker, cid, {"url": rs.CTGOV_STUDY.format(nct=nct), "purpose": "trial"},
                                         tool="fetch_ctgov", title=f"ClinicalTrials.gov {nct} (registry record)")
+            issued = self.state[ticker].setdefault("ctgov_cursors", set())
+            if args["cursor"] is not None and args["cursor"] not in issued:
+                # a registry page token is only ever one code returned as next_cursor; anything else would be sent to
+                # the registry as a malformed pageToken (run 9: HTTP 400), so it is refused here without a request
+                return rc.envelope(cid, "error", None, [rc.issue(
+                    "malformed_argument", "cursor must be a next_cursor returned by an earlier fetch_ctgov query, or "
+                                          "null for the first page.")]), False
             url = rs.ctgov_search_url(query, args["cursor"])
             try:
                 fetched = self.tools.fetcher.get(url)
@@ -2381,6 +2435,8 @@ def make_job_class():
             self.step(ticker, "search", "Code", "capture.research_sources",
                       f"Searched ClinicalTrials.gov for “{query}”: {len(leads)} studies (leads, not evidence).",
                       call_id=cid)
+            if token:
+                issued.add(str(token))
             return rc.envelope(cid, "ok", {"studies": leads, "next_cursor": token,
                                            "retrieved_at": fetched.retrieved_at,
                                            "note": "Leads only: capture a study with nct_id to cite it."}), False
@@ -2542,7 +2598,9 @@ def make_job_class():
                      "relevance": ev["relevance"], "conditions": copy.deepcopy(ev["conditions"]),
                      "subject_company": ev["subject_company"], "relation": ev["relation"],
                      "word_ids": primary.get("word_ids"), "box": None}
-            reading = {"prompt_text": f"{rc.CONTROLLER}\n\nResearch assignment:\n{self.choices.get('note_for_agent')}",
+            from capture import research_instructions
+            reading = {"prompt_text": rc.researcher_instructions(
+                           research_instructions.research_assignment(self.choices.get("note_for_agent"))),
                        "usage": {}, "fake": False, "input": "words"}
             agent_step = [{"step": "Researched", "tag": "Code", "who": "runs.research", "at": at,
                            "text": f"Proposed by the research agent (propose_events, call {cid}), citing "
@@ -2566,7 +2624,8 @@ def make_job_class():
                         "near_duplicates": [], "revisions": [], "evidence_key": rc.evidence_key(ev),
                         "proposed": self.proposed_fields(ev),
                         "proposed_evidence": copy.deepcopy(ev["evidence"]),
-                        "update": update or "proposal"}
+                        "update": update or "proposal",
+                        "request_version": st.get("request_version")}
             timing_ctx = row.get("research") or {}
             row["research"] = research
             research["timing_span_index"] = timing_k
@@ -2778,7 +2837,9 @@ def _nullish(v):
     if v is None:
         return None
     t = str(v).strip()
-    return None if t.lower() in ("", "null", "none", "nil", "undefined") else t
+    # run 9 (2026-11-03): the model sent cursor "{}" for "no cursor"; it was URL-encoded as pageToken=%7B%7D and the
+    # registry answered HTTP 400 three times. An empty JSON object or list, or empty quotes, also means empty.
+    return None if t.lower() in ("", "null", "none", "nil", "undefined", "{}", "[]", '""', "''") else t
 
 
 def _html_title(body: bytes, kind: str) -> str | None:

@@ -27,7 +27,7 @@ import json
 import math
 import re
 import threading
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Request
@@ -259,6 +259,11 @@ def _cell_context(run: dict, target: str) -> tuple[str | None, list[str] | None]
     return None, None
 
 
+def _research_defaults() -> dict:
+    from runs import research
+    return dict(research.STOP_RULE_DEFAULTS)
+
+
 def _summary(state: dict) -> dict:
     return {k: state[k] for k in ("counts", "mistakes", "excluded", "exclusions", "unresolved")}
 
@@ -331,13 +336,47 @@ def create_app(runs_dir: Path = RUNS_DIR, ui_dir: Path = UI_DIR, reader=None, ba
         """The run the app opens on when the address names none (`python -m runs.demo --run X`); null: the UI's own pick."""
         return {"default_run": default_run if default_run in store.ids() else None,
                 "research_instructions_default": research_instructions.RESEARCH_DEFAULT,      # New Run: research mode
-                "research_instructions_max_length": research_instructions.MAX_LENGTH}
+                "research_instructions_max_length": research_instructions.MAX_LENGTH,
+                # New Run's turn limit (POST /api/runs/new turn_limit_per_company), its default
+                "turn_limit_per_company_default": _research_defaults()["turn_ceiling_per_company"]}
 
     @app.get("/api/research/options")
     def research_options() -> dict:
         """LETTUCE-OPTION: the optional research settings a New Run screen can offer (support_check, off by default)."""
         from runs import research
         return research.support_check_options()
+
+    def effective_request_view(body: dict) -> dict:
+        """The complete effective request of a research run with these choices, per stage, before it starts. No model
+        is called; the choices are validated exactly as POST /api/runs/new validates them."""
+        from runs import research_request
+        try:
+            body = dict(body)
+            as_of = jobs.validate_as_of(body.pop("as_of", None))
+            body["mode"] = "research"
+            choices = jobs.validate_choices(body, index)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from None
+        ref = date.fromisoformat(as_of) if as_of else datetime.now(timezone.utc).date()
+        return {"choices": choices, **research_request.preview(choices, ref)}
+
+    @app.get("/api/research/effective-request")
+    def effective_request_get(tickers: str = "", note: str | None = None, as_of: str | None = None,
+                              support_check: str | None = None) -> dict:
+        companies = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+        return effective_request_view({"companies": companies, "note_for_agent": note, "as_of": as_of,
+                                       "support_check": support_check})
+
+    @app.post("/api/research/effective-request")
+    def effective_request_post(body: dict = Body(...)) -> dict:
+        return effective_request_view(body)
+
+    @app.get("/api/runs/{run_id}/request-record")
+    def request_record(run_id: str) -> dict:
+        """The run's saved request record (frozen at admission, versioned), or unavailable for a legacy run."""
+        from runs import research_request
+        run = store.run(run_id)
+        return research_request.request_record_view(store.run_dir(run_id), run)
 
     @app.get("/api/companies")
     def get_companies() -> dict:
