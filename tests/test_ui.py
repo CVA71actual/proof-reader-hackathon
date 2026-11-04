@@ -5737,7 +5737,7 @@ console.log(JSON.stringify(out, null, 1));
 # c1313667 is CHECK-RESULTS-WORDS-001's date outcome ('Timing matches source'
 # in place of a bare 'passed' on every pane's passing date check) — re-verified
 # by diffing both renders surface by surface: that one line is the only change
-_MAIN_SHAPED_RENDER_SHA256 = "d9f41ba179c33cadd27c182d511a7eaaec80d4d742984edf945c7949a4839010"
+_MAIN_SHAPED_RENDER_SHA256 = "9bae29f4d3118423e811560d15479ffac336931e8eddac03f36cb16a0915f3fc"
 
 
 def _review_render(tmp_path, shape):
@@ -6289,7 +6289,10 @@ def test_review_projection_fallback_is_main_byte_for_byte(tmp_path):
     # CHECK-RESULTS-WORDS-001: a passing date check states its observed
     # outcome rather than a bare 'passed'
     assert out["pane_r-acc"]["date"] == [["dot pass", "Timing matches source"]]
-    # and the whole render, byte for byte, is main's
+    rendered = " ".join(" ".join(v["text"]) for v in out.values())
+    assert "Your note (saved with your decision)" in rendered
+    assert "Voice pre-fills a decision; nothing is saved until you press a decision button." in rendered
+    # and the whole render, byte for byte, is main's plus the CVA note wording
     assert hashlib.sha256(raw.encode()).hexdigest() == _MAIN_SHAPED_RENDER_SHA256
 
 
@@ -8127,3 +8130,49 @@ def test_run9_agent_trail_is_folded_per_claim_with_instructions_and_run_wide_ste
         "console.log('ok');",
     ])
     _run_node(script)
+
+
+# ---- CVA: the inline judgment note is the one note saved with Remove
+
+def test_cva_typed_judgment_note_remove_needs_only_confirmation_and_writes_one_note(tmp_path):
+    import json
+    import shutil
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    assert "Your note (saved with your decision)" in js
+    assert "Voice pre-fills a decision; nothing is saved until you press a decision button." in js
+    assert "note: note.value || ('Kept as stated: ' + dt + '.')" in js
+    assert "var note = (document.getElementById('qnote') || {}).value || null;" in js  # Fix uses it too
+    typed = "Not an upcoming event"
+    script = "\n".join([
+        "var posted = [], confirmations = [], navigations = [];",
+        "global.window = { confirm: function (text) { confirmations.push(text); return true; } };",
+        "function currentRunId() { return 'sample'; }",
+        "function postDecision(id, body) { posted.push(body); }",
+        "function navigate(where) { navigations.push(where); }",
+        _grab_fn(js, "judgmentRemove"),
+        "judgmentRemove({ id: 'e1' }, " + json.dumps(typed) + ");",
+        "judgmentRemove({ id: 'e1' }, '');",
+        "console.log(JSON.stringify({ posted: posted, confirmations: confirmations, navigations: navigations }));",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+    view = json.loads(got.stdout)
+    assert len(view["posted"]) == 1                         # no dialog, no second reason entry
+    assert view["posted"][0] == {"target": "e1", "action": "remove", "note": typed}
+    assert view["confirmations"] == ["Remove this row? Your note will be saved with the decision."]
+    assert view["navigations"] == [{"runId": "sample", "screen": "judgment", "rowId": "e1", "dialog": "remove"}]
+
+    # The exact body produced by the UI lands as one person's line in the log.
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    shutil.copytree(REPO / "runs" / "sample", runs / "sample")
+    log = runs / "sample" / "decisions.jsonl"
+    log.write_text("")
+    client = TestClient(create_app(runs_dir=runs, ui_dir=tmp_path / "no-ui"))
+    response = client.post("/api/runs/sample/decisions", json=view["posted"][0])
+    assert response.status_code == 200, response.text
+    lines = [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
+    assert len(lines) == 1 and lines[0]["note"] == typed
+    assert lines[0]["action"] == "remove" and lines[0]["by"] == "person"

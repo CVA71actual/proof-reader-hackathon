@@ -3566,7 +3566,10 @@
       if (starting) return;
       startCapture();
     });
-    wrap.append(b, note, said);
+    // CVA: voice pre-fills a proposal; it never saves the decision by itself
+    var explain = el('div', 'hint',
+      'Voice pre-fills a decision; nothing is saved until you press a decision button.');
+    wrap.append(b, note, said, explain);
     return wrap;
   }
 
@@ -3576,6 +3579,19 @@
   // A draft follows only its OWN run and row, never another target (DIALOGS-003:
   // two runs can generate the same row id; each keeps its own words).
   var qnoteDraft = {};
+  // CVA: one note feeds every decision. With a reason already typed, Remove
+  // asks only for confirmation; an empty box keeps the existing reason dialog.
+  function judgmentRemove(row, note) {
+    var reason = (note || '').trim();
+    if (!reason) {
+      navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id, dialog: 'remove' });
+      return;
+    }
+    if (!window.confirm('Remove this row? Your note will be saved with the decision.')) return;
+    postDecision(row.id, { target: row.id, action: 'remove', note: reason },
+      'Removed by you — moved to checked and removed.');
+  }
+
   function judgmentPendingPane(host, row, t) {
     var keepNote = qnoteDraft ? qnoteDraft[currentRunId() + '/' + row.id] : null;
     clear(host);
@@ -3604,7 +3620,7 @@
     }
     // decision area replaces the action row: append at the end
     var sec = el('div', 'sec');
-    sec.append(el('h4', null, 'Your call'));
+    sec.append(el('h4', null, 'Your note (saved with your decision)'));
     var note = el('textarea', 'note');
     note.id = 'qnote';
     note.__row = row.id;   // the row this box belongs to
@@ -3647,7 +3663,8 @@
     if (isPeriod) {
       br.append(btn('btn', 'Keep as stated', function () {
         var dt = shownDateText(t, row) || 'the period';
-        postDecision(row.id, { target: row.id, action: 'keep', note: 'Kept as stated: ' + dt + '.' },
+        postDecision(row.id, { target: row.id, action: 'keep',
+          note: note.value || ('Kept as stated: ' + dt + '.') },
           'Kept as stated — the period stays, no day invented.');
       }));
     }
@@ -3655,7 +3672,7 @@
       navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id, dialog: 'fix' });
     }));
     br.append(btn('btn danger', 'Remove…', function () {
-      navigate({ runId: currentRunId(), screen: 'judgment', rowId: row.id, dialog: 'remove' });
+      judgmentRemove(row, note.value);
     }));
     // D1: under the projection the server tells us the decision stack through
     // last_action (null when the stack is empty) — Undo is offered whenever a
@@ -3672,8 +3689,8 @@
     if (isPeriod) {
       var keptWording = shownDateText(t, row);
       sec.append(el('div', 'hint', keptWording
-        ? '“Keep as stated” keeps “' + keptWording + '” as a period — the calendar shows no invented day.'
-        : '“Keep as stated” keeps the cleared wording cleared — the calendar shows no invented day.'));
+        ? 'Keep as stated keeps “' + keptWording + '” as a period, with no invented day.'
+        : 'Keep as stated leaves the wording cleared, with no invented day.'));
     }
     if (correctedOpen) {
       sec.append(el('div', 'hint',
