@@ -163,13 +163,69 @@ def test_the_final_turn_requires_a_tool_call_when_the_client_supports_tool_choic
     model = ChoiceModel([tools(assess_all(("no_issue", "no_issue"))), tools(finish("submitted"))])
     rec = review(model, turn_ceiling=1)
     assert rec["status"] == "complete" and rec["closed_by"] is None and rec["summary"] == "submitted"
-    assert model.choices == [None, rv.FINAL_TURN_TOOL_CHOICE] and rv.FINAL_TURN_TOOL_CHOICE == "required"
+    # REVIEW-EARLY-001: every turn requires a tool call on such a client
+    assert model.choices == ["required", "required"] and rv.FINAL_TURN_TOOL_CHOICE == rv.TOOL_CHOICE == "required"
     assert model.offered[-1] == sorted(rv.FINAL_TURN_TOOL_NAMES)       # verdict and finding tools stay offered
     assert "assess_rows" in model.offered[-1] and "report_finding" in model.offered[-1]
     assert rec["settings"]["final_turn_tool_choice"] == "required"
     # a client without tool_choice support (Claude: a forced choice 400s) is sent none
     plain = ToolsModel([tools(assess_all(("no_issue", "no_issue"))), tools(finish())])
     assert review(plain, turn_ceiling=1)["settings"]["final_turn_tool_choice"] is None
+
+
+# ------------------------------------------------------------------ REVIEW-EARLY-001: an early prose reply
+
+PROSE = ChatReply("deepseek-ai/DeepSeek-V4-Pro-0813", content="The draft looks reasonable overall.",
+                  finish_reason="stop", prompt_tokens=100, completion_tokens=50)
+
+
+def test_a_prose_reply_is_nudged_once_then_the_review_goes_on_and_finishes():
+    model = ToolsModel([PROSE, tools(assess_all(("no_issue", "no_issue"))), tools(finish("done"))])
+    rec = review(model)
+    assert rec["status"] == "complete" and rec["closed_by"] is None and rec["summary"] == "done"
+    nudge = model.sent[1][-2:]
+    assert nudge[0] == {"role": "assistant", "content": PROSE.content}
+    assert nudge[1] == {"role": "user", "content": rv.NUDGE_MESSAGE}
+    assert rv.NUDGE_MESSAGE == ("Use the tools: give each row a verdict with the verdict tool, report findings, then "
+                                "call finish_review.")
+    assert rec["prose_replies"][0]["content"] == PROSE.content and rec["turns"] == 3
+
+
+def test_two_prose_replies_are_closed_by_code_with_findings_and_verdicts_kept():
+    only_r1 = call("assess_rows", {"assessments": [{"row_id": "r1", "revision_id": 2, "verdict": "finding"}]})
+    model = ToolsModel([tools(unsupported(), only_r1), PROSE, PROSE])
+    rec = review(model)
+    assert rec["status"] == "incomplete" and rec["closed_by"] == "code"
+    assert rec["ended_by"] == "reviewer_stopped_early"
+    assert rec["reason"].startswith("reviewer stopped early; 1 of 2 rows assessed")
+    assert [f["kind"] for f in rec["findings"]] == ["unsupported_claim"] and len(rec["assessments"]) == 1
+    assert len(model.sent) == 3 and len(rec["prose_replies"]) == 2
+
+
+def test_two_prose_replies_after_every_row_has_a_verdict_close_complete():
+    model = ToolsModel([tools(assess_all(("no_issue", "no_issue"))), PROSE, PROSE])
+    rec = review(model)
+    assert rec["status"] == "complete" and rec["closed_by"] == "code"
+    assert rec["reason"].startswith("The reviewer stopped early") and "all 2 rows assessed" in rec["reason"]
+
+
+def test_an_early_technical_end_is_closed_by_code_and_incomplete_even_with_every_row_assessed():
+    error = ChatReply("m", error="The model call did not succeed (HTTP 500).", http_status=500,
+                      may_have_been_billed=True)
+    rec = review(ToolsModel([tools(assess_all(("no_issue", "no_issue"))), error]))
+    assert rec["status"] == "incomplete" and rec["closed_by"] == "code" and "HTTP 500" in rec["reason"]
+    assert rec["reason"].startswith("reviewer stopped early; 2 of 2 rows assessed") and len(rec["assessments"]) == 2
+
+
+def test_a_rejected_tool_choice_is_dropped_and_the_turn_resent_without_it():
+    bad = ChatReply("m", error="The model call did not succeed (BadRequestError, status 400).", http_status=400,
+                    may_have_been_billed=False)
+    gate = FakeGate()
+    model = ChoiceModel([bad, tools(assess_all(("no_issue", "no_issue"))), tools(finish())])
+    rec = review(model, gate=gate)
+    assert rec["status"] == "complete" and rec["turns"] == 2
+    assert model.choices == ["required", None, None]
+    assert rec["tool_choice_off"]["http_status"] == 400 and rec["usage"]["model_requests"] == 3
 
 
 def test_the_reminder_is_injected_once_at_cap_minus_ten():

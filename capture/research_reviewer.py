@@ -759,6 +759,8 @@ class ReviewResult:
     carried: dict | None = None
     closed_by: str | None = None
     reminded_at_turn: int | None = None
+    prose_replies: list = field(default_factory=list)
+    tool_choice_off: dict | None = None
 
     @property
     def clean(self) -> bool:
@@ -784,7 +786,8 @@ class ReviewResult:
                 "turns": self.turns, "searches": self.searches, "fetches": self.fetches, "usage": self.usage,
                 "summary": self.summary, "settings": self.settings, "ended_by": self.ended_by,
                 "rate_limited": self.rate_limited, "rate_limit_waits": self.rate_limit_waits,
-                "carried": self.carried, "closed_by": self.closed_by, "reminded_at_turn": self.reminded_at_turn}
+                "carried": self.carried, "closed_by": self.closed_by, "reminded_at_turn": self.reminded_at_turn,
+                "prose_replies": self.prose_replies, "tool_choice_off": self.tool_choice_off}
 
 
 # REVIEW-CAP-001 (live run 10: DeepSeek V4 Pro made 92 reviewer requests, $3.77 of the run's $7.25, largely repeating
@@ -805,6 +808,15 @@ FINAL_TURN_TOOL_NAMES = ("assess_rows", "report_finding", "nothing_material", "f
 #      "review turn limit (N) reached; K of M rows assessed".
 REMINDER_TURNS_LEFT = 10
 FINAL_TURN_TOOL_CHOICE = "required"
+# REVIEW-EARLY-001 (live run 12: DeepSeek V4 Pro answered its first turn in prose, no tool call, and the review ended
+# with 0 findings and 0 of 8 rows assessed). On clients that support it (OneShotChat: DeepSeek, Muse; never Claude)
+# EVERY reviewer turn sends tool_choice "required", so a prose-only reply is not a valid answer; if the provider
+# rejects tool_choice (HTTP 400/422) the same turn is resent without it and it stays off for that review. A prose-only
+# reply is nudged once (NUDGE_MESSAGE); a second one, or any other early end (error, cut-off, refusal, spend gate),
+# is closed by CODE exactly as at the cap: "reviewer stopped early; K of M rows assessed" (complete when every row has
+# a verdict and every fetched source is settled).
+TOOL_CHOICE = FINAL_TURN_TOOL_CHOICE
+NUDGE_MESSAGE = "Use the tools: give each row a verdict with the verdict tool, report findings, then call finish_review."
 
 
 def _reminder_message(left: int) -> str:
@@ -872,7 +884,8 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
     settings = {"max_turns": max_turns, "max_searches": max_searches, "max_fetches": max_fetches,
                 "review_turn_ceiling": turn_ceiling, "reminder_turns_left": REMINDER_TURNS_LEFT,
                 "final_turn_tool_choice": FINAL_TURN_TOOL_CHOICE
-                if getattr(model, "supports_tool_choice", False) else None, "rate_limit_backoff_s": list(RATE_LIMIT_BACKOFF),
+                if getattr(model, "supports_tool_choice", False) else None,
+                "tool_choice": TOOL_CHOICE if getattr(model, "supports_tool_choice", False) else None, "rate_limit_backoff_s": list(RATE_LIMIT_BACKOFF),
                 "pages_per_read": pages_per_read, "replay_turns": replay_turns,
                 "assess_rows_per_turn": assess_rows_per_turn,
                 "order_rule": "A-TO-Z-001: search and fetch run only once min(all rows, turn x assess_rows_per_turn) "
@@ -918,6 +931,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
             summary=state["summary"], settings=settings, ended_by=state["ended_by"],
             rate_limited=state["rate_limited"], rate_limit_waits=state["waits"], carried=state["carried"],
             closed_by=state["closed_by"], reminded_at_turn=state["reminded_at"],
+            prose_replies=state.get("prose_replies") or [], tool_choice_off=state.get("tool_choice_off"),
             assessments=list(assessed.values()), order_refusals=order_refusals, nothing_material=nothing_material,
             rows_not_assessed=[{"row_id": r["row_id"], "revision_id": r["revision_id"],
                                 "reason": "The reviewer gave this row no verdict, so it was not assessed."}
@@ -1047,29 +1061,37 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         return ("A-TO-Z-001: " + "; ".join(parts) + ". Conclude them (assess_rows, report_finding or "
                 "nothing_material), then finish_review.") if parts else None
 
-    def close_by_code(why: str) -> dict:
-        """REVIEW-CAP-002 c): the final turn did not finish the review, so code closes it. Every recorded finding and
-        row verdict is kept (result() always carries them); the status follows what was actually concluded."""
-        state["closed_by"], state["ended_by"] = "code", "review_turn_ceiling"
+    def close_by_code(why: str, early: bool = False, technical: bool = False) -> dict:
+        """REVIEW-CAP-002 c) / REVIEW-EARLY-001: the reviewer did not finish (the final turn at the cap, or an early
+        end before it), so code closes the review. Every recorded finding and row verdict is kept (result() always
+        carries them); the status follows what was actually concluded."""
+        state["closed_by"] = "code"
+        state["ended_by"] = "reviewer_stopped_early" if early else "review_turn_ceiling"
         m, k, n = len(rows), sum(1 for key in rows if key in assessed), len(findings)
         found = f"{n} finding{'s' if n != 1 else ''}" if n else "no findings"
-        if k == m and not open_source[0]:
-            reason = (f"The review turn limit ({turn_ceiling}) was reached and the reviewer did not finish on the "
-                      f"final turn ({why}); code closed the review: all {m} row{'s' if m != 1 else ''} assessed, "
-                      f"{found}.")
+        # an empty draft is never closed complete early: the omission search is then the whole review
+        if k == m and not open_source[0] and not technical and (m > 0 or not early):
+            reason = ((f"The reviewer stopped early ({why}); " if early else
+                       f"The review turn limit ({turn_ceiling}) was reached and the reviewer did not finish on the "
+                       f"final turn ({why}); ")
+                      + f"code closed the review: all {m} row{'s' if m != 1 else ''} assessed, {found}.")
             if open_retrieval:
                 j = len(open_retrieval)
                 reason += (f" {j} search or capture step{'s' if j != 1 else ''} did not complete and "
                            f"{'were' if j != 1 else 'was'} not covered, so that part was not reviewed.")
             return result(COMPLETE, reason)
-        reason = (f"review turn limit ({turn_ceiling}) reached; {k} of {m} rows assessed"
+        reason = (("reviewer stopped early" if early else f"review turn limit ({turn_ceiling}) reached")
+                  + f"; {k} of {m} rows assessed"
                   + (f"; {open_source[0]} was fetched and not settled" if open_source[0] else "")
                   + f". Code closed the review ({why}); {found} kept.")
         return result(INCOMPLETE, reason)
 
-    def stop(reason: str) -> dict:
-        return close_by_code(reason[:1].lower() + reason[1:].rstrip(".")) if state["final"] \
-            else result(INCOMPLETE, reason)
+    def stop(reason: str, technical: bool = True) -> dict:
+        """Any end other than a finish: code closes the review, keeping every finding and verdict. At the cap the
+        status follows what was concluded. Before the cap a technical end (error, cut-off, refusal, rate limit, spend
+        gate, broken protocol) is always incomplete: the review's search for staleness and omissions was cut short;
+        only the model's own stop (a second prose-only reply) can close complete when every row has a verdict."""
+        return close_by_code(reason.rstrip("."), early=not state["final"], technical=technical and not state["final"])
 
     def keep_back() -> list[dict]:
         """CAP-001 / OUTCOME-001 (live test 21e10cd): before each reviewer request, the adjudication requests the
@@ -1328,6 +1350,14 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
             gate.settle(ticket, "model", reply.model, who["price_name"], reply.prompt_tokens, reply.completion_tokens,
                         0, reply.error, reply.may_have_been_billed if reply.error else None,
                         None if reply.error else reply.attempts)
+            if tool_choice is not None and reply.error and reply.http_status in (400, 422) \
+                    and not reply.access_reason:
+                # REVIEW-EARLY-001: the provider rejected tool_choice; it is dropped for the rest of this review and
+                # the same turn is sent once more without it (recorded; each request is on the gate)
+                state["tool_choice_off"] = {"turn": state["turns"] + 1, "http_status": reply.http_status,
+                                            "message": reply.error}
+                tool_choice = None
+                continue
             if not rate_limited(reply) or not waits:
                 return reply
             wait = waits.pop(0)
@@ -1356,8 +1386,8 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
             messages = request_messages()
             if state["final"]:
                 messages = messages + [{"role": "user", "content": _final_turn_message(turn_ceiling)}]
-            choice = FINAL_TURN_TOOL_CHOICE if state["final"] and getattr(model, "supports_tool_choice", False) \
-                else None
+            choice = (TOOL_CHOICE if getattr(model, "supports_tool_choice", False)
+                      and not state.get("tool_choice_off") else None)
             reply = send(messages, final_tools if state["final"] else REVIEWER_TOOLS, choice)
         except GateRefused as e:
             return stop(f"The spend gate refused the next reviewer call: {e}")
@@ -1402,8 +1432,15 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
             return stop(f"The reviewer's reply ended with finish reason {reply.finish_reason!r}, which "
                                       f"does not establish a finished reply; nothing in it was used.")
         if not reply.tool_calls:
-            return stop("The reviewer stopped without calling finish_review, so the review is not "
-                                      "complete; its text was not taken as a result.")
+            prose = {"turn": state["turns"], "content": (reply.content or "")[:2000]}
+            state.setdefault("prose_replies", []).append(prose)
+            if not state["final"] and len(state["prose_replies"]) == 1:
+                # REVIEW-EARLY-001 (live run 12: one prose reply ended the review): nudged once, the review goes on
+                turns.append([{"role": "assistant", "content": reply.content or ""},
+                              {"role": "user", "content": NUDGE_MESSAGE}])
+                continue
+            return stop("The reviewer stopped without calling finish_review after a reminder to use the tools; "
+                        "its text was not taken as a result", technical=False)
         assistant = {"role": "assistant", "content": reply.content,
                      "tool_calls": [{"id": c["id"], "type": "function",
                                      "function": {"name": c["name"], "arguments": c["arguments"]}}
@@ -1456,8 +1493,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                                                "assessed": len(assessed), "required": len(rows), "reason": why})
                         refused_finish[0] += 1
                         if refused_finish[0] >= 2:
-                            return result(INCOMPLETE, "The reviewer tried to finish twice with unconcluded units: "
-                                                      + why)
+                            return stop("The reviewer tried to finish twice with unconcluded units: " + why)
                         out = {"status": "refused", "code": "conclude_first", "message": why}
                     elif c["name"] == "finish_review":
                         finished = True
@@ -1487,8 +1523,8 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         if len(ignored_finishes) >= 2 and not finished:
             # DRYRUN-2 (Operator ruling): a finish beside other calls is sent back once with a reminder; the second
             # time, the reply's other calls have run, then the review ends incomplete. A stop on a broken protocol, not a spend limit.
-            return result(INCOMPLETE, "Incomplete: finish_review was not sent on its own after a reminder; the other "
-                                      "calls in that reply were processed.")
+            return stop("finish_review was not sent on its own after a reminder; the other calls in that reply "
+                        "were processed.")
         if finished:
             n = len(findings)
             reason = "The reviewer finished: " + (f"{n} finding{'s' if n != 1 else ''}." if n else "no findings.")

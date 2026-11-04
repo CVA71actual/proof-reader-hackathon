@@ -234,8 +234,7 @@ def test_complete_with_no_findings_is_clean():
     assert rec["model"] == rv.REVIEWER_MODEL_ID and rec["provider"] == "anthropic" and rec["family"] == "Claude"
 
 
-@pytest.mark.parametrize("reply,why", [
-    (ChatReply("m", content="Looks fine to me.", finish_reason="stop"), "without calling finish_review"),
+@pytest.mark.parametrize("reply,why", [      # a prose-only reply is nudged once: tests/test_reviewer_cap.py
     (ChatReply("m", content=None, finish_reason="length"), "cut off"),
     (ChatReply("m", error="The model call did not succeed (BadRequestError, status 400).", http_status=400,
                may_have_been_billed=True), "status 400"),

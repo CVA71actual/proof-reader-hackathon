@@ -1148,8 +1148,10 @@ def test_a_reasoning_content_only_reply_is_not_an_answer():
     reply = rv.parse_chat_response(resp, "deepseek-ai/DeepSeek-V4-Pro-0813")
     assert reply.content is None and reply.tool_calls == [] and reply.error is None
     rec = rv.review_draft(company="X", assignment="a", proposals=[], sources=[], search=lambda q: [],
-                          fetch_capture=lambda u: None, spend_gate=lambda ev: {"t": 1}, model=F.FakeChat([reply]))
+                          fetch_capture=lambda u: None, spend_gate=lambda ev: {"t": 1},
+                          model=F.FakeChat([reply, reply]))         # REVIEW-EARLY-001: nudged once, then closed
     assert rec["status"] == "incomplete" and "without calling finish_review" in rec["reason"]
+    assert rec["closed_by"] == "code" and len(rec["prose_replies"]) == 2
 
 
 def test_the_production_chain_is_deepseek_then_claude_with_their_own_keys():
