@@ -223,7 +223,7 @@ def test_shared_job_entry_honors_one_model_without_api_wrapper(runs_dir):
 
 def test_export_summary_uses_one_model_label():
     js = (UI / "app.js").read_text()
-    fragment = "if (oneModelRun(meta)) kv('Second reader', NO_SECOND_READER);\n    else kv('Mistakes caught by the second reader', String(st.mistakes.second_reader));"
+    fragment = "if (oneModelRun(meta)) kv('Second reader', NO_SECOND_READER);\n    else kv('Corrected by the second reader', String(st.mistakes.second_reader));"
     assert fragment in _grab_fn(js, "renderExport")
     script = "var out=[];function kv(k,v){out.push([k,v]);}var st={mistakes:{second_reader:0}};" + \
         "var NO_SECOND_READER=" + json.dumps(NO_SECOND_READER) + ";" + _grab_fn(js,"oneModelRun") + \
@@ -231,7 +231,7 @@ def test_export_summary_uses_one_model_label():
         "meta={choices:{models:'all'}};" + fragment + "console.log(JSON.stringify(out));"
     got = subprocess.run(["node", "-"], input=script,text=True,capture_output=True)
     assert got.returncode == 0, got.stderr
-    assert json.loads(got.stdout) == [["Second reader",NO_SECOND_READER], ["Mistakes caught by the second reader","0"]]
+    assert json.loads(got.stdout) == [["Second reader",NO_SECOND_READER], ["Corrected by the second reader","0"]]
 
 
 # ---------------------------------------------------------------- PROJECTION-002: research runs
