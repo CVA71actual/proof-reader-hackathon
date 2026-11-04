@@ -268,8 +268,8 @@ def test_footer_does_not_name_a_selected_reviewer_that_made_zero_calls():
     assert models_used(run)["reviewers"] == []
     view = build_view(run, [], generated_at=FIXED_TIME)
     assert "DeepSeek" not in view["footer"]
-    assert "by DeepSeek" not in view["counters_line"]
-    assert "research review not started: no reviewer calls were made" in view["counters_line"]
+    assert not any("DeepSeek" in line for line in view["stage_lines"])
+    assert view["stage_lines"][0].startswith("Independent review (PTGX): no calls made")
     assert run["run"]["research"]["reviewer_access"]["chosen"] == "DeepSeek V4 Pro"      # access history kept
     for page in _pdf_pages(view):
         assert "Review: none ran" in page and "DeepSeek V4 Pro ·" not in page
@@ -283,7 +283,7 @@ def test_footer_names_an_incomplete_review_that_made_calls():
     assert run["run"]["research"]["review"]["PTGX"]["status"] == "incomplete"
     assert footer_line(run) == "Research: Muse Spark · Review: DeepSeek V4 Pro · Built by code from the saved results"
     view = build_view(run, [], generated_at=FIXED_TIME)
-    assert "by DeepSeek V4 Pro" in view["counters_line"] and "(review incomplete)" in view["counters_line"]
+    assert "Independent review (PTGX): DeepSeek V4 Pro, incomplete, " in view["stage_lines"][0]
 
 
 def test_footer_keeps_the_recorded_name_when_legacy_usage_is_missing():
@@ -368,8 +368,8 @@ def test_refused_retry_keeps_the_actual_earlier_reviewer_and_adjudicator(retry_n
     assert models_used(run)["adjudicators"] == ["Earlier adjudicator"]
     view = build_view(run, [], generated_at=FIXED_TIME)
     assert "Review: DeepSeek V4 Pro" in view["footer"]
-    assert "no reviewer calls were made" not in view["counters_line"]
-    assert "(review incomplete)" in view["counters_line"]
+    assert "no calls made" not in view["stage_lines"][0]
+    assert view["stage_lines"][0].startswith("Independent review (PTGX): DeepSeek V4 Pro, incomplete")
     assert "Different reviewer" not in view["footer"]
     # The report survives a save/reload and never assigns the retry identity to history.
     assert models_used(json.loads(json.dumps(run))) == models_used(run)
@@ -384,4 +384,4 @@ def test_old_attempt_without_identity_or_usage_stays_unknown_after_refused_retry
     assert "Review: unknown (record incomplete)" in view["footer"]
     assert "Review: none ran" not in view["footer"]
     assert "DeepSeek" not in view["footer"]
-    assert "no reviewer calls were made" not in view["counters_line"]
+    assert "no calls made" not in view["stage_lines"][0]

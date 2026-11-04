@@ -254,7 +254,7 @@ def test_research_run_export_counters_derive_from_the_review_record():
     # the S1 placeholder holds no per-company review entries
     view = build_view(run, decisions, generated_at="2026-11-03T10:00:00+00:00")
     assert NO_SECOND_READER not in view["counters_line"]
-    assert "no research review recorded" in view["counters_line"]
+    assert "Independent review (PTGX): none recorded" in view["stage_lines"]
     assert view["models_line"] is None
 
     # a completed S2 review with two stored findings: the line names reviewer and findings
@@ -263,15 +263,15 @@ def test_research_run_export_counters_derive_from_the_review_record():
         "status": "complete", "reviewer": "Muse Spark Open",
         "review": {"findings": [{"finding_id": "f1"}, {"finding_id": "f2"}]}}}
     view2 = build_view(reviewed, decisions, generated_at="2026-11-03T10:00:00+00:00")
-    assert "research review findings 2 by Muse Spark Open" in view2["counters_line"]
-    assert NO_SECOND_READER not in view2["counters_line"] and "(review incomplete)" not in view2["counters_line"]
+    assert "Independent review (PTGX): Muse Spark Open, completed, 2 findings" in view2["stage_lines"]
+    assert NO_SECOND_READER not in view2["counters_line"] and "Mistakes caught by code" not in view2["counters_line"]
 
     # an incomplete review says so; a clean complete review says no findings
     partial = copy.deepcopy(reviewed)
     partial["run"]["research"]["review"]["PTGX"]["status"] = "incomplete"
     view3 = build_view(partial, decisions, generated_at="2026-11-03T10:00:00+00:00")
-    assert "(review incomplete)" in view3["counters_line"]
+    assert "Independent review (PTGX): Muse Spark Open, incomplete, 2 findings" in view3["stage_lines"]
     clean = copy.deepcopy(reviewed)
     clean["run"]["research"]["review"]["PTGX"]["review"]["findings"] = []
     view4 = build_view(clean, decisions, generated_at="2026-11-03T10:00:00+00:00")
-    assert "research review by Muse Spark Open: no findings" in view4["counters_line"]
+    assert "Independent review (PTGX): Muse Spark Open, completed, 0 findings" in view4["stage_lines"]

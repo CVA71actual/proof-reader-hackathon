@@ -98,10 +98,12 @@ def test_sample_summary_matches_review_state_not_mechanical_groups(sample_out):
         assert f"{label}: {n}" in flat, label
     m = state["mistakes"]
     excluded = state["excluded"]["code"] + state["excluded"]["person"]
+    # RUN9-COUNTERS: no "Mistakes caught by code" aggregate in the export
     assert (
-        f"Mistakes caught by code {m['code']} · by the second reader {m['second_reader']} "
-        f"· by a person {m['person']} · Excluded {excluded}"
+        f"Corrected by the second reader {m['second_reader']} "
+        f"· Corrected by a person {m['person']} · Excluded {excluded}"
     ) in text
+    assert "Mistakes caught by code" not in text
     assert f"Unresolved (needs attention): {state['unresolved']}" in text
     assert "Sample data — not real events" in text
 
