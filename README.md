@@ -28,7 +28,7 @@ The research brief is one visible, editable box. The exact request sent to the m
 
 ### Saved-run demo (earlier page-reading version)
 
-The no-key demo demonstrates the earlier page-reading workflow. The agentic research runs shown in the video are not included in this repository. After installation, the bundled saved-run demo requires no API keys or paid model calls.
+The no-key demo bundled in the repo demonstrates the earlier page-reading workflow. After installation, it requires no API keys or paid model calls.
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
@@ -42,6 +42,16 @@ The app opens at <http://127.0.0.1:8777/#/ptgx-r5/audit>. Three clicks:
 3. Open **Catalyst Calendar** to see the result, and **Export** for its PDF and Word reports.
 
 More detail is in [docs/BUILD_NOTES_PAGE_READER.md](docs/BUILD_NOTES_PAGE_READER.md).
+
+### Runs 17 and 18 (the research runs in the video)
+
+They are too large for the repository (160 MB and 96 MB zipped), so they are attached to the [demo-runs release](https://github.com/CVA71actual/proof-reader-hackathon/releases/tag/demo-runs). Download `proof-reader-run-17.zip` and/or `proof-reader-run-18.zip`, unzip them into the `runs/` folder, and open one. No key or paid call is needed:
+
+```sh
+.venv/bin/python -m runs.demo --run run-17
+```
+
+The app opens at <http://127.0.0.1:8777/#/run-17/audit>. The Agent trail shows every search, capture, proposal, check and review finding. The Catalyst Calendar and Export show the result.
 
 ### Live research (keys needed; new runs cost money)
 
@@ -62,7 +72,7 @@ Open <http://127.0.0.1:8790>, click **New run**, choose a company, set a spendin
 
 ## Demo runs (PTGX, Protagonist Therapeutics, 4 Nov 2026)
 
-**Two versions:** the video shows the current research version (runs 17 and 18). The offline demo in this repo uses saved runs from the earlier page-reading version, because runs 17 and 18 are 100 to 200 MB each with their captured pages, too large for the repo.
+**Two versions:** the video shows the current research version (runs 17 and 18), which you can download from the release linked under "Run it". The demo bundled in the repo uses saved runs from the earlier page-reading version.
 
 - **Run 17** (build b3eaa46):
   - Research: 207 turns, 27 sources captured, 9 rows generated, including one placed after the window and one the researcher excluded as already launched.
