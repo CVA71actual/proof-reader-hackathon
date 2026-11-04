@@ -345,3 +345,46 @@ def runs_dir(tmp_path):
     d = tmp_path / "runs"
     d.mkdir()
     return d
+
+
+# ------------------------------------------------------------------ REVIEW-SETTLE-001 (live run 15)
+
+def _fetch_newer(url):
+    from tests.test_research_reviewer import FETCHED
+    return FETCHED.get(url)
+
+
+def test_all_rows_assessed_and_an_unconcluded_fetched_source_closes_complete_and_limited():
+    from runs import research_labels as L
+    empty = ChatReply("meta-models/muse-spark-open-1026", content="", finish_reason="stop")
+    model = ToolsModel([tools(assess_all(("no_issue", "no_issue"))),
+                        tools(call("fetch", {"url": "https://example.com/newer"})),
+                        empty])
+    rec = rv.review_draft(company={"ticker": "PTGX"}, assignment="brief", proposals=PROPOSALS, sources=SOURCES,
+                          search=Search(), fetch_capture=_fetch_newer, spend_gate=FakeGate(), model=model,
+                          turn_ceiling=2)
+    assert rec["status"] == "complete" and rec["closed_by"] == "code" and rec["clean"] is False
+    assert rec["findings"] == [] and "S3 was fetched by the reviewer and not concluded" in rec["reason"]
+    assert [(x["kind"], x["source_id"]) for x in rec["limitations"]] == [("source_not_concluded", "S3")]
+    limits = L.review_limits(rec)
+    assert limits["reviewer_sources_not_concluded"] == 1
+    assert L.only_retrieval_limits(rec, limits)
+    kind = L.label_kind(rec["status"], rec["clean"], bool(rec["findings"]), L.only_retrieval_limits(rec, limits))
+    assert kind == "limited" and L.row_clean_kind(rec, limits) == "limited"
+    label = L.with_limits(kind, limits, {"name": "Muse Spark Open", "family": "Muse"})
+    assert label.endswith(" — 1 source the reviewer opened was not concluded"), label
+    assert "independently reviewed" not in label or "Muse Spark Open" in label
+
+
+def test_an_unconcluded_fetched_source_with_rows_unassessed_stays_incomplete():
+    only_r1 = call("assess_rows", {"assessments": [{"row_id": "r1", "revision_id": 2, "verdict": "no_issue"}]})
+    empty = ChatReply("meta-models/muse-spark-open-1026", content="", finish_reason="stop")
+    model = ToolsModel([tools(only_r1, call("fetch", {"url": "https://example.com/newer"})),
+                        tools(call("search", {"query": QUERY})), empty])
+    rec = rv.review_draft(company={"ticker": "PTGX"}, assignment="brief", proposals=PROPOSALS, sources=SOURCES,
+                          search=Search(), fetch_capture=_fetch_newer, spend_gate=FakeGate(), model=model,
+                          turn_ceiling=2, assess_rows_per_turn=1)
+    assert rec["status"] == "incomplete" and rec["closed_by"] == "code"
+    assert rec["reason"].startswith("review turn limit (2) reached; 1 of 2 rows assessed")
+    assert "S3 was fetched and not settled" in rec["reason"]                # really fetched, left open
+    assert not [x for x in rec["limitations"] if x["kind"] == "source_not_concluded"]

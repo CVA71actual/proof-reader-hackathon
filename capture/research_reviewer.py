@@ -899,6 +899,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
     nothing_material: list[dict] = []
     fetched_by_url: dict[str, str] = {}
     open_source: list = [None]        # the last fetched source not yet settled (finding or nothing_material)
+    not_concluded: list[dict] = []    # REVIEW-SETTLE-001: a fetched source left unconcluded when code closed
 
     def coverage() -> tuple[list, list, dict]:
         not_reviewed, cited_unread = [], []
@@ -922,7 +923,7 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         return ReviewResult(
             status=status, reason=reason, findings=findings, rejected=rejected,
             reviewed_sources={"given": list(srcs.given), "fetched": list(srcs.fetched)},
-            limitations=list(open_retrieval.values()), ignored_finishes=ignored_finishes,
+            limitations=list(open_retrieval.values()) + not_concluded, ignored_finishes=ignored_finishes,
             reviewed_rows=[{"row_id": r["row_id"], "revision_id": r["revision_id"]} for r in rows.values()],
             model=state["model"], requested_model=getattr(model, "model", None), provider=who["provider"],
             family=who["family"], reviewer_name=who["name"], access_refused=state.get("access_refused"),
@@ -1070,7 +1071,15 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
         m, k, n = len(rows), sum(1 for key in rows if key in assessed), len(findings)
         found = f"{n} finding{'s' if n != 1 else ''}" if n else "no findings"
         # an empty draft is never closed complete early: the omission search is then the whole review
-        if k == m and not open_source[0] and not technical and (m > 0 or not early):
+        if k == m and not technical and (m > 0 or not early):
+            if open_source[0]:
+                # REVIEW-SETTLE-001 (live run 15): every row has a verdict, but the last source the reviewer fetched
+                # was never concluded. It does not make the review incomplete; it is a stated limitation (the
+                # "limited" label names it). It is never a finding or a citation: nothing is made from it.
+                not_concluded.append({"kind": "source_not_concluded", "source_id": open_source[0],
+                                      "reason": f"The reviewer fetched {open_source[0]} and did not conclude it "
+                                                f"(no finding citing it, no nothing_material) before the review "
+                                                f"was closed by code."})
             reason = ((f"The reviewer stopped early ({why}); " if early else
                        f"The review turn limit ({turn_ceiling}) was reached and the reviewer did not finish on the "
                        f"final turn ({why}); ")
@@ -1079,6 +1088,9 @@ def review_draft(*, company, assignment: str, proposals: list[dict], sources: li
                 j = len(open_retrieval)
                 reason += (f" {j} search or capture step{'s' if j != 1 else ''} did not complete and "
                            f"{'were' if j != 1 else 'was'} not covered, so that part was not reviewed.")
+            if not_concluded:
+                reason += (" " + ", ".join(x["source_id"] for x in not_concluded) + " was fetched by the reviewer "
+                           "and not concluded: recorded as a limitation.")
             return result(COMPLETE, reason)
         reason = (("reviewer stopped early" if early else f"review turn limit ({turn_ceiling}) reached")
                   + f"; {k} of {m} rows assessed"

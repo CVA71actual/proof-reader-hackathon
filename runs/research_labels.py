@@ -45,13 +45,21 @@ def review_limits(record: dict) -> dict:
     lims = record.get("limitations") or []
     return {"sources_not_opened": sum(1 for x in lims if x.get("kind") == "fetch")
                                   + len(record.get("sources_not_given") or []),
-            "searches_not_completed": sum(1 for x in lims if x.get("kind") == "search")}
+            "searches_not_completed": sum(1 for x in lims if x.get("kind") == "search"),
+            # REVIEW-SETTLE-001: a source the reviewer fetched and did not conclude before code closed the review
+            "reviewer_sources_not_concluded": sum(1 for x in lims if x.get("kind") == "source_not_concluded")}
+
+
+LIMIT_KEYS = ("sources_not_opened", "searches_not_completed", "reviewer_sources_not_concluded")
 
 
 def limits_text(limits: dict) -> str:
     n, m = limits.get("sources_not_opened", 0), limits.get("searches_not_completed", 0)
+    u = limits.get("reviewer_sources_not_concluded", 0)
     parts = ([f"{n} source{'s' if n != 1 else ''} could not be opened"] if n else []) + \
-            ([f"{m} search{'es' if m != 1 else ''} did not complete"] if m else [])
+            ([f"{m} search{'es' if m != 1 else ''} did not complete"] if m else []) + \
+            ([f"{u} source{'s' if u != 1 else ''} the reviewer opened {'were' if u != 1 else 'was'} not concluded"]
+             if u else [])
     return (" — " + "; ".join(parts)) if parts else ""
 
 
@@ -249,7 +257,7 @@ def run_label(research: dict, entries: dict) -> str:
     if not done:
         return LABEL + note
     limits = {k: sum((e.get("limits") or {}).get(k, 0) for e in done)
-              for k in ("sources_not_opened", "searches_not_completed")}
+              for k in LIMIT_KEYS}
     kinds = [e.get("label_kind", "none") for e in done]
     whos = [w for w in (reviewer_of(e) for e in done) if w]
     names = list(dict.fromkeys(w["name"] for w in whos))
