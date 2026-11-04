@@ -16,7 +16,8 @@ Limits (CVA ruling 2026-11-02: "I don't want any limits on anything without my a
     There is no page cap on a fetched source.
 Stopping rule (STOP-RULE-001, CVA 2026-11-03, ON by default, settable in research_limits, 0 = off): a company's
 research ENDS AS FINISHED, then goes on to the review, adjudication and support check and publishes, when it has gone
-stall_turns_per_company (40) model turns with no new proposal, reaches turn_ceiling_per_company (200) model turns or
+stall_turns_per_company (60) model turns with no progress (no new proposal or revision and no newly captured
+source), reaches turn_ceiling_per_company (200) model turns or
 minutes_ceiling_per_company (45) minutes, or a person chooses Finish now (request_finish). Each is recorded in
 run.research.kill_conditions, on the company (ended_by) and on the Agent trail.
 With the optional limits off, a company's loop ends only when: the model says it is done (finish_draft, or a final
@@ -86,16 +87,21 @@ RESEARCH_TURN_LIMIT = 1_000_000     # a research run is not paused by the page-m
 # hand so nothing was reviewed or published): "it has to have a rule for stopping." Three code defaults, ON, each a
 # recorded setting in research_limits (0 = off). Each ENDS a company's research as finished (not a limitation): the
 # run goes on to the independent review, adjudication and the support check, then publishes like a model finish.
-#   stall_turns_per_company: N model turns in a row with no new proposal (a new row or a new revision of one for that
-#       company; a refused proposal, an exact duplicate and a repeated search are no progress). Run 9's largest gap
-#       between new proposals was 30 turns.
+#   stall_turns_per_company: N model turns in a row with no progress for that company. Progress is a new proposal
+#       (a new row or a new revision of one) OR a new successful capture of a source not captured before in this run
+#       (a new source_id). A refused proposal, an exact duplicate, a search, a filing listing, a repeated action, a
+#       refused or failed fetch and a refetch of the same bytes are no progress. Run 9's largest gap between new
+#       proposals was 30 turns. STALL-001 (live run 11): 40 -> 60 and captures count, because run 11 proposed 4 rows
+#       by turn ~16, then searched, listed filings and in its last turns captured 4 new sources (Takeda approval
+#       release, Takeda H1 results, J&J approval, a conferences release) and was ended by the stall rule before it
+#       could propose from them.
 #   turn_ceiling_per_company: model turns per company.  minutes_ceiling_per_company: minutes per company.
 # turn_ceiling_per_company 250 -> 200 (CVA 2026-11-03, New Run's turn limit): a run-9 replay at 200 keeps 26 of its
 # 29 rows (lost: e27 Takeda earnings, e28 a duplicate, e29 a past approval).
 # review_turn_ceiling_per_company (REVIEW-CAP-001, live run 10: the reviewer made 92 requests, largely repeated
 # searches, then was rate-limited): reviewer model turns per company. It bounds the REVIEW, not the research: when
 # reached the reviewer is asked once to submit its findings (capture/research_reviewer.REVIEW_TURN_CEILING).
-STOP_RULE_DEFAULTS = {"stall_turns_per_company": 40, "turn_ceiling_per_company": 200,
+STOP_RULE_DEFAULTS = {"stall_turns_per_company": 60, "turn_ceiling_per_company": 200,
                       "minutes_ceiling_per_company": 45, "review_turn_ceiling_per_company": 30}
 LIMIT_KEYS = ("max_spend_per_company_usd", "max_requests_per_company", "max_searches_per_company",
               "max_searches_per_request", "max_fetches_per_company", "max_pages_per_company",
@@ -1135,6 +1141,10 @@ def make_job_class():
                                              spend_gate=self.review_gate(ticker), model=reviewer,
                                              turn_ceiling=cap or None, carried=carried)
                     limited = record.get("rate_limited")
+                    if record.get("status") == "complete":
+                        # REVIEW-CAP-002: a review code closed as complete at the turn limit (every row has a
+                        # verdict) is not handed over, even when its final turn was refused
+                        break
                     if limited and not choice.get("fallback_used"):
                         # RATE-LIMIT-001: still rate-limited after the retries. Hand the frozen draft to the next
                         # reviewer in the chain (a billing-refused one is skipped by its access check), carrying this
@@ -1590,6 +1600,7 @@ def make_job_class():
                                        "fetch_by_url": {}, "finish_attempts": 0, "as_of": as_of,
                                        "delivered": {}, "settled": {}, "compacted": set(), "turn_starts": [],
                                        "brave_calls": {}, "brave_items": [], "last_progress_turn": 0,
+                                       "last_proposal_turn": 0, "last_capture_turn": 0,
                                        "window_end": window_end, "started": time.monotonic()}
             from capture import research_instructions
             from runs import research_request as rq
@@ -1826,6 +1837,7 @@ def make_job_class():
                 return False
             c, L, st = self.company(ticker), self.limits, self.state[ticker]
             turns, last = c["requests"], st["last_progress_turn"]
+            last_prop, last_cap = st.get("last_proposal_turn", 0), st.get("last_capture_turn", 0)
             minutes = (time.monotonic() - st["started"]) / 60
             stall, ceiling, mins = (L.get(k) for k in ("stall_turns_per_company", "turn_ceiling_per_company",
                                                        "minutes_ceiling_per_company"))
@@ -1836,23 +1848,27 @@ def make_job_class():
             elif mins and minutes >= mins:
                 code, setting, why = "minutes_ceiling", mins, f"the ceiling of {mins:g} minutes was reached"
             elif stall and turns - last >= stall:
-                code, setting, why = "stall", stall, f"no new proposal in {stall} turns (stall rule)"
+                code, setting, why = "stall", stall, (f"no new proposal and no newly captured source in {stall} "
+                                                  f"turns (stall rule)")
             else:
                 return False
             reason = f"Research ended — {why}; moving to review."
             open_ = self.unsettled(ticker)
             rec = {"code": code, "ticker": ticker, "at": now_utc(), "setting": setting, "turn": turns,
-                   "last_proposal_turn": last or None, "minutes": round(minutes, 2), "outcome": "finished",
+                   "last_progress_turn": last or None, "last_proposal_turn": last_prop or None,
+                   "last_capture_turn": last_cap or None, "minutes": round(minutes, 2), "outcome": "finished",
                    "detail": f"{ticker}: research ended — {why}; moving to review."}
             with jobs.RUN_LOCK:
                 self.research["kill_conditions"].append(rec)
-                c["ended_by"] = {**{k: rec[k] for k in ("code", "setting", "turn", "last_proposal_turn", "minutes")},
+                c["ended_by"] = {**{k: rec[k] for k in ("code", "setting", "turn", "last_progress_turn",
+                                                       "last_proposal_turn", "last_capture_turn", "minutes")},
                                 "why": why}
                 c["finish"] = {"by": code, "at": rec["at"], "limitations": [], "unsettled_sources": open_}
                 c["status_reason"] = reason + (f" {', '.join(open_)} was captured and not concluded."
                                                if open_ else "")
             self.step(ticker, "limit", "Code", "runs.research", rec["detail"], rule=code, turn=turns,
-                      last_proposal_turn=last or None)
+                      last_progress_turn=last or None, last_proposal_turn=last_prop or None,
+                      last_capture_turn=last_cap or None)
             self.save_ledger()
             return True
 
@@ -2317,6 +2333,12 @@ def make_job_class():
                 st["fetch_by_url"][(fetched.final_url, sha)] = source
                 c = self.company(ticker)
                 c["sources"] += 1
+                # STALL-001: a new source_id captured during research is progress. A refetch of a URL already
+                # captured for this company (new bytes from a dynamic page, say) is a new source but not progress,
+                # so a loop that refetches one page cannot hold the stall rule off.
+                seen_url = any(u == fetched.final_url and v is not source for (u, _), v in st["fetch_by_url"].items())
+                if tool != "review_fetch" and not seen_url:
+                    st["last_progress_turn"] = st["last_capture_turn"] = c["requests"]
                 self.save_ledger()
             flags = [f"page {p['page_number']}: {k} {p['research_checks'][k]['result']}" for p in pages
                      for k in ("capture_incomplete", "hidden_text") if p["research_checks"][k]["result"] == "fail"]
@@ -2571,7 +2593,8 @@ def make_job_class():
                     self.company(ticker)["proposals"] += 1
                 else:
                     self.run["rows"][self.run["rows"].index(existing)] = row
-                st["last_progress_turn"] = self.company(ticker)["requests"]     # STOP-RULE-001: progress
+                turn = self.company(ticker)["requests"]          # STOP-RULE-001: progress (a new row/revision)
+                st["last_progress_turn"] = st["last_proposal_turn"] = turn
             checks = ", ".join(f"{c['label']} {c['result'].replace('_', ' ')}" for c in row["checks"])
             self.step(ticker, "proposal", "Model", "Muse Spark",
                       f"Proposed {row['id']} (revision {row['research']['revision']}): {row['title']} "

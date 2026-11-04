@@ -586,7 +586,7 @@ with retrieval times); `consolidations`; `repeats`; `kill_conditions`; `reservat
 and `review[ticker]` (the independent review, below); `audit` (the draft audit, `runs/research_audit.py`). Exact requests and responses
 are under `research/turns/`. A person stops a research run with `POST /api/runs/{id}/research-stop` (discard: nothing reviewed or published), or
 ends its research with `POST /api/runs/{id}/research-finish` (Finish now: review, checks, then publish). STOP-RULE-001:
-a company's research also ends as finished after `stall_turns_per_company` (40) model turns with no new proposal,
+a company's research also ends as finished after `stall_turns_per_company` (60) model turns with no progress (no new proposal or revision and no newly captured source, STALL-001),
 `turn_ceiling_per_company` (200; New Run sends it as `turn_limit_per_company`) turns or `minutes_ceiling_per_company` (45) minutes (research_limits; 0 = off);
 each is a `kill_conditions` entry (`code` stall | turn_ceiling | minutes_ceiling | finish_now, `outcome` finished)
 and the company's `ended_by`. A research run

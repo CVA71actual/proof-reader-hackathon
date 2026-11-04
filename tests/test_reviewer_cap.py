@@ -2,7 +2,10 @@
 searches, then Baseten returned HTTP 429 and the review ended incomplete). Fakes only: no model, search or paid call.
 
 - the reviewer turn cap (30 by default) asks the reviewer once to submit its findings: complete with what it found;
-  a final turn that does not finish is incomplete with the plain reason "review turn limit (N) reached";
+- REVIEW-CAP-002 (live run 11: the final turn did not call finish_review; 0 findings, rows unassessed): a reminder at
+  cap-10, a final turn that requires a tool call (tool_choice, when the client supports it), and when the final turn
+  still does not finish, CODE closes the review: findings and verdicts kept; complete when every row has a verdict and
+  every fetched source is settled, otherwise incomplete "review turn limit (N) reached; K of M rows assessed";
 - an identical repeated search is answered from the earlier result, never a new (billed) search;
 - HTTP 429 is retried after waits (Retry-After honoured); still refused, the frozen draft is handed to the next
   reviewer in the chain (a billing-refused Claude skipped), and attribution names every reviewer that made calls."""
@@ -101,22 +104,89 @@ def test_cap_reached_then_the_final_submit_turn_ends_complete_with_the_findings(
     assert search.queries == [QUERY]      # the repeat was not a new search
 
 
-def test_cap_reached_and_the_final_turn_does_not_finish_is_incomplete_with_the_cap_reason():
+class ChoiceModel(ToolsModel):
+    """A client that supports tool_choice (as OneShotChat does); keeps the tool_choice of each request."""
+    supports_tool_choice = True
+
+    def __init__(self, replies):
+        super().__init__(replies)
+        self.choices: list = []
+
+    def chat(self, messages, tools=None, json_mode=False, tool_choice=None):
+        self.choices.append(tool_choice)
+        return super().chat(messages, tools, json_mode)
+
+
+def test_all_rows_assessed_and_the_final_turn_does_not_finish_code_closes_complete():
     model = ToolsModel([tools(assess_all(("no_issue", "no_issue"))),
                         tools(call("search", {"query": QUERY})),
                         tools(call("search", {"query": "another"}))])
     rec = review(model, turn_ceiling=2)
-    assert rec["status"] == "incomplete" and rec["ended_by"] is None
-    assert "review turn limit (2) reached" in rec["reason"]
+    assert rec["status"] == "complete" and rec["closed_by"] == "code" and rec["ended_by"] == "review_turn_ceiling"
+    assert "review turn limit (2) was reached" in rec["reason"] and "code closed the review: all 2 rows" in rec["reason"]
     assert len(model.sent) == 3        # exactly one final turn, nothing after it
+    assert rec["rows_not_assessed"] == [] and len(rec["assessments"]) == 2
+
+
+def test_the_model_ignores_the_final_turn_code_closes_with_findings_kept_and_rows_counted():
+    only_r1 = call("assess_rows", {"assessments": [{"row_id": "r1", "revision_id": 2, "verdict": "finding"}]})
+    model = ToolsModel([tools(unsupported(), only_r1),
+                        tools(call("search", {"query": QUERY})),
+                        tools(call("search", {"query": "ignored the final turn"}))])
+    rec = review(model, turn_ceiling=2)
+    assert rec["status"] == "incomplete" and rec["closed_by"] == "code"
+    assert rec["reason"].startswith("review turn limit (2) reached; 1 of 2 rows assessed")
+    assert [f["kind"] for f in rec["findings"]] == ["unsupported_claim"]          # never dropped
+    assert [(a["row_id"], a["verdict"]) for a in rec["assessments"]] == [("r1", "finding")]
+    assert [r["row_id"] for r in rec["rows_not_assessed"]] == ["r2"]
+    assert rec["clean"] is False and len(model.sent) == 3
 
 
 def test_the_final_turn_refuses_a_finish_with_rows_still_unassessed():
     model = ToolsModel([tools(call("read_source_pages", {"source_id": "S1", "pages": [1]})),
                         tools(finish())])
     rec = review(model, turn_ceiling=1)
-    assert rec["status"] == "incomplete" and "review turn limit (1) reached" in rec["reason"]
+    assert rec["status"] == "incomplete" and rec["closed_by"] == "code"
+    assert rec["reason"].startswith("review turn limit (1) reached; 0 of 2 rows assessed")
     assert "row(s) have no verdict" in rec["reason"]
+
+
+def test_a_failed_final_turn_is_closed_by_code_with_the_verdicts_kept():
+    error = ChatReply("deepseek-ai/DeepSeek-V4-Pro-0813", error="The model call did not succeed (HTTP 400).",
+                      http_status=400, may_have_been_billed=False)
+    model = ToolsModel([tools(assess_all(("no_issue", "no_issue"))), error])
+    rec = review(model, turn_ceiling=1)
+    assert rec["status"] == "complete" and rec["closed_by"] == "code" and "HTTP 400" in rec["reason"]
+
+
+def test_the_final_turn_requires_a_tool_call_when_the_client_supports_tool_choice():
+    model = ChoiceModel([tools(assess_all(("no_issue", "no_issue"))), tools(finish("submitted"))])
+    rec = review(model, turn_ceiling=1)
+    assert rec["status"] == "complete" and rec["closed_by"] is None and rec["summary"] == "submitted"
+    assert model.choices == [None, rv.FINAL_TURN_TOOL_CHOICE] and rv.FINAL_TURN_TOOL_CHOICE == "required"
+    assert model.offered[-1] == sorted(rv.FINAL_TURN_TOOL_NAMES)       # verdict and finding tools stay offered
+    assert "assess_rows" in model.offered[-1] and "report_finding" in model.offered[-1]
+    assert rec["settings"]["final_turn_tool_choice"] == "required"
+    # a client without tool_choice support (Claude: a forced choice 400s) is sent none
+    plain = ToolsModel([tools(assess_all(("no_issue", "no_issue"))), tools(finish())])
+    assert review(plain, turn_ceiling=1)["settings"]["final_turn_tool_choice"] is None
+
+
+def test_the_reminder_is_injected_once_at_cap_minus_ten():
+    reminder = "10 turns left: every row needs a verdict; then call finish_review."
+    model = ToolsModel([tools(assess_all(("no_issue", "no_issue"))),
+                        tools(call("search", {"query": QUERY})),
+                        tools(call("search", {"query": "second"})),
+                        tools(finish())])
+    rec = review(model, turn_ceiling=12)
+    def has(msgs):
+        return [m for m in msgs if m.get("role") == "user" and m.get("content") == reminder]
+    assert [len(has(m)) for m in model.sent] == [0, 0, 1, 1]      # added before request 3 (after 2 turns), once
+    assert model.sent[2][-1]["content"] == reminder
+    assert rec["reminded_at_turn"] == 2 and rec["status"] == "complete"
+    assert rv.REMINDER_TURNS_LEFT == 10
+    # the default cap (30): the reminder comes after turn 20
+    assert "FIRST give EVERY draft row a verdict" in rv.REVIEWER_INSTRUCTIONS
 
 
 def test_cap_zero_is_off():

@@ -1,7 +1,8 @@
 """STOP-RULE-001 (CVA 2026-11-03, after live run 9): the research stopping rule and the person's Finish now.
 
 A company's research ENDS AS FINISHED (not a limitation) when it has gone stall_turns_per_company model turns with no
-new proposal (default 40), reaches turn_ceiling_per_company model turns (default 200) or minutes_ceiling_per_company
+progress (default 60; STALL-001, live run 11: progress is a new proposal or revision OR a new successful capture of a
+source not captured before; searches, listings, repeats, refusals and failed fetches are not progress), reaches turn_ceiling_per_company model turns (default 200) or minutes_ceiling_per_company
 minutes (default 45), or a person chooses Finish now (POST /api/runs/{id}/research-finish). The run then goes on to
 the independent review, adjudication and the support check and publishes like a model finish. research-stop
 (discard: nothing reviewed, nothing published) is unchanged and wins over Finish now.
@@ -111,7 +112,7 @@ def assert_reviewed_and_published(meta, r, code):
 def test_stop_rules_are_on_by_default_settable_and_zero_is_off():
     lim = research.validate_limits(None)
     assert {k: lim[k] for k in research.STOP_RULE_DEFAULTS} == {
-        "stall_turns_per_company": 40, "turn_ceiling_per_company": 200, "minutes_ceiling_per_company": 45,
+        "stall_turns_per_company": 60, "turn_ceiling_per_company": 200, "minutes_ceiling_per_company": 45,
         "review_turn_ceiling_per_company": 30}       # REVIEW-CAP-001: the reviewer's own turn cap
     lim = research.validate_limits({"stall_turns_per_company": 10, "turn_ceiling_per_company": 0,
                                     "minutes_ceiling_per_company": 2.5})
@@ -129,15 +130,20 @@ def test_stop_rules_are_on_by_default_settable_and_zero_is_off():
 
 # ------------------------------------------------------------------ the stall rule
 
-def test_stall_after_default_40_turns_without_a_new_proposal_reviews_and_publishes(runs_dir):
-    script = [fetch_turn(), propose_turn(2)] + [web_only_turn(n) for n in range(3, 3 + 40)]
+STALLED = "no new proposal and no newly captured source in {} turns (stall rule)"
+
+
+def test_stall_after_default_60_turns_without_progress_reviews_and_publishes(runs_dir):
+    script = [fetch_turn(), propose_turn(2)] + [web_only_turn(n) for n in range(3, 3 + 60)]
     _, rid, reader, tools = start(runs_dir, script)
     run, meta, r = the_run(runs_dir, rid)
-    assert len(reader.requests) == 42 and reader.script == []        # ended before turn 43: 40 turns after turn 2
+    assert len(reader.requests) == 62 and reader.script == []        # ended before turn 63: 60 turns after turn 2
     c, kill = assert_reviewed_and_published(meta, r, "stall")
-    assert (kill["setting"], kill["turn"], kill["last_proposal_turn"]) == (40, 42, 2)
-    assert c["status_reason"].startswith("Research ended — no new proposal in 40 turns (stall rule); moving to review.")
-    assert r["limits"]["stall_turns_per_company"] == 40
+    assert (kill["setting"], kill["turn"], kill["last_progress_turn"]) == (60, 62, 2)
+    assert (kill["last_proposal_turn"], kill["last_capture_turn"]) == (2, 1)
+    assert c["ended_by"]["last_capture_turn"] == 1
+    assert c["status_reason"].startswith(f"Research ended — {STALLED.format(60)}; moving to review.")
+    assert r["limits"]["stall_turns_per_company"] == 60
     assert [row["id"] for row in run["rows"] if row.get("research")] and tools.reviewer.script == []
 
 
@@ -170,6 +176,46 @@ def test_repeated_identical_searches_count_as_no_progress(runs_dir):
     assert len(r["repeats"]) >= 2                                   # recorded as repeats, and they did not reset
     _, kill = assert_reviewed_and_published(meta, r, "stall")
     assert (kill["turn"], kill["last_proposal_turn"]) == (6, 2)
+
+
+# ------------------------------------------------------------------ STALL-001: a new capture is progress
+
+def capture_turn(n, url):
+    return F.body([F.call("fetch_url", {"url": url, "purpose": "a newer release"}, f"f{n}")], rid=f"rf{n}")
+
+
+def test_a_new_capture_resets_the_stall_counter(runs_dir):
+    # stall 3: turns 3-4 idle, turn 5 captures a source not captured before (resets), turns 6-8 idle -> ends at 8
+    script = ([fetch_turn(), propose_turn(2)] + [web_only_turn(n) for n in (3, 4)] + [capture_turn(5, PR2)]
+              + [web_only_turn(n) for n in (6, 7, 8)])
+    _, rid, reader, _ = start(runs_dir, script, limits={"stall_turns_per_company": 3})
+    _, meta, r = the_run(runs_dir, rid)
+    assert len(reader.requests) == 8
+    _, kill = assert_reviewed_and_published(meta, r, "stall")
+    assert (kill["turn"], kill["last_progress_turn"], kill["last_proposal_turn"], kill["last_capture_turn"]) \
+        == (8, 5, 2, 5)
+
+
+def test_a_refetch_of_a_captured_url_or_a_failed_fetch_is_not_progress(runs_dir):
+    # turn 3 refetches PR1 (same bytes: the same source), turn 4 fetches a URL that answers 404 -> no progress
+    script = ([fetch_turn(), propose_turn(2), capture_turn(3, PR1),
+               capture_turn(4, "https://www.protagonist-inc.com/missing")] + [web_only_turn(5)])
+    _, rid, reader, _ = start(runs_dir, script, limits={"stall_turns_per_company": 3})
+    _, meta, r = the_run(runs_dir, rid)
+    assert len(reader.requests) == 5
+    _, kill = assert_reviewed_and_published(meta, r, "stall")
+    assert (kill["last_progress_turn"], kill["last_capture_turn"]) == (2, 1)
+
+
+def test_a_search_or_a_filing_listing_is_not_progress(runs_dir):
+    listing = lambda n: F.body([F.call("fetch_edgar", {"cik": "1377121", "forms": ["8-K"], "since": "2026-08-01",
+                                                      "until": None, "cursor": None}, f"e{n}")], rid=f"re{n}")
+    script = [fetch_turn(), propose_turn(2), search_turn(3), listing(4), search_turn(5)]
+    _, rid, reader, _ = start(runs_dir, script, limits={"stall_turns_per_company": 3})
+    _, meta, r = the_run(runs_dir, rid)
+    assert len(reader.requests) == 5
+    _, kill = assert_reviewed_and_published(meta, r, "stall")
+    assert kill["last_progress_turn"] == 2
 
 
 # ------------------------------------------------------------------ the ceilings
@@ -256,7 +302,7 @@ def test_research_stop_wins_over_finish_now(runs_dir):
 
 
 def test_finish_endpoint_refuses_a_page_run_and_an_unknown_body(runs_dir):
-    client, rid, _, _ = start(runs_dir, [fetch_turn(), propose_turn(2)] + [web_only_turn(n) for n in range(3, 43)])
+    client, rid, _, _ = start(runs_dir, [fetch_turn(), propose_turn(2)] + [web_only_turn(n) for n in range(3, 63)])
     assert client.post(f"/api/runs/{rid}/research-finish", json={"note": 3}).status_code in (409, 422)
     run = run_json(runs_dir, rid)
     run["run"]["choices"]["mode"] = "pages"
