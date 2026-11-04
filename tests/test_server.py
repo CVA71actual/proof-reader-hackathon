@@ -494,7 +494,7 @@ def test_the_file_only_grows(client, runs_dir):
     ({"target": "e1", "action": "keep", "by": "model"}, "Only a person's decisions are taken here."),
     ({"target": "e1", "action": "recheck", "recheck": {"result": "pass"}}, None),
     ({"target": "e1", "action": "recheck"}, "Only code writes a re-check."),
-    ({"target": "e1", "action": "delete"}, "The action must be keep, fix, remove or undo."),
+    ({"target": "e1", "action": "delete"}, "The action must be keep, fix, remove, undo, same_event or distinct_events."),
     ({"target": "zz", "action": "keep"}, "No row or table value has the id 'zz'."),
     ({"target": "e1", "action": "fix", "fix": None}, "A fix needs a field, a from value and a to value (text or null)."),
     ({"target": "e1", "action": "fix", "fix": {"field": "title", "from": "Nope", "to": "X"}},

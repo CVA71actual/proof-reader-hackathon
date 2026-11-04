@@ -83,7 +83,10 @@ def test_different_days_both_placed():
 
 
 def test_same_day_different_titles_both_placed():
-    state = current_state(combine(truist(), truist(title="Truist Securities 2026 Biopharma Symposium fireside chat")), [])
+    # DUPLICATE-RESOLUTION-001: different named meetings on one day are different events. (A fireside chat at the
+    # same Truist symposium is the same named meeting and now pairs: tests/test_duplicate_resolution.py.)
+    state = current_state(combine(truist(title="Wolfe Research Healthcare Conference participation"),
+                                  truist(title="UBS Global Biopharma Conference participation")), [])
     assert [state["targets"][t]["inclusion"] for t in ("e1", "e2")] == ["included", "included"]
 
 
@@ -97,7 +100,9 @@ def test_person_keep_on_the_duplicate_keeps_it():
     state = current_state(run, [])
     kept = current_state(run, [keep(state, "e2")])
     assert kept["targets"]["e2"]["inclusion"] == "kept" and kept["targets"]["e2"]["accepted"]
-    assert kept["targets"]["e1"]["inclusion"] == "included"
+    # DUPLICATE-RESOLUTION-001: the kept copy is the one on the calendar; the automatic copy now waits for review.
+    assert kept["targets"]["e1"]["inclusion"] == "review"
+    assert kept["targets"]["e1"]["duplicate_of"]["row_id"] == "e2"
 
 
 def test_removed_first_row_does_not_hold_back_the_later_one():

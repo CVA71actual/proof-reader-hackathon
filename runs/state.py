@@ -112,8 +112,9 @@ def _plain_value(field, value):
     return value.replace("_", " ") if field == "event_type" and isinstance(value, str) else value
 
 GROUPS = ("kept", "corrected", "removed", "unverified", "open")
-ACTIONS = ("keep", "fix", "remove", "undo", "recheck")
-PERSON_ACTIONS = ("keep", "fix", "remove", "undo")
+ACTIONS = ("keep", "fix", "remove", "undo", "recheck", "same_event", "distinct_events")
+# DUPLICATE-RESOLUTION-001: same_event and distinct_events resolve a possible duplicate pair (see _resolve_duplicates).
+PERSON_ACTIONS = ("keep", "fix", "remove", "undo", "same_event", "distinct_events")
 RECHECK_RESULTS = ("pass", "fail", "could_not_run", "unresolved")
 COULD_NOT_RUN_REASON = "The re-check could not run: a check had nothing to compare."
 NO_ERROR_REASON = "The value already passed its checks before the edit."
@@ -424,6 +425,14 @@ def _why_not(d, targets: dict, stacks: dict) -> str | None:
         return None
     if action == "undo":
         return None if stacks[target] else "There is nothing to undo for this target."
+    if action in ("same_event", "distinct_events"):
+        other = d.get("duplicate_of")
+        if targets[target]["kind"] != "row" or not isinstance(other, str) or other == target \
+                or other not in targets or targets[other]["kind"] != "row":
+            return "A same-event or different-events decision needs the id of the other event row."
+        if action == "distinct_events" and not (isinstance(d.get("note"), str) and d["note"].strip()):
+            return "Say in a note why these are different events."
+        return None
     if action == "fix":
         fx = d.get("fix")
         if not isinstance(fx, dict) or not {"field", "from", "to"} <= fx.keys():
@@ -648,44 +657,56 @@ def _current_state(run: dict, decisions: list) -> dict:
     second_reader_catches = {m["target"] for m in mistake_list if m["caught_by"] == "second_reader"}
     unreadable_pages = _unreadable_pages(run)
     rows_by_id = {row.get("id"): row for row in run.get("rows", [])}
+
+    def issues_for(t, s):
+        current_findings, _ = _review_findings(rows_by_id.get(t))
+        return row_issues(s, page_unreadable=_page_key(rows_by_id.get(t)) in unreadable_pages,
+                          second_reader_mistake=t in second_reader_catches,
+                          review_findings=current_findings,
+                          research_issues=(_research_support_issues(rows_by_id.get(t), s["values"])
+                                           if s["kind"] == "row" else ()))
+
     for t, s in states.items():
-        current_findings, finding_history = _review_findings(rows_by_id.get(t))
-        s["issues"] = row_issues(s, page_unreadable=_page_key(rows_by_id.get(t)) in unreadable_pages,
-                                 second_reader_mistake=t in second_reader_catches,
-                                 review_findings=current_findings,
-                                 research_issues=(_research_support_issues(rows_by_id.get(t), s["values"])
-                                                  if s["kind"] == "row" else ()))
+        s["issues"] = issues_for(t, s)
         if s["kind"] == "row":
             # history stays on the record, shown as history, never as a current issue
+            _, finding_history = _review_findings(rows_by_id.get(t))
             s["review_findings_history"] = [_finding_text({**f, "current": True}) for f in finding_history]
         s.pop("_disagreement_open", None)
-    # DUPLICATE-ROWS-001: a later row that is the same event as an earlier one is not placed automatically.
-    for t, first in _duplicate_of(run, states).items():
-        s = states[t]
-        if s["issues"] is not None and not s.get("accepted") and s.get("review_bucket") != "excluded":
-            fv = states[first]["values"]
-            s["issues"] = list(dict.fromkeys([*s["issues"], f"Same event as {first} ({(fv.get('title') or '').strip()}, "
-                                                            f"{fv.get('date')}) — possible duplicate"]))
-    counts["issues"] = sum(1 for s in states.values() if s["kind"] == "row" and s["issues"])
 
     # CALENDAR-RULE-001: the one inclusion predicate (runs.review.review_projection), now that issues are known.
     # Placement is the same interval_bucket the calendar partition uses, so state, screen and reports agree.
     from runs.calendar import interval_bucket, research_placement, run_window
     window = run_window(run)
-    for t, s in states.items():
-        if s["kind"] != "row":
-            continue
+
+    def place(t, s):
         values = s["values"]
         s["placement"] = None if window is None else interval_bucket(
             {**values, "timing_state": s.get("timing_state"), "contingent": s.get("contingent"),
              "placement_proposal": research_placement(rows_by_id.get(t) or {})}, *window)
         s.update(review_projection(s))
+        base_reason = s.setdefault("_base_reason", s.get("reason"))
         if s["inclusion"] == "review":
-            s["reason"] = ((s.get("reason") or "Checks recorded.")
+            s["reason"] = ((base_reason or "Checks recorded.")
                            + " The event remains a proposal; a person must decide whether to keep it.")
         elif s["inclusion"] not in ("kept", "excluded"):
-            s["reason"] = ((s.get("reason") or "Checks recorded.")
+            s["reason"] = ((base_reason or "Checks recorded.")
                            + " No issues were found, so it was placed automatically; it was not reviewed by you.")
+        else:
+            s["reason"] = base_reason
+
+    for t, s in states.items():
+        if s["kind"] == "row":
+            place(t, s)
+
+    # DUPLICATE-RESOLUTION-001: one event may be on the calendar once. See _resolve_duplicates.
+    _resolve_duplicates(run, states, stacks, issues_for, place, {id(d): i for i, d in enumerate(decisions)})
+    for s in states.values():
+        s.pop("_base_reason", None)
+    counts["issues"] = sum(1 for s in states.values() if s["kind"] == "row" and s["issues"])
+    counts["review"] = {key: sum(1 for st in states.values()
+                                      if st["kind"] == "row" and st["review_bucket"] == key)
+                        for key in ("accepted", "proposed", "excluded")}
     counts["inclusion"] = {key: sum(1 for st in states.values() if st["kind"] == "row" and st["inclusion"] == key)
                            for key in INCLUSIONS}
 
@@ -738,28 +759,283 @@ def _norm_title(title) -> str:
     return t
 
 
-def _duplicate_of(run: dict, states: dict) -> dict:
-    """DUPLICATE-ROWS-001 (CVA 2026-11-03: "it shouldn't accept something twice"). Rows of the same company on the
-    same exact day (a date and no period end) whose normalized titles are equal are one event. Returns
-    {later row id: first row id}: the first in row order may be placed automatically, each later one is not (it goes
-    to review with a possible-duplicate issue; a person's Keep still wins). Rows a person or a code rule removed do
-    not count as the first. Periods are out of scope. Derived at read time from current values; nothing is stored."""
-    first, out = {}, {}
-    for row in run.get("rows", []):
-        t = row.get("id")
-        s = states.get(t)
-        if not s or s["kind"] != "row" or s.get("review_bucket") == "excluded":
+# DUPLICATE-RESOLUTION-001 (CVA 2026-11-03, run 9 e10/e28: "never silently two accepted copies of one event").
+#
+# THE RULE. Two event rows are a possible duplicate pair only when ALL of these hold:
+#   1. the same company (case/punctuation-insensitive) and the same exact day: a date, and no period end (or an
+#      end equal to the date). Periods, undated rows and different days never pair;
+#   2. none of the distinctness guards fires: both name a regulator and the regulators differ (FDA vs EC), both name
+#      a region and the regions differ (U.S. vs EU), both name a trial phase and the phases differ, both carry an
+#      indication and the indications differ, or both carry a program and the programs share no name token;
+#   3. and at least one identity holds:
+#      a. equal normalized titles (_norm_title: case, punctuation and one leading/trailing day phrase ignored);
+#      b. the same named meeting: both titles are the same kind of meeting (a conference/symposium/summit/forum/
+#         congress, an earnings call/results, an investor/R&D/capital markets day, a shareholder meeting) AND
+#         their organiser/meeting name tokens agree: what is left after removing generic words (participation,
+#         annual, healthcare, biopharma, years, ...), organiser suffixes (securities, research, capital, ...) and
+#         the company's own name is non-empty in both and one set contains the other
+#         ("Truist Securities 2026 Biopharma Symposium" ~ "Truist Biopharma Symposium fireside chat");
+#      c. the same program and the same action: the program fields share a name token and the titles share an
+#         action class (approval/decision, launch, submission, readout/data, initiation, completion, opinion,
+#         payment).
+#   Same company + same day alone is never a pair: "Wolfe conference" vs "UBS conference" (names differ), a
+#   conference vs an earnings call (kinds differ), and an FDA vs an EC approval (regulators differ) do not pair.
+# Pairs are joined into groups. A pair a person declared different events (distinct_events) is not a pair.
+#
+# THE PRIMARY of a group is the copy shown on the calendar: the earliest current person Keep; else the first
+# automatically placed clean row in row order; else the first row in row order. A row a person marked as the same
+# event as another is never the primary. Every other member points at the primary (duplicate_of) and is:
+#   - "same_event": the person said it is the same event; it is not a calendar entry, its source is listed on the
+#     primary as a supporting source (supporting_sources), and its evidence stays on the row;
+#   - "both_kept": a person Keep exists on both copies (written before this rule or by another path). The Keep is
+#     not rewritten; it is held: the row goes to review with an unresolved-duplicate issue until resolved;
+#   - "unresolved": a possible-duplicate issue; it goes to review. A plain Keep is refused by the server while the
+#     primary is on the calendar.
+# Derived at read time from current values and the decision log; nothing is stored or rewritten.
+_DUP_GENERIC = frozenset("""participation participate participates participating present presents presenting
+    presentation presentations fireside chat chats panel webcast webcasts live annual global international healthcare
+    health care biopharma biopharmaceutical biotech biotechnology life sciences science medical medtech pharma
+    pharmaceutical pharmaceuticals therapeutics investor investors virtual hybrid conference conferences symposium
+    symposia summit forum congress convention meeting meetings showcase event events at the a an of in on for and to
+    with by from company management one x 1x1 host hosts hosted hosting attend attends attending will expected
+    expects planned plans day days call calls earnings results quarter quarterly financial fy h1 h2 q1 q2 q3 q4
+    first second third fourth full year update shareholder shareholders stockholder stockholders agm general
+    analyst analysts r d rd innovation capital markets""".split())
+_DUP_ORG_SUFFIX = frozenset("""securities research partners capital bank banc group llc inc co corp corporation
+    plc ltd limited holdings markets financial advisors advisory company""".split())
+_DUP_KINDS = (
+    ("shareholder", ("shareholder meeting", "stockholder meeting", "shareholders meeting", "stockholders meeting",
+                     "annual general meeting", "agm")),
+    ("investor_day", ("investor day", "r d day", "rd day", "capital markets day", "analyst day", "innovation day")),
+    ("earnings", ("earnings", "quarterly results", "financial results", "results call", "q1", "q2", "q3", "q4")),
+    ("conference", ("conference", "conferences", "symposium", "symposia", "summit", "forum", "congress",
+                    "convention", "showcase", "meeting", "meetings", "fireside")),
+)
+_DUP_ACTIONS = {
+    "approval": ("approval", "approved", "approves", "approve", "authorisation", "authorization", "clearance",
+                 "cleared", "pdufa", "decision", "goal date", "action date"),
+    "launch": ("launch", "launched", "launches", "commercial availability"),
+    "submission": ("submission", "submit", "submits", "submitted", "filing", "filed"),
+    "readout": ("readout", "topline", "top line", "data", "results"),
+    "initiation": ("initiation", "initiate", "initiates", "initiated", "first patient", "start", "starts"),
+    "completion": ("completion", "complete", "completes", "completed"),
+    "opinion": ("opinion", "chmp"),
+    "payment": ("milestone", "payment", "payments"),
+}
+_DUP_REGULATORS = {"fda": "fda", "ema": "ema", "chmp": "ema", "european commission": "ec", "ec": "ec",
+                   "mhra": "mhra", "pmda": "pmda", "mhlw": "pmda", "nmpa": "nmpa", "health canada": "hc",
+                   "tga": "tga", "swissmedic": "swissmedic", "anvisa": "anvisa"}
+_DUP_REGIONS = {"u s": "us", "us": "us", "united states": "us", "eu": "eu", "europe": "eu", "european": "eu",
+                "japan": "jp", "japanese": "jp", "china": "cn", "chinese": "cn", "uk": "uk", "united kingdom": "uk",
+                "canada": "ca", "ex u s": "exus", "ex us": "exus"}
+_DUP_PROGRAM_GENERIC = frozenset("phase extension study trial program programme the and oral open label".split())
+_DUP_PHASE = re.compile(r"\bphase (1|2|3|4|i{1,3}|iv)(?: ?([ab]))?\b")
+_ROMAN = {"i": "1", "ii": "2", "iii": "3", "iv": "4"}
+
+
+def _has(text: str, phrase: str) -> bool:
+    return re.search(rf"(?<![0-9a-z]){re.escape(phrase.strip())}(?![0-9a-z])", text) is not None
+
+
+def _single_day(v: dict) -> str | None:
+    d, end = v.get("date"), v.get("date_end")
+    return str(d) if d and (not end or str(end) == str(d)) else None
+
+
+def _dup_identity(v: dict) -> dict:
+    title = _norm_title(v.get("title"))
+    text = f" {title} {_norm_text(v.get('type_hint'))} {_norm_text(v.get('event_type'))} "
+    kinds = [k for k, words in _DUP_KINDS if any(_has(title, w) for w in words)]
+    company = set(_norm_text(v.get("company")).split())
+    names = {w for w in title.split()
+             if w not in _DUP_GENERIC and w not in _DUP_ORG_SUFFIX and w not in company
+             and not w.isdigit() and not re.fullmatch(r"(19|20)\d\d|fy\d+|\d+(st|nd|rd|th)", w)}
+    program = {w for w in _norm_text(v.get("program")).split()
+               if w not in _DUP_PROGRAM_GENERIC and len(w) > 2 and v.get("program") not in (None, "None")}
+    phases = {(_ROMAN.get(m.group(1), m.group(1)) + (m.group(2) or "")) for m in _DUP_PHASE.finditer(title)}
+    indication = _norm_text(v.get("indication")) if v.get("indication") not in (None, "None") else ""
+    return {"title": title, "kind": kinds[0] if kinds else None, "names": names, "program": program,
+            "actions": {a for a, words in _DUP_ACTIONS.items() if any(_has(title, w) for w in words)},
+            "regulators": {r for w, r in _DUP_REGULATORS.items() if _has(text, w)},
+            "regions": {r for w, r in _DUP_REGIONS.items() if _has(title, w)},
+            "phases": phases, "indication": indication}
+
+
+def duplicate_pair(a: dict, b: dict) -> bool:
+    """DUPLICATE-RESOLUTION-001: whether two rows' current values are possibly one event (the rule above)."""
+    if not _norm_text(a.get("company")) or _norm_text(a.get("company")) != _norm_text(b.get("company")):
+        return False
+    day = _single_day(a)
+    if day is None or day != _single_day(b):
+        return False
+    return _identities_pair(_dup_identity(a), _dup_identity(b))
+
+
+def _identities_pair(x: dict, y: dict) -> bool:
+    """Clauses 2 and 3 of the rule, on two rows already known to share company and day."""
+    for key in ("regulators", "regions", "phases"):
+        if x[key] and y[key] and x[key] != y[key]:
+            return False
+    if x["indication"] and y["indication"] and x["indication"] != y["indication"]:
+        return False
+    if x["program"] and y["program"] and not (x["program"] & y["program"]):
+        return False
+    if x["title"] and x["title"] == y["title"]:
+        return True
+    if (x["kind"] and x["kind"] == y["kind"] and x["names"] and y["names"]
+            and (x["names"] <= y["names"] or y["names"] <= x["names"])):
+        return True
+    return bool(x["program"] and y["program"] and (x["actions"] & y["actions"]))
+
+
+_DUP_ACTIONS_ALLOWED = ("same_event", "distinct_events")
+BOTH_KEPT_ISSUE = "Both copies were kept (this one and {first}); resolve: same event or different events"
+SAME_EVENT_STALE_ISSUE = ("Marked as the same event as {first}, which is not on the calendar now; decide again: "
+                          "undo the mark, keep or remove this row")
+KEEP_REFUSED = ("Same event as {first}, already on the calendar. Choose: it is the same event (add this as a "
+                "second source of {first}) or they are different events.")
+
+
+def _resolution_lines(stack: list[dict]) -> tuple[set, dict | None]:
+    """(partners declared different events, the same_event line in effect if it is the last action)."""
+    distinct = {d.get("duplicate_of") for d in stack if d.get("action") == "distinct_events"}
+    last = stack[-1] if stack else None
+    return distinct, (last if last and last.get("action") == "same_event" else None)
+
+
+def _resolve_duplicates(run: dict, states: dict, stacks: dict, issues_for, place, decision_order: dict) -> None:
+    """DUPLICATE-RESOLUTION-001: apply the rule above to the projected states, in place. Every row gets
+    duplicate_of (None or {row_id, title, date, accepted}), duplicate_state (None, unresolved, both_kept,
+    same_event, distinct_events), duplicate_actions (the resolution actions the server takes for it now),
+    keep_refused (the 409 sentence a plain Keep would get, or None) and supporting_sources (rows marked as the same
+    event as this one)."""
+    from runs.review import review_projection
+    order = [r.get("id") for r in run.get("rows", []) if states.get(r.get("id"), {}).get("kind") == "row"]
+    rows_by_id = {r.get("id"): r for r in run.get("rows", [])}
+    for t in order:
+        states[t].update({"duplicate_of": None, "duplicate_state": None, "duplicate_actions": [],
+                          "keep_refused": None, "supporting_sources": [], "possible_duplicates": []})
+    marks = {t: _resolution_lines(stacks.get(t) or []) for t in order}
+    cand = [t for t in order if states[t].get("review_bucket") != "excluded" and _single_day(states[t]["values"])
+            and _norm_text(states[t]["values"].get("company"))]
+    parent = {t: t for t in cand}
+    by_day: dict[tuple, list] = {}
+    for t in cand:
+        v = states[t]["values"]
+        by_day.setdefault((_norm_text(v.get("company")), _single_day(v)), []).append(t)
+    identity = {t: _dup_identity(states[t]["values"]) for ts in by_day.values() if len(ts) > 1 for t in ts}
+
+    def root(t):
+        while parent[t] != t:
+            parent[t] = parent[parent[t]]
+            t = parent[t]
+        return t
+    pairs = {}
+    for same_day in by_day.values():
+        for i, a in enumerate(same_day):
+            for b in same_day[i + 1:]:
+                if a in marks[b][0] or b in marks[a][0]:
+                    continue                       # a person declared these different events
+                if _identities_pair(identity[a], identity[b]):
+                    pairs.setdefault(a, set()).add(b)
+                    pairs.setdefault(b, set()).add(a)
+                    parent[root(b)] = root(a)
+    groups: dict[str, list] = {}
+    for t in cand:
+        if t in pairs:
+            groups.setdefault(root(t), []).append(t)
+
+    def keep_index(t):
+        """Position in the decision log of the Keep in effect (the last Keep in the target's active stack)."""
+        keeps = [d for d in (stacks.get(t) or []) if d.get("action") == "keep"]
+        return decision_order.get(id(keeps[-1]), len(decision_order)) if keeps else len(decision_order)
+
+    def rank(t):
+        s = states[t]
+        if marks[t][1] is not None:
+            return (3, order.index(t))
+        if s.get("accepted"):
+            return (0, keep_index(t), order.index(t))
+        if s.get("on_calendar"):
+            return (1, order.index(t))
+        return (2, order.index(t))
+
+    def ref(first):
+        fv = states[first]["values"]
+        return {"row_id": first, "title": (fv.get("title") or "").strip(), "date": fv.get("date"),
+                "accepted": bool(states[first].get("on_calendar"))}
+
+    linked = set()
+    for members in groups.values():
+        primary = min(members, key=rank)
+        states[primary]["possible_duplicates"] = [m for m in members if m != primary]
+        for t in members:
+            if t == primary:
+                continue
+            linked.add(t)
+            s = states[t]
+            first = ref(primary)
+            s["duplicate_of"] = first
+            same = marks[t][1]
+            if same is not None and same.get("duplicate_of") == primary and first["accepted"]:
+                s["duplicate_state"] = "same_event"
+                row = rows_by_id.get(t) or {}
+                states[primary]["supporting_sources"].append({
+                    "row_id": t, "source_id": row.get("source_id"), "page_number": row.get("page_number"),
+                    "title": s["values"].get("title"), "date": s["values"].get("date"),
+                    "date_text": s["values"].get("date_text"), "quote": s["values"].get("quote"),
+                    "note": same.get("note"), "at": same.get("at")})
+                _mark_same_event(s, primary)
+                continue
+            if same is not None:
+                s["duplicate_state"] = "unresolved"
+                s["issues"] = list(dict.fromkeys([*(s["issues"] or []), SAME_EVENT_STALE_ISSUE.format(first=primary)]))
+                s["duplicate_actions"] = ["undo"]
+                place(t, s)
+                continue
+            s["duplicate_actions"] = list(_DUP_ACTIONS_ALLOWED)
+            s["keep_refused"] = KEEP_REFUSED.format(first=primary) if first["accepted"] else None
+            if s.get("accepted"):
+                # Both kept: the second Keep is held, not rewritten. Its other issues come back with it.
+                s["duplicate_state"] = "both_kept"
+                held = [d for d in (stacks.get(t) or []) if d.get("action") == "keep"][-1:]
+                s["review_history"] = [*s.get("review_history", []), *[
+                    {**copy.deepcopy(d), "history_reason": BOTH_KEPT_ISSUE.format(first=primary)} for d in held]]
+                s["semantic_status"] = "unresolved"
+                s["accepted"] = False
+                s.update(review_projection(s))
+                s["issues"] = issues_for(t, s) or []
+                s["issues"] = list(dict.fromkeys([*s["issues"], BOTH_KEPT_ISSUE.format(first=primary)]))
+                s["_base_reason"] = BOTH_KEPT_ISSUE.format(first=primary) + "."
+            else:
+                s["duplicate_state"] = "unresolved"
+                if s["issues"] is not None:
+                    fv = states[primary]["values"]
+                    s["issues"] = list(dict.fromkeys([*s["issues"], f"Same event as {primary} "
+                                                      f"({(fv.get('title') or '').strip()}, {fv.get('date')}) — "
+                                                      "possible duplicate"]))
+            place(t, s)
+    for t in order:
+        s = states[t]
+        same = marks[t][1]
+        if t in linked or same is None:
+            if t not in linked and marks[t][0] and s["duplicate_state"] is None and not s["possible_duplicates"]:
+                s["duplicate_state"] = "distinct_events"
             continue
-        v = s.get("values") or {}
-        company, title = _norm_text(v.get("company")), _norm_title(v.get("title"))
-        if not v.get("date") or v.get("date_end") or not company or not title:
-            continue
-        key = (company, str(v["date"]), title)
-        if key in first:
-            out[t] = first[key]
-        else:
-            first[key] = t
-    return out
+        # A same-event mark whose row is no longer paired with an event on the calendar: decide again.
+        s["duplicate_state"] = "unresolved"
+        s["duplicate_actions"] = ["undo"]
+        s["issues"] = list(dict.fromkeys([*(s["issues"] or []),
+                                          SAME_EVENT_STALE_ISSUE.format(first=same.get("duplicate_of"))]))
+        place(t, s)
+
+
+def _mark_same_event(s: dict, primary: str) -> None:
+    """A row a person marked as the same event as the primary: not a calendar entry, not a removal."""
+    text = f"Same event as {primary} — kept as a second source of {primary}"
+    s.update({"accepted": False, "needs_attention": False, "on_calendar": False, "inclusion": "excluded",
+              "semantic_status": "same_event", "review_bucket": "excluded", "review_label": text,
+              "decision_label": text, "issues": [], "reason": f"{text}. It is not a second calendar entry."})
 
 
 def _page_key(row: dict | None):
