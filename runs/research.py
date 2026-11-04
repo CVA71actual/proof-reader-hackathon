@@ -922,7 +922,7 @@ def make_job_class():
                                              [self.review_proposal(r) for r in rows_by_id.values()], ticker)
 
         def reviewer_chain(self) -> list:
-            """The reviewers to try, in order (CVA 2026-11-03: DeepSeek V4 Pro, then Claude Opus 5.5); the declared
+            """The reviewers to try, in order (CVA 2026-11-03 late: Muse Spark Open, then DeepSeek V4 Pro); the declared
             same-family fallback (Muse Spark Open) is separate and runs only when none of them can."""
             chain = getattr(self.tools, "reviewer_chain", None)
             return list(chain()) if callable(chain) else [self.tools.reviewer]

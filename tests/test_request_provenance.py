@@ -114,7 +114,7 @@ def test_preview_labels_every_stage(runs_dir):
     assert r["run_context"]["window"] == {"start": "2026-11-03", "end": "2027-05-03", "months": 6}
     assert r["run_context"]["company_cards"][0]["ticker"] == "PTGX"
     review = out["stages"][1]
-    assert [m["name"] for m in review["models"]][:2] == ["DeepSeek V4 Pro", "Claude Opus 5.5"]
+    assert [m["name"] for m in review["models"]][:2] == ["Muse Spark Open", "DeepSeek V4 Pro"]
     assert review["editable"]["brief"] == ri.RESEARCH_DEFAULT and review["enforced_by_code"]["instructions_text"]
     assert out["stages"][2]["model"] == "Muse Wonder"
     sup = out["stages"][3]

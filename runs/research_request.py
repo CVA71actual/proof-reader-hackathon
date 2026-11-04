@@ -94,10 +94,11 @@ def _function_tool_view(tools: list[dict]) -> list[dict]:
 def _reviewer_chain() -> list[dict]:
     from capture import research_reviewer as rv
     from capture import second_reader
-    return [{"name": rv.DEEPSEEK_NAME, "model": rv.DEEPSEEK_MODEL_ID, "family": rv.DEEPSEEK_FAMILY, "order": 1},
-            {"name": rv.REVIEWER_NAME, "model": rv.REVIEWER_MODEL_ID, "family": rv.REVIEWER_FAMILY, "order": 2},
-            {"name": rv.FALLBACK_REVIEWER_NAME, "model": second_reader.BASETEN_MODEL,
-             "family": rv.FALLBACK_REVIEWER_FAMILY, "order": 3, "role": "declared fallback"}]
+    # CVA 2026-11-03 late: Meta's open-weight Muse Spark Open reviews first; DeepSeek V4 Pro only if it is unavailable
+    return [{"name": rv.FALLBACK_REVIEWER_NAME, "model": second_reader.BASETEN_MODEL,
+             "family": rv.FALLBACK_REVIEWER_FAMILY, "order": 1},
+            {"name": rv.DEEPSEEK_NAME, "model": rv.DEEPSEEK_MODEL_ID, "family": rv.DEEPSEEK_FAMILY, "order": 2,
+             "role": "used only if Muse Spark Open is unavailable"}]
 
 
 def effective_request(choices: dict, as_of: date) -> dict:
