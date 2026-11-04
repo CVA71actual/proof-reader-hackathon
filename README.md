@@ -96,11 +96,12 @@ The reviewer was uneven. In run 17 it flagged stale launch guidance on a row the
 
 ## Why LLMs were hard to build on
 
-My experiments exposed three practical risks in this implementation:
+My experiments exposed four practical risks in this implementation:
 
 1. **Models did not reliably follow instructions.** Across runs, the reviewer was told to give every row a verdict and then finish. Instead it looped for 92 calls, replied in prose instead of calling tools, filed findings without verdicts, and left sources it had opened unconcluded. Code either recorded the review as incomplete, or closed it under explicit completion rules with the remaining limitations kept.
-2. **Results varied between runs.** The reviewer caught stale guidance in one run and missed similar issues in another. Inputs and settings also differed.
-3. **Passing tests did not establish live quality.** More than 3,000 passing tests did not represent the failures that live runs exposed. Live runs, and audits against the sources afterwards, found them.
+2. **Models spent their effort unevenly.** In run 17, 31 of 98 searches went to one question (whether one drug had already launched), and the same two Takeda pages were captured 6 and 5 times. Partner investor events got little attention and were missed.
+3. **Results varied between runs.** The reviewer caught stale guidance in one run and missed similar issues in another. Inputs and settings also differed.
+4. **Passing tests did not establish live quality.** More than 3,000 passing tests did not represent the failures that live runs exposed. Live runs, and audits against the sources afterwards, found them.
 
 What I would keep: code that constrains what can be accepted and preserves evidence, honest stage labels, and a person deciding. Checking a model's format does not make its judgment correct. Models explore, code checks what can be checked mechanically, and a person judges.
 
