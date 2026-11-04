@@ -619,8 +619,10 @@ def test_u19_export_glass5_rows():
     assert "python -m report.build" not in js and "currentRunId() + '\n" not in js
     # G5-3: spend and cost per kept row in the summary
     for word in ("kv('Spend', usd2(meta.spend_usd)", "kv('Cost per kept row', usd2(st.cost_per_kept_row_usd))",
-                 "Mistakes caught by you"):
+                 "Corrected by the second reader", "Corrected by you"):
         assert word in js, word
+    assert "Mistakes caught by the second reader" not in js
+    assert "Mistakes caught by you" not in js
     # G5-5: the disagreement is stated once — the why box defers to the block
     why = re.search(r"function whySection.*?\n  \}\n", js, re.S).group(0)
     assert "bothReadersWord() + ' disagree on the ' + fieldWord + '. A person decides.'" in why
@@ -5747,7 +5749,7 @@ console.log(JSON.stringify(out, null, 1));
 # c1313667 is CHECK-RESULTS-WORDS-001's date outcome ('Timing matches source'
 # in place of a bare 'passed' on every pane's passing date check) — re-verified
 # by diffing both renders surface by surface: that one line is the only change
-_MAIN_SHAPED_RENDER_SHA256 = "e65df80228774f23c620c54eccdca74b79f23e1b89b2a57251077aeeb198cb53"
+_MAIN_SHAPED_RENDER_SHA256 = "bf4414080bba04dd4f9920a12e41bc5a8e30aea20c904e00ec098b6110134815"
 
 
 def _review_render(tmp_path, shape):
@@ -8089,7 +8091,8 @@ def test_run9_agent_trail_is_folded_per_claim_with_instructions_and_run_wide_ste
     js = (UI / "app.js").read_text()
     consts = _grab_var(js, "RESEARCH_STEP_WORDS")
     fns = "\n".join(_grab_fn(js, n) for n in
-                    ("runResearch", "researchTrailBlock", "trailInstructionsBlock", "stageOutcomesBlock",
+                    ("runResearch", "researchTrailBlock", "trailInstructionsBlock", "requestRecordBrief",
+                     "trailRequestBlock", "ensureRequestRecord", "stageOutcomesBlock",
                      "researchStepsForRow", "researchStepsWithoutRow", "trailClaimSection",
                      "shownField", "renderTrail", "hm"))
     script = "\n".join([
@@ -8105,6 +8108,8 @@ def test_run9_agent_trail_is_folded_per_claim_with_instructions_and_run_wide_ste
         "global.document = { getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
         "var route = { rowId: 'e1' }, trailSel = null;",
         "var decisionsCache = { id: 'run9', lines: [{ target: 'e1', by: 'person', action: 'keep', note: 'keep this' }] };",
+        "var requestRecordCache = { id: null, loading: false, body: null, error: null };",
+        "var A = {};",
         "var detail = { id: 'run9', run: { rows: [",
         "  { id: 'e1', ticker: 'ACME', title: 'ACME readout', date_text: 'Q1 2027', proposed_by: 'Muse Spark',",
         "    trail: [{ step: 'Checked', tag: 'Code', text: 'Row code check' }] },",
@@ -8284,3 +8289,112 @@ def test_demo_cut_run_card_orders_instructions_stages_and_collapsed_activity():
     assert "Research · no calls made" in quiet
     assert "Independent review · not run" in quiet
     assert "LettuceDetect · no calls made" in quiet
+
+
+# ---- Final UI wiring: correction words, duplicate choices and request provenance
+
+def test_duplicate_keep_refusal_opens_same_or_different_event_choices():
+    js = (UI / "app.js").read_text()
+    dialog = _grab_fn(js, "duplicateDialog")
+    for marker in ("Two copies of one event", "Same event", "Different events",
+                   "decision('same_event')", "decision('distinct_events')",
+                   "Say in a note why these are different events."):
+        assert marker in dialog, marker
+    assert "action: 'keep'" not in dialog             # Different events never silently keeps
+
+    script = "\n".join([
+        "var pending = false, duplicateRefusals = {}, route = { screen: 'judgment' };",
+        "var navigated = null, toasted = [];",
+        "function currentRunId() { return 'run9'; }",
+        "var A = { decide: function () { return Promise.resolve({ ok: false, status: 409, body: {",
+        "  code: 'duplicate_unresolved', reason: 'Choose same or different.',",
+        "  duplicate_of: { row_id: 'e10' }, actions: ['same_event', 'distinct_events'] } }); } };",
+        "function navigate(o) { navigated = o; }",
+        "function toast(s) { toasted.push(s); }",
+        "function showDialogError() { throw new Error('duplicate went to a generic error'); }",
+        "function refresh() { throw new Error('duplicate choice must open before a refresh'); }",
+        _grab_fn(js, "postDecision"),
+        "postDecision('e28', { target: 'e28', action: 'keep', note: null }, 'Kept.');",
+        "setTimeout(function () {",
+        "  if (!navigated || navigated.dialog !== 'duplicate' || navigated.rowId !== 'e28')",
+        "    { console.error(JSON.stringify(navigated)); process.exit(2); }",
+        "  if (duplicateRefusals['run9/e28'].duplicate_of.row_id !== 'e10' || toasted.length) process.exit(3);",
+        "  console.log('ok');",
+        "}, 0);",
+    ])
+    _run_node(script)
+
+
+def test_new_run_full_request_preview_uses_current_choices():
+    html = (UI / "index.html").read_text()
+    assert 'id="nr-request"' in html and "Full request sent to each model" in html
+    js = (UI / "app.js").read_text()
+    assert "/api/research/effective-request" in js
+    script = "\n".join([
+        "function make(tag) { return { tag: tag || 'div', className: '', textContent: '', children: [], open: true,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "function el(tag, cls, text) { var n = make(tag); n.className = cls || ''; n.textContent = text || ''; return n; }",
+        "function clear(n) { n.children = []; n.textContent = ''; return n; }",
+        "function textOf(n, out) { out = out || []; if (n && n.textContent) out.push(n.textContent);",
+        "  (n.children || []).forEach(function (c) { textOf(c, out); }); return out.join(' '); }",
+        "var panel = make('details'), body = make('div');",
+        "global.document = { getElementById: function (id) { return id === 'nr-request' ? panel : body; },",
+        "  querySelectorAll: function (selector) { return selector === '.nr-co:checked' ? [{ value: 'PTGX' }] : []; } };",
+        "function intakeDoneN() { return null; }",
+        "function notePayload() { return 'Current edited brief'; }",
+        "function nrSupportValue() { return 'lettucedetect'; }",
+        "var sent = null, nrRequestSeq = 0;",
+        "var A = { effectiveRequest: function (choices) { sent = choices; return Promise.resolve({ ok: true, body: { stages: [",
+        "  { stage: 'research', model: 'Muse Spark', editable: { brief: choices.note },",
+        "    enforced_by_code: { instructions_text: 'Exact full instructions' } }] } }); } };",
+        "var REQUEST_STAGE_WORDS = { research: 'Research', review: 'Independent review',",
+        "  adjudication: 'Adjudication', support_check: 'LettuceDetect' };",
+        "\n".join(_grab_fn(js, n) for n in
+                    ("requestStageTitle", "appendRequestStages", "nrRequestTickers", "loadEffectiveRequest")),
+        "loadEffectiveRequest();",
+        "setTimeout(function () {",
+        "  if (!sent || sent.tickers.join(',') !== 'PTGX' || sent.note !== 'Current edited brief' ||",
+        "      sent.support_check !== 'lettucedetect') { console.error(JSON.stringify(sent)); process.exit(2); }",
+        "  var text = textOf(body);",
+        "  if (text.indexOf('Research · Muse Spark') === -1 || text.indexOf('Exact full instructions') === -1 ||",
+        "      text.indexOf('Current edited brief') === -1) { console.error(text); process.exit(3); }",
+        "  console.log('ok');",
+        "}, 0);",
+    ])
+    _run_node(script)
+
+
+def test_trail_uses_frozen_request_record_or_shows_unavailable_reason():
+    js = (UI / "app.js").read_text()
+    assert "/request-record" in js
+    script = "\n".join([
+        "function make(tag) { return { tag: tag || 'div', className: '', textContent: '', children: [], open: false,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "function el(tag, cls, text) { var n = make(tag); n.className = cls || ''; n.textContent = text || ''; return n; }",
+        "function textOf(n, out) { out = out || []; if (n && n.textContent) out.push(n.textContent);",
+        "  (n.children || []).forEach(function (c) { textOf(c, out); }); return out.join(' '); }",
+        "var detail = { id: 'r', run: { run: { choices: { note_for_agent: 'Today default must not replace history' } } } };",
+        "var requestRecordCache = { id: 'r', loading: false, error: null, body: { status: 'recorded', current_version: 1,",
+        "  versions: [{ version: 1, reason: 'admission', intact: true, stages: [",
+        "    { stage: 'research', model: 'Muse Spark', editable: { brief: 'Frozen admission brief' },",
+        "      enforced_by_code: { instructions_text: 'Exact frozen instructions' } }] }] } };",
+        "var REQUEST_STAGE_WORDS = { research: 'Research', review: 'Independent review',",
+        "  adjudication: 'Adjudication', support_check: 'LettuceDetect' };",
+        "\n".join(_grab_fn(js, n) for n in
+                    ("requestStageTitle", "appendRequestStages", "requestRecordBrief", "trailRequestBlock")),
+        "var block = trailRequestBlock(), text = textOf(block);",
+        "if (text.indexOf('Frozen admission brief') === -1 || text.indexOf('Exact frozen instructions') === -1 ||",
+        "    text.indexOf('Today default must not replace history') !== -1) { console.error(text); process.exit(2); }",
+        "var full = block.children[2];",
+        "if (!full || full.tag !== 'details' || full.open || textOf(full).indexOf('Full request sent to each model') === -1)",
+        "  process.exit(3);",
+        "requestRecordCache.body = { status: 'unavailable', reason: 'Admitted before request records existed.',",
+        "  from_saved_request_files: { label: 'From saved request files, not an admission record', companies: [",
+        "    { ticker: 'PTGX', instructions_text: 'Legacy saved instructions' }] } };",
+        "var legacyText = textOf(trailRequestBlock());",
+        "if (legacyText.indexOf('Admitted before request records existed.') === -1 ||",
+        "    legacyText.indexOf('From saved request files, not an admission record') === -1 ||",
+        "    legacyText.indexOf('Legacy saved instructions') === -1) { console.error(legacyText); process.exit(4); }",
+        "console.log('ok');",
+    ])
+    _run_node(script)

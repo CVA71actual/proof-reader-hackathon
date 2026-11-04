@@ -152,6 +152,10 @@
     <h4>Research instructions <span class="opt">(optional)</span></h4>
     <textarea class="fld" id="nr-note" rows="12" style="resize:vertical;min-height:200px" placeholder="What the research should focus on"></textarea>
     <div class="hint" id="nr-note-hint">Guides the research; the source checks still run on every row.</div>
+    <details class="instrbox" id="nr-request">
+      <summary>Full request sent to each model</summary>
+      <div id="nr-request-body"><div class="hint">Open to load the request for the current choices.</div></div>
+    </details>
     <div hidden>
     <h4>Models <span class="opt">(page-reading runs only)</span></h4>
     <label><input type="radio" name="nr-models" id="nr-models-one" value="one"> Muse Spark only</label>
