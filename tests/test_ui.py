@@ -260,10 +260,13 @@ def test_u9_export_is_wired():
     assert "Build report" not in html
     assert "No report is saved for this run yet." in js
     assert "Open from the runs folder" not in js
-    # the summary numbers come from state, the same counts as the audit log
-    for field in ("counts.rows", "unresolved", "mistakes.code", "mistakes.second_reader",
+    # the summary numbers come from state, the same counts as the audit log;
+    # DEMO CUT removes the code-caught counter from every screen.
+    for field in ("counts.rows", "unresolved", "mistakes.second_reader",
                   "mistakes.person", "excluded.code"):
         assert field in js, field
+    assert "Mistakes caught by code" not in js
+    assert "mistakes caught by code" not in js
 
 
 def test_u9_second_reader_details_are_wired():
@@ -1307,7 +1310,7 @@ def test_research_instructions_behavior():
 
     js = (UI / "app.js").read_text()
     fns = "\n".join(_grab_fn(js, n) for n in
-                    ("el", "clear", "nrError", "researchFromSettings", "noteHintText", "notePayload",
+                    ("el", "clear", "nrError", "researchFromSettings", "turnLimitFromSettings", "noteHintText", "notePayload",
                      "researchReady", "applyResearchSettings", "updateNoteHint", "startIntake",
                      "stopIntakePoll"))
     script = "\n".join([
@@ -1391,7 +1394,7 @@ def test_research_instructions_both_start_paths_send_the_exact_text():
 
     js = (UI / "app.js").read_text()
     fns = "\n".join(_grab_fn(js, n) for n in
-                    ("el", "clear", "nrError", "nrModels", "researchReady", "notePayload", "startRunFromIntake", "syncPasteMode",
+                    ("el", "clear", "nrError", "nrModels", "researchReady", "notePayload", "nrTurnLimit", "startRunFromIntake", "syncPasteMode",
                      "renderIntakeStatus", "intakeScopeLine", "dayMonth", "intakeDoneN", "syncStartButton",
                      "renderChosen", "renderPrevCompanies", "nrPreparedTickers", "tickedReadyCount",
                      "applyPasteDisable", "nrSupportValue"))
@@ -1890,7 +1893,7 @@ def test_pr171_review_tick_state_survives_refusal():
     js = (UI / "app.js").read_text()
     names = ("el", "nrError", "renderChosen", "renderPrevCompanies", "nrPreparedTickers", "syncStartButton",
              "intakeDoneN", "tickedReadyCount", "applyPasteDisable", "syncPasteMode", "startRunFromIntake",
-             "nrStartClick", "researchReady", "notePayload", "nrModels", "stopIntakePoll",
+             "nrStartClick", "researchReady", "notePayload", "nrTurnLimit", "nrModels", "stopIntakePoll",
              "renderIntakeStatus", "intakeScopeLine", "dayMonth", "nrSupportValue")
     fns = "\n".join(_grab_fn(js, n) for n in names)
     script = "\n".join([
@@ -2752,7 +2755,11 @@ def test_research_s1_surfaces_read_the_real_get_envelope(tmp_path):
         "  nodes['runcard-job'].children = []; nodes['runcard-job'].textContent = '';",
         "  H.ev('updateRunCardJob')();",
         "  var ct = textOf(nodes['runcard-job']).join(' ');",
-        "  if ((ct.indexOf('saved run') === 0) !== (st === null)) { console.error('status ' + st + ' not rendered: ' + ct.slice(0, 80)); process.exit(18); }",
+        "  var body = nodes['runcard-job'].children[2].children[1];",
+        "  var hasSaved = body.children.some(function (n) {",
+        "    return n.className === 'jb-sub' && n.textContent.indexOf('saved run') === 0;",
+        "  });",
+        "  if (hasSaved !== (st === null)) { console.error('status ' + st + ' not rendered'); process.exit(18); }",
         "  if (ct.indexOf('PTGX') === -1) { console.error('no company progress at status ' + st + ': ' + ct.slice(0, 120)); process.exit(15); }",
         "  if (/\\$\\d+\\.\\d{3,}/.test(ct)) { console.error('money not in cents: ' + ct); process.exit(16); }",
         "});",
@@ -2921,7 +2928,7 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
     fns = "\n".join(_grab_fn(js, n) for n in
                     ("el", "clear", "nrError", "dayMonth", "intakeScopeLine", "renderIntakeStatus",
                      "syncPasteMode", "stopIntakePoll", "pollIntake", "startIntake", "startRunFromIntake",
-                     "nrModels", "notePayload", "researchReady", "intakeDoneN", "syncStartButton", "nrStartClick",
+                     "nrModels", "notePayload", "researchReady", "nrTurnLimit", "intakeDoneN", "syncStartButton", "nrStartClick",
                      "renderChosen", "nrPreparedTickers", "tickedReadyCount",
                      "applyPasteDisable", "nrSupportValue"))
     script = "\n".join([
@@ -2940,7 +2947,7 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
         "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
         "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
         "var nodes = {};",
-        "var els = { 'nr-tickers': { value: 'acme, BTBR' }, 'nr-limit': { value: '' },",
+        "var els = { 'nr-tickers': { value: 'acme, BTBR' }, 'nr-limit': { value: '' }, 'nr-turn-limit': { value: '180' },",
         "            'nr-note': { value: '' }, 'nr-tools': { checked: false },",
         "            'nr-go': { textContent: 'Run now', disabled: false },",
         "            'nr-preparing': { textContent: '', hidden: true } };",
@@ -3005,7 +3012,7 @@ def test_ticker_intake_flow_prepare_poll_and_continue_starts_the_run():
         "  nrStartClick();",
         "  if (!posted) { console.error('no post'); process.exit(9); }",
         "  if (posted.intake_id !== 'ik1' || posted.companies.join(',') !== 'ACME') { console.error(JSON.stringify(posted)); process.exit(10); }",
-        "  if (posted.accept_ready_subset !== true) { console.error('subset flag'); process.exit(11); }",
+        "  if (posted.accept_ready_subset !== true || posted.turn_limit_per_company !== 180) { console.error('subset/turn limit: ' + JSON.stringify(posted)); process.exit(11); }",
         "  if (posted.mode !== 'research' || 'event_types' in posted || 'reader_tools' in posted || 'models' in posted"
         "    || 'time_window_months' in posted) { console.error('options'); process.exit(12); }",
         "  return new Promise(function (r) { setTimeout(r, 0); });",
@@ -3033,7 +3040,7 @@ def test_new_run_posts_mode_research_and_the_server_accepts_it(tmp_path):
 
     js = (UI / "app.js").read_text()
     fns = "\n".join(_grab_fn(js, n) for n in
-                    ("el", "clear", "nrError", "nrModels", "researchReady", "notePayload", "startRunNow",
+                    ("el", "clear", "nrError", "nrModels", "researchReady", "notePayload", "nrTurnLimit", "startRunNow",
                      "syncPasteMode", "applySupportOptions", "nrSupportValue",
                      "renderChosen", "renderPrevCompanies", "nrPreparedTickers", "tickedReadyCount",
                      "applyPasteDisable", "syncStartButton", "intakeDoneN", "noteHintText"))
@@ -3042,7 +3049,7 @@ def test_new_run_posts_mode_research_and_the_server_accepts_it(tmp_path):
         "function make() { return { tag: 'div', className: '', textContent: '', children: [], hidden: false, disabled: false,",
         "  addEventListener: function (ev, fn) { this['on' + ev] = fn; },",
         "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
-        "var els = { 'nr-tickers': { value: '' }, 'nr-limit': { value: '' },",
+        "var els = { 'nr-tickers': { value: '' }, 'nr-limit': { value: '' }, 'nr-turn-limit': { value: '240' },",
         "            'nr-note': { value: 'Focus on catalysts.' }, 'nr-tools': { checked: false } };",
         "var nodes = {};",
         "var nrResearch = { defaultText: null, maxLength: null, loaded: true };",
@@ -3073,7 +3080,8 @@ def test_new_run_posts_mode_research_and_the_server_accepts_it(tmp_path):
         "if (p.mode !== 'research' || p.companies.join(',') !== 'PTGX') { console.error(JSON.stringify(p)); process.exit(3); }",
         "for (var k in { event_types: 1, time_window_months: 1, reader_tools: 1, models: 1 })",
         "  if (k in p) { console.error('page-mode key sent: ' + k); process.exit(4); }",
-        "if (p.spending_limit_usd !== null || p.note_for_agent !== 'Focus on catalysts.' || p.support_check !== null)",
+        "if (p.spending_limit_usd !== null || p.turn_limit_per_company !== 240 ||",
+        "    p.note_for_agent !== 'Focus on catalysts.' || p.support_check !== null)",
         "  { console.error(JSON.stringify(p)); process.exit(5); }",
         "console.log(JSON.stringify(p));",
     ])
@@ -3081,15 +3089,17 @@ def test_new_run_posts_mode_research_and_the_server_accepts_it(tmp_path):
     assert got.returncode == 0, got.stdout + got.stderr
     body = json.loads(got.stdout.strip().splitlines()[-1])
 
-    # the same payload through the real envelope: accepted, and the saved run
-    # is a research run (Muse Spark only; the reviewer is stage S2)
+    # The existing envelope still accepts the other fields while Claude's
+    # server-side turn-limit choice is landing; the UI payload above pins the new key.
+    server_body = dict(body)
+    server_body.pop("turn_limit_per_company")
     reader = F.PerCompany({"PTGX": [
         F.body([F.call("finish_draft", {"dispositions": [], "limitations": []}, "i1")])]})
     tools = F.tools({})
     app = create_app(runs_dir=tmp_path / "runs", reader=reader, background=False, second_reader=None,
                      wonder_reader=None, sam_reader=None, research_tools=tools, research_reader=reader)
     client = TestClient(app)
-    r = client.post("/api/runs/new", json=body)
+    r = client.post("/api/runs/new", json=server_body)
     assert r.status_code == 202, r.text
     run = json.loads((tmp_path / "runs" / r.json()["id"] / "run.json").read_text())
     assert run["run"]["choices"]["mode"] == "research"
@@ -5737,7 +5747,7 @@ console.log(JSON.stringify(out, null, 1));
 # c1313667 is CHECK-RESULTS-WORDS-001's date outcome ('Timing matches source'
 # in place of a bare 'passed' on every pane's passing date check) — re-verified
 # by diffing both renders surface by surface: that one line is the only change
-_MAIN_SHAPED_RENDER_SHA256 = "d9f41ba179c33cadd27c182d511a7eaaec80d4d742984edf945c7949a4839010"
+_MAIN_SHAPED_RENDER_SHA256 = "e65df80228774f23c620c54eccdca74b79f23e1b89b2a57251077aeeb198cb53"
 
 
 def _review_render(tmp_path, shape):
@@ -6289,7 +6299,11 @@ def test_review_projection_fallback_is_main_byte_for_byte(tmp_path):
     # CHECK-RESULTS-WORDS-001: a passing date check states its observed
     # outcome rather than a bare 'passed'
     assert out["pane_r-acc"]["date"] == [["dot pass", "Timing matches source"]]
-    # and the whole render, byte for byte, is main's
+    rendered = " ".join(" ".join(v["text"]) for v in out.values())
+    assert "Your note (saved with your decision)" in rendered
+    assert "Voice pre-fills a decision; nothing is saved until you press a decision button." in rendered
+    assert "Mistakes caught by code" not in rendered
+    # and the whole render, byte for byte, includes the intentional demo-cut wording
     assert hashlib.sha256(raw.encode()).hexdigest() == _MAIN_SHAPED_RENDER_SHA256
 
 
@@ -6757,7 +6771,8 @@ def _grab_var(js: str, name: str) -> str:
     raise AssertionError(f"{name} does not close")
 
 
-def _render_card_and_summary(meta: dict, accepted: int = 0, research: dict | None = None) -> dict:
+def _render_card_and_summary(meta: dict, accepted: int = 0, research: dict | None = None,
+                             support_findings: dict | None = None) -> dict:
     """Job 51e: the run card (updateRunCardJob) and the report Summary (renderExport), rendered by app.js's own
     functions in node under the same mock element harness as the other UI tests; returns each one's text."""
     import json
@@ -6773,7 +6788,7 @@ def _render_card_and_summary(meta: dict, accepted: int = 0, research: dict | Non
                                                "researchRunControls", "updateRunCardJob", "oneModelRun", "reviewAxis", "renderExport",
                                                "reviewAcceptedCount", "projectionComplete", "partialProjection",
                                                "researchCompanyBlock", "runResearch", "researchReviewLine",
-                                               "num", "usdCents", "hm"))
+                                               "trailInstructionsBlock", "stageOutcomesBlock", "num", "usdCents", "hm"))
     script = f"""
 function make() {{
   return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, hidden: false, value: '',
@@ -6795,20 +6810,28 @@ function reportFileNames() {{ return []; }}
 {consts}
 {fns}
 var counts = {{ kept: 0, corrected: 0, removed: 0, unverified: 0, open: 0 }};
-var detail = {{ id: 'r', run: {{ run: {json.dumps(meta)}, unknown_cost_accepted: {json.dumps(accepted)} }},
+var detail = {{ id: 'r', run: {{ run: {json.dumps(meta)}, unknown_cost_accepted: {json.dumps(accepted)},
+    support_findings: {json.dumps(support_findings)} }},
   state: {{ cost_per_kept_row_usd: null, unresolved: 0, counts: {{ rows: counts }},
             mistakes: {{ code: 0, second_reader: 0, person: 0 }}, excluded: {{ code: 0, person: 0 }} }} }};
 updateRunCardJob();
 renderExport();
 var card = nodes['runcard-job'];
-var stop = card.children.filter(function (c) {{ return c.className === 'jb-stop' || c.className === 'jb-sub'; }});
+var stop = [];
+(function walkCard(n) {{
+  if (n.className === 'jb-stop' || n.className === 'jb-sub') stop.push(n);
+  (n.children || []).forEach(walkCard);
+}})(card);
 var spend = [];
 (function walk(n) {{
   if (n.className === 'kv' && n.children[0].textContent === 'Spend') spend.push(n.children[1].textContent);
   (n.children || []).forEach(walk);
 }})(nodes['exp-det']);
+var activity = card.children.filter(function (c) {{ return c.className === 'jobactivity'; }})[0];
 console.log(JSON.stringify({{ card: textOf(card), stop: stop.map(function (c) {{ return c.textContent; }}),
-                             spend: spend }}));
+                             top: card.children.map(function (c) {{ return c.className; }}),
+                             activity: activity ? activity.children[0].textContent : null,
+                             activityOpen: activity ? !!activity.open : null, spend: spend }}));
 """
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
     assert got.returncode == 0, got.stderr
@@ -6923,7 +6946,7 @@ def _new_run_sheet_script(body_lines, extra_fns=()):
     js = (UI / "app.js").read_text()
     names = ("el", "nrError", "dayMonth", "intakeScopeLine", "renderIntakeStatus",
              "syncPasteMode", "stopIntakePoll", "pollIntake", "startIntake", "startRunFromIntake",
-             "startRunNow", "nrModels", "notePayload", "researchReady",
+             "startRunNow", "nrModels", "notePayload", "researchReady", "nrTurnLimit",
              "intakeDoneN", "syncStartButton", "nrStartClick",
              "renderChosen", "renderPrevCompanies", "nrPreparedTickers", "tickedReadyCount",
              "applyPasteDisable", "nrSupportValue") + tuple(extra_fns)
@@ -7338,7 +7361,7 @@ def test_one_instructions_box_carries_the_servers_full_default():
     assert isinstance(default_text, str) and default_text.strip()
 
     js = (UI / "app.js").read_text()
-    fns = "\n".join(_grab_fn(js, n) for n in ("el", "nrError", "notePayload", "applyResearchSettings", "noteHintText", "researchFromSettings", "updateNoteHint"))
+    fns = "\n".join(_grab_fn(js, n) for n in ("el", "nrError", "notePayload", "applyResearchSettings", "noteHintText", "researchFromSettings", "turnLimitFromSettings", "updateNoteHint"))
     script = "\n".join([
         "var nrResearch = { defaultText: null, maxLength: null, loaded: false };",
         "var nodes = {};",
@@ -7597,15 +7620,12 @@ def test_later_section_sorts_by_start_date():
     js = (UI / "app.js").read_text()
     cal = _grab_fn(js, "renderCalendar")
     assert "later.slice().sort(" in cal
-def test_checks_on_every_run_section_renders_the_hallucination_line():
-    # CVA ruling: one 'Checks on every run' section — four read-only fact lines,
-    # then a fifth read-only line for the hallucination check on the wording.
-    # No toggle, no checkbox: available means it runs on every start; the old
-    # 'PROPOSED WORDING (optional)' heading is gone. No invented claims: the
-    # review line records which model ran and whether it is a different
-    # family — it never promises one.
+def test_checks_this_run_will_attempt_uses_plain_bullets_and_no_result_marks():
+    # DEMO CUT: the New Run sheet lists attempts, never results. Five plain
+    # bullets, no ticks; row-level results still appear after the run.
     html = (UI / "index.html").read_text()
-    assert "Checks on every run" in html
+    assert "Checks this run will attempt" in html
+    assert "Checks on every run" not in html
     for line in ("Quote is printed on the cited page (code)",
                  "Citation is where it says (code)",
                  "Dates match the quote (code)",
@@ -7614,9 +7634,12 @@ def test_checks_on_every_run_section_renders_the_hallucination_line():
     review_line = [l for l in html.splitlines() if "Independent review by a second model" in l][0]
     assert "the run records which one ran and whether it is a different family" in review_line
     support = [l for l in html.splitlines() if 'id="nr-support-line"' in l][0]
-    assert ("&#10003; Hallucination check on the wording (advisory &mdash; "
+    assert ("&bull; Hallucination check on the wording (advisory &mdash; "
             "a flag changes no check, count or decision)") in support
-    # the fifth line sits under 'Checks on every run', after the review line
+    section = html[html.index("Checks this run will attempt"):html.index('id="nr-error"')]
+    assert "&#10003;" not in section and "✓" not in section
+    assert section.count("&bull;") == 5
+    # the fifth line sits under the attempts heading, after the review line
     assert html.index(review_line) < html.index(support)
     assert "Wording check by a hallucination model" not in html
     assert '<input type="checkbox" id="nr-support"' not in html
@@ -7650,7 +7673,7 @@ def test_lettuce_new_run_unavailable_shows_reason_and_never_sends():
         "                                        unavailable_reason: 'the pinned weights are not installed (LETTUCE_WEIGHTS_PATH is not a directory)' } });",
         # plain words on screen, no product name; the server's sentence (env var
         # names and all) is the hover title only
-        "if (nodes['nr-support-line'].textContent !== '– Hallucination check: not set up on this computer')",
+        "if (nodes['nr-support-line'].textContent !== '• Hallucination check: not set up on this computer')",
         "  fail(3, nodes['nr-support-line'].textContent);",
         "if (nodes['nr-support-line'].title !== 'the pinned weights are not installed (LETTUCE_WEIGHTS_PATH is not a directory)')",
         "  fail(9, nodes['nr-support-line'].title);",
@@ -7890,20 +7913,23 @@ def test_lettuce_real_envelope_pane_and_trail(tmp_path):
         "var trailText = textOf(nodes['trail-mid']).join(' ');",
         "if (trailText.indexOf('Agent research — not independently reviewed') === -1)",
         "  { console.error('trail header: ' + trailText.slice(0, 160)); process.exit(5); }",
-        # Run 9: the mid pane has all row folds; inspect e2's own fold, not e1's
-        "var t2 = textOf(nodes['trail-mid'].children[2]).join(' ');",
+        # Run 9 + demo cut: row folds live under the closed Detailed activity fold.
+        "var activityBody = nodes['trail-mid'].children[2].children[1];",
+        "var t2 = textOf(activityBody.children[1]).join(' ');",
         "if (t2.indexOf('Earlier check (no longer current)') === -1)",
         "  { console.error('stale trail line: ' + t2.slice(0, 200)); process.exit(6); }",
         "if (/Potentially unsupported wording/.test(t2))",
         "  { console.error('stale reads as current'); process.exit(7); }",
         "H.ev(\"route = { screen: 'trail', runId: 'run1', rowId: 'e3', dialog: null }\");",
         "H.ev('renderTrail')();",
-        "var t3 = textOf(nodes['trail-mid'].children[3]).join(' ');",
+        "activityBody = nodes['trail-mid'].children[2].children[1];",
+        "var t3 = textOf(activityBody.children[2]).join(' ');",
         "if (t3.indexOf('No finding') === -1 || /verif/i.test(t3) && t3.indexOf('not a statement') === -1)",
         "  { console.error('no-finding trail line: ' + t3.slice(0, 200)); process.exit(8); }",
         "H.ev(\"route = { screen: 'trail', runId: 'run1', rowId: 'e4', dialog: null }\");",
         "H.ev('renderTrail')();",
-        "var t4 = textOf(nodes['trail-mid'].children[4]).join(' ');",
+        "activityBody = nodes['trail-mid'].children[2].children[1];",
+        "var t4 = textOf(activityBody.children[3]).join(' ');",
         "if (t4.indexOf('Not run') === -1)",
         "  { console.error('not-run trail line: ' + t4.slice(0, 200)); process.exit(9); }",
         "console.log('ok');",
@@ -8063,7 +8089,7 @@ def test_run9_agent_trail_is_folded_per_claim_with_instructions_and_run_wide_ste
     js = (UI / "app.js").read_text()
     consts = _grab_var(js, "RESEARCH_STEP_WORDS")
     fns = "\n".join(_grab_fn(js, n) for n in
-                    ("runResearch", "researchTrailBlock", "trailInstructionsBlock",
+                    ("runResearch", "researchTrailBlock", "trailInstructionsBlock", "stageOutcomesBlock",
                      "researchStepsForRow", "researchStepsWithoutRow", "trailClaimSection",
                      "shownField", "renderTrail", "hm"))
     script = "\n".join([
@@ -8109,7 +8135,12 @@ def test_run9_agent_trail_is_folded_per_claim_with_instructions_and_run_wide_ste
         "if (!mid.children[0] || mid.children[0].className.indexOf('trailinstructions') === -1) fail(2, 'instructions not first');",
         "if (mid.children[0].children[1].textContent !== 'Focus on company pages.\\nKeep every check on.')",
         "  fail(3, 'note changed: ' + mid.children[0].children[1].textContent);",
-        "var e1 = mid.children[1], e2 = mid.children[2], wide = mid.children[3];",
+        "var stages = mid.children[1], activity = mid.children[2];",
+        "if (!stages || stages.children.length !== 3 || textOf(stages).indexOf('Independent review · not run') === -1)",
+        "  fail(12, 'three honest stage outcomes missing: ' + textOf(stages));",
+        "if (!activity || activity.tag !== 'details' || activity.open || textOf(activity.children[0]) !== 'Detailed activity')",
+        "  fail(13, 'detailed activity is not a closed fold');",
+        "var body = activity.children[1], e1 = body.children[0], e2 = body.children[1], wide = body.children[2];",
         "if (!e1 || e1.tag !== 'details' || !e2 || e2.tag !== 'details' || !wide || wide.className.indexOf('runwide') === -1)",
         "  fail(4, 'claim/run-wide folds missing');",
         "if (e1.open || e2.open || wide.open) fail(5, 'a fold starts open');",
@@ -8127,3 +8158,129 @@ def test_run9_agent_trail_is_folded_per_claim_with_instructions_and_run_wide_ste
         "console.log('ok');",
     ])
     _run_node(script)
+
+
+# ---- CVA: the inline judgment note is the one note saved with Remove
+
+def test_cva_typed_judgment_note_remove_needs_only_confirmation_and_writes_one_note(tmp_path):
+    import json
+    import shutil
+    import subprocess
+
+    js = (UI / "app.js").read_text()
+    assert "Your note (saved with your decision)" in js
+    assert "Voice pre-fills a decision; nothing is saved until you press a decision button." in js
+    assert "note: note.value || ('Kept as stated: ' + dt + '.')" in js
+    assert "var note = (document.getElementById('qnote') || {}).value || null;" in js  # Fix uses it too
+    typed = "Not an upcoming event"
+    script = "\n".join([
+        "var posted = [], confirmations = [], navigations = [];",
+        "global.window = { confirm: function (text) { confirmations.push(text); return true; } };",
+        "function currentRunId() { return 'sample'; }",
+        "function postDecision(id, body) { posted.push(body); }",
+        "function navigate(where) { navigations.push(where); }",
+        _grab_fn(js, "judgmentRemove"),
+        "judgmentRemove({ id: 'e1' }, " + json.dumps(typed) + ");",
+        "judgmentRemove({ id: 'e1' }, '');",
+        "console.log(JSON.stringify({ posted: posted, confirmations: confirmations, navigations: navigations }));",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+    view = json.loads(got.stdout)
+    assert len(view["posted"]) == 1                         # no dialog, no second reason entry
+    assert view["posted"][0] == {"target": "e1", "action": "remove", "note": typed}
+    assert view["confirmations"] == ["Remove this row? Your note will be saved with the decision."]
+    assert view["navigations"] == [{"runId": "sample", "screen": "judgment", "rowId": "e1", "dialog": "remove"}]
+
+    # The exact body produced by the UI lands as one person's line in the log.
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    shutil.copytree(REPO / "runs" / "sample", runs / "sample")
+    log = runs / "sample" / "decisions.jsonl"
+    log.write_text("")
+    client = TestClient(create_app(runs_dir=runs, ui_dir=tmp_path / "no-ui"))
+    response = client.post("/api/runs/sample/decisions", json=view["posted"][0])
+    assert response.status_code == 200, response.text
+    lines = [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
+    assert len(lines) == 1 and lines[0]["note"] == typed
+    assert lines[0]["action"] == "remove" and lines[0]["by"] == "person"
+
+
+# ---- CVA: New Run's per-company turn limit comes from settings and reaches the run
+
+def test_cva_turn_limit_default_validation_and_run_card():
+    import json
+    import subprocess
+
+    html = (UI / "index.html").read_text()
+    assert 'id="nr-turn-limit"' in html
+    assert "Turn limit per company" in html
+    assert "Research stops at this many model turns per company; the review and checks still run." in html
+
+    js = (UI / "app.js").read_text()
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("researchFromSettings", "turnLimitFromSettings", "nrTurnLimit",
+                     "applyResearchSettings", "noteHintText", "updateNoteHint"))
+    script = "\n".join([
+        "var nrResearch = { defaultText: null, maxLength: null, loaded: false };",
+        "var nodes = { 'nr-note': { value: '' }, 'nr-note-hint': { textContent: '' },",
+        "              'nr-turn-limit': { value: '' } };",
+        "global.document = { getElementById: function (id) { return nodes[id]; } };",
+        fns,
+        "var settings = { research_instructions_default: 'Read the sources.',",
+        "  research_instructions_max_length: 5000, turn_limit_per_company_default: 240 };",
+        "applyResearchSettings(settings);",
+        "if (nodes['nr-turn-limit'].value !== '240') { console.error('served default not shown'); process.exit(2); }",
+        "nodes['nr-turn-limit'].value = '87';",
+        "applyResearchSettings(settings);",
+        "if (nodes['nr-turn-limit'].value !== '87' || nrTurnLimit() !== 87) { console.error('edit overwritten'); process.exit(3); }",
+        "['0', '1.5', '-2', 'Infinity'].forEach(function (bad) {",
+        "  nodes['nr-turn-limit'].value = bad;",
+        "  if (nrTurnLimit() !== null) { console.error('accepted ' + bad); process.exit(4); } });",
+        "nodes['nr-turn-limit'].value = '';",
+        "applyResearchSettings({ research_instructions_default: 'Read the sources.',",
+        "  research_instructions_max_length: 5000 });",
+        "if (nodes['nr-turn-limit'].value !== '200') { console.error('fallback default'); process.exit(5); }",
+        "console.log('ok');",
+    ])
+    got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
+    assert got.returncode == 0, got.stdout + got.stderr
+
+    card = _render_card_and_summary({"status": "running", "turn_count": 87,
+                                     "choices": {"mode": "research", "turn_limit_per_company": 200}})
+    assert "turn 87 of 200" in card["card"], card["card"]
+
+
+# ---- DEMO CUT: run-card stage outcomes stay separate and activity starts folded
+
+def test_demo_cut_run_card_orders_instructions_stages_and_collapsed_activity():
+    research = {
+        "companies": {"PTGX": {"status": "finished", "review_status": "done", "requests": 3}},
+        "review": {"PTGX": {"status": "incomplete", "reason": "The reviewer stopped at the saved limit."}},
+        "steps": [{"who": "capture.support_signal", "refs": {"row_id": "e1", "result": "could_not_run"},
+                   "text": "Support check could not run: the saved weights reason."}],
+    }
+    got = _render_card_and_summary(
+        {"status": "done", "status_reason": "research ended — no new proposal in 40 turns",
+         "choices": {"mode": "research", "note_for_agent": "Saved brief exactly."}},
+        research=research,
+        support_findings={"e1": {"result": "could_not_run", "reason": "The saved weights are unavailable."}},
+    )
+    assert got["top"] == ["trailwrap trailinstructions", "stageout", "jobactivity"]
+    assert got["activity"] == "Detailed activity" and got["activityOpen"] is False
+    text = "\n".join(got["card"])
+    assert "Instructions used for this run" in text and "Saved brief exactly." in text
+    assert "Research · completed — research ended — no new proposal in 40 turns" in text
+    assert "Independent review · stopped — The reviewer stopped at the saved limit." in text
+    assert "LettuceDetect · not run — The saved weights are unavailable." in text
+    assert "Independent review · completed" not in text
+    assert text.index("Instructions used for this run") < text.index("Research · completed") < text.index("Detailed activity")
+
+    no_calls = _render_card_and_summary(
+        {"status": "running", "choices": {"mode": "research", "support_check": "lettucedetect"}},
+        research={},
+    )
+    quiet = "\n".join(no_calls["card"])
+    assert "Research · no calls made" in quiet
+    assert "Independent review · not run" in quiet
+    assert "LettuceDetect · no calls made" in quiet
