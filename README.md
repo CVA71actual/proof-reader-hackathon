@@ -59,6 +59,9 @@ Put your keys in `~/.config/proof-reader/env`, one per line. Keep credentials ou
 - `MODEL_API_KEY`: the Meta Model API key, for Muse Spark, Muse Wonder and Muse Voice Transcribe.
 - `BASETEN_API_KEY`: Muse Spark Open.
 - `BRAVE_API_KEY`: Brave Search.
+- `SEC_USER_AGENT`: your name and email, which SEC EDGAR requires on every request (for example `Jane Doe jane@example.com`).
+
+You also need Google Chrome installed: captured pages are rendered with headless Chrome. Install first, as in the saved-run demo (`python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`).
 
 Then:
 
@@ -67,7 +70,7 @@ set -a; . ~/.config/proof-reader/env; set +a
 .venv/bin/python -m uvicorn server.app:app --port 8790
 ```
 
-Open <http://127.0.0.1:8790>, click **New run**, choose a company, set a spending limit and a turn limit, and review the brief. Then click **Run now**. Recorded costs for the two featured runs were $4.19 and $2.79. Costs vary with settings and research length. LettuceDetect is optional: set `LETTUCE_PYTHON` and `LETTUCE_WEIGHTS_PATH` to a local install of `KRLabsOrg/lettucedect-v2-mmbert-base`.
+Open <http://127.0.0.1:8790> and click **New run**. Tick **PTGX** under "Previously captured" (or type tickers and click **Prepare tickers**). Set a spending limit and a turn limit, and review the brief. Then click **Run now**. The run card shows progress; the Agent trail fills in as it goes. Recorded costs for the two featured runs were $4.19 and $2.79. Costs vary with settings and research length. LettuceDetect is optional: set `LETTUCE_PYTHON` and `LETTUCE_WEIGHTS_PATH` to a local install of `KRLabsOrg/lettucedect-v2-mmbert-base`.
 
 
 ## Demo runs (PTGX, Protagonist Therapeutics, 4 Nov 2026)
