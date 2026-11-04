@@ -320,6 +320,17 @@ html.dark .toast{background:#EDEBE6;color:#26241F}
 .jmidcard .srcq{font-style:italic;margin-top:5px;line-height:1.4;font-size:12.5px}
 /* catalyst calendar (U6) */
 #scr-calendar .pane.mid{background:var(--bg)}
+.calband{max-width:724px;margin:12px 14px 0;border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+.calbandsummary{cursor:pointer;list-style:none;background:var(--panel2);border-bottom:1px solid var(--line)}
+.calbandsummary::-webkit-details-marker{display:none}
+.calband:not([open]) .calbandsummary{border-bottom:0}
+.calbandhead{display:flex;align-items:center;gap:8px;padding:11px 14px 3px}
+.calbandhead h3{margin:0;font-family:var(--serif);font-size:17px;font-weight:500;line-height:1.35}
+.calbandnote{padding:0 14px 11px;color:var(--sub);font-size:12px;line-height:1.45}
+.calband.attention{border-left:4px solid var(--amber)}
+.calband.context .calbandsummary,.calband.later .calbandsummary{background:var(--panel)}
+.calband.context .calbandhead h3,.calband.later .calbandhead h3{color:var(--sub);font-size:15px}
+.calband.context .calbandnote,.calband.later .calbandnote{color:var(--faint)}
 .calwrap{padding:8px 22px 30px;max-width:680px}
 .mo{font-family:var(--serif);font-size:17px;font-weight:500;padding:18px 0 6px;border-bottom:1px solid var(--line)}
 .crow{display:flex;gap:12px;width:100%;padding:9px 4px;border-bottom:1px solid var(--line2);align-items:baseline;border-radius:6px}

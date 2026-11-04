@@ -1196,7 +1196,13 @@
       }
       var bits = [];
       if (c.requests !== null && c.requests !== undefined) bits.push(num(c.requests) + ' requests');
-      if (c.searches !== null && c.searches !== undefined) bits.push(num(c.searches) + ' searches');
+      // Meta's built-in count and Brave's request count are separate on the
+      // saved company record. Name both rather than presenting Meta's as all.
+      var searchBits = [];
+      if (c.searches !== null && c.searches !== undefined) searchBits.push('web_search ' + num(c.searches));
+      if (c.brave_requests !== null && c.brave_requests !== undefined)
+        searchBits.push('Brave ' + num(c.brave_requests));
+      if (searchBits.length) bits.push(searchBits.join(' · '));
       if (c.fetches !== null && c.fetches !== undefined) bits.push(num(c.fetches) + ' fetches');
       if (c.pages_delivered !== null && c.pages_delivered !== undefined) bits.push(num(c.pages_delivered) + ' pages delivered');
       // G6-3/G6-7: money in cents, one way ($2.65, never $2.651162)
@@ -3165,6 +3171,19 @@
       return a.len - b.len;
     });
 
+    // Each band has its own visible heading, count and explanation. Context
+    // and Later start closed; every band's explainer stays visible.
+    function band(title, count, note, body, tone, collapsed) {
+      var box = el('details', 'calband' + (tone ? ' ' + tone : ''));
+      box.open = !collapsed;
+      var summary = el('summary', 'calbandsummary');
+      var heading = el('div', 'calbandhead');
+      heading.append(el('h3', null, title + ' · ' + count));
+      summary.append(heading, el('div', 'calbandnote', note));
+      box.append(summary, body);
+      return box;
+    }
+
     var wrap = el('div', 'calwrap');
     headers.forEach(function (h) {
       var sample = h.exact[0] || (h.periods[0] && h.periods[0].rows[0]);
@@ -3194,30 +3213,62 @@
         p.rows.forEach(function (r) { wrap.append(calRow(r, '', true)); });
       });
     });
+    if (rows.length) {
+      host.append(band('On the calendar', rows.length,
+        'Events in the run’s time window, by date.', wrap, '', false));
+    }
+
     // Wording distinguishes missing timing, unresolved timing, and explicit dependencies.
+    var needsWrap = el('div', 'calwrap');
     if (undated.length) {
-      wrap.append(el('div', 'mo', 'Undated · no timing stated · ' + undated.length));
-      undated.forEach(function (r) { wrap.append(calRow(r, '', true)); });
+      needsWrap.append(el('div', 'mo', 'Undated · no timing stated · ' + undated.length));
+      undated.forEach(function (r) { needsWrap.append(calRow(r, '', true)); });
     }
     if (timingUnresolved.length) {
-      wrap.append(el('div', 'mo', 'Timing unresolved · ' + timingUnresolved.length));
-      timingUnresolved.forEach(function (r) { wrap.append(calRow(r, '', true)); });
+      needsWrap.append(el('div', 'mo', 'Timing unresolved · ' + timingUnresolved.length));
+      timingUnresolved.forEach(function (r) { needsWrap.append(calRow(r, '', true)); });
     }
     if (nodates.length) {
-      wrap.append(el('div', 'mo', (w.unresolved ? 'Timing unresolved · ' : 'Contingent · ') + nodates.length));
-      nodates.forEach(function (r) { wrap.append(calRow(r, '', true)); });
+      needsWrap.append(el('div', 'mo', (w.unresolved ? 'Timing unresolved · ' : 'Contingent · ') + nodates.length));
+      nodates.forEach(function (r) { needsWrap.append(calRow(r, '', true)); });
     }
+    var needsN = nodates.length + undated.length + timingUnresolved.length;
+    if (needsN) {
+      host.append(band('Needs a date or your review', needsN,
+        'No usable date yet, or waiting for your decision.', needsWrap, 'attention', false));
+    }
+
+    // Past context is one band. An exclusion's latest-event record may already
+    // be in the server's past partition; display and count that event only once.
+    var contextIds = {};
+    past.forEach(function (r) { contextIds[r.row.id] = true; });
+    lastEvents = lastEvents.filter(function (r) { return !contextIds[r.row.id]; });
+    var contextWrap = el('div', 'calwrap');
     if (past.length) {
-      wrap.append(el('div', 'mo', 'Past · ' + past.length));
+      contextWrap.append(el('div', 'mo', 'Past · ' + past.length));
       past.forEach(function (r) {
         var written = shownDateText(r.t, r.row) || r.date;
         var reason = r.t.reason || r.row.reason || (keptCurrent(r.t) ? 'Kept by you; the event period ended before this run began.' : '');
         if (reason) r.row.reason = reason;
-        wrap.append(calRow(r, written, !!r.period));
+        contextWrap.append(calRow(r, written, !!r.period));
       });
     }
+    if (lastEvents.length) {
+      lastEvents.forEach(function (r) {
+        contextWrap.append(el('div', 'mo', 'Latest past event · ' + (r.row.ticker || 'ticker not stated')));
+        var written = shownDateText(r.t, r.row) ||
+          ((r.t.values && r.t.values.date) || '') || 'Date not stated';   // never the raw row date
+        contextWrap.append(calRow(r, written, !!r.period));
+      });
+    }
+    if (past.length + lastEvents.length) {
+      host.append(band('Context (past events)', past.length + lastEvents.length,
+        'Already happened; kept so out-of-date guidance can be caught. Not on the calendar.',
+        contextWrap, 'context', true));
+    }
+
     if (later.length) {
-      wrap.append(el('div', 'mo', 'Later · ' + later.length));
+      var laterWrap = el('div', 'calwrap');
       // glass adviser (5): the Later section reads in date order — a period
       // sorts by its start, then the exact-day rows of the same date
       later.slice().sort(function (a, b) {
@@ -3225,18 +3276,11 @@
         return (b.period ? 1 : 0) - (a.period ? 1 : 0);
       }).forEach(function (r) {
         var written = shownDateText(r.t, r.row) || r.date;
-        wrap.append(calRow(r, written, !!r.period));
+        laterWrap.append(calRow(r, written, !!r.period));
       });
+      host.append(band('Later (after the window)', later.length,
+        'Dated after this run’s time window.', laterWrap, 'later', true));
     }
-    if (lastEvents.length) {
-      lastEvents.forEach(function (r) {
-        wrap.append(el('div', 'mo', 'Latest past event · ' + (r.row.ticker || 'ticker not stated')));
-        var written = shownDateText(r.t, r.row) ||
-          ((r.t.values && r.t.values.date) || '') || 'Date not stated';   // never the raw row date
-        wrap.append(calRow(r, written, !!r.period));
-      });
-    }
-    host.append(wrap);
 
     var on = host.querySelector('.crow.on');
     if (on) revealRow(on);
@@ -3376,7 +3420,9 @@
       if (wording) c2.append(el('span', 'dt', wording));
     }
     b.append(c2);
-    b.append(el('span', 'ty', typeCategoryValue(t) || eventWord(shownField(t, row, 'event_type'))));
+    var calCategory = typeCategoryValue(t) || eventWord(shownField(t, row, 'event_type'));
+    if (calCategory && String(calCategory).trim().toLowerCase() !== 'unknown')
+      b.append(el('span', 'ty', calCategory));
     if (t.decided_by_person) b.append(decidedBadge(t));
     b.addEventListener('click', function () {
       calSel = row.id;
