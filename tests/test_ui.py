@@ -6770,7 +6770,7 @@ def _render_card_and_summary(meta: dict, accepted: int = 0, research: dict | Non
                                                    "JOB_PAUSABLE", "JOB_LIMIT_STOP", "RESEARCH_STATUS_WORDS",
                                                    "NO_SECOND_READER", "ONE_MODEL_LINE"))
     fns = "\n".join(_grab_fn(js, n) for n in ("money", "cents", "costPerKeptRowWords", "unpricedMark", "jobReason",
-                                               "updateRunCardJob", "oneModelRun", "reviewAxis", "renderExport",
+                                               "researchRunControls", "updateRunCardJob", "oneModelRun", "reviewAxis", "renderExport",
                                                "reviewAcceptedCount", "projectionComplete", "partialProjection",
                                                "researchCompanyBlock", "runResearch", "researchReviewLine",
                                                "num", "usdCents", "hm"))
@@ -7890,18 +7890,20 @@ def test_lettuce_real_envelope_pane_and_trail(tmp_path):
         "var trailText = textOf(nodes['trail-mid']).join(' ');",
         "if (trailText.indexOf('Agent research — not independently reviewed') === -1)",
         "  { console.error('trail header: ' + trailText.slice(0, 160)); process.exit(5); }",
-        "if (trailText.indexOf('Earlier check (no longer current)') === -1)",
-        "  { console.error('stale trail line: ' + trailText.slice(0, 200)); process.exit(6); }",
-        "if (/Potentially unsupported wording/.test(trailText))",
+        # Run 9: the mid pane has all row folds; inspect e2's own fold, not e1's
+        "var t2 = textOf(nodes['trail-mid'].children[2]).join(' ');",
+        "if (t2.indexOf('Earlier check (no longer current)') === -1)",
+        "  { console.error('stale trail line: ' + t2.slice(0, 200)); process.exit(6); }",
+        "if (/Potentially unsupported wording/.test(t2))",
         "  { console.error('stale reads as current'); process.exit(7); }",
         "H.ev(\"route = { screen: 'trail', runId: 'run1', rowId: 'e3', dialog: null }\");",
         "H.ev('renderTrail')();",
-        "var t3 = textOf(nodes['trail-mid']).join(' ');",
+        "var t3 = textOf(nodes['trail-mid'].children[3]).join(' ');",
         "if (t3.indexOf('No finding') === -1 || /verif/i.test(t3) && t3.indexOf('not a statement') === -1)",
         "  { console.error('no-finding trail line: ' + t3.slice(0, 200)); process.exit(8); }",
         "H.ev(\"route = { screen: 'trail', runId: 'run1', rowId: 'e4', dialog: null }\");",
         "H.ev('renderTrail')();",
-        "var t4 = textOf(nodes['trail-mid']).join(' ');",
+        "var t4 = textOf(nodes['trail-mid'].children[4]).join(' ');",
         "if (t4.indexOf('Not run') === -1)",
         "  { console.error('not-run trail line: ' + t4.slice(0, 200)); process.exit(9); }",
         "console.log('ok');",
@@ -7969,8 +7971,8 @@ def test_calendar_row_and_pane_use_the_current_corrected_fields():
     # corrected title from state (t.values), never the raw row.title; a
     # deliberately cleared field stays cleared (presence-aware shownField)
     js = (UI / "app.js").read_text()
-    # both surfaces go through shownField — calRow and detailsPane
-    assert js.count("shownField(t, row, 'title')") == 2
+    # all three surfaces go through shownField — calRow, detailsPane, trail claim
+    assert js.count("shownField(t, row, 'title')") == 3
     assert "shownField(t, row, 'ticker')" in js and "shownField(t, row, 'program')" in js
     assert "eventWord(shownField(t, row, 'event_type'))" in js
     script = "\n".join([
@@ -8009,6 +8011,119 @@ def test_calendar_row_and_pane_use_the_current_corrected_fields():
         "var out3 = textOf(calRow({ row: row, t: {}, fold: [] }, '', false));",
         "if (out3.indexOf('EXPAND topline data') === -1) fail(7, 'untouched row lost its title');",
         "if (out3.indexOf('EXPAND') === -1) fail(8, 'untouched row lost its program');",
+        "console.log('ok');",
+    ])
+    _run_node(script)
+
+
+# ---- Run 9: active research controls and the per-claim Agent trail
+
+def test_run9_research_finish_and_stop_require_confirmation_and_hide_when_done():
+    js = (UI / "app.js").read_text()
+    assert "/research-finish" in js and "/research-stop" in js
+    assert "researchRunControls(meta, live)" in js
+    assert "jobReason(st, meta, detail.run.unknown_cost_accepted)" in js
+    script = "\n".join([
+        "function fail(code, msg) { console.error(code + ': ' + msg); process.exit(code); }",
+        "function el(tag, cls, text) { return { tag: tag, className: cls || '', textContent: text || '',",
+        "  hidden: false, children: [], append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "function btn(cls, text, onClick) { var b = el('button', cls, text); b._click = onClick; return b; }",
+        "var questions = [], answers = [], posts = [], polls = 0, refreshes = 0;",
+        "global.window = { confirm: function (q) { questions.push(q); return answers.shift(); } };",
+        "function immediate(res) { return { then: function (fn) { fn(res); return { catch: function () {} }; } }; }",
+        "var A = { researchFinish: function (id) { posts.push('finish:' + id); return immediate({ ok: true, body: {} }); },",
+        "  researchStop: function (id) { posts.push('stop:' + id); return immediate({ ok: true, body: {} }); } };",
+        "function currentRunId() { return 'run9'; }",
+        "function toast() {}",
+        "function startJobPoll() { polls++; }",
+        "function refresh() { refreshes++; }",
+        _grab_fn(js, "researchRunControls"),
+        "var meta = { choices: { mode: 'research' } };",
+        "var ctl = researchRunControls(meta, true);",
+        "if (!ctl || ctl.children[0].textContent !== 'Finish now' || ctl.children[1].textContent !== 'Stop and discard')",
+        "  fail(2, 'active research controls missing');",
+        "answers.push(false); ctl.children[0]._click();",
+        "if (posts.length !== 0) fail(3, 'Finish now posted without confirmation');",
+        "if (questions[0] !== 'Stop searching and review what was found? The review and checks still run, then the run is published.')",
+        "  fail(4, questions[0]);",
+        "answers.push(true); ctl.children[0]._click();",
+        "if (posts.join(',') !== 'finish:run9' || polls !== 1 || refreshes !== 1) fail(5, posts.join(','));",
+        "answers.push(true); ctl.children[1]._click();",
+        "if (questions[2] !== 'Stop now? Nothing is reviewed or published.') fail(6, questions[2]);",
+        "if (posts.join(',') !== 'finish:run9,stop:run9' || polls !== 2 || refreshes !== 2) fail(7, posts.join(','));",
+        "if (researchRunControls(meta, false) !== null) fail(8, 'ended run still has controls');",
+        "if (researchRunControls({ choices: { mode: 'pages' } }, true) !== null) fail(9, 'page run has research controls');",
+        "if (!researchRunControls({ choices: {}, research: {} }, true)) fail(10, 'research record fallback missing');",
+        "console.log('ok');",
+    ])
+    _run_node(script)
+
+
+def test_run9_agent_trail_is_folded_per_claim_with_instructions_and_run_wide_steps():
+    js = (UI / "app.js").read_text()
+    consts = _grab_var(js, "RESEARCH_STEP_WORDS")
+    fns = "\n".join(_grab_fn(js, n) for n in
+                    ("runResearch", "researchTrailBlock", "trailInstructionsBlock",
+                     "researchStepsForRow", "researchStepsWithoutRow", "trailClaimSection",
+                     "shownField", "renderTrail", "hm"))
+    script = "\n".join([
+        "function fail(code, msg) { console.error(code + ': ' + msg); process.exit(code); }",
+        "function make(tag) { return { tag: tag || 'div', className: '', textContent: '', children: [], open: false, hidden: false,",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); },",
+        "  querySelector: function () { return null; } }; }",
+        "function el(tag, cls, text) { var n = make(tag); n.className = cls || ''; n.textContent = text || ''; return n; }",
+        "function clear(n) { n.children = []; n.textContent = ''; return n; }",
+        "function textOf(n, out) { out = out || []; if (n && n.textContent) out.push(n.textContent);",
+        "  ((n && n.children) || []).forEach(function (c) { textOf(c, out); }); return out.join(' '); }",
+        "var nodes = {};",
+        "global.document = { getElementById: function (id) { if (!nodes[id]) nodes[id] = make(); return nodes[id]; } };",
+        "var route = { rowId: 'e1' }, trailSel = null;",
+        "var decisionsCache = { id: 'run9', lines: [{ target: 'e1', by: 'person', action: 'keep', note: 'keep this' }] };",
+        "var detail = { id: 'run9', run: { rows: [",
+        "  { id: 'e1', ticker: 'ACME', title: 'ACME readout', date_text: 'Q1 2027', proposed_by: 'Muse Spark',",
+        "    trail: [{ step: 'Checked', tag: 'Code', text: 'Row code check' }] },",
+        "  { id: 'e2', ticker: 'BTBR', title: 'BTBR launch', date_text: '2 May 2027', proposed_by: 'Muse Spark', trail: [] } ],",
+        "  run: { label: 'Run 9', choices: { note_for_agent: 'Focus on company pages.\\nKeep every check on.' },",
+        "    research: { label: 'Agent research — reviewed', steps: [",
+        "      { who: 'Code', tag: 'Code', kind: 'search', text: 'Searched ACME', at: '2026-11-03T00:00:00Z' },",
+        "      { who: 'Code', tag: 'Code', kind: 'fetch', text: 'Source e1', refs: { row_id: 'e1' } },",
+        "      { who: 'Muse Spark Open', tag: 'Model', kind: 'check', text: 'Review e1', refs: { row_id: 'e1' } },",
+        "      { who: 'Code', tag: 'Code', kind: 'fetch', text: 'Capture e2', refs: { row_id: 'e2' } } ] } } },",
+        "  state: { targets: { e1: { status: 'proposed' }, e2: { status: 'proposed' } } } };",
+        "function rowTarget(row) { return detail.state.targets[row.id] || {}; }",
+        "function rowOf(id) { return detail.run.rows.filter(function (r) { return r.id === id; })[0] || null; }",
+        "function trailRowBtn() { return el('button', 'row'); }",
+        "function revealRow() {}",
+        "function shownDateText(t, row) { return (t.values && t.values.date_text) || row.date_text || ''; }",
+        "function statusBadge(st) { return el('span', 'st', st || 'proposed'); }",
+        "function decidedBadge() { return el('span', 'st', 'decided'); }",
+        "function supportTrailSteps() { return []; }",
+        "function personStepsFor(rowId) { return decisionsCache.lines.filter(function (l) { return l.target === rowId; }); }",
+        "function trailStep(row, s) { return el('div', 'step', s.__decision ? 'Kept by you: ' + s.line.note : s.text); }",
+        "var paneRow = null;",
+        "function detailsPane(det, row) { paneRow = row.id; }",
+        consts,
+        fns,
+        "renderTrail();",
+        "var mid = nodes['trail-mid'];",
+        "if (!mid.children[0] || mid.children[0].className.indexOf('trailinstructions') === -1) fail(2, 'instructions not first');",
+        "if (mid.children[0].children[1].textContent !== 'Focus on company pages.\\nKeep every check on.')",
+        "  fail(3, 'note changed: ' + mid.children[0].children[1].textContent);",
+        "var e1 = mid.children[1], e2 = mid.children[2], wide = mid.children[3];",
+        "if (!e1 || e1.tag !== 'details' || !e2 || e2.tag !== 'details' || !wide || wide.className.indexOf('runwide') === -1)",
+        "  fail(4, 'claim/run-wide folds missing');",
+        "if (e1.open || e2.open || wide.open) fail(5, 'a fold starts open');",
+        "var t1 = textOf(e1), t2 = textOf(e2), tw = textOf(wide);",
+        "if (t1.indexOf('ACME readout') === -1 || t1.indexOf('Q1 2027') === -1 || t1.indexOf('proposed') === -1)",
+        "  fail(6, 'claim summary incomplete: ' + t1);",
+        "if (t1.indexOf('Source e1') === -1 || t1.indexOf('Review e1') === -1 ||",
+        "    t1.indexOf('Row code check') === -1 || t1.indexOf('Kept by you: keep this') === -1)",
+        "  fail(7, 'row steps incomplete: ' + t1);",
+        "if (t1.indexOf('Capture e2') !== -1 || t1.indexOf('Searched ACME') !== -1) fail(8, 'wrong steps in e1: ' + t1);",
+        "if (t2.indexOf('Capture e2') === -1 || t2.indexOf('Source e1') !== -1) fail(9, 'wrong steps in e2: ' + t2);",
+        "if (tw.indexOf('Run-wide steps') === -1 || tw.indexOf('Searched ACME') === -1 ||",
+        "    tw.indexOf('Source e1') !== -1 || tw.indexOf('Capture e2') !== -1) fail(10, 'run-wide assignment: ' + tw);",
+        "if (paneRow !== 'e1') fail(11, 'details selection changed');",
         "console.log('ok');",
     ])
     _run_node(script)

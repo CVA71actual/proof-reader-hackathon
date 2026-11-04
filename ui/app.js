@@ -446,6 +446,22 @@
           return r.json().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
         });
       },
+      researchFinish: function (id) {
+        return fetch('/api/runs/' + encodeURIComponent(id) + '/research-finish', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}'
+        }).then(function (r) {
+          return r.json().catch(function () { return {}; })
+            .then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+        });
+      },
+      researchStop: function (id) {
+        return fetch('/api/runs/' + encodeURIComponent(id) + '/research-stop', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}'
+        }).then(function (r) {
+          return r.json().catch(function () { return {}; })
+            .then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+        });
+      },
       decide: function (id, body) {
         return fetch('/api/runs/' + encodeURIComponent(id) + '/decisions', {
           method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
@@ -2484,7 +2500,7 @@
   // a person's decision is the last step, dated from decisions.jsonl.
   function renderTrail() {
     document.getElementById('trail-sub').textContent =
-      'Step by step, for one row · ' + detail.run.rows.length + ' rows';
+      'Step by step, by row · ' + detail.run.rows.length + ' rows';
     if (route.rowId && rowOf(route.rowId)) trailSel = route.rowId;
 
     var host = clear(document.getElementById('trail-rows'));
@@ -2495,7 +2511,7 @@
     var mid = clear(document.getElementById('trail-mid'));
     var det = clear(document.getElementById('trail-det'));
     var rs = runResearch();
-    if (rs && rs.steps && rs.steps.length) mid.append(researchTrailBlock(rs));
+    mid.append(trailInstructionsBlock());
     var row = rowOf(trailSel) || detail.run.rows[0] || null;
     if (!row) {
       mid.append(el('div', 'empty', 'No rows in this run.'));
@@ -2514,20 +2530,69 @@
       }).catch(function () { decisionsCache = { id: runId, lines: [] }; });
     }
 
+    // Run 9: one folded claim section per row. Research steps belong to the row
+    // named by refs.row_id; only searches, limits and other unbound steps stay
+    // in the final run-wide fold. Every fold starts closed.
+    detail.run.rows.forEach(function (r) { mid.append(trailClaimSection(r, rs)); });
+    if (rs && rs.steps && rs.steps.length) {
+      var wide = el('details', 'trailclaim runwide');
+      wide.append(el('summary', 'trailclaimsum', 'Run-wide steps'));
+      var wideBody = el('div', 'trailwrap trailclaimbody');
+      rs = { label: rs.label, steps: researchStepsWithoutRow(rs) };
+      wideBody.append(researchTrailBlock(rs));
+      if (!rs.steps.length) wideBody.append(el('div', 'empty', 'No run-wide steps.'));
+      wide.append(wideBody);
+      mid.append(wide);
+    }
+
+    detailsPane(det, row, { back: null });
+  }
+
+  function trailInstructionsBlock() {
     var meta = detail.run.run || {};
-    var head = el('div', 'trailhead');
-    head.append(el('div', 'tt', row.title || '(no title)'));
-    head.append(el('div', 'tm', (row.ticker || '') + ' · proposed by ' + (row.proposed_by || 'Model') +
+    var note = meta.choices && meta.choices.note_for_agent;
+    var wrap = el('div', 'trailwrap trailinstructions');
+    wrap.append(el('div', 'rstitle', 'Instructions used for this run'));
+    wrap.append(el('pre', 'codeblk', typeof note === 'string' && note !== ''
+      ? note : 'No note for the agent was sent.'));
+    return wrap;
+  }
+
+  function researchStepsForRow(rs, rowId) {
+    return ((rs && rs.steps) || []).filter(function (s) {
+      return s && s.refs && s.refs.row_id === rowId;
+    });
+  }
+
+  function researchStepsWithoutRow(rs) {
+    return ((rs && rs.steps) || []).filter(function (s) {
+      return !(s && s.refs && s.refs.row_id);
+    });
+  }
+
+  function trailClaimSection(row, rs) {
+    var t = rowTarget(row);
+    var fold = el('details', 'trailclaim');
+    var summary = el('summary', 'trailclaimsum');
+    summary.append(el('span', 'claimtitle', shownField(t, row, 'title') || '(no title)'),
+                   el('span', 'claimdate', shownDateText(t, row)),
+                   t.decided_by_person ? decidedBadge(t) : statusBadge(t.status));
+    fold.append(summary);
+
+    var wrap = el('div', 'trailwrap trailclaimbody');
+    var meta = detail.run.run || {};
+    wrap.append(el('div', 'tm', (row.ticker || '') + ' · proposed by ' + (row.proposed_by || 'Model') +
       ' · ' + (meta.label || 'run ' + meta.number) + (meta.sample ? ' · sample data — not real events' : '')));
-    var wrap = el('div', 'trailwrap');
-    wrap.append(head);
+    var researchSteps = researchStepsForRow(rs, row.id);
+    if (researchSteps.length) {
+      wrap.append(researchTrailBlock({ label: 'Research steps', steps: researchSteps }));
+    }
 
     var steps = (row.trail || []).slice();
-    // LETTUCE-OPTION: the wording-check steps of this row ride after the run's
+    // LETTUCE-OPTION: the wording-check steps of this row ride after the row's
     // own steps — attribution and run status stay in the trail only
     var supportSteps = supportTrailSteps((((detail.run.run || {}).research || {}).steps), row.id,
                                          ((detail.run || {})).support_findings);
-    var t = rowTarget(row);
     // G2-1: Person steps come only from decisions.jsonl lines — one step per
     // line, in order, with the person's own note; a matched or undecided row
     // nobody decided ends at the last code step
@@ -2537,9 +2602,9 @@
     lines.forEach(function (s, i) {
       wrap.append(trailStep(row, s, i < lines.length - 1));
     });
-    mid.append(wrap);
-
-    detailsPane(det, row, { back: null });
+    if (!researchSteps.length && !lines.length) wrap.append(el('div', 'empty', 'No steps recorded for this row.'));
+    fold.append(wrap);
+    return fold;
   }
 
   function trailRowBtn(row) {
@@ -5424,6 +5489,35 @@
   // G4-5: the job bar reads money in cents, one way ($5.06, never $5.055042)
   function cents(v) { return '$' + Number(v).toFixed(2); }
 
+  // Run 9: an active research run can finish searching into review, or stop
+  // without publishing. Both actions are explicit and confirmed; ended runs
+  // render neither control.
+  function researchRunControls(meta, live) {
+    var researchMode = (meta.choices || {}).mode === 'research' || !!meta.research;
+    if (!live || !researchMode) return null;
+    var err = el('span', 'errline', '');
+    err.hidden = true;
+    function act(kind) {
+      var finishing = kind === 'finish';
+      var question = finishing
+        ? 'Stop searching and review what was found? The review and checks still run, then the run is published.'
+        : 'Stop now? Nothing is reviewed or published.';
+      if (!window.confirm(question)) return;
+      var request = finishing ? A.researchFinish(currentRunId()) : A.researchStop(currentRunId());
+      request.then(function (res) {
+        if (!res.ok) { err.textContent = (res.body && res.body.detail) || ('HTTP ' + res.status); err.hidden = false; return; }
+        err.hidden = true;
+        toast(finishing ? 'Finishing run.' : 'Run stopped.');
+        startJobPoll(currentRunId());
+        return refresh();
+      }).catch(function () { err.textContent = 'The server is not reachable.'; err.hidden = false; });
+    }
+    var ctl = el('div', 'jb-ctl research-controls');
+    ctl.append(btn('btn', 'Finish now', function () { act('finish'); }),
+               btn('btn', 'Stop and discard', function () { act('stop'); }), err);
+    return ctl;
+  }
+
   // G4-R3: the job block lives in the rail run card. Live = a pulsing dot +
   // 'running'; paused = 'needs input' + the stop sentence in the warm box +
   // limit box and Resume; done = 'done'; no recorded status = 'saved run' + cost.
@@ -5505,6 +5599,8 @@
     if (meta.status_reason) {
       host.append(el('div', JOB_PAUSABLE.indexOf(st) >= 0 ? 'jb-stop' : 'jb-sub', jobReason(st, meta, detail.run.unknown_cost_accepted)));
     }
+    var researchCtl = researchRunControls(meta, live);
+    if (researchCtl) host.append(researchCtl);
     if (JOB_PAUSABLE.indexOf(st) >= 0) {
       var limitInput = null;
       if (st === 'needs_input') {
