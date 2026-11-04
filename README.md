@@ -6,7 +6,7 @@ This README is an honest after-action report: what worked, what did not, and why
 
 **Status:** the workflow is demonstrated in two live PTGX runs. Research recall, repeatability and autonomous use have not been validated. The demonstrated workflow keeps a person in control.
 
-**Demo video:** [YouTube link]
+**Demo video:** https://youtu.be/oXevxrh5JCg
 
 ![Run 17: a proposal with its quote boxed on the captured SEC filing page](docs/images/run17-proposal-source.png)
 
