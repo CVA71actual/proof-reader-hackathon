@@ -126,7 +126,7 @@ I directed a team of AI models, each with a fixed role:
 - **Claude app (Fable 5.1)**: coding and managing the other coders: integration, reviews, merges and the project record.
 - **Kimi app**: the app's screens and visual design.
 - **Terminal coders**: Kimi, Grok, Claude Opus 5.5 (with Haiku for quick asynchronous checks) and Cursor.
-- **Grok Bot**: ran the coding seats and handled helper tasks.
+- **Grok Bot**: the dedicated red teamer, challenging each build; it also ran the coding seats and handled helper tasks.
 - **Devin bot**: patrolled the repository for errors.
 - **Manus**: oversight of the code, analysis and patterns across runs.
 
