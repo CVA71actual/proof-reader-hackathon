@@ -55,6 +55,8 @@ FINDING_TEXT = "The EXPAND timing is subject to FDA feedback; the draft drops th
 PAGE = F.html("SAN DIEGO, Nov. 2, 2026 -- Protagonist Therapeutics announced today its pipeline update.",
               QUOTE, EXPAND_QUOTE)
 WAIT_MS = 30_000
+# the judgment pane's own heading for an open row (ui/app.js judgmentPendingPane; "Your call" before 0dc1589)
+YOUR_CALL = "Your note (saved with your decision)"
 
 
 # ------------------------------------------------------------------ the scripted models
@@ -300,6 +302,11 @@ def test_2a_the_run_card_shows_the_company_researching(j):
     j.screens.append(("run card · researching", text))
     assert "running" in text or "queued" in text, text
     assert "PTGX" in text
+    # RUNCARD-001: the stage lines say research is going and the later stages have not started — never "not run",
+    # never the page-mode "No second reader"
+    assert re.search(r"Research · (queued|running \(turn \d+ of \d+\))", text), text
+    assert "Independent review · not started" in text, text
+    assert "not run" not in text and "No second reader" not in text, text
     assert_honest(text, where="run card while researching")
 
 
@@ -349,6 +356,9 @@ def test_2b_the_run_card_shows_the_review_stage(j):
     assert review_progress_element(progress[0]), \
         f"API review_status is 'reviewing' but the PTGX line's review element reads {progress[0]!r}:\n{text}"
     assert not re.search(r"not independently reviewed|review completed", text, re.IGNORECASE), text
+    # RUNCARD-001: the stage line agrees — reviewing now, never completed; research ending is not review ending
+    assert re.search(r"Independent review · reviewing( \([^()]+\))?\n", text + "\n"), text
+    assert "Research · finished" in text and "Independent review · completed" not in text, text
 
 
 def test_2c_the_run_card_reaches_done_after_the_review(j):
@@ -413,7 +423,7 @@ def test_4_the_review_row_shows_its_reason(j):
     text = j.wait_text("#judgment-rows", "Waiting for you · 1")
     assert "EXPAND" in text, text
     j.page.locator("#judgment-rows .row", has_text="EXPAND").first.click()
-    pane = j.wait_text("#judgment-det", "Your call")
+    pane = j.wait_text("#judgment-det", YOUR_CALL)
     j.screens.append(("judgment · EXPAND row", j.text("#scr-judgment")))
     listing = j.text("#judgment-rows")
     assert has(listing, NEEDS_REVIEW), listing
@@ -435,7 +445,7 @@ def test_4_the_review_row_shows_its_reason(j):
 
 def test_4a_the_review_row_shows_what_the_reviewer_found(j):
     j.goto(f"judgment/{j.rows['flagged']}")
-    pane = j.wait_text("#judgment-det", "Your call")
+    pane = j.wait_text("#judgment-det", YOUR_CALL)
     issues = j.run()["state"]["targets"][j.rows["flagged"]]["issues"]
     assert any("reviewer found" in i for i in issues), issues
     assert FINDING_TEXT in pane or any(i in pane for i in issues), f"No reviewer finding in the pane:\n{pane}"
@@ -449,7 +459,7 @@ def decisions(j: Journey) -> list[dict]:
 
 def test_5_remove_then_undo_on_the_included_row(j):
     j.goto(f"judgment/{j.rows['clean']}")
-    pane = j.wait_text("#judgment-det", "Your call")
+    pane = j.wait_text("#judgment-det", YOUR_CALL)
     assert "ICARUS" in pane, pane
     j.click_button("Remove…", "#judgment-det")
     j.page.wait_for_selector("#dialog-wrap:not([hidden])")
@@ -462,7 +472,7 @@ def test_5_remove_then_undo_on_the_included_row(j):
     assert has(pane, "Removed by you") and has(pane, "Undo"), pane
     assert_honest(pane, where="judgment pane after Remove")
     j.click_button("Undo", "#judgment-det")
-    j.wait_text("#judgment-det", "Your call")
+    j.wait_text("#judgment-det", YOUR_CALL)
     j.wait_api(lambda b: b["state"]["targets"][j.rows["clean"]]["inclusion"] == "included", "the Undo landing")
     target = j.run()["state"]["targets"][j.rows["clean"]]
     assert target["review_label"] == INCLUDED and target["decision_label"] is None, target
@@ -476,7 +486,7 @@ def test_5_remove_then_undo_on_the_included_row(j):
 
 def test_5a_fix_then_keep_on_the_review_row(j):
     j.goto(f"judgment/{j.rows['flagged']}")
-    j.wait_text("#judgment-det", "Your call")
+    j.wait_text("#judgment-det", YOUR_CALL)
     j.click_button("Fix…", "#judgment-det")
     j.page.wait_for_selector("#dialog-wrap:not([hidden])")
     j.page.select_option("#dialog select", "title")
@@ -525,7 +535,7 @@ def test_6_the_decisions_persist_after_a_reload(j):
     pane = j.wait_text("#judgment-det", KEPT)
     assert has(j.text("#judgment-rows"), "Decided by you · 1"), j.text("#judgment-rows")
     j.goto(f"judgment/{j.rows['clean']}")
-    pane = j.wait_text("#judgment-det", "Your call")
+    pane = j.wait_text("#judgment-det", YOUR_CALL)
     assert not has(pane, KEPT) and not has(pane, "Removed by you"), pane
     assert_honest(j.capture("after reload · calendar + judgment", "#app"), where="after reload", kept_allowed=True)
     targets = j.run()["state"]["targets"]

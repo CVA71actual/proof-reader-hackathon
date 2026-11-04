@@ -2554,107 +2554,149 @@
     detailsPane(det, row, { back: null });
   }
 
-  function trailInstructionsBlock() {
+  function trailInstructionsBlock(folded) {
     var meta = detail.run.run || {};
     var note = meta.choices && meta.choices.note_for_agent;
-    var wrap = el('div', 'trailwrap trailinstructions');
-    wrap.append(el('div', 'rstitle', 'Instructions used for this run'));
-    wrap.append(el('pre', 'codeblk', typeof note === 'string' && note !== ''
-      ? note : 'No note for the agent was sent.'));
+    var text = typeof note === 'string' && note !== '' ? note : 'No note for the agent was sent.';
+    // RUNCARD-001: on the run card the brief is one closed line; the Agent
+    // trail keeps it open as the page's first block
+    var wrap = el(folded ? 'details' : 'div', 'trailwrap trailinstructions' + (folded ? ' runinstructions' : ''));
+    wrap.append(el(folded ? 'summary' : 'div', folded ? 'trailclaimsum' : 'rstitle', 'Instructions used for this run'));
+    wrap.append(el('pre', 'codeblk', text));
     return wrap;
   }
 
-  // DEMO CUT: three recorded stage outcomes. Research ending is not review
-  // ending, and an attempted check that could not run is never a pass.
+  // DEMO CUT / RUNCARD-001: three stage lines read from the saved/live record.
+  // A stage that has not started says 'not started', never 'not run'; research
+  // ending is not review ending; a stage that did not run is never a pass.
+  function isResearchRun(meta) {
+    return !!meta && (((meta.choices || {}).mode === 'research') || !!meta.research);
+  }
+  function stagePhrase(parts) {
+    // one company: its phrase; several: one phrase when they agree, else per ticker
+    var uniq = [];
+    parts.forEach(function (p) { if (uniq.indexOf(p[1]) < 0) uniq.push(p[1]); });
+    if (uniq.length <= 1) return uniq[0] || '';
+    return parts.map(function (p) { return p[0] + ': ' + p[1]; }).join('; ');
+  }
+  function researchEndWords(c) {
+    var by = c.ended_by || {};
+    if (by.code === 'stall') return 'no new proposal in ' + by.setting + ' turns';
+    if (by.code === 'turn_ceiling') return 'turn limit reached (' + by.setting + ' turns)';
+    if (by.code === 'minutes_ceiling') return 'time limit reached (' + by.setting + ' minutes)';
+    if (by.code === 'finish_now') return 'a person chose Finish now';
+    if (by.why) return by.why;
+    var fin = (c.finish || {}).by;
+    if (fin === 'finish_draft') return 'the model finished its draft';
+    if (fin === 'prose') return 'the model ended with a written answer';
+    return '';
+  }
   function stageOutcomesBlock() {
     var meta = (detail && detail.run && detail.run.run) || {};
+    var choices = meta.choices || {};
     var rs = meta.research || {};
     var companies = rs.companies || {};
-    var companyNames = Object.keys(companies);
-    function savedReason(rec) {
-      if (!rec) return '';
-      var value = rec.status_reason || rec.reason || (rec.limitation && rec.limitation.reason) || '';
-      return typeof value === 'string' ? value : '';
-    }
-    function firstReason(records) {
-      for (var i = 0; i < records.length; i++) {
-        var why = savedReason(records[i]);
-        if (why) return why;
+    var ticks = Object.keys(companies);
+    var live = JOB_ACTIVE.indexOf(meta.status) >= 0;
+    var limits = rs.limits || choices.research_limits || {};
+    var ceiling = typeof limits.turn_ceiling_per_company === 'number' ? limits.turn_ceiling_per_company
+                : choices.turn_limit_per_company;
+
+    // Research: queued / running (turn N of LIMIT) / finished — why / stopped by a person / stopped — why / failed — why
+    var researchParts = ticks.map(function (t) {
+      var c = companies[t] || {};
+      if (c.status === 'researching' && !live) return [t, 'stopped — the run ended while researching'];
+      if (c.status === 'researching') {
+        var turn = typeof c.requests === 'number' ? c.requests : 0;
+        return [t, 'running (turn ' + turn + (ceiling ? ' of ' + ceiling : '') + ')'];
       }
-      return '';
-    }
-    function stoppedStatus(st) {
-      return st === 'stopped' || st === 'failed' || st === 'incomplete' ||
-             st === 'needs_input' || st === 'paused_turn_limit';
-    }
-    function finishedStatus(st) { return st === 'done' || st === 'complete' || st === 'finished'; }
+      if (c.status === 'finished') {
+        var why = researchEndWords(c);
+        return [t, 'finished' + (why ? ' — ' + why : '')];
+      }
+      if (c.status === 'stopped') {
+        if (c.limitation && c.limitation.kind === 'person') return [t, 'stopped by a person'];
+        var sw = (c.limitation && c.limitation.reason) || c.status_reason || '';
+        return [t, 'stopped' + (sw ? ' — ' + sw : '')];
+      }
+      if (c.status === 'failed') {
+        var fw = (c.limitation && c.limitation.reason) || c.status_reason || '';
+        return [t, 'failed' + (fw ? ' — ' + fw : '')];
+      }
+      return [t, live ? 'queued' : 'not run — this company was never started'];
+    });
+    var research = stagePhrase(researchParts) ||
+      (live ? 'queued' : 'not run — no research was recorded' +
+        (meta.status_reason ? ' (' + meta.status_reason + ')' : ''));
 
-    var companyRecords = companyNames.map(function (t) { return companies[t] || {}; });
-    var researchOutcome = 'not run';
-    var researchWhy = savedReason(meta) || firstReason(companyRecords);
-    var researchRequests = companyRecords.reduce(function (n, c) {
-      return n + (typeof c.requests === 'number' ? c.requests : 0);
-    }, 0);
-    if (meta.status === 'done' || meta.finished_at ||
-        (companyRecords.length && companyRecords.every(function (c) { return c.status === 'finished'; }))) {
-      researchOutcome = 'completed';
-    } else if (stoppedStatus(meta.status) || companyRecords.some(function (c) { return stoppedStatus(c.status); })) {
-      researchOutcome = 'stopped';
-    } else if (!researchRequests && !(rs.steps || []).length) {
-      researchOutcome = 'no calls made';
-    }
-
+    // Independent review: not started / reviewing (who) / completed (who, N findings) /
+    // incomplete (who) / no calls made — why
     var review = rs.review || {};
-    var reviewRecords = Object.keys(review).map(function (t) { return review[t] || {}; });
-    var reviewOutcome = 'not run';
-    var reviewWhy = firstReason(reviewRecords) || firstReason(companyRecords.map(function (c) {
-      return { reason: c.review_reason, status_reason: c.review_status_reason };
-    }));
-    if (reviewRecords.length) {
-      if (reviewRecords.every(function (r) { return finishedStatus(r.status); })) reviewOutcome = 'completed';
-      else if (reviewRecords.some(function (r) { return stoppedStatus(r.status); })) reviewOutcome = 'stopped';
-      else if (reviewRecords.every(function (r) {
-        return r.requests === 0 || r.calls === 0 || r.requests_made === 0;
-      })) reviewOutcome = 'no calls made';
-    } else if (companyRecords.length && companyRecords.every(function (c) { return c.review_status === 'done'; })) {
-      reviewOutcome = 'completed';
-    } else if (companyRecords.some(function (c) { return stoppedStatus(c.review_status); })) {
-      reviewOutcome = 'stopped';
-    } else if (meta.second_reader && (meta.status === 'done' || meta.finished_at)) {
-      reviewOutcome = 'completed';
-    } else if (meta.second_reader && stoppedStatus(meta.status)) {
-      reviewOutcome = 'stopped';
-    } else if (meta.choices && meta.choices.models === 'one') {
-      reviewWhy = reviewWhy || NO_SECOND_READER;
-    }
-
-    var findings = (detail && detail.run && detail.run.support_findings) || {};
-    var findingRecords = Object.keys(findings).map(function (id) { return findings[id] || {}; });
-    var supportSteps = (rs.steps || []).filter(function (s) { return s && s.who === 'capture.support_signal'; });
-    var supportRecords = findingRecords.concat(supportSteps);
-    var supportOutcome = 'not run';
-    var supportWhy = firstReason(findingRecords);
-    if (!supportWhy) {
-      for (var i = 0; i < supportSteps.length; i++) {
-        if (supportSteps[i].refs && supportSteps[i].refs.result === 'could_not_run' && supportSteps[i].text) {
-          supportWhy = supportSteps[i].text;
-          break;
+    var chosen = (rs.reviewer_access || {}).chosen || '';
+    var reviewParts = ticks.map(function (t) {
+      var c = companies[t] || {};
+      var e = review[t];
+      if (e && e.status) {
+        var who = e.reviewer || chosen;
+        var calls = e.usage && typeof e.usage.model_requests === 'number' ? e.usage.model_requests : null;
+        if (e.status === 'not_run' || (e.status !== 'complete' && calls === 0)) {
+          return [t, 'no calls made' + (e.reason ? ' — ' + e.reason : '')];
         }
+        if (e.status === 'complete') {
+          var n = ((e.review || {}).findings || []).length;
+          return [t, 'completed (' + (who ? who + ', ' : '') + n + (n === 1 ? ' finding' : ' findings') + ')'];
+        }
+        return [t, 'incomplete' + (who ? ' (' + who + ')' : '') + (e.reason ? ' — ' + e.reason : '')];
       }
-    }
-    var supportResults = supportRecords.map(function (s) { return (s.refs && s.refs.result) || s.result; });
-    if (supportResults.some(function (r) { return r === 'unsupported_spans' || r === 'no_finding' || r === 'stale'; })) {
-      supportOutcome = 'completed';
-    } else if (supportResults.indexOf('could_not_run') >= 0) {
-      supportOutcome = 'not run';
-    } else if (meta.choices && meta.choices.support_check === 'lettucedetect') {
-      supportOutcome = 'no calls made';
+      if (c.review_status === 'reviewing' && !live) return [t, 'incomplete — the run ended during the review'];
+      if (c.review_status === 'reviewing') return [t, 'reviewing' + (chosen ? ' (' + chosen + ')' : '')];
+      return [t, live ? 'not started' : 'not run — no review was recorded'];
+    });
+    var reviewWords = stagePhrase(reviewParts) || (live ? 'not started' : 'not run — no review was recorded');
+
+    // LettuceDetect: not requested / not started / running / ran on N rows, M flags (advisory) / not run — why
+    var support;
+    if (choices.support_check !== 'lettucedetect') {
+      support = 'not requested';
+    } else {
+      var agg = rs.support_check || {};
+      var done = agg.companies || {};
+      var pending = ticks.filter(function (t) { return !done[t]; });
+      var started = pending.filter(function (t) {
+        var st = (companies[t] || {}).status;
+        return st && st !== 'queued' && st !== 'researching';
+      });
+      var tot = { checked: 0, flags: 0, could: 0 };
+      Object.keys(done).forEach(function (t) {
+        var d = done[t] || {};
+        tot.could += d.could_not_run || 0;
+        tot.flags += d.unsupported_spans || 0;
+        tot.checked += (d.no_finding || 0) + (d.unsupported_spans || 0) + (d.could_not_run || 0);
+      });
+      if (live && started.length) {
+        support = 'running';
+      } else if (!Object.keys(done).length) {
+        support = live ? 'not started' : 'not run — no result was recorded';
+      } else if (tot.checked - tot.could > 0) {
+        support = 'ran on ' + (tot.checked - tot.could) + (tot.checked - tot.could === 1 ? ' row, ' : ' rows, ') +
+          tot.flags + (tot.flags === 1 ? ' flag' : ' flags') + ' (advisory)' +
+          (tot.could ? '; could not run on ' + tot.could : '');
+      } else {
+        var why = '';
+        var findings = (detail.run && detail.run.support_findings) || {};
+        Object.keys(findings).some(function (id) {
+          var f = findings[id] || {};
+          if (f.result === 'could_not_run' && f.reason) { why = f.reason; return true; }
+          return false;
+        });
+        support = 'not run — ' + (why || (tot.checked ? 'the check could not run' : 'no proposals to check'));
+      }
     }
 
     var box = el('div', 'stageout');
-    box.append(el('div', 'jb-sub stageline', 'Research · ' + researchOutcome + (researchWhy ? ' — ' + researchWhy : '')),
-               el('div', 'jb-sub stageline', 'Independent review · ' + reviewOutcome + (reviewWhy ? ' — ' + reviewWhy : '')),
-               el('div', 'jb-sub stageline', 'LettuceDetect · ' + supportOutcome + (supportWhy ? ' — ' + supportWhy : '')));
+    box.append(el('div', 'jb-sub stageline', 'Research · ' + research),
+               el('div', 'jb-sub stageline', 'Independent review · ' + reviewWords),
+               el('div', 'jb-sub stageline', 'LettuceDetect · ' + support));
     return box;
   }
 
@@ -5666,28 +5708,32 @@
     clear(host);
     if (!detail) { host.hidden = true; return; }
     host.hidden = false;
-    host.append(trailInstructionsBlock());
-    host.append(stageOutcomesBlock());
-    var activity = el('details', 'jobactivity');
-    activity.append(el('summary', 'trailclaimsum', 'Detailed activity'));
-    var activityBody = el('div', 'jobactivitybody');
-    activity.append(activityBody);
-    host.append(activity);
-    host = activityBody;
     var meta = detail.run.run || {};
     var st = meta.status;
+    // RUNCARD-001: on top, always visible — the run status word, the three
+    // stage lines (research runs), each company's progress, then the brief as
+    // one closed line; everything else under the closed Detailed activity fold
+    var card = host;
+    function cardTop() {
+      if (isResearchRun(meta)) card.append(stageOutcomesBlock());
+      var rscTop = researchCompanyBlock(runResearch() && runResearch().companies);
+      if (rscTop) card.append(rscTop);
+      card.append(trailInstructionsBlock(true));
+      var activity = el('details', 'jobactivity');
+      activity.append(el('summary', 'trailclaimsum', 'Detailed activity'));
+      var activityBody = el('div', 'jobactivitybody');
+      activity.append(activityBody);
+      card.append(activity);
+      return activityBody;
+    }
     if (!st) {
       // G4-R2: the block shows on every run — with no status it is a quiet
       // 'saved run' plus the cost when known, no dot
       var bits = ['saved run'];
       var cw = costPerKeptRowWords();
       if (cw) bits.push(cw);
-      host.append(el('div', 'jb-sub', bits.join(' · ')));
-      // fix-on-find: the status-less path returns early, so it carries the
-      // per-company research progress itself (7c0c3b4 dropped it here)
-      var rsc0 = researchCompanyBlock(runResearch() && runResearch().companies);
-      if (rsc0) host.append(rsc0);
-      host.hidden = false;
+      card.append(el('div', 'jb-sub', bits.join(' · ')));
+      cardTop();
       return;
     }
     var live = JOB_ACTIVE.indexOf(st) >= 0;
@@ -5707,7 +5753,8 @@
     } else {
       row1.append(el('span', null, JOB_STATUS_WORDS[st] || st));
     }
-    host.append(row1);
+    card.append(row1);
+    host = cardTop();
     // PROJECTION-002: the one-reader sentence is a page-mode sentence — a
     // research run's independent reviewer is stage S2, named from the record
     if (oneModelRun(meta) && meta.choices.mode !== 'research') {
@@ -5781,10 +5828,7 @@
       }), err);
       host.append(ctl);
     }
-    // per-company research progress rides every state — queued, running, done
-    var rsc = researchCompanyBlock(runResearch() && runResearch().companies);
-    if (rsc) host.append(rsc);
-    host.hidden = false;
+    card.hidden = false;
   }
   // the money rule: under a cent reads in words, a cent or more in cents
   function costPerKeptRowWords() {

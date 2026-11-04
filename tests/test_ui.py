@@ -2755,7 +2755,7 @@ def test_research_s1_surfaces_read_the_real_get_envelope(tmp_path):
         "  nodes['runcard-job'].children = []; nodes['runcard-job'].textContent = '';",
         "  H.ev('updateRunCardJob')();",
         "  var ct = textOf(nodes['runcard-job']).join(' ');",
-        "  var body = nodes['runcard-job'].children[2].children[1];",
+        "  var body = nodes['runcard-job'];",
         "  var hasSaved = body.children.some(function (n) {",
         "    return n.className === 'jb-sub' && n.textContent.indexOf('saved run') === 0;",
         "  });",
@@ -6788,7 +6788,8 @@ def _render_card_and_summary(meta: dict, accepted: int = 0, research: dict | Non
                                                "researchRunControls", "updateRunCardJob", "oneModelRun", "reviewAxis", "renderExport",
                                                "reviewAcceptedCount", "projectionComplete", "partialProjection",
                                                "researchCompanyBlock", "runResearch", "researchReviewLine",
-                                               "trailInstructionsBlock", "stageOutcomesBlock", "num", "usdCents", "hm"))
+                                               "trailInstructionsBlock", "isResearchRun", "stagePhrase",
+                                               "researchEndWords", "stageOutcomesBlock", "num", "usdCents", "hm"))
     script = f"""
 function make() {{
   return {{ tag: 'div', className: '', textContent: '', children: [], style: {{}}, hidden: false, value: '',
@@ -6828,10 +6829,13 @@ var spend = [];
   (n.children || []).forEach(walk);
 }})(nodes['exp-det']);
 var activity = card.children.filter(function (c) {{ return c.className === 'jobactivity'; }})[0];
+var brief = card.children.filter(function (c) {{ return (c.className || '').indexOf('runinstructions') >= 0; }})[0];
 console.log(JSON.stringify({{ card: textOf(card), stop: stop.map(function (c) {{ return c.textContent; }}),
                              top: card.children.map(function (c) {{ return c.className; }}),
                              activity: activity ? activity.children[0].textContent : null,
-                             activityOpen: activity ? !!activity.open : null, spend: spend }}));
+                             activityOpen: activity ? !!activity.open : null, spend: spend,
+                             instructionsTag: brief ? brief.tag : null, instructionsOpen: brief ? !!brief.open : null,
+                             instructionsSummary: brief ? brief.children[0].textContent : null }}));
 """
     got = subprocess.run(["node", "-"], input=script, text=True, capture_output=True, timeout=60)
     assert got.returncode == 0, got.stderr
@@ -8087,9 +8091,10 @@ def test_run9_research_finish_and_stop_require_confirmation_and_hide_when_done()
 
 def test_run9_agent_trail_is_folded_per_claim_with_instructions_and_run_wide_steps():
     js = (UI / "app.js").read_text()
-    consts = _grab_var(js, "RESEARCH_STEP_WORDS")
+    consts = _grab_var(js, "RESEARCH_STEP_WORDS") + "\n" + _grab_var(js, "JOB_ACTIVE")
     fns = "\n".join(_grab_fn(js, n) for n in
-                    ("runResearch", "researchTrailBlock", "trailInstructionsBlock", "stageOutcomesBlock",
+                    ("runResearch", "researchTrailBlock", "trailInstructionsBlock", "isResearchRun", "stagePhrase",
+                     "researchEndWords", "stageOutcomesBlock",
                      "researchStepsForRow", "researchStepsWithoutRow", "trailClaimSection",
                      "shownField", "renderTrail", "hm"))
     script = "\n".join([
@@ -8251,36 +8256,106 @@ def test_cva_turn_limit_default_validation_and_run_card():
     assert "turn 87 of 200" in card["card"], card["card"]
 
 
-# ---- DEMO CUT: run-card stage outcomes stay separate and activity starts folded
+# ---- DEMO CUT / RUNCARD-001: honest stage lines, the status word on top, the brief folded
 
-def test_demo_cut_run_card_orders_instructions_stages_and_collapsed_activity():
+def _stage_lines(card: dict) -> list[str]:
+    return [t for t in card["card"] if t.startswith(("Research · ", "Independent review · ", "LettuceDetect · "))]
+
+
+def test_demo_cut_run_card_orders_status_stages_and_collapsed_brief_and_activity():
     research = {
-        "companies": {"PTGX": {"status": "finished", "review_status": "done", "requests": 3}},
-        "review": {"PTGX": {"status": "incomplete", "reason": "The reviewer stopped at the saved limit."}},
-        "steps": [{"who": "capture.support_signal", "refs": {"row_id": "e1", "result": "could_not_run"},
-                   "text": "Support check could not run: the saved weights reason."}],
+        "limits": {"turn_ceiling_per_company": 200},
+        "companies": {"PTGX": {"status": "finished", "review_status": "incomplete", "requests": 41,
+                               "ended_by": {"code": "stall", "setting": 40, "turn": 41, "why": "x"}}},
+        "review": {"PTGX": {"status": "incomplete", "reviewer": "Claude Opus 5.5",
+                            "reason": "The reviewer stopped at the saved limit.", "usage": {"model_requests": 3}}},
+        "support_check": {"companies": {"PTGX": {"no_finding": 0, "unsupported_spans": 0, "could_not_run": 2}}},
     }
+    brief = "Saved brief exactly. " * 180          # a ~3,600-char brief
     got = _render_card_and_summary(
-        {"status": "done", "status_reason": "research ended — no new proposal in 40 turns",
-         "choices": {"mode": "research", "note_for_agent": "Saved brief exactly."}},
+        {"status": "done", "status_reason": "Researched 1 company.",
+         "choices": {"mode": "research", "note_for_agent": brief, "support_check": "lettucedetect"}},
         research=research,
         support_findings={"e1": {"result": "could_not_run", "reason": "The saved weights are unavailable."}},
     )
-    assert got["top"] == ["trailwrap trailinstructions", "stageout", "jobactivity"]
+    assert got["top"] == ["jb-row1", "stageout", "rscomp", "trailwrap trailinstructions runinstructions",
+                          "jobactivity"], got["top"]
     assert got["activity"] == "Detailed activity" and got["activityOpen"] is False
+    assert got["instructionsTag"] == "details" and got["instructionsOpen"] is False
+    assert got["instructionsSummary"] == "Instructions used for this run"
+    assert _stage_lines(got) == [
+        "Research · finished — no new proposal in 40 turns",
+        "Independent review · incomplete (Claude Opus 5.5) — The reviewer stopped at the saved limit.",
+        "LettuceDetect · not run — The saved weights are unavailable.",
+    ]
     text = "\n".join(got["card"])
-    assert "Instructions used for this run" in text and "Saved brief exactly." in text
-    assert "Research · completed — research ended — no new proposal in 40 turns" in text
-    assert "Independent review · stopped — The reviewer stopped at the saved limit." in text
-    assert "LettuceDetect · not run — The saved weights are unavailable." in text
-    assert "Independent review · completed" not in text
-    assert text.index("Instructions used for this run") < text.index("Research · completed") < text.index("Detailed activity")
+    assert text.index("Run finished") < text.index("Research · finished") < text.index("Instructions used")
 
-    no_calls = _render_card_and_summary(
-        {"status": "running", "choices": {"mode": "research", "support_check": "lettucedetect"}},
-        research={},
+
+def test_runcard_stage_lines_while_researching_are_never_not_run():
+    # the 3bab950 journey defect: a running research run read "not run" on every stage, with page-mode wording
+    got = _render_card_and_summary(
+        {"status": "running", "status_reason": "Researching.",
+         "choices": {"mode": "research", "models": "one", "support_check": "lettucedetect",
+                     "turn_limit_per_company": 200}},
+        research={"limits": {"turn_ceiling_per_company": 200},
+                  "companies": {"PTGX": {"status": "researching", "review_status": "queued", "requests": 3}},
+                  "review": {}},
     )
-    quiet = "\n".join(no_calls["card"])
-    assert "Research · no calls made" in quiet
-    assert "Independent review · not run" in quiet
-    assert "LettuceDetect · no calls made" in quiet
+    assert _stage_lines(got) == ["Research · running (turn 3 of 200)", "Independent review · not started",
+                                 "LettuceDetect · not started"]
+    assert got["top"][0].startswith("jb-row1") and "running" in got["card"], got["card"]
+    text = "\n".join(got["card"])
+    assert "not run" not in text and "No second reader" not in text
+    assert "PTGX" in text and "Researching" in text
+
+    queued = _render_card_and_summary({"status": "queued", "choices": {"mode": "research"}},
+                                      research={"companies": {"PTGX": {"status": "queued"}}})
+    assert "queued" in queued["card"]
+    assert _stage_lines(queued) == ["Research · queued", "Independent review · not started",
+                                    "LettuceDetect · not requested"]
+
+
+def test_runcard_stage_lines_review_and_support_states():
+    base = {"status": "running", "choices": {"mode": "research", "support_check": "lettucedetect"}}
+    reviewing = _render_card_and_summary(base, research={
+        "reviewer_access": {"chosen": "Claude Opus 5.5"},
+        "companies": {"PTGX": {"status": "finished", "review_status": "reviewing",
+                               "ended_by": {"code": "turn_ceiling", "setting": 200}}}})
+    assert _stage_lines(reviewing) == ["Research · finished — turn limit reached (200 turns)",
+                                       "Independent review · reviewing (Claude Opus 5.5)",
+                                       "LettuceDetect · running"]
+
+    done = _render_card_and_summary({**base, "status": "done"}, research={
+        "companies": {"PTGX": {"status": "finished", "review_status": "done", "finish": {"by": "finish_draft"}}},
+        "review": {"PTGX": {"status": "complete", "reviewer": "Claude Opus 5.5", "usage": {"model_requests": 2},
+                            "review": {"findings": [{"finding_id": "f1"}]}}},
+        "support_check": {"companies": {"PTGX": {"no_finding": 1, "unsupported_spans": 1, "could_not_run": 0}}}})
+    assert _stage_lines(done) == ["Research · finished — the model finished its draft",
+                                  "Independent review · completed (Claude Opus 5.5, 1 finding)",
+                                  "LettuceDetect · ran on 2 rows, 1 flag (advisory)"]
+
+    stopped = _render_card_and_summary({"status": "failed", "choices": {"mode": "research"}}, research={
+        "companies": {"PTGX": {"status": "stopped",
+                               "limitation": {"kind": "person", "reason": "Stopped by a person."}}},
+        "review": {"PTGX": {"status": "not_run", "reason": "A person stopped the run, so the independent review "
+                                                          "was not run; nothing was reviewed."}}})
+    assert _stage_lines(stopped) == [
+        "Research · stopped by a person",
+        "Independent review · no calls made — A person stopped the run, so the independent review was not run; "
+        "nothing was reviewed.",
+        "LettuceDetect · not requested"]
+    # research stopping is not review finishing; a stage that did not run is never a pass
+    assert not any("completed" in t or "ran on" in t for t in _stage_lines(stopped))
+
+    no_calls = _render_card_and_summary({**base, "status": "done"}, research={
+        "companies": {"PTGX": {"status": "failed",
+                               "limitation": {"kind": "failed", "reason": "Technical failure."}}},
+        "review": {"PTGX": {"status": "incomplete", "reason": "No reviewer could run.",
+                            "usage": {"model_requests": 0}}}})
+    assert _stage_lines(no_calls) == ["Research · failed — Technical failure.",
+                                      "Independent review · no calls made — No reviewer could run.",
+                                      "LettuceDetect · not run — no result was recorded"]
+
+    page = _render_card_and_summary({"status": "done", "choices": {"mode": "pages", "models": "one"}})
+    assert _stage_lines(page) == []           # a page-mode run carries no research stage lines
