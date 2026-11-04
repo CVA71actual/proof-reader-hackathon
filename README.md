@@ -118,6 +118,26 @@ My experiments exposed four practical risks in this implementation:
 
 What I would keep: code that constrains what can be accepted and preserves evidence, honest stage labels, and a person deciding. Checking a model's format does not make its judgment correct. Models explore, code checks what can be checked mechanically, and a person judges.
 
+## How it was built
+
+I directed a team of AI models, each with a fixed role:
+
+- **Codex app (GPT-6 Astra)**: design and coding on the toughest problems, plus independent audits and acceptance checks.
+- **Claude app (Fable 5.1)**: coding and managing the other coders: integration, reviews, merges and the project record.
+- **Kimi app**: the app's screens and visual design.
+- **Terminal coders**: Kimi, Grok, Claude Opus 5.5 (with Haiku for quick asynchronous checks) and Cursor.
+- **Grok Bot**: ran the coding seats and handled helper tasks.
+- **Devin bot**: patrolled the repository for errors.
+- **Manus**: oversight of the code, analysis and patterns across runs.
+
+The working rules:
+- No model approved its own work. Every change needed a review from a different model, plus the automated tests.
+- I decided what merged.
+- Any change to how the models were instructed got a cheap live trial run before a full run.
+- Reviews and decisions were written to a project record.
+
+The build taught the same lesson as the product: the models wrote most of the code, but checks at the edges (tests, review by a different model, a person deciding) caught what they missed.
+
 ## Meta products used
 
 - **Muse Spark** through the Meta Model API: the research agent.
@@ -134,7 +154,7 @@ Not used: Muse Code.
 
 ## Built during the hackathon
 
-This repository was created on 14 Oct 2026 with only a placeholder README (one commit). All product code was written during the hackathon, from 26 Oct to 4 Nov 2026, and the full commit history is included. I built it with AI coding assistants (Claude, Codex, Kimi) under my direction, with reviews by other models.
+This repository was created on 14 Oct 2026 with only a placeholder README (one commit). All product code was written during the hackathon, from 26 Oct to 4 Nov 2026, and the full commit history is included. I built it with the AI team described under "How it was built".
 
 ## Licence
 
