@@ -854,7 +854,10 @@ def test_vague_periods_need_dates_inside_their_window(text, start, end):
     Changed in R3b (Red Team round 1): whole-year dates no longer pass for a vague period."""
     q = f"The company expects data in {text}."
     assert _dm(text, start, q, date_end=end).result == "pass"
-    assert _dm(text, start, q, date_end=start).result == "pass"
+    # Run 9 (e25): a row whose first and last day are the same day is one exact day, and one day is more precise
+    # than a vague period says, so it fails like a row that gives only that day.
+    assert _dm(text, start, q, date_end=start).result == "fail"
+    assert _dm(text, start, q).result == "fail"
     for s_, e_ in [("2027-01-01", "2027-12-31"), ("2026-12-01", "2027-03-31"), ("2027-10-01", "2028-01-31"),
                    ("2028-01-01", "2028-06-30"), ("2026-01-01", "2026-06-30")]:
         if (s_, e_) == (start, end):

@@ -305,9 +305,17 @@ def fix_commas(text: str) -> str:
     return re.sub(r",(?=\d)", ", ", text or "")
 
 
+# A field label printed before a date on an event page ("Date: Thursday, November 12, 2026", "When: March 3, 2027"):
+# it names the field, it is not part of the date (run 9, e10 versus e28: the same day must give the same result with
+# or without the label). Only these field names; any other word before a date stays part of the text.
+_LABEL = re.compile(r"^(?:dates?(?:\s*(?:and|&|/)\s*times?)?|when)\s*:\s*", re.I)
+
+
 def clean_date_text(text: str | None) -> str:
-    """The date alone: no leading weekday, no trailing time of day, 'calendar year' read as 'year'."""
+    """The date alone: no leading field label ('Date:', 'When:'), no leading weekday, no trailing time of day,
+    'calendar year' read as 'year'."""
     s = fix_commas(normalize(text))
+    s = _LABEL.sub("", s)
     s = _WEEKDAY.sub("", s)
     s = _TIME.sub("", s)
     s = _CAL_YEAR.sub("", s)
@@ -856,6 +864,80 @@ def date_in_clause(date_text: str | None, filed: date | str | None = None) -> st
     return last[0]
 
 
+# The action a date belongs to (run 9, e5): "In September 2025, JNJ submitted an application to the EMA seeking the
+# first approval of ICOTYDE" dates the SUBMISSION; a row titled "ICOTYDE EMA approval decision" must not take that date
+# as its decision date. Word-based and narrow on purpose: it only ever withholds a result (could_not_run), never
+# passes or fails a row, and never infers an event type.
+_SUBMIT_WORDS = re.compile(r"(?<![\w-])(?:re)?(?:submit(?:s|ted|ting)?|submissions?|filed|filings?|applications?|applied)"
+                           r"(?![\w-])", re.I)
+# Decision-side words. Beyond decision / approval / launch, a PDUFA, action or goal date and a CHMP opinion or vote
+# also date the decision, so a nearer one of these keeps the date with the decision (never flagged).
+_DECIDE_WORDS = re.compile(r"(?<![\w-])(?:decisions?|decide[sd]?|approv(?:als?|e[sd]?)|launch(?:es|ed|ing)?|pdufa|"
+                           r"action|goal date|opinions?|vote)(?![\w-])", re.I)
+# The row's own event, from its title: only these words (the order's list), never the wider decision-side list.
+_ROW_EVENT_WORDS = re.compile(r"(?<![\w-])(?:decisions?|approv(?:als?|e[sd]?)|launch(?:es|ed|ing)?)(?![\w-])", re.I)
+_LAUNCH_WORD = re.compile(r"(?<![\w-])launch", re.I)
+# "decision on the application", "approval of the submission", "action on the filing": the submission word is the
+# object of the decision word, so it does not date a submission.
+_OBJECT_OF_DECISION = re.compile(r"(?:decisions?|approvals?|action|review)\s+(?:on|of|for)\s+(?:the\s+|its\s+|this\s+|"
+                                 r"that\s+|an?\s+)?(?:[A-Za-z()]+\s+){0,2}$", re.I)
+_CLAUSE_BREAK = re.compile(r";|(?<=[a-z0-9)\u201d\"])[.!?](?=\s+[A-Z(\u201c\"])")
+ACTION_MISMATCH = "The date in the text is the {done} date, not the {wanted} date."
+
+
+def date_action_mismatch(date_text: str | None, quote: str | None, *, title: str | None = None,
+                         event_type: str | None = None) -> str | None:
+    """The reason the printed date belongs to a submission while the row's event is a decision, approval or launch;
+    None otherwise.
+
+    The row's event: its title names decision / approval / launch, or its event_type is regulatory_decision
+    or launch; a title that itself names a submission or filing is never flagged (the row is about the filing).
+    The date's action: the clause of the quote that prints the date text's first date or period (the clause runs
+    between full stops or semicolons; the date text itself when the quote does not print that date; never flagged
+    when the date text names no date or period). In that clause a submission word (submitted, filed, application, submission, applied) must be
+    nearer to the date than any decision word (decision, decide, approval, launch, PDUFA, action, goal date,
+    opinion, vote); a submission word that is the object of a decision ("decision on the application") does not
+    count.
+    Limits: English words only; nearness is counted in characters, not grammar; a clause split by an abbreviation
+    ("U.S. FDA") may be cut short; only the first date the date text names is attributed."""
+    row_words = title or ""
+    wanted = None
+    if _ROW_EVENT_WORDS.search(row_words):
+        wanted = "launch" if _LAUNCH_WORD.search(row_words) and not re.search(r"decision|approv|decide", row_words, re.I) \
+            else "decision"
+    elif event_type in ("regulatory_decision", "launch"):
+        wanted = "launch" if event_type == "launch" else "decision"
+    if wanted is None or _SUBMIT_WORDS.search(row_words):
+        return None
+    dt = _norm_quote(date_text)
+    if not dt:
+        return None
+    q = _norm_quote(quote)
+    clause, at = dt, None
+    found = named_dates(dt)
+    if found:
+        words = found[0][0]
+        hit = q.lower().find(words.lower()) if q else -1
+        if hit >= 0:
+            starts = [0] + [m.end() for m in _CLAUSE_BREAK.finditer(q) if m.end() <= hit]
+            ends = [m.start() for m in _CLAUSE_BREAK.finditer(q) if m.start() >= hit + len(words)] + [len(q)]
+            clause, at = q[max(starts):ends[0]], hit - max(starts)
+        else:
+            at = dt.find(words)
+    if at is None:
+        return None
+    subs = [m for m in _SUBMIT_WORDS.finditer(clause) if not _OBJECT_OF_DECISION.search(clause[:m.start()])]
+    if not subs:
+        return None
+    near = lambda ms: min(abs(m.start() - at) for m in ms)
+    decides = list(_DECIDE_WORDS.finditer(clause))
+    if decides and near(decides) <= near(subs):
+        return None
+    nearest = min(subs, key=lambda m: abs(m.start() - at))
+    done = "filing" if re.match(r"fil", nearest[0], re.I) else "submission"
+    return ACTION_MISMATCH.format(done=done, wanted=wanted)
+
+
 def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
                date_end: str | None = None, *, event_type: str | None = None, title: str | None = None,
                program: str | None = None, filed: date | str | None = None,
@@ -885,7 +967,27 @@ def date_match(date_text: str | None, date_iso: str | None, quote: str | None,
     Anything vaguer ('later this year') with no date given: not_needed.
     A date text written as a clause ('with initiation expected in early first quarter 2027'): the one date or period
     it ends on (date_in_clause) is checked as the date text, and the reason names the words read.
+    A row whose first and last day are the same day (date == date_end) is one exact day: it is read as that day with
+    no date_end (run 9, e25), so one day has one representation whichever way the row stores it.
+    The one place the row's event is consulted (date_action_mismatch): when the date belongs to a submission and the
+    row's title or event_type names a decision, approval or launch, the check could not run and no timing is derived.
+    That rule only withholds a result; it never passes or fails a row.
     """
+    one_day = bool(date_iso) and date_end == date_iso
+    if one_day:
+        date_end = None
+    mismatch = date_action_mismatch(date_text, quote, title=title, event_type=event_type)
+    if mismatch is not None:
+        return CheckResult(DATE_ID, DATE_LABEL, COULD_NOT_RUN,
+                           f"{mismatch} Code does not take it as this event's date; the timing stays unresolved.",
+                           {"value": date_iso or _norm_quote(date_text), "found": None,
+                            "timing": {"wording": date_text, "start": None, "end": None, "precision": "unresolved"}})
+    if one_day:
+        got = date_match(date_text, date_iso, quote, None, event_type=event_type, title=title, program=program,
+                         filed=filed, today=today, chosen=chosen)
+        return CheckResult(got.check, got.label, got.result,
+                           f"The row's first and last day are the same day ({date_iso}), read as that one day. "
+                           f"{got.reason}", got.compared)
     inner = date_in_clause(date_text, filed)
     if inner is not None:
         # The date text is a clause around one date or period: check those words as the date text, unchanged.
