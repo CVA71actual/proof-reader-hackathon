@@ -54,9 +54,10 @@ def test_no_research_policy_outside_the_brief():
     for phrase in MOVED:
         assert phrase not in rc.CONTROLLER, phrase
     brief = ri.RESEARCH_DEFAULT
-    for phrase in ("publication dateline", "exact printed day", "Quote whole sentences", "Prefer primary sources",
-                   "brave_search first", "Work like an analyst", "primary origin", "derives the bounds",
-                   "supersedes", "one proposal citing all of them", "monitoring item", "approval is not a launch"):
+    for phrase in ("publication date is not the event date", "exact printed day", "Quote whole sentences",
+                   "Prefer primary sources", "brave_search first", "primary origin", "leave date and date_end empty",
+                   "do not propose it", "one proposal citing all of them", "monitoring item", "an approval is not a launch",
+                   "Past events are not catalysts"):
         assert phrase in brief, phrase
     assert len(brief) < 3700 < ri.MAX_LENGTH
     card = rq.company_card("PTGX", __import__("datetime").date(2026, 11, 3), "P", "1", True)

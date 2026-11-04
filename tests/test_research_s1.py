@@ -1352,8 +1352,8 @@ def test_an_sec_document_captured_by_url_takes_its_filing_date_so_year_end_has_a
 
 def test_guidance_says_code_derives_period_bounds_and_quotes_are_whole():
     from capture import research_instructions as ri      # timing policy is in the visible brief, not in code text
-    assert "leave date and date_end empty and code derives the bounds" in ri.RESEARCH_DEFAULT
-    assert "Quote whole sentences as printed, including the timing words" in ri.RESEARCH_DEFAULT
+    assert "leave date and date_end empty" in ri.RESEARCH_DEFAULT
+    assert "Quote whole sentences including the timing words" in ri.RESEARCH_DEFAULT
     from checks import event_checks as e
     q = "into a comprehensive Phase 2 psoriasis program, with initiation expected in early Q1 2027."
     assert e.date_match("early Q1 2027", None, q, date_end=None).result == "pass"       # null bounds: derived
@@ -1869,7 +1869,7 @@ def test_the_default_research_request_is_exactly_the_one_box(runs_dir):
     assert len(ri.RESEARCH_DEFAULT) <= 3700 < ri.MAX_LENGTH
     assert sent == _instructions_for(ri.RESEARCH_DEFAULT) and sent.startswith(ri.RESEARCH_DEFAULT)
     assert run_json(runs_dir, rid)["run"]["choices"]["note_for_agent"] == ri.RESEARCH_DEFAULT
-    assert "Regulators beyond the FDA: EMA, MHRA, PMDA, NMPA and TGA" in sent
+    assert "EMA, MHRA, PMDA, NMPA or TGA" in sent
     assert not any(ri.RESEARCH_DEFAULT in (i.get("content") or "") for i in reader.requests[0]["input"])
 
 
