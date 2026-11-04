@@ -2507,10 +2507,11 @@ def test_research_s1_ui_surfaces():
         "if (lbl.indexOf('partly reviewed by Muse Spark Open') === -1 || lbl.indexOf('not independently reviewed') !== -1)",
         "  { console.error(lbl); process.exit(17); }",
         # per-company progress
-        "var cb = textOf(researchCompanyBlock({ ACME: { status: 'researching', requests: 5, searches: 12,",
-        "  fetches: 4, pages_delivered: 9, spend_usd: 0.42, status_reason: '' }, BTBR: { status: 'failed',",
-        "  status_reason: 'The SEC could not be reached.', requests: 2 } }));",
-        "if (cb.indexOf('ACME') === -1 || cb.indexOf('Researching') === -1 || cb.indexOf('12 searches') === -1 ||",
+        "var cb = textOf(researchCompanyBlock({ ACME: { status: 'researching', requests: 5, searches: 0,",
+        "  brave_requests: 42, fetches: 4, pages_delivered: 9, spend_usd: 0.42, status_reason: '' },",
+        "  BTBR: { status: 'failed', status_reason: 'The SEC could not be reached.', requests: 2 } }));",
+        "if (cb.indexOf('ACME') === -1 || cb.indexOf('Researching') === -1 ||",
+        "    cb.indexOf('web_search 0 · Brave 42') === -1 || cb.indexOf('0 searches') !== -1 ||",
         "    cb.indexOf('9 pages delivered') === -1 || cb.indexOf('$0.42') === -1)",
         "  { console.error(cb); process.exit(5); }",
         "if (cb.indexOf('BTBR') === -1 || cb.indexOf('Failed') === -1 || cb.indexOf('The SEC could not be reached.') === -1)",
@@ -8490,6 +8491,62 @@ def test_trail_uses_frozen_request_record_or_shows_unavailable_reason():
         "if (legacyText.indexOf('Admitted before request records existed.') === -1 ||",
         "    legacyText.indexOf('From saved request files, not an admission record') === -1 ||",
         "    legacyText.indexOf('Legacy saved instructions') === -1) { console.error(legacyText); process.exit(4); }",
+        "console.log('ok');",
+    ])
+    _run_node(script)
+
+
+def test_calendar_readability_bands_have_counts_explainers_and_collapsed_history():
+    js = (UI / "app.js").read_text()
+    render = _grab_fn(js, "renderCalendar")
+    for words in (
+            "band('On the calendar', rows.length",
+            "band('Needs a date or your review', needsN",
+            "band('Context (past events)', past.length + lastEvents.length",
+            "band('Later (after the window)', later.length",
+            "No usable date yet, or waiting for your decision.",
+            "Already happened; kept so out-of-date guidance can be caught. Not on the calendar.",
+            "contextWrap, 'context', true", "laterWrap, 'later', true",
+            "needsWrap, 'attention', false", "box.open = !collapsed"):
+        assert words in render, words
+    assert render.index("band('On the calendar'") < render.index("band('Needs a date or your review'")
+    assert render.index("band('Needs a date or your review'") < render.index("band('Context (past events)'")
+    assert render.index("band('Context (past events)'") < render.index("band('Later (after the window)'")
+    # Past rows and the latest-past exclusion history share one de-duplicated count.
+    assert "lastEvents = lastEvents.filter(function (r) { return !contextIds[r.row.id]; });" in render
+    css = (UI / "styles.css").read_text()
+    assert ".calband.attention{border-left:4px solid var(--amber)}" in css
+    assert ".calband.context .calbandsummary" in css
+    assert ".calbandnote{" in css
+
+
+def test_calendar_category_tag_hides_unknown_and_shows_a_real_category():
+    js = (UI / "app.js").read_text()
+    script = "\n".join([
+        "function el(tag, cls, text) { return { tag: tag, className: cls || '', textContent: text || '',",
+        "  title: '', children: [], addEventListener: function () {},",
+        "  append: function () { for (var i = 0; i < arguments.length; i++) this.children.push(arguments[i]); } }; }",
+        "function btn(cls) { return el('button', cls); }",
+        "function keptCurrent() { return false; }",
+        "function typeCategoryValue() { return null; }",
+        "function eventWord(v) { return v === 'unknown' ? 'Unknown' : v === 'trial_results' ? 'Trial results' : ''; }",
+        "function shownField(t, row, field) {",
+        "  return t.values && Object.prototype.hasOwnProperty.call(t.values, field) ? t.values[field] : row[field]; }",
+        "function shownDateText() { return ''; }",
+        "function supportTag() { return null; }",
+        "var calSel = null;",
+        _grab_fn(js, "calRow"),
+        "function tags(n, out) { out = out || []; if (!n) return out;",
+        "  if ((n.className || '').split(/\\s+/).indexOf('ty') !== -1) out.push(n.textContent);",
+        "  (n.children || []).forEach(function (c) { tags(c, out); }); return out; }",
+        "var unknown = { row: { id: 'u', ticker: 'ACME', title: 'Timing not classed', event_type: 'unknown' },",
+        "  t: {}, fold: [] };",
+        "var unknownTags = tags(calRow(unknown, '', false));",
+        "if (unknownTags.length !== 0) { console.error(unknownTags.join(',')); process.exit(2); }",
+        "var real = { row: { id: 'r', ticker: 'ACME', title: 'Topline results', event_type: 'trial_results' },",
+        "  t: {}, fold: [] };",
+        "var realTags = tags(calRow(real, '', false));",
+        "if (realTags.join(',') !== 'Trial results') { console.error(realTags.join(',')); process.exit(3); }",
         "console.log('ok');",
     ])
     _run_node(script)
