@@ -357,29 +357,58 @@ def _is_research_run(meta: dict) -> bool:
     return bool(meta.get("research")) or (meta.get("choices") or {}).get("mode") == "research"
 
 
-def _research_review_counter(meta: dict) -> str | None:
-    """PROJECTION-002: a research run's independent reviewer is stage S2, recorded in run.research.review
-    (per company: status, reviewer, the review record with its findings). The export's counter segment comes
-    from that record — never the page-mode "No second reader in this run" sentence. None for page-mode runs."""
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}" + ("" if n == 1 else "s")
+
+
+def stage_lines(run: dict) -> list[str]:
+    """RUN9-COUNTERS (CVA + Codex 2026-11-03): one plain execution line per company for the independent review
+    and for the LettuceDetect support check, read from their saved records (run.research.review,
+    run.research.support_check). A stage that did not run says so with its saved reason; it is never shown as
+    "no findings" or folded into a mistakes count. Page-mode runs have no such stages: []."""
+    meta = run.get("run") or {}
     if not _is_research_run(meta):
-        return None
+        return []
     research = meta.get("research") or {}
     review = research.get("review") or {}
-    # an S1 placeholder ({"stage", "outcome": "not_requested_by_mode"}) holds no per-company entries
-    entries = [e for e in review.values() if isinstance(e, dict) and (e.get("status") or e.get("reviewer"))]
-    if not entries:
-        return "no research review recorded"
-    # a review entry with a recorded zero reviewer calls was selected, not run: it is never "by" anyone
-    ran = [e for e in review_attempts(entries) if review_made_calls(e)]
-    incomplete = any(e.get("status") != "complete" for e in entries)
-    if not ran:
-        return "research review not started: no reviewer calls were made"
-    names = sorted(attempted_reviewer_names(entries))
-    findings = sum(len((e.get("review") or {}).get("findings") or []) for e in entries)
-    who = " by " + ", ".join(names) if names else ""
-    segment = (f"research review findings {findings}{who}" if findings
-               else f"research review{who}: no findings")
-    return segment + (" (review incomplete)" if incomplete else "")
+    entries = {t: e for t, e in review.items() if isinstance(e, dict) and (e.get("status") or e.get("reviewer"))}
+    support = research.get("support_check") if isinstance(research.get("support_check"), dict) else None
+    requested = (meta.get("choices") or {}).get("support_check")
+    companies = [t for t in (meta.get("choices") or {}).get("companies") or []]
+    for t in [*entries, *((support or {}).get("companies") or {})]:
+        if t not in companies:
+            companies.append(t)
+    out = []
+    for t in companies or [None]:
+        who = f" ({t})" if t else ""
+        e = entries.get(t)
+        if e is None:
+            out.append(f"Independent review{who}: none recorded")
+        elif not [a for a in review_attempts([e]) if review_made_calls(a)]:
+            out.append(f"Independent review{who}: no calls made" + (f" — {e['reason']}" if e.get("reason") else ""))
+        else:
+            names = ", ".join(attempted_reviewer_names([e]))
+            findings = len((e.get("review") or {}).get("findings") or []) if isinstance(e.get("review"), dict) else 0
+            status = "completed" if e.get("status") == "complete" else (e.get("status") or "incomplete")
+            out.append(f"Independent review{who}: {names}, {status}, {_plural(findings, 'finding')}")
+        c = ((support or {}).get("companies") or {}).get(t) if t else None
+        if not requested and not support:
+            out.append(f"LettuceDetect{who}: not requested for this run")
+        elif not isinstance(c, dict):
+            out.append(f"LettuceDetect{who}: not run (no result was saved)")
+        else:
+            checked = (c.get("no_finding") or 0) + (c.get("unsupported_spans") or 0)
+            unfinished = c.get("could_not_run") or 0
+            reason = (c.get("worker") or {}).get("reason")
+            if not checked:
+                out.append(f"LettuceDetect{who}: not run ({reason or 'no reason was saved'})")
+            else:
+                line = (f"LettuceDetect{who}: ran on {_plural(checked, 'row')}, "
+                        f"{_plural(c.get('unsupported_spans') or 0, 'flag')} (advisory)")
+                if unfinished:
+                    line += f"; could not run on {_plural(unfinished, 'row')}" + (f" ({reason})" if reason else "")
+                out.append(line)
+    return out
 
 
 def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
@@ -686,12 +715,16 @@ def build_view(run: dict, decisions: list[dict], *, generated_at: str) -> dict:
         "models_line": ONE_MODEL_LINE if run_is_one_model(run) and not _is_research_run(meta) else None,
         # REVIEW-NOT-A-FLAG-001: rows still under review that carry a real issue (needing review is not one)
         "issues": state["counts"]["issues"],
+        # RUN9-COUNTERS (CVA + Codex 2026-11-03): no "Mistakes caught by code" aggregate (a zero there read as
+        # "nothing wrong" when checks failed, could not run, or the review and support check never ran). The
+        # research stages are stated per company in stage_lines; row-level check results are unchanged.
         "counters_line": (
-            f"Mistakes caught by code {mistakes['code']} · "
-            + (_research_review_counter(meta)
-               or (NO_SECOND_READER if run_is_one_model(run) else f"by the second reader {mistakes['second_reader']}"))
-            + f" · by a person {mistakes['person']} · Excluded {excluded_n}"
+            ("" if _is_research_run(meta) else
+             (f"{NO_SECOND_READER} · " if run_is_one_model(run)
+              else f"Corrected by the second reader {mistakes['second_reader']} · "))
+            + f"Corrected by a person {mistakes['person']} · Excluded {excluded_n}"
         ),
+        "stage_lines": stage_lines(run),
         "no_accepted_rows_text": "No rows accepted by you." if state["counts"]["review"]["accepted"] == 0 else None,
         "calendar_heading": CALENDAR_HEADING,
         "needs_review_heading": NEEDS_REVIEW_HEADING,

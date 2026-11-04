@@ -248,6 +248,8 @@ def build_pdf(view: dict) -> bytes:
     for key, label in view["group_labels"].items():
         story.append(_p(f"{label}: {view['counts'][key]}", styles["body"]))
     story.append(_p(view["counters_line"], styles["body"]))
+    for line in view.get("stage_lines") or []:
+        story.append(_p(line, styles["body"]))
     story.append(_p(f"Unresolved (needs attention): {view['unresolved']}", styles["body"]))
 
     # Still open and unverified

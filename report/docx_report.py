@@ -181,6 +181,8 @@ def build_docx(view: dict) -> bytes:
     for key, label in view["group_labels"].items():
         _line(doc, f"{label}: {view['counts'][key]}")
     _line(doc, view["counters_line"])
+    for line in view.get("stage_lines") or []:
+        _line(doc, line)
     _line(doc, f"Unresolved (needs attention): {view['unresolved']}")
 
     _heading(doc, view["needs_review_heading"])
